@@ -57,8 +57,9 @@ server through. The host attaches to a live server named by
 
 ### The server outlives the window
 
-The host starts the server detached (its own session on Linux, a job breakaway on Windows),
-so closing or crashing the window stops neither the server nor its agent runs.
+The server owns threads and runs, so closing the window stops neither. The host starts the
+server as a child process and stops it when the application quits; it never stops a server
+it attached to.
 
 ### v1 state is read, never written
 

@@ -21,7 +21,8 @@ silently doing nothing.
 checksum in the update feed. **Install** asks for confirmation and restarts the app on the
 new version. A failed download or install shows the cause.
 
-Closing the window does not stop the server. If a server from another build is still
+Installing restarts Houston, which stops the server it started and ends its running agents;
+finish work you want to keep first. If a server from another build is still
 running when Houston starts, Houston attaches to it, warns that its version differs from
 the app's, and never stops it; quit that server yourself to run the server bundled with the
 new build.

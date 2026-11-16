@@ -1,9 +1,9 @@
 # Houston contributor instructions
 
 Houston is a local-first desktop application for coding agents on Linux and Windows. An
-Electron host starts, or attaches to, a detached TypeScript server for its channel; the
-renderer presents each agent conversation as a **thread**. Closing the application detaches
-the client; the server and its agent runs continue.
+Electron host starts, or attaches to, a TypeScript server for its channel; the renderer
+presents each agent conversation as a **thread**. Closing the window keeps the host in the
+tray, so the server and its agent runs continue; quitting stops the server the host started.
 
 Prefer the smallest design that satisfies the requirement. Verify documentation against
 the implementation and correct discrepancies in the same change. If an instruction
@@ -11,9 +11,10 @@ conflicts with the task, explain the conflict and obtain maintainer direction.
 
 ## Invariants
 
-- **Detached server** (`apps/server`): closing the app stops neither the server nor its agent
-  runs. One server runs per channel; clients find it through
-  `<channel dir>/v2/userdata/server-runtime.json`.
+- **Server lifetime** (`apps/server`): the server owns threads and agent runs, and a window is
+  only a client. Closing the window stops neither the server nor its runs. Quitting stops the
+  server the host started; a server the host attached to is never stopped by it. One server
+  runs per channel; clients find it through `<channel dir>/v2/userdata/server-runtime.json`.
 - **Local state** (`<channel dir>/v2`): one user, one machine, one SQLite database per channel.
   Upstream's tables follow upstream's migrations; Houston's tables live on the Houston migration
   track (`houston_sql_migrations`), whose ids never enter upstream's migrator. Telemetry is
@@ -65,7 +66,7 @@ Use the [glossary](docs/internals/glossary.md) consistently:
 - **Contributor agent:** the agent editing Houston. Contributor agents run in the installed
   release built from `main`; check `HOUSTON_SESSION` before operations that could affect the
   pane hosting it.
-- **Server:** the TypeScript server under `apps/server`, run detached by the host for one
+- **Server:** the TypeScript server under `apps/server`, run by the host for one
   **channel**. The installed `release` channel keeps its state in
   `~/.houston/v2`; `dev` uses `~/.houston-dev/v2`.
 - **Thread:** a structured conversation with one agent. A **turn** is one request and its answer;

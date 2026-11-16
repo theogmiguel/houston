@@ -1,8 +1,8 @@
 # Installing Houston
 
-Houston is a desktop app with a local server. The app starts, or attaches to, one detached
-server for its channel; the server owns threads and agent runs, so closing the window does
-not stop them.
+Houston is a desktop app with a local server. The app starts, or attaches to, one server
+for its channel; the server owns threads and agent runs, so closing the window does not
+stop them.
 
 ## Requirements
 

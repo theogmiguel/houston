@@ -455,7 +455,7 @@ platform included in the draft before promotion.
 
 For Windows, install the NSIS artifact on Windows 10 or 11 and launch it on an
 isolated test channel. Start a thread with each installed agent CLI, close and reopen
-the app, and confirm that the detached server and its agent runs remain available.
+the window, and confirm that the server and its agent runs remain available.
 
 ### 4. Publish
 

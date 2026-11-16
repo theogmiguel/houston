@@ -41,7 +41,7 @@ Then:
 The development script runs `pnpm run build:desktop`, which builds the renderer, the server
 bundle and the Electron main process, then launches
 `node apps/desktop/scripts/start-electron.mjs` with the resolved channel. The host attaches
-to the channel's running server or spawns one detached. Close the existing window for that
+to the channel's running server or spawns one. Close the existing window for that
 channel before relaunching: a second launch focuses the running instance instead of loading
 the rebuilt renderer.
 

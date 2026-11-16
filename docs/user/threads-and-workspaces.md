@@ -5,8 +5,8 @@ with one agent: a **turn** is one request and its answer, and a **run** is the p
 session that serves a thread. A **workspace** is a named layout of **columns**, each holding
 **panes**, each holding **tabs**; threads of any project share a workspace.
 
-Closing the window detaches the app from the local server. Threads, runs and workspaces
-continue on the server, and the next launch reconnects to them.
+Closing the window leaves Houston in the tray. Threads, runs and workspaces continue on the
+local server, and reopening the window reconnects to them.
 
 The server keeps each workspace's name, columns, panes, tabs, pin and hidden state, so a change
 an agent makes to a workspace appears in the open window.
@@ -310,7 +310,8 @@ each thread's `workspaceId`. The earlier `houston_grid_*` tools, the `grid` laun
 ## Closing
 
 Closing the window hides Houston in the tray when **Settings ▸ General ▸ Background ▸ Keep
-in tray** is on; otherwise it quits the app. Either way the server and its runs continue.
+in tray** is on, and the server and its runs continue; otherwise it quits the app.
 `Ctrl+Q` follows **Settings ▸ General ▸ Confirmations ▸ Quit shortcut**: **Direct**, **Hold** or
-**Press twice**. Quitting from the tray's **Quit Houston** quits the client without touching the
-server's runs.
+**Press twice**. Quitting, from the tray's **Quit Houston** or the shortcut, stops the server Houston
+started, which ends its running agents; threads and their history are kept. A server that was
+already running when Houston started keeps running.
