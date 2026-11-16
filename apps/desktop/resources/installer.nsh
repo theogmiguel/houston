@@ -100,14 +100,16 @@ houstonUninstallScanLine:
   StrCmp $R4 '"pid"' houstonUninstallFoundPid
   IntOp $R3 $R3 + 1
   StrLen $R5 $R2
-  IntCmp $R3 $R5 houstonUninstallReadLoop houstonUninstallReadLoop houstonUninstallReadLoop
+  IntCmp $R3 $R5 houstonUninstallReadLoop houstonUninstallScanLine houstonUninstallReadLoop
 houstonUninstallFoundPid:
   IntOp $R3 $R3 + 5
-houstonUninstallChompWhitespace:
+houstonUninstallSkipSeparator:
   StrCpy $R4 $R2 1 $R3
-  StrCmp $R4 ' ' 0 houstonUninstallParsePid
+  StrCmp $R4 ' ' houstonUninstallNextSeparator
+  StrCmp $R4 ':' houstonUninstallNextSeparator houstonUninstallParsePid
+houstonUninstallNextSeparator:
   IntOp $R3 $R3 + 1
-  Goto houstonUninstallChompWhitespace
+  Goto houstonUninstallSkipSeparator
 houstonUninstallParsePid:
   StrCpy $R4 $R2 1 $R3
   StrCmp $R4 '' houstonUninstallReadEnd
@@ -121,7 +123,9 @@ houstonUninstallParsePid:
 houstonUninstallReadEnd:
   FileClose $R0
 
-  StrCmp $R1 "" houstonUninstallDone
+  ; Only a positive integer reaches the command line below.
+  IntOp $R1 $R1 + 0
+  IntCmp $R1 0 houstonUninstallDone houstonUninstallDone
   nsExec::ExecToLog `"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "$$p = Get-Process -Id $R1 -ErrorAction SilentlyContinue; if ($$p -and $$p.Path.StartsWith('$INSTDIR')) { Stop-Process -Id $R1 -Force }"`
 
 houstonUninstallDone:

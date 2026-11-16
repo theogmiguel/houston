@@ -101,6 +101,32 @@ NodeTest.test("the NSIS hook defines only macros the installer templates insert"
   NodeAssert.doesNotMatch(hook, /StrFunc\.nsh/);
 });
 
+NodeTest.test("every label in the NSIS hook is a jump target", () => {
+  // An unused label is a makensis warning, and the build treats warnings as errors.
+  const hook = NodeFS.readFileSync(
+    NodePath.join(REPO_ROOT, "apps/desktop/resources/installer.nsh"),
+    "utf8",
+  );
+  const labels = [...hook.matchAll(/^(\w+):$/gm)].map((match) => match[1]);
+  NodeAssert.notEqual(labels.length, 0);
+  for (const label of labels) {
+    NodeAssert.match(
+      hook,
+      new RegExp(`\\b${label}\\b(?!:)`),
+      `installer.nsh declares the label ${label}, which nothing jumps to`,
+    );
+  }
+});
+
+NodeTest.test("the NSIS hook reads the daemon pid past the key's separator", () => {
+  const hook = NodeFS.readFileSync(
+    NodePath.join(REPO_ROOT, "apps/desktop/resources/installer.nsh"),
+    "utf8",
+  );
+  NodeAssert.match(hook, /StrCmp \$R4 ':' houstonUninstallNextSeparator houstonUninstallParsePid/);
+  NodeAssert.match(hook, /IntCmp \$R1 0 houstonUninstallDone houstonUninstallDone\n/);
+});
+
 NodeTest.test("the NSIS hook accepts the arguments the Tauri updater passes", () => {
   const hook = NodeFS.readFileSync(
     NodePath.join(REPO_ROOT, "apps/desktop/resources/installer.nsh"),
