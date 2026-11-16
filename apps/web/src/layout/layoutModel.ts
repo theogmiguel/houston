@@ -652,6 +652,27 @@ export function arrangeLayoutWorkspaces(
   });
 }
 
+/**
+ * Scale the widths to fill the window, none below the floor. A column held at the floor takes its
+ * room from the others, so the strip runs past the window only when every column is at the floor.
+ */
+function shareWindow(widths: Map<string, number>, floor: number): void {
+  const held = new Set<string>();
+  while (held.size < widths.size) {
+    const free = [...widths].filter(([id]) => !held.has(id));
+    const scale = (1 - held.size * floor) / free.reduce((sum, [, width]) => sum + width, 0);
+    const narrow = free.filter(([, width]) => width * scale < floor);
+    if (narrow.length === 0) {
+      for (const [id, width] of free) widths.set(id, width * scale);
+      return;
+    }
+    for (const [id] of narrow) {
+      held.add(id);
+      widths.set(id, floor);
+    }
+  }
+}
+
 /** Only opening or closing columns triggers fitting. Temporary side panes borrow and return their
  * chat column share; reordering preserves widths. */
 export function fitLayoutColumns(
@@ -694,8 +715,8 @@ export function fitLayoutColumns(
       if (mode !== "always-scroll") {
         const total = [...widths.values()].reduce((sum, width) => sum + width, 0);
         // Shrink to share the window; after a close, grow back to fill it.
-        const scale = total > 1 || removed.length > 0 ? 1 / total : 1;
-        for (const [id, width] of widths) widths.set(id, Math.max(floor, width * scale));
+        if (total > 1 || removed.length > 0) shareWindow(widths, floor);
+        else for (const [id, width] of widths) widths.set(id, Math.max(floor, width));
       }
     }
     const columns = workspace.columns.map((column) => {
