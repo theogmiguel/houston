@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import * as NodeAssert from "node:assert/strict";
+import * as NodeModule from "node:module";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeTest from "node:test";
@@ -65,6 +66,39 @@ NodeTest.test("the NSIS hook keeps the Tauri install directory and daemon cleanu
   NodeAssert.match(hook, /!macro customUnInstall/);
   NodeAssert.match(hook, /\.houston\\daemon\.json/);
   NodeAssert.match(hook, /StartsWith\('\$INSTDIR'\)/);
+});
+
+NodeTest.test("the NSIS hook defines only macros the installer templates insert", () => {
+  // makensis runs with warnings as errors, and a function that only an
+  // uninserted macro references is a warning.
+  const hook = NodeFS.readFileSync(
+    NodePath.join(REPO_ROOT, "apps/desktop/resources/installer.nsh"),
+    "utf8",
+  );
+  const fromDesktop = NodeModule.createRequire(
+    NodePath.join(REPO_ROOT, "apps/desktop/package.json"),
+  );
+  const fromBuilder = NodeModule.createRequire(
+    fromDesktop.resolve("electron-builder/package.json"),
+  );
+  const templates = NodePath.join(
+    NodePath.dirname(fromBuilder.resolve("app-builder-lib/package.json")),
+    "templates/nsis",
+  );
+  const inserted = NodeFS.readdirSync(templates, { encoding: "utf8", recursive: true })
+    .filter((entry) => /\.ns[hi]$/.test(entry))
+    .map((entry) => NodeFS.readFileSync(NodePath.join(templates, entry), "utf8"))
+    .join("\n");
+  const defined = [...hook.matchAll(/^!macro (\w+)/gm)].map((match) => match[1]);
+  NodeAssert.notEqual(defined.length, 0);
+  for (const macro of defined) {
+    NodeAssert.match(
+      inserted,
+      new RegExp(`!insertmacro ${macro}\\b`),
+      `installer.nsh defines ${macro}, which no installer template inserts`,
+    );
+  }
+  NodeAssert.doesNotMatch(hook, /StrFunc\.nsh/);
 });
 
 NodeTest.test("the NSIS hook accepts the arguments the Tauri updater passes", () => {
