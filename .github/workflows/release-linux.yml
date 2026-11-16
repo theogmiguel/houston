@@ -56,7 +56,7 @@ jobs:
       - name: Record start time
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           # A cut's default checkout is the pre-bump dispatch SHA, so it hands
           # its new tag through here; empty means the triggering ref.
@@ -141,7 +141,7 @@ jobs:
       - name: Cache the pinned Tauri CLI
         if: steps.signing.outputs.signed == 'true'
         id: tauri-cli-cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cargo/bin/cargo-tauri
           key: cargo-tauri-${{ inputs.tauri_cli_version }}-ubuntu-22.04-${{ matrix.arch }}
@@ -151,10 +151,10 @@ jobs:
 
       # The desktop package is built with the Node version its workspace pins in
       # package.json engines.node, not the runner's default.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 12.14.0
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version-file: package.json
           cache: pnpm
@@ -330,7 +330,7 @@ jobs:
         shell: bash
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
 
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: houston-${{ inputs.version }}-linux-x86_64
           path: dist

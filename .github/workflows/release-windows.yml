@@ -59,7 +59,7 @@ jobs:
       # Packaging fixes on the workflow branch apply when an older tag is
       # rebuilt; the application source still comes from the tag.
       - name: Check out packaging automation
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
       - name: Preserve packaging scripts when rebuilding an older tag
         shell: pwsh
         run: |
@@ -71,7 +71,7 @@ jobs:
           New-Item -ItemType Directory -Force (Join-Path $staged 'installer') | Out-Null
           Copy-Item apps/desktop/resources/installer.nsh (Join-Path $staged 'installer')
       - name: Check out the application source
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
       - name: Use the workflow's packaging scripts
@@ -103,7 +103,7 @@ jobs:
 
       - name: Cache the pinned Tauri CLI
         id: tauri-cli-cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cargo/bin/cargo-tauri.exe
           key: cargo-tauri-prebuilt-${{ inputs.tauri_cli_version }}-windows-2022
@@ -220,10 +220,10 @@ jobs:
 
       # The embedded desktop and server bundles use the Node version the
       # workspace pins in package.json engines.node, not the runner's default.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 12.14.0
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version-file: package.json
           cache: pnpm
@@ -261,7 +261,7 @@ jobs:
 
       - name: Sign the NSIS installer with Azure Trusted Signing
         if: steps.signing.outputs.azure == 'true'
-        uses: azure/trusted-signing-action@v0
+        uses: azure/trusted-signing-action@v2
         with:
           azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}

@@ -54,7 +54,7 @@ jobs:
       - name: Record start time
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
 
@@ -78,7 +78,7 @@ jobs:
 
       - name: Cache the pinned Tauri CLI
         id: tauri-cli-cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cargo/bin/cargo-tauri
           key: cargo-tauri-${{ inputs.tauri_cli_version }}-macos-${{ matrix.arch }}
@@ -122,10 +122,10 @@ jobs:
 
       # The desktop and server bundles use the Node version the workspace pins
       # in package.json engines.node, not the runner's default.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 12.14.0
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version-file: package.json
           cache: pnpm

@@ -44,7 +44,7 @@ jobs:
       - name: Record start time
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
 
@@ -57,10 +57,10 @@ jobs:
           [ -n "$base" ] || { echo "::error::version input '$VERSION' has no base before its + build metadata"; exit 1; }
           ./scripts/set-version.sh --check "$base"
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 12.14.0
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 26.12.1
           cache: pnpm
@@ -111,7 +111,7 @@ jobs:
       - name: Record start time
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
 
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: houston-server-${{ inputs.version }}-*
           path: release-server

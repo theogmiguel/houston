@@ -51,14 +51,14 @@ jobs:
       - name: Record start time
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install signature verifier
         run: sudo apt-get update && sudo apt-get install -y minisign
 
       # The release assets: desktop bundles plus the server archives the boot
       # service and remote installs download.
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: houston-*
           path: artifacts
@@ -70,7 +70,7 @@ jobs:
         run: node scripts/refresh-updater-metadata.mjs artifacts --check
 
       - name: Download the prepared release notes
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: release-notes-${{ inputs.tag }}
           path: prepared-notes

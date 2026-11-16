@@ -40,7 +40,7 @@ jobs:
       - id: pin
         run: echo "tauri_cli_version=$TAURI_CLI_VERSION" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.ref }}
       - id: check

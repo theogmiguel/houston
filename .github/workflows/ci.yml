@@ -42,7 +42,7 @@ jobs:
       # Depth 2 gives HEAD (the PR merge commit) and both parents; HEAD^1 is the
       # base tip, so the diff is exactly the PR's own changes. Blobless keeps the
       # fetch small because only paths are read.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           filter: blob:none
           fetch-depth: 2
@@ -69,7 +69,7 @@ jobs:
     steps:
       - name: Record job start time
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           filter: blob:none
           fetch-depth: 2
@@ -171,7 +171,7 @@ jobs:
     steps:
       - name: Record job start time
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           filter: blob:none
       - uses: ./.github/actions/setup
@@ -211,7 +211,7 @@ jobs:
     steps:
       - name: Record job start time
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           filter: blob:none
       - uses: ./.github/actions/setup
@@ -252,7 +252,7 @@ jobs:
     steps:
       - name: Record job start time
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           filter: blob:none
       - uses: ./.github/actions/setup
@@ -302,7 +302,7 @@ jobs:
     steps:
       - name: Record job start time
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           filter: blob:none
       - uses: ./.github/actions/setup
@@ -337,7 +337,7 @@ jobs:
     steps:
       - name: Record job start time
         run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           filter: blob:none
       - uses: ./.github/actions/setup
@@ -390,7 +390,7 @@ jobs:
     env:
       CARGO_BUILD_JOBS: 3
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           filter: blob:none
       - name: Install native build dependencies
