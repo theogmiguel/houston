@@ -196,6 +196,9 @@ jobs:
           shopt -s nullglob
           mkdir -p dist
           cp release/*.AppImage release/*.deb dist/
+          # An unsigned run has no signatures to carry.
+          signatures=(release/*.sig)
+          if [ "${#signatures[@]}" -gt 0 ]; then cp "${signatures[@]}" dist/; fi
           cp release/latest-linux*.yml dist/
           appimages=(dist/*.AppImage)
           debs=(dist/*.deb)
