@@ -15,7 +15,7 @@ wayland-client = "0.31"
 wayland-scanner = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "unstable", "staging"] }
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
-smithay-client-toolkit = { version = "0.19.2", default-features = false }
+smithay-client-toolkit = { version = "0.21.1", default-features = false }
 rustix = { version = "1", features = ["event"] }
 
 [dev-dependencies]
