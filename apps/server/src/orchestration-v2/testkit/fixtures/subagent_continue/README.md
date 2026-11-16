@@ -13,7 +13,7 @@ Parent app thread / Codex thread A
           Turn 1: initial prompt
           Assistant: initial subagent response
 
-  Turn 2: @hooke continue the same subagent
+  Turn 2: continue the same subagent
     |
     +-- resumeAgent + sendInput
           |

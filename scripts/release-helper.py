@@ -18,10 +18,8 @@ from pathlib import Path
 from urllib.parse import quote
 
 CATEGORIES = ("Features", "Fixes", "Performance", "Refactoring", "Other")
-REQUIRED_JOBS = (
-    "safety-checks", "renderer-checks", "core-checks", "core-integration",
-    "linux-native-checks", "windows-renderer-checks", "windows-checks", "licence-inventory",
-)
+# ci-gate succeeds only when every job the change needed succeeded.
+REQUIRED_JOBS = ("ci-gate",)
 STABLE_TAG = re.compile(r"v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)")
 NONE = re.compile(r"(?:none|internal[ -]only)[.!]?", re.IGNORECASE)
 

@@ -76,8 +76,6 @@
   "apps/web/src/markdown-clipboard.ts": 1,
   "apps/web/src/mobile/PhoneGallery.browser.test.tsx": 6,
   "apps/web/src/motion/motionProbe.ts": 1,
-  "handoff/design/boards/support.js": 2,
-  "handoff/mocks/shot-views.mjs": 1,
   "packages/client-runtime/src/state/subagentDisplay.ts": 1,
   "packages/contracts/src/scheduledTask.ts": 1,
   "packages/shared/src/composerContextLegacy.ts": 1,

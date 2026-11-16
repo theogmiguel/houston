@@ -3,7 +3,9 @@
 The right panel holds surfaces beside a thread. Open or close it with the panel control in
 the thread header or `Ctrl+Alt+B`. Its tab strip has a **+** menu with **Browser**,
 **Terminal**, **Files**, **Diff**, **Pull request**, **Linked pull requests**, **Device** and
-**Side chat**. A thread's details card (`Ctrl+Shift+B`) is separate.
+**Side chat**. A thread's details card (`Ctrl+Shift+B`) is separate. In a workspace, the panel's
+surfaces open as a side pane or as tabs, as set in **Settings ▸ Appearance** (see
+[Threads and workspaces](threads-and-workspaces.md#workspaces)).
 
 Tabs can be dragged to reorder, closed, maximized and restored. A tab's menu also closes
 the others, those to its right, or all of them.

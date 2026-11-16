@@ -6,10 +6,10 @@ pins what already violates them, so a change may lower the count but never raise
 
 ```sh
 bash scripts/check-web-style.sh              # check every rule against its baseline
-bash scripts/check-web-style.sh --all        # check and print every failure, not just the first
+bash scripts/check-web-style.sh --all        # the same check, without the closing baseline reminder
 bash scripts/check-web-style.sh --list       # list the rules
 bash scripts/check-web-style.sh --print raw-palette accent-ink
-bash scripts/check-web-style.sh --update     # lower every pin to today's count
+bash scripts/check-web-style.sh --update     # rewrite every baseline to today's counts
 bash scripts/check-web-style.sh --update title-tooltip
 bash scripts/check-web-style.sh --self-test  # prove each rule fires on its bad fixture
 ```
@@ -47,20 +47,19 @@ Fix the violation first, then tighten the pin:
    violation elsewhere.
 5. Run `bash scripts/check-web-style.sh --self-test` and the full check again.
 
-`--update` only records what the scanner finds; it cannot tell a genuine fix from a
-false positive. If a hit is a false positive, fix the scanner and add a unit test beside
+`--update` writes whatever the scanner finds, so it can raise a pin as easily as lower one,
+and it cannot tell a genuine fix from a false positive. If a hit is a false positive, fix the scanner and add a unit test beside
 `scripts/check-web-style.test.mjs` rather than pinning it.
 
 ## Current token policy
 
-The rules encode the renderer's colour and metric policy. The terms live in the code,
-not in the retired v1 style guide:
+The rules encode the renderer's colour and metric policy, and the rule definitions are the
+source of truth:
 
 - **Colour roles, not palette shades.** Status work uses `--ok`, `--warn`, `--stop` and
   `--info` with their `-ink` or `-foreground` text roles. The `raw-palette` rule rejects
   `text-red-600`, `bg-zinc-900` and the other raw Tailwind palette utilities inside
-  `apps/web/src/components`. `apps/web/src/projectIconColors.ts` is intentionally outside
-  that directory: it is the palette source for project icons.
+  `apps/web/src/components`; files outside that directory are not scanned.
 - **Hover is neutral.** The Tailwind `accent` utility names were retired: use `bg-hover` and
   `text-hover-foreground`. The `accent-utility` rule rejects `bg-accent` and
   `text-accent-foreground`.

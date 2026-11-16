@@ -17,7 +17,7 @@ Reset times are minute offsets from `n0`.
 1. Start a dev server with empty provider homes, so local logins add no accounts:
 
    ```sh
-   CODEX_HOME=$(mktemp -d) CLAUDE_CONFIG_DIR=$(mktemp -d) vp run dev
+   CODEX_HOME=$(mktemp -d) CLAUDE_CONFIG_DIR=$(mktemp -d) pnpm dev
    ```
 
 2. Write `state.json` as `{"scenario": "A", "n0": 1792515540000}`. That `n0` is 2026-10-20T16:59:00Z, the instant every published capture uses. Then start the hub:
@@ -26,7 +26,7 @@ Reset times are minute offsets from `n0`.
    node hub.mjs state.json 18517
    ```
 
-3. Under Settings → Providers → Usage limit sources, add a hub with URL `http://127.0.0.1:18517`, any management key, and label `Team hub`. The composer panel prints that label on every account row.
+3. Under Settings → Providers → Usage, choose Add hub and enter the URL `http://127.0.0.1:18517`, any management key, and the label `Team hub`. The composer panel prints that label on every account row.
 
 4. Freeze the browser clock at `n0` from the devtools console:
 

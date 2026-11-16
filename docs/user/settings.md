@@ -6,7 +6,7 @@ the settings sidebar finds a page, a section or a single setting by name.
 | Group       | Pages                                                                           |
 | ----------- | ------------------------------------------------------------------------------- |
 | —           | General, Appearance, Chat, Voice, Diffs & pull requests, Keybindings, SnapShots |
-| Agents      | Providers, Threads, Browser, Devices, Scheduled tasks                           |
+| Agents      | Providers, Usage, Threads, Browser, Devices, Scheduled tasks                    |
 | Code        | Projects, Source control, Worktrees                                             |
 | Connections | Environments, Task sources, Sharing & access, Secrets                           |
 | —           | Maintenance, Labs, About, Archive                                               |
@@ -89,6 +89,11 @@ Claude has two switches, both on by default:
   and drive your Chrome tabs. The extension and a Chromium browser are required.
 - **Artifacts** lets Claude publish pages as private Artifacts on claude.ai. The page's
   content is sent to your Claude account, and the account must have Artifacts.
+
+## Usage
+
+Token totals, API-equivalent costs and provider limits for the threads Houston runs. See
+[Usage](usage.md).
 
 ## Threads
 

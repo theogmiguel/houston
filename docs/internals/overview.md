@@ -2,22 +2,23 @@
 
 > For maintainers. Using Houston? Start at the [README](../../README.md).
 
-Houston runs one Electron host and, per channel, one detached TypeScript server. The host
+Houston runs one Electron host and, per channel, one TypeScript server. The host
 starts the server, or attaches to the one already running, and embeds the renderer, a built
 Vite bundle. The renderer talks to the server over one authenticated loopback WebSocket and
 to the host through a small desktop bridge. Agents run as provider sessions owned by the
-server; quitting Houston closes the window and the connection, not the server or its runs.
+server; closing the window ends neither the server nor its runs, and quitting stops the
+server the host started.
 
 Houston began as a port of T3 Code (MIT, see NOTICE) and is maintained as an independent
 codebase.
 
 ```
 ┌──────────────────────────────┐   WebSocket RPC    ┌─────────────────────────────────────┐
-│ houston (Electron host)      │ (loopback, token)  │ server (apps/server, detached)       │
+│ houston (Electron host)      │ (loopback, token)  │ server (apps/server)                 │
 │  ┌────────────────────────┐  │◄──────────────────►│  threads · turns · runs              │
 │  │ renderer (apps/web)     │  │                    │  provider adapters · orchestration-v2│
 │  └────────────────────────┘  │                    │  MCP toolkits · SQLite · secrets     │
-│  backend (start/attach),     │   spawns detached  └──────────────┬───────────────────────┘
+│  backend (start/attach),     │  spawns or attaches└──────────────┬───────────────────────┘
 │  desktop bridge, tray,       │                                   │ SDK / app-server / ACP
 │  v1 cleanup, native crates   │                    ┌──────────────▼───────────────────────┐
 └──────────────────────────────┘                    │ agent runtimes: Claude, Codex, ...    │
@@ -38,10 +39,10 @@ codebase.
 
 ### One server per channel, and a host that is a client
 
-The host resolves its channel from `--channel` (debug builds default to `dev`), then reads
+The host resolves its channel from `HOUSTON_CHANNEL` (unset or `release` is the installed
+channel; `scripts/dev.sh --channel <name>` sets it and defaults to `dev`), then reads
 `<channel dir>/v2/userdata/server-runtime.json`. When the server it names answers, the host
-attaches; otherwise it spawns one detached (`setsid` on Linux, a job breakaway on Windows)
-and waits for the runtime file. Upstream's server ownership lock makes a second server for
+attaches; otherwise it spawns one as a child process and waits for the runtime file. Upstream's server ownership lock makes a second server for
 the same directory exit instead of sharing the database. The host hands the renderer the
 server's origin and a bootstrap credential; the renderer then speaks upstream's typed
 WebSocket RPC, whose messages are defined in `packages/contracts`.
@@ -90,11 +91,11 @@ Retained events must remain decodable on replay. Changing a schema affects old e
 startup as well as live RPC traffic. Compatibility work must account for stored history, not just
 what the newest client sends.
 
-Closing the window, or quitting from the tray, ends the host process. The server and its agent
-runs continue; the next launch attaches to the server the runtime file names. Stopping a
-server uses the PID that file names.
-
-<!-- Host details (Theo): tray and hide-to-tray, desktop bridge, updates, WSL. -->
+Closing the window hides the host in the tray when **Keep in tray** is on, and the server and
+its agent runs continue. Quitting ends the host process: it sends the server it started
+`SIGTERM`, then kills it after a grace period, so its runs end. A server the host attached
+to is not its own and keeps running; the next launch attaches to the server the runtime file
+names. Stopping a server by hand uses the PID that file names.
 
 ## Boundaries that matter
 

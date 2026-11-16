@@ -1,8 +1,8 @@
 # Installing Houston
 
-Houston is a desktop app with a local server. The app starts, or attaches to, one detached
-server for its channel; the server owns threads and agent runs, so closing the window does
-not stop them.
+Houston is a desktop app with a local server. The app starts, or attaches to, one server
+for its channel; the server owns threads and agent runs, so closing the window does not
+stop them.
 
 ## Requirements
 
@@ -12,7 +12,7 @@ not stop them.
 | Linux, ARM64    | `.deb` and `.AppImage` | glibc 2.35 or newer                       |
 | Windows, x86_64 | NSIS `.exe`            | Windows 10 or 11; not Authenticode-signed |
 | Windows, ARM64  | none                   | no installer is published                 |
-| macOS           | none                   | not built                                 |
+| macOS           | none                   | not supported                             |
 
 The AppImage needs the FUSE 2 runtime (`libfuse2`, or `libfuse2t64` on Ubuntu 24.04 and
 newer). The `.deb` installs with your package manager. Other glibc distributions are best
@@ -27,7 +27,7 @@ Download the current release from
 [GitHub Releases](https://github.com/theogmiguel/houston/releases). On Linux, make the
 AppImage executable and launch it, or install the `.deb`. On Windows, run the installer
 from the Start menu. SmartScreen may warn because the Windows installer has no Authenticode
-signature; the update itself is signed separately.
+signature; updates are verified against the release's checksums.
 
 Houston keeps its data under the channel directory's `v2` child: `~/.houston/v2` for the
 release channel on Linux, `%USERPROFILE%\.houston\v2` on Windows. A development build uses
@@ -88,14 +88,14 @@ reads to its own provider. See [Privacy and diagnostics](privacy.md).
 
 ## Platform differences
 
-| Feature              | Linux                                         | Windows                                             |
-| -------------------- | --------------------------------------------- | --------------------------------------------------- |
-| Updates              | Signed download, then install                 | Signed download, then the NSIS installer            |
-| Native notifications | Supported by the desktop notification service | Supported                                           |
-| Keep in tray         | Available when a tray exists                  | Available when a tray exists                        |
-| WSL backend          | Unavailable                                   | Experimental; x86_64 WSL 2 with glibc 2.35 or newer |
-| Browser start page   | Lists loopback servers started in the project | No loopback server list                             |
-| Browser automation   | Headless Chromium is downloaded on first use  | Headless Chromium is downloaded on first use        |
+| Feature              | Linux                                                                 | Windows                                                      |
+| -------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Updates              | Verified download, then install                                       | Verified download, then the NSIS installer                   |
+| Native notifications | Supported by the desktop notification service                         | Supported                                                    |
+| Keep in tray         | Available when a tray exists                                          | Available when a tray exists                                 |
+| WSL backend          | Unavailable                                                           | Experimental; x86_64 WSL 2 with glibc 2.35 or newer          |
+| Browser start page   | Lists loopback servers started by agents and terminals in the project | Lists loopback servers started from terminals, not by agents |
+| Browser automation   | Headless Chromium is downloaded on first use                          | Headless Chromium is downloaded on first use                 |
 
 See [The right panel](right-panel.md) for browser and file features, and
 [Updating Houston](updating.md) for installing over Houston 1.

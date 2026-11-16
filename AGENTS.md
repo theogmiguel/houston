@@ -1,21 +1,9 @@
 # Houston contributor instructions
 
 Houston is a local-first desktop application for coding agents on Linux and Windows. An
-Electron host starts, or attaches to, a detached TypeScript server for its channel; the
-renderer presents each agent conversation as a **thread**. Closing the application detaches
-the client; the server and its agent runs continue.
-
-## Branch `v2`
-
-`v2` and its `v2-*` slice branches carry the rebuild. `handoff/` holds the decisions and the
-slice plan; read `handoff/HANDOFF.md` and `handoff/PLAN.md` before starting a slice.
-
-- **Tests first:** a slice includes its tests and lands only with them green.
-- **Shared branch:** `v2` has two maintainers pushing from separate machines. Never
-  rebase or force-push `v2`; slices enter through PRs `v2-<slice> → v2`. Regenerate lockfiles
-  and the licence inventory instead of hand-merging them.
-- `check-doc-hygiene.sh` fails on `handoff/` by design; `handoff/` is deleted before `v2`
-  merges into `main`.
+Electron host starts, or attaches to, a TypeScript server for its channel; the renderer
+presents each agent conversation as a **thread**. Closing the window keeps the host in the
+tray, so the server and its agent runs continue; quitting stops the server the host started.
 
 Prefer the smallest design that satisfies the requirement. Verify documentation against
 the implementation and correct discrepancies in the same change. If an instruction
@@ -23,9 +11,10 @@ conflicts with the task, explain the conflict and obtain maintainer direction.
 
 ## Invariants
 
-- **Detached server** (`apps/server`): closing the app stops neither the server nor its agent
-  runs. One server runs per channel; clients find it through
-  `<channel dir>/v2/userdata/server-runtime.json`.
+- **Server lifetime** (`apps/server`): the server owns threads and agent runs, and a window is
+  only a client. Closing the window stops neither the server nor its runs. Quitting stops the
+  server the host started; a server the host attached to is never stopped by it. One server
+  runs per channel; clients find it through `<channel dir>/v2/userdata/server-runtime.json`.
 - **Local state** (`<channel dir>/v2`): one user, one machine, one SQLite database per channel.
   Upstream's tables follow upstream's migrations; Houston's tables live on the Houston migration
   track (`houston_sql_migrations`), whose ids never enter upstream's migrator. Telemetry is
@@ -68,7 +57,7 @@ conflicts with the task, explain the conflict and obtain maintainer direction.
 
 - **Renderer:** the web app under `apps/web`. Its primitives adopt Houston's tokens and
   recipes and are bound by the style guards; feature components that still follow the original
-  port are exempt from the feature-`className` rule until a slice adapts them.
+  port are exempt from the feature-`className` rule until they are adapted.
 
 ## Terms
 
@@ -77,7 +66,7 @@ Use the [glossary](docs/internals/glossary.md) consistently:
 - **Contributor agent:** the agent editing Houston. Contributor agents run in the installed
   release built from `main`; check `HOUSTON_SESSION` before operations that could affect the
   pane hosting it.
-- **Server:** the TypeScript server under `apps/server`, run detached by the host for one
+- **Server:** the TypeScript server under `apps/server`, run by the host for one
   **channel**. The installed `release` channel keeps its state in
   `~/.houston/v2`; `dev` uses `~/.houston-dev/v2`.
 - **Thread:** a structured conversation with one agent. A **turn** is one request and its answer;
@@ -158,7 +147,8 @@ The [development runbook](docs/operations/development.md) contains exact command
 ## Pull requests and releases
 
 - All changes to `main` go through a PR, including documentation. Merge only with green
-  CI and completed local gates. Do not assume branch protection is configured; verify
+  CI and completed local gates. Regenerate lockfiles and the licence inventory instead of
+  hand-merging them. Do not assume branch protection is configured; verify
   repository settings when administering it.
 - Use conventional PR titles that describe user-visible behaviour, for example
   `fix(threads): a renamed thread keeps its name after a restart`. Release notes group the

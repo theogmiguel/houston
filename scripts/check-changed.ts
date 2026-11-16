@@ -89,9 +89,7 @@ function changedFiles(options: { base: string | null; working: boolean }): strin
       for (const name of git(args).split("\n")) names.add(name);
     }
   }
-  return [...names]
-    .map((name) => name.trim())
-    .filter((name) => name.length > 0 && !name.startsWith("handoff/"));
+  return [...names].map((name) => name.trim()).filter((name) => name.length > 0);
 }
 
 const FORMATTABLE = /\.(?:[cm]?[jt]sx?|json|jsonc|css|html?|md|ya?ml)$/i;

@@ -1,7 +1,7 @@
 # Tasks
 
-Tasks are a project backlog. Open **Tasks** from the sidebar. The count beside it is the
-number in **Your turn**.
+Tasks are a project backlog. Open **Tasks** from the command palette (**Open tasks**) or a new
+tab's **Open a page** list.
 
 ## Views
 

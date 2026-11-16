@@ -42,9 +42,9 @@ Full setup, the dev/release channel split, and every environment knob:
 `<type>/<short-description>`, using the same conventional type as the commit itself
 (`fix`, `feat`, `docs`, `chore`, `refactor`, `test`). Good:
 
-- `fix/pane-status-hooks`
+- `fix/thread-rename-persists`
 - `feat/orchestration-inbox-cap`
-- `docs/routine-headless-refusals`
+- `docs/release-runbook-checks`
 
 Avoid:
 
@@ -57,8 +57,8 @@ Run the gates for whatever you touched.
 
 **Per item, in the package or crate you touched** — cheap, run constantly:
 
-- `apps/desktop/native` and `native`: `cargo fmt`, `cargo clippy --all-targets -- -D warnings`,
-  the item's own and touched tests.
+- `apps/desktop/native` and `native`, in each crate directory: `cargo fmt`,
+  `cargo clippy --all-targets -- -D warnings`, the item's own and touched tests.
 - `apps/` and `packages/`: the package's `typecheck` and its touched tests, for example
   `pnpm --filter @houston-app/cli exec vp test run <files>` for the server.
 
@@ -66,16 +66,10 @@ Run the gates for whatever you touched.
 run Cargo inside `scripts/oom-shield.sh`. On Windows, set `$env:CARGO_BUILD_JOBS = '3'`
 in PowerShell. Never run concurrent Cargo workloads.
 
-**The workspace** (the web build comes first: the desktop host serves its output):
+**The workspace:** the exact commands, as CI runs them, are under "Full gate commands" in
+[`docs/operations/development.md`](docs/operations/development.md#full-gate-commands).
 
-```
-pnpm -r typecheck
-pnpm --filter @houston-app/web build
-pnpm --filter @houston-app/contracts --filter @houston-app/shared test
-pnpm --filter @houston-app/cli exec vp test run src/houston
-```
-
-**The native crates** (`apps/desktop/native` and `native`):
+**The native crates**, in each crate directory under `apps/desktop/native` and `native`:
 
 ```
 cargo fmt --all --check
@@ -91,18 +85,21 @@ only walks the happy path.
 
 ## Pull requests
 
+- Open the pull request against `main`.
 - Say what changed and why, in a sentence or two.
 - One concern per PR. If the message says "also", split it.
 - Before/after screenshots for anything visual, or `N/A` with a reason.
 - Use a conventional title describing the resulting behaviour. Add a `## Release notes`
-  section with feature, fix and improvement bullets, or explicit `None` for internal work.
-  Releases group these items; legacy PR titles are a fallback requiring editorial review.
+  section with `Features`, `Fixes`, `Performance`, `Refactoring` or `Other` bullets, or explicit
+  `None` for internal work. Releases group these items; legacy PR titles are a fallback
+  requiring editorial review.
   See the [release runbook](docs/operations/release.md#release-notes) for the format.
 
 ## Releases are maintainer-only
 
-Never include a version bump in a contribution. The four version manifests and both
-lockfiles are written only by the maintainer's **Cut release** workflow.
+Never include a version bump in a contribution. The three version manifests
+(`apps/desktop`, `apps/server` and `apps/web` `package.json`) are written only by the
+maintainer's **Cut release** workflow.
 
 ## Licensing
 

@@ -50,7 +50,7 @@ name and VM-side clone path override via `LINUX_VM_DISTRO`/`LINUX_VM_REPO`
   libEGL/MESA warnings in the resulting log are expected noise. Never measure
   UI performance in this VM.
 - **Stop by recorded pid only.** `app-stop` kills only the pid `app`
-  recorded to `~/app.pid` — never by pattern (AGENTS.md danger #1).
+  recorded to `~/app.pid` — never by pattern (AGENTS.md, safety boundary 1).
 
 ## `sync --force`
 
@@ -64,8 +64,7 @@ it discards whatever is sitting there uncommitted, on the VM only.
 Runs, sequentially (no two cargo workloads concurrently — AGENTS.md's rule extends
 across the VM boundary too):
 `native` (the Houston 1 cleanup crate and the Linux capture helpers, `cargo test` shielded
-under `oom-shield.sh` + `dbus-run-session` + unlocked `gnome-keyring`) and the
-`check-dev-channel` and `check-comment-hygiene` safety scripts.
+under `oom-shield.sh`) and the `check-dev-channel` and `check-comment-hygiene` safety scripts.
 
 `gate` runs only a subset of CI's safety scripts. Passing it does not establish
 that the complete CI gate passes. Use the full safety-script list in the

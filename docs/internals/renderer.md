@@ -6,152 +6,58 @@
 
 ## Stack
 
-React 19, Tailwind 4 (`@tailwindcss/vite`), Vite, Vitest 4 with jsdom, CodeMirror 6 for
-the editor, `lucide-react` for icons, three `@fontsource` families. Package manager is
-**`pnpm`**.
+React 19, Tailwind 4 (`@tailwindcss/vite`), Vite+ (`vp`), TanStack Router, Effect atoms for
+server state, Base UI primitives, TipTap for the composer, `lucide-react` for icons and two
+`@fontsource-variable` families (Inter, JetBrains Mono). Package manager is **`pnpm`**.
 
 `pnpm dev:desktop` runs the Vite dev server with HMR and launches Electron against it.
 A packaged build is a static bundle in `apps/web/dist`, copied into
-`apps/server/dist/client` and served by the host over the `houston://app` protocol.
+`apps/server/dist/client` and served by the host over the `houston://app` protocol
+(`houston-dev://app` in development builds, which proxy to the dev server).
 `scripts/dev.sh` builds that bundle and launches the Electron host; it is the channel-level
 equivalent of the installed app.
 
-`apps/web/package.json` scripts: `build`, `typecheck`, `test`, `dev`.
+`apps/web/package.json` scripts: `dev`, `dev:built`, `build`, `preview`, `test` and
+`build:ghostty-wasm`. The workspace `typecheck` script covers the package.
 
 ## Source tree
 
 ```
 apps/web/src/
-  AppRoot.tsx          the application root; routes own workspaces and panes
-  routes/              TanStack Router route files
-  components/          the UI; chat/, sidebar/, settings/, files/, browser/
-  motion/              the motion roles and springs, the motion probe and the strip's gestures
-  environments/        server discovery, auth and the per-environment HTTP/WS layers
+  AppRoot.tsx          the application root; the router renders workspaces and panes
+  routes/              TanStack Router route files (`routeTree.gen.ts` is generated)
+  components/          the UI: chat/, settings/, files/, device/, desktop/ and the shared ui/ primitives
+  layout/              the workspace model, its store and sync, and the panes that render it
+  threads/ shortcuts/  thread opening and ordering; keybinding dispatch and commands
+  connection/          the connection catalog and the desktop host's bootstraps
+  environments/        the primary environment's target, auth and HTTP layer
+  rpc/                 the atom registry the server state is read through
   terminal/ghostty/    the terminal engine: vendored WASM → Canvas 2D
-  lib/                 host bridge helpers, clipboard, file transfer and desktop window
-  theme.ts theme.css   chrome themes, terminal palettes, every design token
-  watchdog.ts          Tier 2 of the paint-freeze watchdog
+  speech/              dictation: capture, consent and the environment's engine
+  motion/              the motion roles and the motion probe
+  mobile/ onboarding/  the phone layout and first-run flow
+  i18n/ observability/ message catalogues; client tracing
+  lib/ hooks/ state/   shared helpers, hooks and stores
+  index.css            every design token and the Tailwind theme
 ```
 
-747 `.ts`/`.tsx` files, ~146k lines. The terminal engine is vendored in-tree — there is no
-terminal package in `package.json`.
+The terminal engine is vendored in-tree — there is no terminal package in `package.json`.
 
 ## Transport
 
-The renderer asks `window.hostBridge.getLocalEnvironmentBootstraps()` for the channel's
-server origin and bootstrap credential, opens `ws://127.0.0.1:<port>/ws` with
-`binaryType = 'arraybuffer'`, and sends a `hello` frame carrying the token and the protocol
-version first. The token comes only from the host bridge.
-
-Two message shapes on the socket: **text frames are JSON control messages** (`ServerMsg`),
-dispatched to the app; **binary frames are PTY bytes**. Frame kind 1 is output
-(`u8 kind | u32 session | u64 offset | payload`), kind 2 is stdin
-(`u8 kind | u32 session | payload`), kind 3 is a gap notice. Output frames carry the stream
-offset of their first byte so a pane can drop bytes a scrollback replay already covered.
-
-Terminal I/O is behind the `TerminalTransport` interface (`transport/types.ts`), implemented
-once by `transport/ws.ts`: frames arrive as binary WS frames on the same socket as control,
-writes go out as `encodeStdinFrame` bytes, and `attach()` sends `session_attach`, whose
-`scrollback` reply carries the replay and the attachment number (`attempt`) the transport
-checks against its own count before honouring it. The daemon sends frames only for sessions
-this socket asked about, through a bounded per-session queue; a gap frame (kind 3) means that
-queue dropped, and the pane answers with one re-attach.
-
-Create promises use connection-local request numbers and direct `session_create_result`
-replies, including refusals. Roster broadcasts never acknowledge creation. A workspace
-action sends its command only to the session in its matching successful result. Closing
-the transport or exceeding the reply deadline rejects outstanding creates.
-
-The App connection effect owns one pending connection and one active client. Repeated
-retries share the pending attempt; replacement closes the prior client. Cleanup closes
-the active client and any late successful connection, and obsolete callbacks cannot mutate
-renderer state or start a retry.
-
-Removed sessions release readiness, attach-attempt and generation metadata. A bounded
-recent-removal set suppresses late readiness and background queries; exited sessions that
-remain in the roster keep their readiness suppression until removal.
-
-The daemon refuses control requests past 16 in flight per connection instead of queueing
-them, so a refresh that sends one request per directory or workspace must not fire them
-all at once. Such fan-outs queue through `createBoundedPoller` (`houston/boundedPoller.ts`),
-which bounds requests in flight and skips a key already queued or awaiting its reply.
-`inbox_list` shares one poller per client across every surface, because its `inbox_rows`
-reply reaches every subscriber; `git_status` and `git_branch` fan-outs use their own bounds.
-
-`sendStdin` is the outbound path: `term.onData` → `client.sendStdin` → the transport's
-`write`. Each accepted input is sent as one binary frame, preserving paste transaction
-ordering. Paste encoding admits at most 65,536 UTF-16 code units before UTF-8/WASM
-allocation (at most 192 KiB of UTF-8), and individual input frames are capped at
-256 KiB. Socket admission caps operator backlog at 1 MiB; parser-generated replies
-have a separate 64 KiB reserve. A saturated reserve is also a visible error, never
-an unreported reply loss. These are bounded admission policies, not delivery receipts:
-WebSocket acceptance does not establish PTY consumption. Large content should use
-files; renderer input does not add a second unbounded queue.
-
-`WriteLatencyTracker` (`houston/latency.ts`) writes keystroke latency to the app's debug
-log. `slow round trip` times a keystroke to the next output frame of its session reaching
-the socket handler; `slow echo paint` times it to the pane's first paint after that frame
-has been parsed, with nothing left in the pane's write queue. The daemon merges a session's
-queued output into one frame, so one frame closes every keystroke sent before it; each
-record names the oldest, how many keystrokes it closed and how many records the
-per-session five-second throttle suppressed. Both are logged only above 250 ms. A
-session keeps at most eight open marks; further keystrokes are counted, not timed.
-
-While a pane's snapshot attach is in flight, its input is held and released in order when
-the hold ends, whether the snapshot lands, the daemon falls back to a replay or the pane
-reattaches without one. Pastes are held as text and encoded after the import, because
-bracketed-paste mode comes from the snapshot; keys wait behind them to keep their order,
-encoded with the modes the pane had when they were typed. The hold is bounded
-(`HELD_INPUT_MAX_ENTRIES`, `HELD_INPUT_MAX_CODE_UNITS` in `TerminalPane.tsx`); past either
-limit it keeps the oldest input and logs the first refused entry with the limits and held
-size. A closed or ended pane discards held input with a log line. Parser replies produced
-during the hold are dropped: the pane parses no new output then, so they answer output the
-snapshot replaces.
-
-`PaneWriteQueue` (`pane/writeQueue.ts`) is the **inbound** pipeline, between arriving frames
-and the engine's synchronous `term.write`. It owns a hard byte chunk ceiling,
-a single-write-in-flight gate, a stalled-write watchdog, and
-the overflow policy. The persistent libghostty WASM parser retains control-sequence
-and UTF-8 state across writes; chunks can end inside either. Real-WASM regressions
-compare whole and fragmented streams, including long OSC/DCS, modes and replies.
-The byte ceiling does not establish a wall-clock responsiveness bound.
-When the queue passes its cap, a synced pane whose daemon has an
-emulator discards the backlog and reattaches from a snapshot. The daemon has parsed every
-byte, so the screen comes back exact, and stdin stays live while the snapshot is in flight.
-Without a snapshot path, the queue drops its oldest bytes and says so in the pane.
-Incoming replay views covering less than half their backing allocation are copied before
-queueing, so a small overlap tail does not retain the entire replay while waiting to drain.
-
-| Constant                       | Value   | Reason                                                                       |
-| ------------------------------ | ------- | ---------------------------------------------------------------------------- |
-| `DEFAULT_CHUNK_BYTES`          | 256 KiB | hard ceiling for synchronous parsing, with a yield between chunks            |
-| `DEFAULT_MAX_QUEUED_BYTES`     | 2 MiB   | queue cap                                                                    |
-| `DEFAULT_DROP_TARGET_FRACTION` | 0.75    | evict to 75 % of the cap so an episode is one hole, not per-frame thrash     |
-| `DEFAULT_BATCH_WINDOW_MS`      | 4       | a quarter-frame of write batching; small writes bypass it                    |
-| `BATCH_WINDOW_CLAMP_MS`        | 50      | above this the host is treated as clamping timers, and batching latches off  |
-| `DEFAULT_WATCHDOG_MS`          | 10 000  | unwedges a pane whose engine load hung instead of rejecting                  |
-| `RESYNC_WINDOW_BYTES`          | 8 KiB   | resync scan after a drop — the same window the daemon's safe-cut uses        |
-| `DEFAULT_NOTICE_INTERVAL_MS`   | 2 000   | how often a loss may narrate itself; the cumulative total rides every notice |
-
-## Session metadata subscriptions
-
-Session metadata uses immutable map snapshots and session objects. Single-session
-consumers subscribe by id: an event for another session does not notify them or run
-their React snapshot reader. Dispatch compares only ids with mounted subscribers,
-and the last unsubscribe removes the id's listener bucket. Changing the selected id
-or store releases the previous subscription; removal and later insertion of the
-selected id remain observable.
-
-Selectors for families, membership, layout and workspace attention still receive
-whole-roster updates and preserve equal selections to avoid unrelated renders.
-This separation reduces single-session notification work without suppressing
-background status needed by the rail, tray and notifications.
+The renderer asks `window.hostBridge.getLocalEnvironmentBootstraps()`
+(`src/connection/desktopLocal.ts`) for the channel's server origin and bootstrap credential.
+`packages/client-runtime` (`connection/resolver.ts`) opens the WebSocket at `/ws` on that
+origin with the credential the server issues for it. The token comes only from the host
+bridge. The messages are typed in `packages/contracts`; the renderer defines none of its own.
 
 ## The terminal engine
 
-`ghostty/` is Houston's own engine. The WASM is vendored and loaded by Vite URL import
-(`./vendor/ghostty-vt.wasm?url`, `./vendor/ghostty-write-pty.wasm?url&no-inline`), so
-nothing is fetched at runtime.
+`terminal/ghostty/` is Houston's own engine; its README lists each file's job. The WASM is
+vendored and loaded by Vite URL import (`./vendor/ghostty-vt.wasm?url`,
+`./vendor/ghostty-write-pty.wasm?url&no-inline`), so nothing is fetched at runtime, and
+`apps/web/scripts/build-libghostty-wasm.sh` regenerates it from the pin in
+`native/libghostty-vt`.
 
 `GhosttyRuntime` (`ghostty/runtime.ts`) wraps the exports with a hand-written struct-layout
 system and caches a `DataView`/`Uint8Array` over WASM memory — the alternative was tens of
@@ -159,64 +65,8 @@ thousands of per-frame allocations. The cache is refreshed on buffer identity ch
 because growing a `WebAssembly.Memory` detaches the old `ArrayBuffer`.
 
 The render target is **Canvas 2D** — not WebGL, not DOM (`ghostty/renderer.ts`,
-`ghostty/surface.ts`). `pane/ghosttyTerminal.ts` is the pane-facing wrapper.
-
-RGB interning is shared across terminals and capped at 4096 colours with FIFO eviction.
-Repeated colours keep the renderer's identity comparison fast path while cached; evicted
-colours retain their exact RGB values and compare by value. The cap bounds historical
-cache retention across pane disposal, not the colours in live snapshots or total memory.
-
-The engine caps scrollback in bytes, while the setting counts lines. The surface converts
-the setting at the current width (`scrollbackLinesToBytes`) and recomputes the cap through
-`houston_vt_set_max_scrollback` whenever the width changes. Without that, a pane opened
-narrow during a split would keep a narrow pane's history after it widens.
-
-Output in unfocused panes repaints on one shared tick (`BACKGROUND_OUTPUT_PAINT_MS`, about
-15 Hz). The focused pane, input, scrolling, selection and resizes repaint on the next frame.
-
-Both engines are built from the pinned source with Houston's Ghostty patch series
-applied in order; the build stamps the extracted tree
-with the series' text and re-extract it when the series changes. Besides the snapshot
-exports, one patch changes behaviour: a full erase-line (`ESC [ 2 K`) ends the soft-wrap
-link from the row above into the erased row; upstream already ends the erased row's link
-onto the next one. Agent CLIs repaint by erasing and rewriting rows, and without the patch
-a reflow joins a row in history with the new content side by side.
-
-Each engine is constructed with `OSC 133;A;redraw=1` to turn on `shell_redraws_prompt`,
-followed at once by `OSC 133;C`. The flag survives the close; left open, every row a program
-without OSC 133 integration prints is a prompt row, and each resize erases it from the screen
-and history. The renderer and `vt.rs` must send identical bytes so a snapshot paints the same.
-
-A size change a `ResizeObserver` reports, the surface's or the pane's, is held until the PTY
-is told (`surface.ts`): the grid reflows and the PTY resize goes out in the same tick.
-Reflowing first would let the program draw for the old width into the new grid for the
-debounce and the round trip. The debounce outlasts a layout animation, so a maximize reaches
-the PTY as one size: an agent CLI reprints its screen on every size change, and each
-reprint taller than the pane lands in history. Explicit fits (a font change, a reveal, a
-side-panel commit) apply at once. A fit measures the canvas's layout box, not its client
-rect, because a new pane grows in under a transform that fires no observer when it ends.
-
-The debounce bounds how many reprints a resize causes; it cannot make one harmless. Claude
-Code's inline renderer answers a size change by erasing and repainting only the visible
-rows, after the terminal has already moved rows between the screen and scrollback, so the
-moved rows are repeated and older rows keep the old width. Claude panes therefore start
-with `CLAUDE_CODE_NO_FLICKER=1` (the `claude_fullscreen` session policy, on by default),
-which puts Claude Code on the alternate screen, where a resize is a full redraw.
-
-A new pane's PTY starts at the size the pane will have (`pane/newPaneSize.ts`): the caller
-predicts the slot from the split tree the way `session_created` will place it, and converts
-it with the gutter, chrome and cell metrics of a terminal pane on screen. A CLI otherwise
-draws its first frame at 80 columns and reprints it at the pane's width. With no terminal on
-screen to measure, the daemon's default applies and the pane's first fit corrects it.
-
-Terminal palettes are applied **to the engine, not to CSS**: `theme.ts` holds
-`TERMINAL_PALETTES`, and `ghosttyThemeFromCss` converts the foreground, background,
-cursor and sixteen ANSI colors to the engine's RGB theme. The engine replaces only
-the default ANSI entries, preserving the extended palette and explicit OSC 4
-overrides. A daemon snapshot carries only explicit color overrides, so the renderer's
-theme remains local across attach. `[data-theme]` scopes app chrome only; it never
-reaches the terminal canvas. An unparseable colour degrades to white rather than
-throwing.
+`ghostty/surface.ts`). Terminal bytes arrive through the client runtime; the engine holds no
+React state in its render loop.
 
 ## Layout
 
@@ -252,286 +102,36 @@ Every bound (columns, panes per column, tabs per pane and per workspace, name an
 `HOUSTON_LAYOUT_WORKSPACE_LIMITS`; a refusal names the limit, the actual value and the
 operation.
 
-### Tab order
-
-There is no designed tab order across regions — no container sets a sequencing
-`tabIndex`, and no focus-trap library is used anywhere in the tree. What Tab actually
-does is walk plain DOM order:
-
-1. `Sidebar` (rail), when expanded — workspace rows, then their nav-row buttons.
-2. The titlebar (`App.tsx`'s `<header>`) — rail toggle (only when the rail is
-   collapsed), mode `Segmented`, Tidy, `WindowControls`.
-3. `<main>` — exactly one of the layout (`LayoutHost`), Settings, a rail nav-row
-   surface, Agents chat, or the new-session composer. These are alternates in one
-   ternary, never siblings, so nothing after this point is reachable in the same
-   pass except whichever one is mounted.
-4. Inside the layout, panes and their column resize handles follow the strip's column order,
-   then each column's pane order.
-
-Two widgets implement real roving tabindex (`FilesPane` and `Segmented`) and are
-locally well-behaved, but participate in no larger scheme.
-`StackTabs` gives every tab in a stack `role="tab"` and its own `tabIndex={0}` without
-roving behavior, so a stack with N tabs costs N Tab presses to get through and arrow
-keys do nothing there. A terminal pane's real tab stop is a transparent
-`<textarea>` (`ghostty/surface.ts`) with no explicit `tabIndex`, so it keeps the
-implicit default of `0`.
-
-Escape is centrally chained only while no pane is focused: `App.tsx`'s global
-keydown handler closes, in priority order, the shortcut sheet,
-Settings, the rail nav-row surface, the new-session composer, the workspace
-launcher, then collapses an expanded pane. Once a pane is selected
-(`activeId !== null`), that chain is skipped entirely and Escape passes straight
-through to the terminal (e.g. for vim/less) — surfaces opened from a selected pane
-still close on Escape only because opening them happens to clear `activeId` first,
-not because the chain reaches them. Every modal, popover and menu outside that
-chain (roughly 30 of them) handles Escape itself, independently, with no shared
-priority list.
-
-## The shell
-
-An L-shaped CSS grid: `grid-template-areas: "rail topbar" "rail grid"`, columns
-`var(--w-rail) minmax(0, 1fr)`, rows `var(--h-top) 1fr`. `--w-rail` is the rail's live width,
-set on the shell root. The rail spans both rows and the topbar spans the content column. The
-shell carries no general status bar; session-specific context occupancy is a static ring in
-each supported terminal pane's header.
-
-Source control shares the main content region with the grid; it is not a leaf in
-the persisted split tree. Legacy Changes leaves are removed during layout loading
-without discarding the remaining terminals, browser or editor panes. Keeping its
-width separate from the split tree lets it close without remounting terminals.
-
-| Region       | Metric                                                                                                                                    |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Rail         | resizable, 200–420px, remembered per user; a drag under 160px collapses it, and `sidebarRail` also hides it — there is no icon-only strip |
-| Topbar       | 44px, two columns, drag region; the mode `Segmented` floats at the window's centre                                                        |
-| Pane headers | 28px, every pane kind; supported agent panes can show a context ring                                                                      |
-| Stack tabs   | 26px strip                                                                                                                                |
-
-## The window background
-
-Two modes. **Solid** paints each theme's own grounds and is the default. **Custom** dithers
-one image — a bundled preset or the user's own file — as a single field behind the entire
-window: rail, titlebar, gutters, empty states and panes all stand on the same picture. The
-pass is Bayer 8×8 ordered dithering in `backdrop/dither.ts`; `backdrop/BackdropMount.tsx`
-keeps the whole engine behind a `lazy()` so a Solid launch loads none of it.
-
-### Four grounds, and who wears which
-
-A surface on the field never puts ink straight onto a photograph. Each one wears a flat
-**coat** — one per-theme colour at one alpha. In Custom there are exactly **four** grounds;
-every element that fills an area is one of them, and nothing else paints a ground:
-
-| Ground      | Token                             | Worn by                                                                                                                                                                    | Bound                                    |
-| ----------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| The field   | nothing paints                    | the grid's gutters (`--gutter-bg`)                                                                                                                                         | —                                        |
-| Chrome coat | `--custom-chrome-scrim` (`shell`) | rail, titlebar, the corner shoulders, and `--field-plate-bg` under any words on the field                                                                                  | min 60%, proven by `check:css`           |
-| Panel coat  | `--material-base-bg` (`base`)     | every screen that fills a content region edge to edge and is Houston's own chrome: Settings, the Skills/Connections/Routines surfaces, the new-session composer, first run | derived, so it inherits the chrome bound |
-| Pane coat   | `--custom-pane-scrim`             | the terminals (on their own canvas), and the Changes/Files/Editor/Skills frames                                                                                            | min 5%, deliberately not gated           |
-
-The rule that makes a pane see-through is that **nothing between the field and a pane may
-paint**: a pane's transparency is only ever as deep as what it stands on, so the gutters
-paint nothing in Custom. A coat on the gutters makes
-every pane opaque whatever its own dial says. Which is why the panel coat is worn _only_ by
-a screen with no pane on it.
-
-The corollary is that ink never stands on the field. A screen with words there (the empty
-workspace) wears `--field-plate-bg`, the chrome coat in Custom and transparent in Solid;
-a screen that _fills_ the region wears the panel coat instead and needs no plate.
-
-The **panel coat is the chrome coat one step heavier** — `min(1, chrome + .12)` on the same
-per-theme triple, not a dial of its own, so the panel and the rail move together as the
-slider travels instead of drifting apart. At +.12 the panel is a visible
-step off the rail wherever the picture is not already the coat's own colour, and 16% of the
-picture still reads through it; at +.06 the step disappears and at +.20 so does the picture.
-The one place the step cannot exist is a region of the image that already matches the coat
-colour — two alphas of one colour over that ground composite to the same pixel, and no
-derivation fixes that.
-
-`check:css` records a rung whose Custom fill is transparent as the field and does not hold
-ink to a bar over it. No rung is the field as things stand — the gutters are `--gutter-bg`,
-which is deliberately not a rung — but the exemption stays for the next rung that goes
-transparent.
-
-The **colour** is per-theme (`--custom-chrome-rgb`, `--custom-pane-rgb`, in each theme's
-block) and the **strength** is one dial, so `backgroundMode.ts`'s `applyCssVars` projects
-`--custom-chrome-alpha` / `--custom-pane-alpha` onto the root element and `theme.css`
-composes `rgba(<triple>, <alpha>)`. Their consumers are CSS rules, not components — the
-`[data-custom='on']` scope — which is
-why the store owns the projection rather than any surface: a dial applied by a component is
-a dial some other surface can forget.
-
-The concave corner where a surface meets the rail and the titlebar is not a setting: it is
-always cut, in Solid too, wherever a surface fills the region against the rail. Every such
-surface (the grid, Settings, Skills, the composer, first run) carries a region class
-that draws its own pair of corner squares at that surface's concentric radius. The square is
-`--material-shell-bg`, so it is the rail's fill in Solid and the chrome coat in Custom.
-
-**Where the square sits in the stack is the whole difference between the two regions.** On
-the grid it paints over the region's ground and under the panes (`--z-base` against
-`--z-leaf`): it reaches past the gutter by exactly a pane's radius, and the pane's own
-rounded corner leaves the sliver it shows through. On a content region it paints _under_ the
-screen (`z-index: -1`, inside the wrapper's own stacking context), and the screen rounds its
-two left corners to the same `--r-content` — so the arc is **cut out of** the screen's ground
-rather than coated over it. Coating was measurably wrong: the wedge came out as the chrome
-coat over the panel coat, one step past the rail. Cut, it is the rail exactly — measured at
-the worst legal field, graphite rail/wedge 43,43,47 with the panel at 31,31,36, and paper
-rail/wedge 224 with the panel at 237.
-
-The grid's own pair is suppressed while a content region is open
-(`.grid-region:has(> .content-region)`): the grid's radius is larger, so its square would
-show through the screen's cut and double-coat the corner.
-
-The **fade** is a switch: `fadeStop` is where a ramp into the theme's ground _starts_, so
-100 (the default) is no fade and 88 blends the last tenth or so.
-
-### Why the canvas carries the pane coat, not the frame
-
-In Custom the TERMINAL's frame stops painting (`--terminal-frame-bg: transparent`) and the
-terminal **canvas element** carries the coat instead: `ghostty/renderer.ts`'s
-`syncCanvasBackground` writes `rgb(<engine ground> / var(--terminal-coat))`. The engine's
-default background is live state a CLI can move at runtime (OSC 11); a coat on the frame
-would discard that and paint every terminal the same colour. The loading skeleton wears the
-same recipe (`--terminal-skeleton-bg`) so a pane does not flash opaque a frame before the
-engine paints.
-
-That transparency is the terminal's alone, and the token split says so. Changes, Files,
-Editor and Skills have no canvas — they hold Houston's own ink — so their frames read
-`--pane-bg`, which IS the pane coat in Custom. One build had all five on the one transparent
-token, which put Houston's labels straight onto the photograph.
-
-The **browser** pane is the one leaf that keeps its opaque ground: a web page is not ours to
-see through, and a translucent one would composite whatever the site chose to paint against
-the field.
-
-### What is proven, and what is only shown
-
-`check:css` renders two synthetic flat fields per theme at both edges of the dither pass's
-luminance band, at the worst legal combination (ceiling at its maximum, chrome coat at its
-minimum), and holds every rung's ink to the contrast bar there. Because the band is an
-invariant of the pass and blur/tint/coat compositing is monotone, a flat field at the band's
-edge brackets every legal image — which is how a build-time gate proves legibility against a
-picture it has never seen.
-
-Terminal ink is **not** gated, and cannot be: it is the agent's own ANSI palette, and
-repainting it would make the terminal stop being a terminal. Graphite's default palette
-grounds on `#000000` — luminance zero — so any translucency raises the denominator and
-nothing lowers it again. The pane coat is therefore the one dial with no cap, and the live
-preview beside it is what shows the cost. The same goes for the panes that hold Houston's
-own ink (Changes, Files, Editor, Skills): they inherit the custom ink cuts from the
-`[data-custom='on']` scope, but at the coat's 5% floor the ground _is_ the photograph, and no
-ink cut clears an arbitrary image. The coat is the dial that buys it back.
-
 ## Desktop bridge
 
 The renderer reaches the host through `HostBridge`, exposed by the Electron preload
-(`apps/desktop/src/preload.ts`) and typed in `packages/contracts`. Its members group window
-chrome, notifications and tray, quick composer, settings and the connection catalog, SSH,
-WSL, snapshots, updates, the v1 cleanup report and the browser-preview bridge.
+(`apps/desktop/src/preload.ts`) and typed in `packages/contracts` (`ipc.ts`). Its members group
+window chrome, notifications and the badge, the quick composer, settings and the connection
+catalog, SSH, WSL, snapshots, updates, the v1 cleanup report and the browser-preview bridge.
 
-Preview webviews run a separate preload with no app authority; the host answers their
-requests through the preview IPC channels only.
+## Renderer recovery
 
-Browser consent binds the current document and the actual DOM node. A preview's isolated
-preload context is ephemeral, so globals cannot hold that identity. Private node-owned event
-listeners prove identity across evaluations without putting reusable proof keys in
-page markup. A new snapshot removes the previous snapshot's listeners; navigation
-and surface destruction also invalidate native refs and pending consent.
-
-Browser relay requests belong to their connection and have bounded concurrency and
-absolute expiry. Disconnect drains cancelled owners before reconnecting. Confirmation
-cleanup dismisses the prompt and removes its temporary capture even when the waiting
-future is cancelled. Queued native operations check cancellation and expiry before
-execution; geometry generations discard superseded positions. A timeout after native
-execution begins reports an unknown outcome rather than promising no side effect.
-
-## The renderer recovery loop
-
-The main process listens for a webview's `render-process-gone`. A crash, OOM, kill or
+The main process listens for the window's `render-process-gone`. A crash, OOM, kill or
 abnormal exit reloads the window, at most three times in sixty seconds
 (`RENDERER_RECOVERY_MAX_ATTEMPTS` and `RENDERER_RECOVERY_WINDOW_MS` in
 `apps/desktop/src/window/DesktopWindow.ts`). A clean exit or an exhausted budget leaves the
-window stopped rather than reloading forever. Cooldown delays a pending reload, not the decision to stop trying after
-the ladder is exhausted.
-
-The native tray can quit independently of JavaScript. Confirmed shutdown contacts local
-and WSL daemons concurrently with bounded requests; failures require a native decision
-before the client exits. Closing a detected failed main window exits the client even if
-other windows are open. Client exit leaves sessions running unless daemon shutdown was
-explicitly confirmed.
-
-A paint incident requires a successful animation-frame report from the current page
-generation, including after reload; JavaScript probe replies cannot clear it. Paint
-reports carry the generation obtained at installation and updated on completed navigation.
-Recovery confirmation owns an incident ID, page generation and one absolute monotonic
-deadline. Queued expired dialogs never open, and cancellation targets the individual
-dialog. Selecting Wait stops automatic escalation for that incident.
-
-The supervisor coalesces native state hints and bounds ordinary receipts. Process loss,
-navigation, stop and prompt answers have reserved ingress; native callbacks never wait
-for queue space. A single poll and two native evaluations may remain outstanding;
-reload requests coalesce behind a single native dispatch slot.
-Logical probe expiry does not release those physical permits. Superseded queued probes
-check generation before execution, and unchanged titles are not reissued. Window
-destruction stops the supervisor; app exit joins it independently of GTK work.
-Logging uses a bounded writer queue and keeps a current and previous log segment.
-Queue loss is reported on stderr by the writer when it resumes. A blocked OS write can
-retain that single worker until I/O returns; it cannot block supervisor shutdown.
-
-Recovery remains experimental: animation-frame and JavaScript liveness do not establish
-successful React initialization or correct rendered pixels. Linux supports native recovery
-confirmation and forced web-process termination. Other
-platforms explicitly withhold focused recovery when native confirmation is unavailable;
-forced termination reports its lack of support and the ladder retries reload only.
-
-| Tier 2 constant               | Value                                                                               |
-| ----------------------------- | ----------------------------------------------------------------------------------- |
-| `T_PAINT_BASE_MS`             | 5000                                                                                |
-| `PAINT_PROBE_GAP_MS`          | 5000 — the wait between a RETURNED probe and the next; a MISSED one re-arms at once |
-| `T_WARN_MS`                   | 1500                                                                                |
-| `DPR_DEBOUNCE_MS`             | 250                                                                                 |
-| `POST_WAKE_MIN_MS` / `MAX_MS` | 8000 / 30000                                                                        |
-
-The renderer itself never reloads; only the main process decides recovery. Development
-retries a failed load from the dev server with increasing delays while the page is being
-served.
+window stopped rather than reloading forever. Development retries a failed load from the dev
+server with increasing delays while the page is being served.
 
 ## What the renderer knows
 
-Only what it is handed. It **reads no environment variables at all** — no `import.meta.env`,
-no `process.env` anywhere under `apps/web/src`. Origin and token come from the host bridge, the wire
-constants come from the generated constants files, and the only
-state it keeps for itself is the `localStorage` set above.
+Only what it is handed. Origin and token come from the host bridge. Build-time values arrive
+through `import.meta.env` (`VITE_*` and `APP_VERSION`); nothing under `apps/web/src` reads
+`process.env`.
 
-## Native file saves and notifications
+## Notifications
 
-Checked file saves compare `expected_sha256` while holding the same process-wide lock
-as other Houston saves, preserve file permissions, write a same-directory temporary
-file and rename it over the target. Conflicts return `FILE_SAVE_CONFLICT` with expected
-and actual hashes. Rename is atomic for readers; the save lock does not exclude writes
-by external processes, and the filesystem allowlist retains its resolve/syscall race.
-
-Path search shares immutable index snapshots and one in-flight scan per root generation.
-Invalidation prevents caching an obsolete scan but lets its existing callers receive the
-completed snapshot. Scan permits belong to the blocking closures, so cancelling a caller
-or evicting its cache entry cannot admit replacement work beyond the process limit.
-Search ranking runs off the async executor and retains only the display budget of
-candidates while counting every match. Index scans and ranking each have a two-worker
-limit; excess requests return a visible error instead of accumulating blocking jobs.
-
-Native notifications use the Linux desktop notification service over the existing session
-bus, or Windows toasts. The daemon is not involved: the renderer detects top-level status
-transitions, checks the OS window focus state, and sends only the pane, agent and workspace
-to the desktop. A click returns a pane id to the renderer's existing focus path: the Linux
-service's `ActionInvoked` signal, or the toast's `Activated` event; the app keeps each toast
-object until it is clicked, closed or replaced so that handler stays alive. Windows attributes toasts to the AppUserModelID that
-the installer writes on the Start menu shortcut (the bundle identifier); without that
-shortcut, support is refused with the missing path. Toasts are silent because the renderer
-plays notification sounds. Linux has no standard permission query on this D-Bus interface;
-Houston reports successful delivery or a refusal after a notification attempt.
-
-The window badge count is updated from top-level, visible panes waiting for input and is
-cleared when a pane is opened. Electron exposes a badge count on Linux and macOS and an
-overlay icon on Windows. macOS desktop notification delivery is explicitly unsupported.
+The renderer detects thread status transitions, checks the window's focus state and calls
+`HostBridge.notifyThread` with a stable thread key, a title and a bounded body. The host shows
+the OS notification (`apps/desktop/src/notifications/DesktopNotifications.ts`); a click returns
+the key through `onThreadNotificationFocus`. `notificationsSupported` reports a refusal with its
+reason, such as a Linux machine with no notification service. The badge count goes through
+`setNotificationBadge`.
 
 ## Microphone capture
 
@@ -544,7 +144,7 @@ browser denial.
 Audio is transcribed by the server, not the webview, and the native engine runs in a separate
 process: `apps/server/src/speech/native.ts` starts the packaged executable with the hidden
 `__speech-worker` command. The packaged server is a Node single executable, where `import()`
-cannot load a module from the file system, so the worker loads transcribe-cpp through
+cannot load a module from the file system, so `nativeWorker.ts` loads the engine through
 `createRequire` while development and tests keep the ESM loader.
 
 The audio destination is a per-device grant in local storage (`houston:voice-audio-grant:v1`),
@@ -563,51 +163,10 @@ session are dropped on both sides.
 
 ## Testing
 
-`pnpm --filter @houston-app/web test` runs the unit and browser projects from
-`apps/web/vite.config.ts`; see [testing.md](testing.md) for the discriminators. Browser tests
+`pnpm --filter @houston-app/web test` runs the `unit` and `browser` projects from
+`apps/web/vite.config.ts`; the config also defines a render-scenario project over
+`test/*.renders.tsx`. See [testing.md](testing.md) for the discriminators. Browser tests
 run in Chromium through Playwright. Shared fixtures live in `apps/web/test/`.
 
-`check:css` runs **after** `build` and loads the _emitted_ stylesheet in a real browser,
-because `@theme`/`@layer` resolution only exists post-build. It re-derives the theme list
-and token mapping from source, asserts every `--color-*` token re-resolves per
-`[data-theme]` scope, and gates contrast: ink-on-ground at ≥ 4.5:1 per theme and the focus
-ring at ≥ 3:1 against two surfaces.
-
-## Mascot arbitration
-
-The optional companion is configured in Settings → Mascot and loads outside the
-terminal render path. A pure director orders user interactions, lifecycle moments,
-scheduled greetings and ambient play. Scheduled
-speech requires focus and five seconds without typing; it is limited to three remarks
-per hour and at least ten minutes between remarks. User actions are exempt. The local
-ledger prevents repeated holiday greetings across reloads. Sleeping defers a scheduled
-greeting to wake; disco and Ring Invaders suspend scheduled and ambient moments.
-Calendar rules use local civil dates and Gregorian Easter, with explicit overlap order.
-Preferences, first-seen install date and the bounded greeting ledger use `tr-mascot*`
-localStorage keys. Turning the feature off unmounts its listeners and lazy visuals.
-
-Renderer mascot slots arbitrate one visible companion across the rail, introduction
-and surrounding surfaces. Transitions use a temporary artwork copy above the app
-while both slots are hidden, with the introduction's transform/opacity flight. A
-bounded timer completes each handoff independently of Web Animations callbacks;
-user actions run immediately. Reduced motion switches slots without a flight.
-
-The companion host lives outside App and the Sidebar, retaining its director mount
-when floating and the rail collapses. A reporting hook keeps workspace/onboarding
-lifecycle current independently of Sidebar. The rail provides a docking rectangle; the
-host is a small fixed layer above the grid and rail, below overlay chrome. Only its
-button receives pointer input. Pointer movement updates a transform; drops persist
-normalized window coordinates under `tr-mascot-position`, independently of the
-ledger. Invalid coordinates fall back to Rail. Resize and browser geometry changes
-clamp the entire art rectangle with a 12 px window margin.
-
-Floating placement reads attached native webview rectangles from the existing
-browser surface registry. An intersecting drop is projected onto the closest valid
-position outside every rectangle, minimizing squared displacement and respecting
-window bounds. Candidate positions use browser edges and window limits; touching an
-edge is allowed. If no full art rectangle fits, return to Rail, hidden if the rail
-is collapsed. During a drag, the existing suppression mechanism temporarily freezes
-native browser surfaces so they cannot interrupt pointer capture; release restores
-them after choosing a safe position. Speech flips and clamps to the window. Surface
-flights use the host's current rectangle and return to its current rail or floating
-position. Reduced motion disables the lift animation while preserving direct moves.
+Legibility is held by unit tests over the theme palettes (`appearanceContrast.test.ts`,
+`themePalette.test.ts`) and by the style guards in [style-guard.md](style-guard.md).

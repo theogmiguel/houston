@@ -53,8 +53,7 @@ get wrong without it.
 - [Style guide](internals/styleguide.md) — tokens, typography, layout, components, motion
 - [Style guard](internals/style-guard.md) — how the renderer rules and baselines work, and
   how to lower the ratchet
-- [CSS conversion patterns](internals/css-conversion-patterns.md) — cookbook for large
-  styling sweeps
+- [Continuous integration](internals/ci.md) — the gate's jobs, runners and branch rules
 
 ### Runbooks
 
