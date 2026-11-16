@@ -2,6 +2,7 @@
 import * as NodeAssert from "node:assert/strict";
 import * as NodeModule from "node:module";
 import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeTest from "node:test";
 import * as NodeURL from "node:url";
@@ -19,6 +20,7 @@ import {
   LINUX_DEB_DEPENDS,
   asarEntryPath,
   missingPackagedResources,
+  stageWindowsServerSidecar,
   resolveDesktopTargets,
   resolveExtraResources,
   resolveMacFileExclusions,
@@ -274,6 +276,25 @@ NodeTest.test("Windows packages the Houston 1 cleanup helper under its .exe name
 NodeTest.test("an archive lookup uses the platform's path separator", () => {
   NodeAssert.equal(asarEntryPath("apps/server/dist/bin.mjs", "\\"), "apps\\server\\dist\\bin.mjs");
   NodeAssert.equal(asarEntryPath("apps/server/dist/bin.mjs", "/"), "apps/server/dist/bin.mjs");
+});
+
+NodeTest.test("the Windows server archive is written before its staging source goes", async () => {
+  const stage = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-server-sidecar-"));
+  try {
+    const dist = NodePath.join(stage, "apps/server/dist");
+    NodeFS.mkdirSync(dist, { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(dist, "bin.mjs"), "export {};\n");
+    await stageWindowsServerSidecar(stage);
+    const archive = NodePath.join(stage, "apps/desktop/prod-resources/windows-server/server.asar");
+    NodeAssert.equal(NodeFS.existsSync(archive), true);
+    const asar = NodeModule.createRequire(import.meta.url)("@electron/asar");
+    NodeAssert.doesNotThrow(() =>
+      asar.statFile(archive, asarEntryPath("apps/server/dist/bin.mjs")),
+    );
+    NodeAssert.equal(NodeFS.existsSync(NodePath.join(stage, "server-sidecar")), false);
+  } finally {
+    NodeFS.rmSync(stage, { recursive: true });
+  }
 });
 
 NodeTest.test("a resource present in the stage is not reported missing", () => {

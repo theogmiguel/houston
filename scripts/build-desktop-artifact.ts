@@ -662,10 +662,15 @@ function stageResources(input: {
   }
 }
 
-function stageWindowsServerSidecar(stageAppDir: string): void {
+/** Packs the staged server into the archive the Windows host starts it from. */
+export async function stageWindowsServerSidecar(stageAppDir: string): Promise<void> {
   const require = NodeModule.createRequire(import.meta.url);
   const asar = require("@electron/asar") as {
-    createPackageWithOptions(source: string, destination: string, options?: unknown): void;
+    createPackageWithOptions(
+      source: string,
+      destination: string,
+      options?: unknown,
+    ): Promise<unknown>;
   };
   const sourceDir = NodePath.join(stageAppDir, "server-sidecar");
   const asarPath = NodePath.join(
@@ -684,7 +689,8 @@ function stageWindowsServerSidecar(stageAppDir: string): void {
   }
   NodeFS.mkdirSync(NodePath.dirname(asarPath), { recursive: true });
   NodeFS.rmSync(asarPath, { force: true });
-  asar.createPackageWithOptions(sourceDir, asarPath, {
+  // The archive is written asynchronously; its source must outlive the write.
+  await asar.createPackageWithOptions(sourceDir, asarPath, {
     unpack: WINDOWS_NATIVE_ASAR_UNPACK_GLOB,
   });
   NodeFS.rmSync(sourceDir, { recursive: true, force: true });
@@ -915,7 +921,7 @@ function printArtifacts(outputDir: string): void {
   }
 }
 
-export function main(): void {
+export async function main(): Promise<void> {
   const options = resolveBuildOptions();
   const hostPlatform = detectHostPlatform(process.platform);
   if (options.platform !== hostPlatform) {
@@ -937,7 +943,7 @@ export function main(): void {
     installStageDependencies(stageAppDir, options.verbose);
     stageResourceMonitor(stageAppDir);
     if (options.platform === "win") {
-      stageWindowsServerSidecar(stageAppDir);
+      await stageWindowsServerSidecar(stageAppDir);
     }
     verifyStagedResources(stageAppDir, options.platform);
     runElectronBuilder(options, stageAppDir);
@@ -957,10 +963,8 @@ if (
   process.argv[1] !== undefined &&
   NodePath.resolve(process.argv[1]) === NodeURL.fileURLToPath(import.meta.url)
 ) {
-  try {
-    main();
-  } catch (error) {
+  main().catch((error: unknown) => {
     console.error(`[desktop-artifact] ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
-  }
+  });
 }
