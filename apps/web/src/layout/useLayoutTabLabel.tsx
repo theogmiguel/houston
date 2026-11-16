@@ -23,8 +23,6 @@ import {
   SidebarProviderStack,
   type SidebarProviderEntry,
 } from "../components/sidebar/SidebarThreadRow";
-import { useNowMinute } from "../hooks/useNowMinute";
-import { resolveThreadRowState } from "../threads/sidebarModel";
 import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
 import { useQuietThreadShells } from "../state/entities";
 import { chatTargetThreadRef } from "./layoutThreadRef";
@@ -92,14 +90,6 @@ export function ChatTabIcon({
   );
 }
 
-/** The status a thread's tab marks: work running, or something that needs the person. */
-function markOf(shell: EnvironmentThreadShell | null, nowIso: string): LayoutTabLabel["mark"] {
-  if (shell === null) return undefined;
-  const state = resolveThreadRowState(shell, nowIso);
-  if (state === "running") return "running";
-  return state === "needs" || state === "failed" ? "attention" : undefined;
-}
-
 /**
  * The label of every tab, from the thread and surface state it shows. The tab bar calls the
  * returned function once per tab while it renders, so the stores it reads are subscribed here.
@@ -108,8 +98,6 @@ export function useLayoutTabLabel(): (tab: LayoutTab) => LayoutTabLabel {
   const shells = useQuietThreadShells();
   const providerEntriesByEnvironment = useAtomValue(sidebarProviderEntriesAtom);
   const panels = useRightPanelStore((state) => state.byThreadKey);
-  const nowMinute = useNowMinute();
-  const nowIso = `${nowMinute}:00.000Z`;
   const shellByKey = new Map(
     shells.map(
       (shell) => [scopedThreadKey(scopeThreadRef(shell.environmentId, shell.id)), shell] as const,
@@ -133,7 +121,6 @@ export function useLayoutTabLabel(): (tab: LayoutTab) => LayoutTabLabel {
             />
           ),
           title: shell?.title || NEW_THREAD_TITLE,
-          mark: markOf(shell, nowIso),
         };
       }
       case "surface": {

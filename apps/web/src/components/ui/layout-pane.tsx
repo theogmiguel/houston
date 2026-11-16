@@ -265,26 +265,6 @@ export function LayoutTabTitle({ className, ...props }: HTMLAttributes<HTMLSpanE
   return <span className={cn("min-w-0 truncate pe-0.5", className)} {...props} />;
 }
 
-export type LayoutTabMarkTone = "running" | "attention" | "dirty";
-
-const MARK_TONE: Record<LayoutTabMarkTone, string> = {
-  running: "bg-(--accent)",
-  attention: "bg-(--warn)",
-  dirty: "bg-muted-foreground",
-};
-
-/** A small dot after the title: work running, input needed, or unsaved changes. */
-export function LayoutTabMark({ tone, label }: { tone: LayoutTabMarkTone; label: string }) {
-  return (
-    <span
-      role="img"
-      aria-label={label}
-      data-layout-tab-mark={tone}
-      className={cn("size-1.5 shrink-0 rounded-full", MARK_TONE[tone])}
-    />
-  );
-}
-
 /** The close button over a tab's icon: visible while the pointer is on the tab or it has focus. */
 export function LayoutTabClose({
   tabId,

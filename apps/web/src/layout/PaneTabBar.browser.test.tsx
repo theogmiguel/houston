@@ -74,24 +74,6 @@ describe("tabs", () => {
       findLayoutTab(useLayoutStore.getState().layout, (tab) => tab.id === "b")?.tab.ghostOf,
     ).toBeUndefined();
   });
-
-  it("draws a mark for running, attention and unsaved work", async () => {
-    using _layout = openLayout([[[["a", "b", "c"]]]]);
-    const marks = new Map<string, LayoutTabLabel["mark"]>([
-      ["a", "running"],
-      ["b", "attention"],
-      ["c", "dirty"],
-    ]);
-    await using screen = await render(
-      <BarOf tabLabel={(tab) => ({ ...label(tab), mark: marks.get(tab.id) })} />,
-      { router: false },
-    );
-    expect(
-      [...screen.container.querySelectorAll("[data-layout-tab-mark]")].map((mark) =>
-        mark.getAttribute("data-layout-tab-mark"),
-      ),
-    ).toEqual(["running", "attention", "dirty"]);
-  });
 });
 
 describe("closing", () => {

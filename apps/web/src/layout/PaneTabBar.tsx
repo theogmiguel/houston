@@ -6,14 +6,12 @@ import {
   LayoutTabBar,
   LayoutTabClose,
   LayoutTabIcon,
-  LayoutTabMark,
   LayoutTabShell,
   LayoutTabSlot,
   LayoutTabStrip,
   LayoutTabTitle,
   LayoutTabTooltip,
   type LayoutBarPlacement,
-  type LayoutTabMarkTone,
 } from "../components/ui/layout-pane";
 import { Tooltip, TooltipTrigger } from "../components/ui/tooltip";
 import { observeResize } from "../lib/observeResize";
@@ -31,15 +29,7 @@ export interface LayoutTabLabel {
   title: string;
   /** Longer text for the hover label; the title when absent. */
   tooltip?: string;
-  /** Work running, input needed or unsaved changes, drawn as a dot after the title. */
-  mark?: LayoutTabMarkTone | undefined;
 }
-
-const MARK_LABEL: Record<LayoutTabMarkTone, string> = {
-  running: "Running",
-  attention: "Needs attention",
-  dirty: "Unsaved changes",
-};
 
 /** A middle click closes a tab, as in browsers and editors. */
 export function closeLayoutTabOnMiddleClick(
@@ -150,7 +140,6 @@ export const LayoutPaneTab = memo(function LayoutPaneTab({
         >
           <LayoutTabIcon>{label.icon}</LayoutTabIcon>
           <LayoutTabTitle>{label.title}</LayoutTabTitle>
-          {label.mark ? <LayoutTabMark tone={label.mark} label={MARK_LABEL[label.mark]} /> : null}
         </TooltipTrigger>
         <LayoutTabTooltip>{label.tooltip ?? label.title}</LayoutTabTooltip>
       </Tooltip>
