@@ -176,6 +176,27 @@ NodeTest.test("missing packaged resources name every required lookup", () => {
   ]);
 });
 
+NodeTest.test("Windows packages the Houston 1 cleanup helper under its .exe name", () => {
+  const asked = [];
+  const { missing } = missingPackagedResources({
+    platform: "win",
+    exists: (path) => {
+      asked.push(path);
+      return path === "houston-v1-cleanup.exe";
+    },
+  });
+  NodeAssert.equal(missing.includes("houston-v1-cleanup"), false);
+  NodeAssert.equal(asked.includes("houston-v1-cleanup"), false);
+  NodeAssert.deepEqual(resolveExtraResources("win", () => false)[0], {
+    from: "apps/desktop/prod-resources/houston-v1-cleanup.exe",
+    to: "houston-v1-cleanup.exe",
+  });
+  NodeAssert.deepEqual(resolveExtraResources("linux", () => false)[0], {
+    from: "apps/desktop/prod-resources/houston-v1-cleanup",
+    to: "houston-v1-cleanup",
+  });
+});
+
 NodeTest.test("a resource present in the stage is not reported missing", () => {
   const { missing } = missingPackagedResources({
     platform: "linux",

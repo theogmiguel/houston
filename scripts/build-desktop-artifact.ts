@@ -121,6 +121,13 @@ export interface PackagedResourceRequirement {
   readonly area: "resources" | "app";
   readonly platforms?: readonly BuildPlatform[];
   readonly optional?: boolean;
+  /** A native executable: Windows packages it with the `.exe` suffix. */
+  readonly executable?: boolean;
+}
+
+/** The file name a native executable has on the target platform. */
+export function executableName(platform: BuildPlatform, name: string): string {
+  return platform === "win" ? `${name}.exe` : name;
 }
 
 /**
@@ -133,6 +140,7 @@ export const PACKAGED_RESOURCE_REQUIREMENTS: readonly PackagedResourceRequiremen
     lookup: "houston-v1-cleanup",
     source: V1_CLEANUP_BINARY,
     area: "resources",
+    executable: true,
   },
   {
     lookup: "third-party-licenses.json",
@@ -383,7 +391,10 @@ export function resolveExtraResources(
   // The app carries `prod-resources` for lookups made relative to app.getAppPath().
   // Extra resources are the host helpers it reads straight from process.resourcesPath.
   const resources: Array<Record<string, unknown>> = [
-    { from: "apps/desktop/prod-resources/houston-v1-cleanup", to: V1_CLEANUP_BINARY },
+    {
+      from: `apps/desktop/prod-resources/${executableName(platform, V1_CLEANUP_BINARY)}`,
+      to: executableName(platform, V1_CLEANUP_BINARY),
+    },
     {
       from: "apps/desktop/prod-resources/third-party-licenses.json",
       to: "third-party-licenses.json",
@@ -430,7 +441,11 @@ export function missingPackagedResources(input: {
     if (requirement.platforms !== undefined && !requirement.platforms.includes(input.platform)) {
       continue;
     }
-    if (input.exists(requirement.source)) continue;
+    const source =
+      requirement.executable === true
+        ? executableName(input.platform, requirement.source)
+        : requirement.source;
+    if (input.exists(source)) continue;
     if (requirement.optional === true) {
       skippedOptional.push(requirement.lookup);
     } else {
@@ -574,7 +589,7 @@ function buildDesktopBundles(verbose: boolean): void {
 }
 
 function buildV1Cleanup(platform: BuildPlatform, verbose: boolean): string {
-  const executable = platform === "win" ? `${V1_CLEANUP_BINARY}.exe` : V1_CLEANUP_BINARY;
+  const executable = executableName(platform, V1_CLEANUP_BINARY);
   const binary = NodePath.join(REPO_ROOT, V1_CLEANUP_CRATE, "target", "release", executable);
   const crateManifest = NodePath.join(REPO_ROOT, V1_CLEANUP_CRATE, "Cargo.toml");
   const source = NodePath.join(REPO_ROOT, V1_CLEANUP_CRATE, "src");
@@ -622,10 +637,7 @@ function stageResources(input: {
   const v1Cleanup = buildV1Cleanup(input.platform, input.verbose);
   copyFile(
     v1Cleanup,
-    NodePath.join(
-      prodResourcesDir,
-      input.platform === "win" ? `${V1_CLEANUP_BINARY}.exe` : V1_CLEANUP_BINARY,
-    ),
+    NodePath.join(prodResourcesDir, executableName(input.platform, V1_CLEANUP_BINARY)),
     0o755,
   );
 
