@@ -838,6 +838,11 @@ function runElectronBuilder(options: BuildOptions, stageAppDir: string): void {
   run("pnpm", args, { env, verbose: options.verbose });
 }
 
+/** The archive reader splits an entry path on the platform separator, not on "/". */
+export function asarEntryPath(path: string, separator: string = NodePath.sep): string {
+  return path.split("/").join(separator);
+}
+
 function verifyPackagedOutput(options: BuildOptions): void {
   const unpackedName =
     options.platform === "linux"
@@ -865,7 +870,7 @@ function verifyPackagedOutput(options: BuildOptions): void {
       statFile(archive: string, path: string): unknown;
     };
     try {
-      asar.statFile(appAsar, path);
+      asar.statFile(appAsar, asarEntryPath(path));
       return true;
     } catch {
       return false;

@@ -17,6 +17,7 @@ import {
   DESKTOP_SHORT_DESCRIPTION,
   GITHUB_PUBLISH_CONFIG,
   LINUX_DEB_DEPENDS,
+  asarEntryPath,
   missingPackagedResources,
   resolveDesktopTargets,
   resolveExtraResources,
@@ -268,6 +269,11 @@ NodeTest.test("Windows packages the Houston 1 cleanup helper under its .exe name
     from: "apps/desktop/prod-resources/houston-v1-cleanup",
     to: "houston-v1-cleanup",
   });
+});
+
+NodeTest.test("an archive lookup uses the platform's path separator", () => {
+  NodeAssert.equal(asarEntryPath("apps/server/dist/bin.mjs", "\\"), "apps\\server\\dist\\bin.mjs");
+  NodeAssert.equal(asarEntryPath("apps/server/dist/bin.mjs", "/"), "apps/server/dist/bin.mjs");
 });
 
 NodeTest.test("a resource present in the stage is not reported missing", () => {
