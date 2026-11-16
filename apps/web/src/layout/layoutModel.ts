@@ -652,6 +652,27 @@ export function arrangeLayoutWorkspaces(
   });
 }
 
+/**
+ * Scale the widths to fill the window, none below the floor. A column held at the floor takes its
+ * room from the others, so the strip runs past the window only when every column is at the floor.
+ */
+function shareWindow(widths: Map<string, number>, floor: number): void {
+  const held = new Set<string>();
+  while (held.size < widths.size) {
+    const free = [...widths].filter(([id]) => !held.has(id));
+    const scale = (1 - held.size * floor) / free.reduce((sum, [, width]) => sum + width, 0);
+    const narrow = free.filter(([, width]) => width * scale < floor);
+    if (narrow.length === 0) {
+      for (const [id, width] of free) widths.set(id, width * scale);
+      return;
+    }
+    for (const [id] of narrow) {
+      held.add(id);
+      widths.set(id, floor);
+    }
+  }
+}
+
 /** Only opening or closing columns triggers fitting. Temporary side panes borrow and return their
  * chat column share; reordering preserves widths. */
 export function fitLayoutColumns(
@@ -694,8 +715,8 @@ export function fitLayoutColumns(
       if (mode !== "always-scroll") {
         const total = [...widths.values()].reduce((sum, width) => sum + width, 0);
         // Shrink to share the window; after a close, grow back to fill it.
-        const scale = total > 1 || removed.length > 0 ? 1 / total : 1;
-        for (const [id, width] of widths) widths.set(id, Math.max(floor, width * scale));
+        if (total > 1 || removed.length > 0) shareWindow(widths, floor);
+        else for (const [id, width] of widths) widths.set(id, Math.max(floor, width));
       }
     }
     const columns = workspace.columns.map((column) => {
@@ -1843,6 +1864,30 @@ export function resizeLayoutColumn(
   });
 }
 
+/**
+ * A column narrowed until the strip is shorter than the window hands the room it gave up to the
+ * next column, or keeps it when it is the last one. A strip that was already short stays that short.
+ */
+function fillNarrowedStrip(before: LayoutState, after: LayoutState, columnId: string): LayoutState {
+  return mapWorkspaces(after, (workspace) => {
+    const index = workspace.columns.findIndex((column) => column.id === columnId);
+    const previous = before.workspaces
+      .find((candidate) => candidate.id === workspace.id)
+      ?.columns.find((column) => column.id === columnId);
+    if (index < 0 || !previous || workspace.columns.length < 2) return workspace;
+    const total = workspace.columns.reduce((sum, column) => sum + column.width, 0);
+    const room = Math.min(1 - total, previous.width - workspace.columns[index]!.width);
+    if (room <= 1e-6) return workspace;
+    const taker = index + 1 < workspace.columns.length ? index + 1 : index;
+    return {
+      ...workspace,
+      columns: workspace.columns.map((column, columnIndex) =>
+        columnIndex === taker ? { ...column, width: column.width + room } : column,
+      ),
+    };
+  });
+}
+
 export function resizeLayoutColumnEdge(
   state: LayoutState,
   columnId: string,
@@ -1872,9 +1917,10 @@ export function resizeLayoutColumnEdge(
   const index = workspace?.columns.findIndex((column) => column.id === columnId) ?? -1;
   const neighbor = workspace?.columns[index + 1];
   if (mode !== "always-shrink" || !workspace || !neighbor || !Number.isFinite(width)) {
+    const resized = resizeLayoutColumn(rebased, columnId, width);
     return arrangeLayoutWorkspaces(
       state,
-      resizeLayoutColumn(rebased, columnId, width),
+      mode === "shrink-then-scroll" ? fillNarrowedStrip(rebased, resized, columnId) : resized,
       cameraWidth,
     );
   }

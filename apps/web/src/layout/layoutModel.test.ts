@@ -14,6 +14,7 @@ import {
   placeLayoutContent,
   placeLayoutTabs,
   replaceLayoutTabContent,
+  fitLayoutColumns,
   resizeLayoutColumnEdge,
   selectFocusedChatTarget,
   selectFocusedTab,
@@ -488,7 +489,37 @@ describe("resizeLayoutColumnEdge", () => {
         viewportWidth,
       ),
     );
-    expect(drawn).toEqual(pointers.map((pointer) => [pointer, pointer + 660]));
+    // Below 340 the pair no longer reaches the window's edge, so the terminal takes the rest.
+    expect(drawn).toEqual(pointers.map((pointer) => [pointer, Math.max(pointer + 660, 1000)]));
+  });
+
+  const fitted = (...columns: ReturnType<typeof column>[]): LayoutState => ({
+    focusedWorkspaceId: "workspace",
+    workspaces: [{ id: "workspace", name: null, focusedPaneId: null, cameraWidth: 1000, columns }],
+  });
+
+  it("gives the next column the room a narrowed column leaves, so the strip still fills the window", () => {
+    const base = fitted(column("chat", 0.5), column("diff", 0.25), column("terminal", 0.25));
+    const narrowed = resizeLayoutColumnEdge(base, "chat", 0.3, "shrink-then-scroll", 1000);
+    expect(drawnRightEdges(narrowed, 1000)).toEqual([300, 750, 1000]);
+  });
+
+  it("keeps the last column against the window's edge when it is the one narrowed", () => {
+    const base = fitted(column("chat", 0.5), column("terminal", 0.5));
+    const narrowed = resizeLayoutColumnEdge(base, "terminal", 0.3, "shrink-then-scroll", 1000);
+    expect(drawnRightEdges(narrowed, 1000)).toEqual([500, 1000]);
+  });
+
+  it("fills only the room this drag left when the strip was already short", () => {
+    const base = fitted(column("chat", 0.4), column("terminal", 0.4));
+    const narrowed = resizeLayoutColumnEdge(base, "chat", 0.3, "shrink-then-scroll", 1000);
+    expect(drawnRightEdges(narrowed, 1000)).toEqual([300, 800]);
+  });
+
+  it("leaves the gap when columns always scroll", () => {
+    const base = fitted(column("chat", 0.5), column("terminal", 0.5));
+    const narrowed = resizeLayoutColumnEdge(base, "chat", 0.3, "always-scroll", 1000);
+    expect(drawnRightEdges(narrowed, 1000, "always-scroll")).toEqual([300, 800]);
   });
 
   it("lands the dragged edge where it is released when columns always shrink to fit", () => {
@@ -520,6 +551,38 @@ describe("resizeLayoutColumnEdge", () => {
       unitWidth,
     );
     expect(drawnRightEdges(released, viewportWidth, "always-shrink")).toEqual([333, 600, 1000]);
+  });
+});
+
+describe("fitLayoutColumns", () => {
+  const strip = (...columns: ReturnType<typeof column>[]): LayoutState => ({
+    focusedWorkspaceId: "workspace",
+    workspaces: [{ id: "workspace", name: null, focusedPaneId: null, cameraWidth: 1650, columns }],
+  });
+  const widthsOf = (state: LayoutState) =>
+    state.workspaces[0]!.columns.map((column) => Math.round(column.width * 1650));
+
+  it("fits a new column in the window when one column is already at the readable width", () => {
+    const before = strip(column("chat", 0.25), column("notes", 0.49));
+    const after = strip(column("chat", 0.25), column("notes", 0.49), column("files", 0.5));
+    const widths = widthsOf(fitLayoutColumns(before, after, "shrink-then-scroll", 1650));
+    // The chat stops at 420px, and the other two share what is left instead of running past the edge.
+    expect(widths[0]).toBe(420);
+    expect(widths.reduce((sum, width) => sum + width, 0)).toBe(1650);
+    expect(widths[1]! / widths[2]!).toBeCloseTo(0.49 / 0.37, 1);
+  });
+
+  it("scrolls once every column is at the readable width", () => {
+    const before = strip(column("a", 1 / 3), column("b", 1 / 3), column("c", 1 / 3));
+    const after = strip(
+      column("a", 1 / 3),
+      column("b", 1 / 3),
+      column("c", 1 / 3),
+      column("d", 1 / 3),
+    );
+    expect(widthsOf(fitLayoutColumns(before, after, "shrink-then-scroll", 1650))).toEqual([
+      420, 420, 420, 420,
+    ]);
   });
 });
 

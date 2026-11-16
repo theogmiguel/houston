@@ -242,7 +242,10 @@ workspace and gains a tab when opened.
 Columns carry a width as a fraction of the strip. By default a column stays at least
 `LAYOUT_READABLE_COLUMN_PX` (420) wide and the strip scrolls when the columns no longer fit; the
 workspace records the strip width it was arranged at (`cameraWidth`) so a long strip does not
-reflow when the window resizes. The user can choose to always shrink or always scroll instead.
+reflow when the window resizes. In that default the strip is never shorter than the window: a
+column held at the readable width takes its room from the others when a column opens, and a
+column narrowed by its divider hands the room to the next one. The user can choose to always
+shrink or always scroll instead.
 Panes are positioned from the model's geometry (`paneGeometry.ts`).
 
 Every bound (columns, panes per column, tabs per pane and per workspace, name and id length) is in
