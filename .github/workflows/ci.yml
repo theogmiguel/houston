@@ -407,6 +407,11 @@ jobs:
           key: linux-native-checks
       - name: Test the Houston 1 cleanup helper
         run: cargo test --locked --manifest-path apps/desktop/native/houston-v1-cleanup/Cargo.toml
+      # The Windows installer builds this crate; a check catches its Windows-only code here.
+      - name: Type-check the Houston 1 cleanup helper for Windows
+        run: |
+          rustup target add x86_64-pc-windows-msvc
+          cargo check --locked --manifest-path apps/desktop/native/houston-v1-cleanup/Cargo.toml --target x86_64-pc-windows-msvc
       - name: Test the Linux capture helpers
         run: |
           cargo test --locked --manifest-path native/kde-snap-shot/Cargo.toml
