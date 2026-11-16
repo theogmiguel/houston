@@ -224,3 +224,16 @@ NodeTest.test(
     }
   },
 );
+
+NodeTest.test("the server archive deploys the package apps/server declares", () => {
+  const root = NodePath.join(import.meta.dirname, "..");
+  const { name } = JSON.parse(
+    NodeFS.readFileSync(NodePath.join(root, "apps/server/package.json"), "utf8"),
+  );
+  const script = NodeFS.readFileSync(
+    NodePath.join(root, "scripts/build-server-archive.mjs"),
+    "utf8",
+  );
+  const filter = /"--filter",\s*"([^"]+)",\s*"deploy"/.exec(script)?.[1];
+  NodeAssert.equal(filter, name, "pnpm deploy selects no package when the filter is not its name");
+});
