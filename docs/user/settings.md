@@ -125,8 +125,9 @@ settings and merge history. See [Merge queue](pull-requests.md#merge-queue).
 
 ## Source control
 
-Accounts and tokens for each host, repository conventions, generated change description
-and pull request text, review guides (beta), automatic pull and the default merge method.
+Accounts and tokens for each host, issue trackers (connect Linear with an API key and bind each
+project to a team), repository conventions, generated change description and pull request text,
+review guides (beta), automatic pull and the default merge method.
 
 ## Worktrees
 

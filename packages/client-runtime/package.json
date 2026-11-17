@@ -251,6 +251,10 @@
       "types": "./src/state/issues.ts",
       "default": "./src/state/issues.ts"
     },
+    "./state/issue-trackers": {
+      "types": "./src/state/issueTrackers.ts",
+      "default": "./src/state/issueTrackers.ts"
+    },
     "./state/pull-requests": {
       "types": "./src/state/pullRequests.ts",
       "default": "./src/state/pullRequests.ts"

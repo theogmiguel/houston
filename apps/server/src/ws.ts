@@ -262,6 +262,7 @@ import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as TriageService from "./triage/TriageService.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as IssueService from "./issue/IssueService.ts";
+import * as IssueTrackerConnections from "./issue/IssueTrackerConnections.ts";
 import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewGuideService.ts";
 import {
   listLinkedPullRequestThreads,
@@ -721,6 +722,7 @@ const SPLIT_WS_RPC_PREFIXES = [
   "server",
   "pullRequests",
   "issues",
+  "issueTrackers",
   "provider",
   "orchestration",
 ] as const;
@@ -1526,6 +1528,7 @@ export const layerWsRpc = (
       const secretRequests = yield* SecretRequests.SecretRequests;
       const pullRequests = yield* PullRequestService.PullRequestService;
       const issues = yield* IssueService.IssueService;
+      const issueTrackers = yield* IssueTrackerConnections.IssueTrackerConnections;
       const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
       const deviceService = yield* DeviceService.DeviceService;
@@ -2146,6 +2149,9 @@ export const layerWsRpc = (
         [WS_METHODS.issuesUpdate]: (input) => issues.update(input),
         [WS_METHODS.issuesSetState]: (input) => issues.setState(input),
         [WS_METHODS.issuesReact]: (input) => issues.react(input),
+        [WS_METHODS.issueTrackersList]: () => issueTrackers.list,
+        [WS_METHODS.issueTrackersConnect]: (input) => issueTrackers.connect(input),
+        [WS_METHODS.issueTrackersBindProject]: (input) => issueTrackers.bindProject(input),
         [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
           Effect.annotateCurrentSpan({
             "orchestration_v2.command_id": command.commandId,
@@ -3750,6 +3756,7 @@ export const layer = Layer.unwrap(
     const npmRelease = yield* NpmRelease.NpmRelease;
     const pullRequests = yield* PullRequestService.PullRequestService;
     const issues = yield* IssueService.IssueService;
+    const issueTrackers = yield* IssueTrackerConnections.IssueTrackerConnections;
     const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
     const peerLinks = yield* PeerLinks.PeerLinks;
     const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
@@ -3814,6 +3821,9 @@ export const layer = Layer.unwrap(
               // Share server-lifetime PR caches so WS mutations invalidate every client's HTTP diffs.
               Layer.provide(Layer.succeed(PullRequestService.PullRequestService, pullRequests)),
               Layer.provide(Layer.succeed(IssueService.IssueService, issues)),
+              Layer.provide(
+                Layer.succeed(IssueTrackerConnections.IssueTrackerConnections, issueTrackers),
+              ),
               Layer.provide(OtlpEndpointCheck.layer),
               Layer.provide(
                 Layer.succeed(

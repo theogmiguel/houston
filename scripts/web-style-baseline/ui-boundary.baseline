@@ -334,6 +334,7 @@
 24 apps/web/src/components/settings/FoldedSettingsSection.tsx
 3 apps/web/src/components/settings/FontFamilyPicker.tsx
 20 apps/web/src/components/settings/IntegrationsSettings.tsx
+17 apps/web/src/components/settings/IssueTrackerSettings.tsx
 91 apps/web/src/components/settings/KeybindingsSettings.tsx
 8 apps/web/src/components/settings/LabsSettingsPanel.tsx
 10 apps/web/src/components/settings/LinkAccessPicker.tsx

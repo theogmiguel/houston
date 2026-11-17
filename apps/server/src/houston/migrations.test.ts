@@ -36,6 +36,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [19, "LayoutWorkspaces"],
   [20, "RemoveGrids"],
   [21, "LayoutThreadMembership"],
+  [22, "IssueTrackerBindings"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -1137,6 +1138,7 @@ describe("the grids removal migration", () => {
             [19, "LayoutWorkspaces"],
             [20, "RemoveGrids"],
             [21, "LayoutThreadMembership"],
+            [22, "IssueTrackerBindings"],
           ],
         );
         assert.deepEqual(yield* gridObjects, []);
@@ -1205,6 +1207,41 @@ describe("the thread membership migration", () => {
           ["two", "b"],
         ],
       );
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+});
+
+describe("the issue tracker bindings migration", () => {
+  const bindingsTable = Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const columns = yield* sql<{ readonly name: string; readonly pk: number }>`
+      SELECT name, pk FROM pragma_table_info('issue_tracker_bindings') ORDER BY cid
+    `;
+    return {
+      columns: columns.map((column) => [column.name, column.pk] as const),
+      rows: yield* sql`SELECT * FROM issue_tracker_bindings`,
+    };
+  });
+
+  it.effect("keys one binding per project and keeps the credential out of the table", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
+      const { columns, rows } = yield* bindingsTable;
+      assert.deepEqual(columns, [
+        ["project_id", 1],
+        ["tracker", 0],
+        ["scope", 0],
+        ["updated_at", 0],
+      ]);
+      assert.deepEqual(rows, []);
+      for (const [name] of columns) assert.notMatch(name, /token|secret/i);
+      const bind = (scope: string) => sql`
+        INSERT INTO issue_tracker_bindings (project_id, tracker, scope, updated_at)
+        VALUES ('p', 'linear', ${scope}, 'now')
+      `;
+      yield* bind("ENG");
+      assert.isTrue((yield* Effect.exit(bind("OPS")))._tag === "Failure");
     }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
   );
 });

@@ -27,6 +27,10 @@ undoes it. Linked issues are listed in the thread's details beside its pull requ
 the issues they work on with the `link_issue` tool, and can list, read, file and comment on issues
 and change their state through the other issue tools.
 
+To list a Linear team's issues beside a project's, connect Linear with an API key under
+**Settings ▸ Source control**, then choose the team for that project there. Removing the key
+disconnects Linear and removes those project bindings.
+
 ## Requests
 
 Requests lists the pull requests of the projects in scope. Search by title, branch, author,

@@ -7,8 +7,11 @@ state directory on the machine that runs it.
 
 - **Agents.** Each provider receives the prompts you send and the files its agent reads, under
   that provider's own terms.
-- **Features you turn on.** Integrations such as GitHub, Slack, Notion, usage hubs and transcript
-  cleanup contact the services you configure for them, and nothing while they are off.
+- **Features you turn on.** Integrations such as GitHub, Slack, Notion, Linear, usage hubs and
+  transcript cleanup contact the services you configure for them, and nothing while they are off.
+  A connected Linear tracker sends the API key with each request and reads the teams, issues,
+  comments and people you open; remove the key under **Settings ▸ Source control** to disconnect
+  it, after which Houston sends nothing to Linear.
 - **Cloud dictation.** When you choose OpenAI, Grok or OpenRouter under Settings ▸ Voice, the
   environment sends each finished recording to that provider with your API key. Nothing is sent
   while dictation is Off or set to an environment. See [Dictation](dictation.md#network-use).

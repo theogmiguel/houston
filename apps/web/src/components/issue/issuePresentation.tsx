@@ -4,18 +4,24 @@ import { CircleCheckIcon, CircleDotIcon, CircleSlashIcon, TicketIcon } from "luc
 
 import { cn } from "~/lib/utils";
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
+import { LinearIcon, type Icon } from "~/components/Icons";
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { PULL_REQUEST_PRESENTATION } from "../pullRequest/pullRequestIcons";
 
 export const IssueGlyph = { issue: CircleDotIcon } as const;
 
+/** Name and mark per standalone tracker kind; one missing here falls back to its kind and a ticket. */
+const STANDALONE_TRACKERS: Partial<Record<string, { providerName: string; Icon: Icon }>> = {
+  linear: { providerName: "Linear", Icon: LinearIcon },
+};
+
 /** A git host's tracker wears the host's own icon and name; a standalone tracker wears its kind. */
 export function issueTrackerPresentation(tracker: IssueTrackerKind | string) {
   if (sourceControlClients.find(tracker) !== undefined) {
     return getSourceControlPresentationForKind(tracker);
   }
-  return { providerName: tracker, Icon: TicketIcon };
+  return STANDALONE_TRACKERS[tracker] ?? { providerName: tracker, Icon: TicketIcon };
 }
 
 /**

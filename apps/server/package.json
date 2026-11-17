@@ -43,6 +43,7 @@
     "@effect/platform-node-shared": "catalog:",
     "@ff-labs/fff-node": "0.11.0",
     "@houston-app/client-runtime": "workspace:*",
+    "@houston-app/issue-tracker-linear": "workspace:*",
     "@houston-app/provider-acp": "workspace:*",
     "@houston-app/provider-acp-registry": "workspace:*",
     "@houston-app/provider-core": "workspace:*",
