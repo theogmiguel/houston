@@ -59,8 +59,8 @@ surface, or the **Pull requests** or **Tasks** page. A thread's chat has one tab
 opening a thread that is already open focuses its tab. Settings, which includes Usage, opens
 as a card above the layout.
 
-- **New workspace** (in the sidebar's **View options** menu) adds one; the sidebar lists
-  them all, and at least one always exists.
+- **New workspace** (a sidebar button, also in the **View options** menu) adds one; the
+  sidebar lists them all, and at least one always exists.
 - A column and its panes share the strip: **New pane to the right** and **New pane below**
   (under **Layout…** in the command palette) open a new tab in a new column or pane, a tab's
   **Split right** and **Split down** split its pane, and dragging a tab to a pane's edge does the
@@ -88,8 +88,8 @@ same id.
 
 ## The sidebar
 
-The sidebar opens with search and icon buttons for **New thread**, **Add project** and
-**View options**, then one group per layout workspace, in workspace order. A group lists the threads whose chat is
+The sidebar opens with search and icon buttons for **New thread**, **New workspace**,
+**Add project** and **View options**, then one group per layout workspace, in workspace order. A group lists the threads whose chat is
 open in that workspace, whichever project they belong to. A thread whose chat is not placed in
 any workspace is listed under the first one. Each group label collapses with **Enter** or
 **Space** and keeps its state; a search opens every group it matches in. The **…** button

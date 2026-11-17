@@ -10,6 +10,7 @@ import {
   ChevronRightIcon,
   EyeOffIcon,
   FolderPlusIcon,
+  LayoutGridIcon,
   SquarePenIcon,
   MoreHorizontalIcon,
   PinIcon,
@@ -1366,10 +1367,8 @@ export function SidebarWorkspacesHeader({
   );
 }
 
-/**
- * The quiet icon buttons beside the search field: new thread, add project and view options. New
- * workspace sits at the top of the view options menu.
- */
+/** The quiet icon buttons beside the search field: new thread, new workspace, add project and view
+ * options. New workspace also stays at the top of the view options menu. */
 export function SidebarToolbarActions({
   options,
   onChange,
@@ -1397,6 +1396,21 @@ export function SidebarToolbarActions({
           <SquarePenIcon aria-hidden className="size-[15px]" />
         </TooltipTrigger>
         <TooltipPopup side="bottom">New thread</TooltipPopup>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              aria-label="New workspace"
+              onClick={onNewWorkspace}
+              className={SIDEBAR_TOOLBAR_ACTION_CLS}
+            />
+          }
+        >
+          <LayoutGridIcon aria-hidden className="size-[15px]" />
+        </TooltipTrigger>
+        <TooltipPopup side="bottom">New workspace</TooltipPopup>
       </Tooltip>
       <SidebarAddProjectButton />
       <SidebarOptionsMenu
