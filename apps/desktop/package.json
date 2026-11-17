@@ -1,6 +1,6 @@
 {
   "name": "@houston-app/desktop",
-  "version": "0.20.0-rc.3",
+  "version": "0.20.0",
   "private": true,
   "type": "module",
   "main": "dist-electron/boot.cjs",
