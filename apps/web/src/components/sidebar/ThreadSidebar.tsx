@@ -1471,6 +1471,7 @@ function NewWorkspaceField({
           else onDone();
         }}
         onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === "Escape") event.preventDefault();
           if (event.key === "Enter") submit();
           if (event.key === "Escape") {
             event.stopPropagation();
@@ -1827,6 +1828,8 @@ export function SidebarWorkspaceGroup({
             onChange={(event) => setDraftName(event.target.value)}
             onBlur={finishRenaming}
             onKeyDown={(event) => {
+              // The key's default would click the heading that replaces the input.
+              if (event.key === "Enter" || event.key === "Escape") event.preventDefault();
               if (event.key === "Enter") event.currentTarget.blur();
               if (event.key === "Escape") {
                 setDraftName(workspaceName);

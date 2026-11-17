@@ -53,6 +53,8 @@ export function ThreadTitleInput({
         onKeyDown={(event) => {
           event.stopPropagation();
           if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+          // The key's default would click whatever takes focus once the input unmounts.
+          if (event.key === "Enter" || event.key === "Escape") event.preventDefault();
           if (event.key === "Enter") {
             const next = value.trim();
             if (next.length === 0) {
