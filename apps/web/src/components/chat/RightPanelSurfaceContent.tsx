@@ -1,6 +1,7 @@
 import type {
   EditorId,
   EnvironmentId,
+  IssueTrackerKind,
   PreviewAnnotationPayload,
   ProjectId,
   ResolvedKeybindingsConfig,
@@ -36,6 +37,9 @@ const DevicePanel = lazy(() =>
 const FilePreviewPanel = lazy(() => import("../files/FilePreviewPanel"));
 const pullRequestDetailPanel = lazySurface(() =>
   import("../pullRequest/PullRequestDetailPanel").then((module) => module.PullRequestDetailPanel),
+);
+const issueDetailPanel = lazySurface(() =>
+  import("../issue/IssueDetailPanel").then((module) => module.IssueDetailPanel),
 );
 
 type RightPanelTerminalProps = Omit<
@@ -182,6 +186,34 @@ export function RightPanelSurfaceContent(props: {
     }
     case "pull-requests":
       return <ThreadPullRequestsPanel threadRef={threadRef} />;
+    case "issue":
+      return (
+        <LazySurfaceBoundary
+          key={`${scopedThreadKey(threadRef)}:${surface.id}`}
+          surface={issueDetailPanel}
+          label="issue"
+          renderFrame={(content) => content}
+          props={{
+            environmentId: props.environmentId,
+            threadRef,
+            reference: {
+              projectId: surface.projectId as ProjectId,
+              tracker: surface.tracker as IssueTrackerKind,
+              ...(surface.host ? { host: surface.host } : {}),
+              scope: surface.scope,
+              key: surface.key,
+            },
+            onSelectPullRequest: (reference) => {
+              useRightPanelStore.getState().openPullRequest(threadRef, {
+                projectId: reference.projectId,
+                repository: reference.repository,
+                number: reference.number,
+                ...(reference.host ? { host: reference.host } : {}),
+              });
+            },
+          }}
+        />
+      );
     case "side-chat":
       // Not lazy: revealing a suspended tiptap editor tears down its view and crashes the composer.
       return (

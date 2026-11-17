@@ -4,6 +4,23 @@ Open **Pull requests** from the command palette (**Open pull requests**) or a ne
 **Open a page** list. In a thread, `Ctrl+Shift+K` copies the current request number. The page has
 two views: **Requests** and **Merge queue**.
 
+## Issues
+
+Open **Issues** from the command palette (**Open issues**) or a new tab's **Open a page** list.
+The page lists the issues of every project whose remote is on a supported tracker, grouped by
+tracker account. Search by title or key, and filter by state and by involvement: everything,
+issues assigned to you, issues you opened, or issues that mention you. **Load more** continues the
+list from where each tracker stopped.
+
+A row shows the issue's state, key, title, assignees, comment count, author and labels. Select a
+row to read it beside the list. The panel shows the description and timeline, with comments,
+labels, assignments and state changes. Where the tracker and your account allow it, you can edit
+the title and description, comment, react, and change labels, assignees and state. An issue
+outside the projects you have open is read-only.
+
+Linked pull requests appear in the issue panel and open beside it. Closing the panel or switching
+issues keeps the list where it was.
+
 ## Requests
 
 Requests lists the pull requests of the projects in scope. Search by title, branch, author,

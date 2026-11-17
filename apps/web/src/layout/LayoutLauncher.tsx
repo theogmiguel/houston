@@ -3,6 +3,7 @@ import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { scopeProjectRef } from "@houston-app/client-runtime/environment";
 import type { ScopedThreadRef } from "@houston-app/contracts";
 import {
+  CircleDotIcon,
   FolderIcon,
   GitCompareIcon,
   GlobeIcon,
@@ -143,6 +144,11 @@ export function LayoutLauncher({
           icon={<PullRequestGlyph.pullRequest aria-hidden className="size-4" />}
           label="Pull requests"
           onSelect={() => showPage("pull-requests")}
+        />
+        <LayoutLauncherRow
+          icon={<CircleDotIcon aria-hidden className="size-4" />}
+          label="Issues"
+          onSelect={() => showPage("issues")}
         />
         <LayoutLauncherRow
           icon={<ListChecksIcon aria-hidden className="size-4" />}

@@ -20,8 +20,8 @@ export type LayoutCompanionKind = "panel" | "terminal";
  */
 export const THREAD_TERMINAL_SURFACE_ID = "thread-terminal";
 
-/** Pull requests and Tasks show as workspace tabs; Settings is a card over the layout, never a tab. */
-export type LayoutPageContent = { kind: "pull-requests" | "tasks"; href?: string };
+/** Pull requests, issues and Tasks show as workspace tabs; Settings is a card over the layout, never a tab. */
+export type LayoutPageContent = { kind: "pull-requests" | "issues" | "tasks"; href?: string };
 
 export type LayoutTabContent =
   | { kind: "chat"; target: ThreadRouteTarget }
@@ -41,7 +41,7 @@ export type LayoutTabContent =
   | { kind: "surface"; threadRef: ScopedThreadRef; surfaceId: string };
 
 export function isLayoutPageContent(content: LayoutTabContent): content is LayoutPageContent {
-  return content.kind === "pull-requests" || content.kind === "tasks";
+  return content.kind === "pull-requests" || content.kind === "issues" || content.kind === "tasks";
 }
 
 export type LayoutLauncherContent = Extract<LayoutTabContent, { kind: "launcher" }>;

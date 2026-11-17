@@ -19,7 +19,10 @@ const LAZY_MODULES: Record<string, ReadonlyArray<string>> = {
     "components/settings/ProviderAuthTerminal.tsx",
     "components/settings/SettingsFontPreviews.tsx",
   ],
-  "components/pullRequest/PullRequestDetailPanel": ["components/pullRequest/PullRequestsPage.tsx"],
+  "components/pullRequest/PullRequestDetailPanel": [
+    "components/pullRequest/PullRequestsPage.tsx",
+    "components/issue/IssuesPage.tsx",
+  ],
 };
 
 const STATIC_IMPORT = /^\s*(?:import|export)\s+(?!type\b)[^;]*?\sfrom\s+["']([^"']+)["']/gm;

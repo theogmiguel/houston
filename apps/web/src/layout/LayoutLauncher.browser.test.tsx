@@ -102,6 +102,7 @@ describe("LayoutLauncher", () => {
       "Browser in Work",
       "Browser in Home",
       "Pull requests",
+      "Issues",
       "Tasks",
     ]);
   });

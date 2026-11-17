@@ -192,6 +192,23 @@ it(
   APP_BOOT_TEST_TIMEOUT_MS,
 );
 
+it(
+  "an issues route opens an Issues tab in the layout instead of replacing the window",
+  async () => {
+    await using app = await bootAt(threadPath("thread-a"));
+    await vi.waitFor(() => {
+      expect(app.screen.container.querySelector("[data-layout-tab-add]")).not.toBeNull();
+    });
+    await app.router.navigate({ to: "/issues", search: {} as never });
+    await vi.waitFor(() => {
+      expect(app.screen.container.querySelector('[data-layout-page-tab="issues"]')).not.toBeNull();
+    });
+    expect(selectFocusedTab(useLayoutStore.getState().layout)?.content.kind).toBe("issues");
+    expect(app.screen.container.querySelector("[data-layout-chat-tab]")).not.toBeNull();
+  },
+  APP_BOOT_TEST_TIMEOUT_MS,
+);
+
 const rowStartingWith = (container: Element, label: string) =>
   Array.from(container.querySelectorAll<HTMLElement>("[data-layout-launcher-row]")).find((row) =>
     row.textContent?.startsWith(label),
