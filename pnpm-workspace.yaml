@@ -276,6 +276,15 @@ overrides:
   # The dbus-next patch drops usocket from the package, but pnpm resolves from the
   # registry manifest, so the edge has to be cut here as well.
   "dbus-next>usocket": "-"
+  # dbus-next's last release still asks for xml2js 0.4, which is open to prototype pollution;
+  # 0.5 fixed it without changing parseString, the only call dbus-next makes.
+  "dbus-next>xml2js": 0.6.2
+  # The math extension renders through KaTeX only in its micromark HTML entry point, which
+  # Houston does not load; keep it on the renderer's patched KaTeX line all the same.
+  "micromark-extension-llm-math>katex": ^0.18.2
+  # electron-builder 26 and @electron/universal still ask for minimatch 9 and 10, which can
+  # be made to expand a pattern exponentially; 11.0.1 fixed it and keeps the same exports.
+  "minimatch@>=7.0.0 <11.0.1": ^11.0.1
   # The SDK always receives the user's Claude executable, so its bundled binaries are unused.
   "@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-darwin-arm64": "-"
   "@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-darwin-x64": "-"
