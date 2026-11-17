@@ -68,6 +68,10 @@ version; another cut or changes to `main` can change the next result.
 - If publication fails, inspect the error, leave the release as a draft, and rerun
   **Promote draft to public** after fixing the cause. Edited notes are read again.
   A public release is never republished by this workflow.
+- If the release became public but the npm launcher step failed, rerun **Promote
+  draft to public** with the same tag and `launcher_only` checked. It skips promotion,
+  refuses a tag that is still a draft, and publishes only the launcher, unless that
+  version is already on npm.
 
 Cuts share a concurrency group. The running cut is not cancelled by a new one;
 GitHub retains only one pending run in that group and replaces an older pending

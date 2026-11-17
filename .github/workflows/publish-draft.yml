@@ -15,6 +15,11 @@ on:
         type: boolean
         required: true
         default: false
+      launcher_only:
+        description: "The release is already public; publish only its npm launcher"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -44,10 +49,35 @@ jobs:
 
       - uses: actions/checkout@v5
 
+      # A release whose promotion succeeded but whose launcher did not publish is
+      # public already. It is never promoted twice: the reviewer asks for the
+      # launcher alone, and that request is refused for anything still a draft.
+      - name: Read the release's state
+        id: state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          LAUNCHER_ONLY: ${{ inputs.launcher_only }}
+        run: |
+          set -euo pipefail
+          draft=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)
+          if [ "$LAUNCHER_ONLY" != "true" ]; then
+            echo "public=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$draft" != "false" ]; then
+            echo "::error::launcher_only is ticked but release $TAG is still a draft (isDraft=$draft); promote it first with launcher_only unticked"
+            exit 1
+          fi
+          echo "public=true" >> "$GITHUB_OUTPUT"
+          echo "::notice::release $TAG is already public; only the npm launcher is published"
+
       - name: Install signature verifier
+        if: steps.state.outputs.public != 'true'
         run: sudo apt-get update && sudo apt-get install -y minisign
 
       - name: Refuse a missing or already published release
+        if: steps.state.outputs.public != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
@@ -56,6 +86,7 @@ jobs:
           python3 scripts/release-draft.py snapshot --repository "$GITHUB_REPOSITORY" --tag "$TAG" --output draft-snapshot.json
 
       - name: Download the draft's assets
+        if: steps.state.outputs.public != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
@@ -74,6 +105,7 @@ jobs:
           ls -lh release-assets
 
       - name: Verify assets, synchronize reviewed notes and publish
+        if: steps.state.outputs.public != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
@@ -112,8 +144,13 @@ jobs:
             echo "::warning::$TAG predates the npm launcher; houston-app was not published"
             exit 0
           fi
+          if [ "$(npm view "houston-app@$version" version 2>/dev/null)" = "$version" ]; then
+            echo "::notice::houston-app@$version is already on npm; nothing to publish"
+            exit 0
+          fi
           node tagged/scripts/build-npm-launcher.mjs --version "$version" --output-dir npm-packages
           dist_tag=latest
           case "$version" in *-*) dist_tag=preview ;; esac
-          npm publish --access public --tag "$dist_tag" npm-packages/houston-app.tgz
+          # The leading ./ matters: npm reads a bare "directory/file" as a GitHub repository.
+          npm publish --access public --tag "$dist_tag" ./npm-packages/houston-app.tgz
           echo "Published houston-app@$version to npm under the $dist_tag tag." >> "$GITHUB_STEP_SUMMARY"

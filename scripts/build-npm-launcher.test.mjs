@@ -237,3 +237,12 @@ NodeTest.test("the server archive deploys the package apps/server declares", () 
   const filter = /"--filter",\s*"([^"]+)",\s*"deploy"/.exec(script)?.[1];
   NodeAssert.equal(filter, name, "pnpm deploy selects no package when the filter is not its name");
 });
+
+NodeTest.test("the launcher is published from a path npm cannot read as a repository", () => {
+  const workflow = NodeFS.readFileSync(
+    NodePath.join(import.meta.dirname, "..", ".github/workflows/publish-draft.yml"),
+    "utf8",
+  );
+  const target = /npm publish [^\n]*?(\S+houston-app\.tgz)/.exec(workflow)?.[1];
+  NodeAssert.equal(target, "./npm-packages/houston-app.tgz");
+});
