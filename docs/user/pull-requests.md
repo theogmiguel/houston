@@ -7,10 +7,10 @@ two views: **Requests** and **Merge queue**.
 ## Issues
 
 Open **Issues** from the command palette (**Open issues**) or a new tab's **Open a page** list.
-The page lists the issues of every project whose remote is on a supported tracker, grouped by
-tracker account. Search by title or key, and filter by state and by involvement: everything,
-issues assigned to you, issues you opened, or issues that mention you. **Load more** continues the
-list from where each tracker stopped.
+The page lists the issues of every project whose remote is on GitHub, GitLab, Azure DevOps or
+Forgejo, grouped by tracker account. Search by title or key, and filter by state and by
+involvement: everything, issues assigned to you, issues you opened, or issues that mention you.
+**Load more** continues the list from where each tracker stopped.
 
 A row shows the issue's state, key, title, assignees, comment count, author and labels. Select a
 row to read it beside the list. The panel shows the description and timeline, with comments,
