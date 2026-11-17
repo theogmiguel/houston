@@ -21,6 +21,12 @@ outside the projects you have open is read-only.
 Linked pull requests appear in the issue panel and open beside it. Closing the panel or switching
 issues keeps the list where it was.
 
+An issue can be kept with a thread the way a pull request can: open it beside the thread (issue
+links in the conversation open there) and use **Link to this thread** in its header; **Unlink**
+undoes it. Linked issues are listed in the thread's details beside its pull requests. Agents link
+the issues they work on with the `link_issue` tool, and can list, read, file and comment on issues
+and change their state through the other issue tools.
+
 ## Requests
 
 Requests lists the pull requests of the projects in scope. Search by title, branch, author,
