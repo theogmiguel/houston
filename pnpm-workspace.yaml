@@ -35,7 +35,7 @@ catalog:
   "@alchemy.run/axiom": 2.0.0-beta.84
   "@alchemy.run/cloudflare": 2.0.0-beta.84
   "@alchemy.run/drizzle": 2.0.0-beta.84
-  "@alchemy.run/planetscale": 2.0.0-beta.84
+  "@alchemy.run/planetscale": 2.0.0-beta.87
   "@clerk/backend": 3.25.0
   "@clerk/clerk-js": 6.40.0
   "@clerk/electron": 0.1.3
