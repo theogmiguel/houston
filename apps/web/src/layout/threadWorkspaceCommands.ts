@@ -80,10 +80,8 @@ export async function claimWorkspaceForNewThread(thread: ThreadRef): Promise<voi
   }
 }
 
-/**
- * Moves a thread, its children and their chat tabs to a workspace. The tabs land in the target's
- * focused pane. Rejects with the server's refusal, which names the workspace.
- */
+/** Moves a thread, its children and their chat tabs to a workspace: into `paneId` when given, else
+ * into a column of their own. Rejects with the server's refusal, which names the workspace. */
 export async function moveThreadToWorkspaceOnServer(input: {
   readonly thread: ThreadRef;
   readonly workspaceId: string;
@@ -93,10 +91,7 @@ export async function moveThreadToWorkspaceOnServer(input: {
   const environmentId = environmentOrThrow("move a thread to a workspace");
   // Edits still waiting in this window go first, so the server moves tabs from the layout it shows.
   await flushLayoutSync();
-  const target = useLayoutStore
-    .getState()
-    .layout.workspaces.find((workspace) => workspace.id === input.workspaceId);
-  const paneId = input.paneId ?? target?.focusedPaneId ?? null;
+  const paneId = input.paneId ?? null;
   const result = await layoutWorkspacesEnvironment.moveThread.run(appAtomRegistry, {
     environmentId,
     input: {

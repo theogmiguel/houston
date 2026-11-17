@@ -419,6 +419,26 @@ describe("movement", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect("rule 12: a thread moved without a pane opens in a column of its own at the end", () =>
+    Effect.gen(function* () {
+      const service = yield* svc;
+      const at = (width: number, ...tabs: HoustonLayoutTabContent[]) => ({
+        ...column(tabs),
+        width,
+      });
+      yield* create(record("a", [column([chat("t")])]));
+      yield* create(record("b", [at(0.5, chat("u")), at(0.5, chat("v"))]));
+      yield* service.moveThread({ environmentId: ENV, threadId: "t", workspaceId: "b" });
+      const b = (yield* service.get("b"))!;
+      assert.deepEqual(
+        b.columns.map((left) => left.panes.flatMap((pane) => pane.tabs).length),
+        [1, 1, 1],
+      );
+      assert.deepEqual(chatIdsIn(b), ["u", "v", "t"]);
+      for (const left of b.columns) assert.closeTo(left.width, 1 / 3, 1e-9);
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("rule 12: tabs land in the pane the caller names, at the index it names", () =>
     Effect.gen(function* () {
       const service = yield* svc;

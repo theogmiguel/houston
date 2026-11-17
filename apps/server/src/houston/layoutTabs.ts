@@ -137,6 +137,40 @@ export const withTabAppended = (
   };
 };
 
+/** Whether `paneId` names a pane of `workspace`. */
+export const hasPane = (workspace: HoustonLayoutWorkspaceRecord, paneId: string | undefined) =>
+  paneId !== undefined && workspace.columns.some((c) => c.panes.some((p) => p.id === paneId));
+
+/** The renderer's narrowest column, as a share of the strip; a new column never squeezes past it. */
+const MIN_COLUMN_WIDTH = 0.2;
+
+/** `workspace` with `tab` in a new column at the end, as wide as the others on average; the strip
+ * shrinks its columns to fit the window, none below the narrowest the renderer draws. */
+export const withTabInNewColumn = (
+  workspace: HoustonLayoutWorkspaceRecord,
+  tab: HoustonLayoutTab,
+  stem: string,
+): HoustonLayoutWorkspaceRecord => {
+  const widths = workspace.columns.map((column) => column.width);
+  const average =
+    widths.length === 0 ? 1 : widths.reduce((sum, width) => sum + width, 0) / widths.length;
+  const added: HoustonLayoutColumn = {
+    id: `column:${stem}`,
+    width: average,
+    panes: [{ id: `pane:${stem}`, size: 1, activeTabId: tab.id, tabs: [tab] }],
+  };
+  const columns = [...workspace.columns, added];
+  const total = columns.reduce((sum, column) => sum + column.width, 0);
+  if (total <= 1) return { ...workspace, columns };
+  return {
+    ...workspace,
+    columns: columns.map((column) => ({
+      ...column,
+      width: Math.max(Math.min(MIN_COLUMN_WIDTH, column.width), column.width / total),
+    })),
+  };
+};
+
 /** Where the tab showing `key` sits: its pane and its index in that pane. */
 export const locateTab = (
   workspace: HoustonLayoutWorkspaceRecord,

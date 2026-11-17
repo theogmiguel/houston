@@ -183,8 +183,8 @@ asks for confirmation.
 ### Dragging
 
 - Drag a row onto a chat composer to attach that thread as context.
-- Drag a thread row onto another workspace group to move its chat tab to that workspace.
-  Drag a workspace heading to reorder workspaces.
+- Drag a thread row onto another workspace group to move its chat tab to that workspace,
+  where it opens in a column of its own. Drag a workspace heading to reorder workspaces.
 - Drag a **Closed** or **On hold** row into the rail to reopen or wake it in its workspace.
 - Drop files from a file manager onto a row to add them to that thread's draft; they go
   out with its next message. Files over an environment's limit, or beyond the attachment
