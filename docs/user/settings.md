@@ -143,7 +143,8 @@ between trusted environments. See [Environments and task sources](connections.md
 
 ## Task sources
 
-Slack intake, per-project GitHub issues and Notion, and the Houston 1 import.
+Slack intake, per-project Notion, the Houston 1 import, and a pointer to issue-backed tasks
+on the Issues page.
 
 ## Sharing & access
 

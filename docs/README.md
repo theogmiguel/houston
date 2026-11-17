@@ -19,7 +19,7 @@ For an installed build, use the documentation at its version tag from the
 - [Context](user/context.md) — where a thread's context use is shown, and what it reads
 - [Tasks](user/tasks.md) — the queue, projects, sources, planning and handback
 - [Settings](user/settings.md) — every settings page and what it controls
-- [Environments and task sources](user/connections.md) — machines, access, Slack, GitHub
+- [Environments and task sources](user/connections.md) — machines, access, Slack, Notion
   issues, Notion and secrets
 - [Secrets](user/secrets.md) — secret providers, references and agent secret requests
 - [Changes](user/changes.md) — the Git surface, branches, worktrees and stashes

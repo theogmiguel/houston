@@ -25,9 +25,6 @@ import { storedSettings, trackerSecretName, unsetSettings, type StoredSettings }
 
 export const StoredSettingsJson = Schema.fromJsonString(
   Schema.Struct({
-    githubRepository: Schema.NullOr(Schema.String),
-    githubLabel: Schema.NullOr(Schema.String),
-    githubAssignedUser: Schema.NullOr(Schema.String),
     notionDataSourceId: Schema.NullOr(Schema.String),
     notionTitlePropertyId: Schema.NullOr(Schema.String),
     notionDescriptionPropertyId: Schema.NullOr(Schema.String),
@@ -149,7 +146,7 @@ export class HoustonTaskSourceStore extends Context.Service<
       projectId: string,
       provider: HoustonTaskSourceProvider,
     ) => Effect.Effect<boolean>;
-    /** Both providers' settings for a project, unset ones included. */
+    /** The provider's settings for a project, unset included. */
     readonly settingsOf: (
       projectId: ProjectId,
     ) => Effect.Effect<ReadonlyArray<HoustonTaskSourceSettings>>;
@@ -199,18 +196,16 @@ const make = Effect.gen(function* () {
     );
 
   const hasCredential = (projectId: string, provider: HoustonTaskSourceProvider) =>
-    provider === "github_issues"
-      ? Effect.succeed(false)
-      : secrets.get(trackerSecretName(projectId, provider)).pipe(
-          Effect.map(Option.isSome),
-          Effect.orElseSucceed(() => false),
-        );
+    secrets.get(trackerSecretName(projectId, provider)).pipe(
+      Effect.map(Option.isSome),
+      Effect.orElseSucceed(() => false),
+    );
 
   const settingsOf = Effect.fn("HoustonTaskSourceStore.settingsOf")(function* (
     projectId: ProjectId,
   ) {
     const result: Array<HoustonTaskSourceSettings> = [];
-    for (const provider of ["github_issues", "notion"] as const) {
+    for (const provider of ["notion"] as const) {
       const row = yield* settingsRow(projectId, provider);
       const poll = yield* pollRow(projectId, provider);
       const base =

@@ -1,10 +1,6 @@
 // Write-back to the tracker. Task transitions enqueue outbox rows inside their own transaction;
-// the drain rebuilds each row from live state and sends it to GitHub or Notion every 20 seconds.
-// @effect-diagnostics nodeBuiltinImport:off - draws the marker namespace from the CSPRNG.
-import * as NodeCrypto from "node:crypto";
-
+// the drain rebuilds each row from live state and sends it to Notion every 20 seconds.
 import type { HoustonTaskSourceProvider } from "@houston-app/contracts/houston/taskSources";
-import * as GitHubRest from "@houston-app/source-control-github/server/GitHubRest";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -17,34 +13,20 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import { HoustonSecrets } from "../secrets/HoustonSecrets.ts";
 import { HoustonTaskTransitions, nowIso, type TaskTransition } from "../tasks/TaskStore.ts";
-import { GitHubRequestTimeout, describeGitHubError } from "./GitHubSource.ts";
 import { NotionClient, writeNotion } from "./NotionClient.ts";
 import {
-  GITHUB_MAX_PAGES,
-  GITHUB_PAGE_SIZE,
   OUTBOX_BATCH,
   POLL_INTERVAL_SECONDS,
   SUPERSEDED,
   TOKEN_MISSING,
   TOKEN_UNAVAILABLE,
-  WRITE_LIMITS,
-  commentMarker,
-  cutChars,
-  endsWithMarker,
   errorText,
-  githubPullRequestUrl,
-  githubRecord,
-  issueNumberOf,
-  neutralise,
-  parseRepository,
   quote,
   retryDelayMillis,
-  statusComment,
   syncStateOf,
   trackerSecretName,
   writebackActions,
   type OutboxEntry,
-  type StoredSettings,
   type WritebackTask,
   type WritebackTransition,
 } from "./rules.ts";
@@ -186,44 +168,9 @@ const makeReads = (sql: SqlClient.SqlClient) => {
   return { task, slices, latestRun, enabled };
 };
 
-/** The marker namespace and key, each 32 random hex digits written once; the namespace is
- * Houston 1's after an import. */
-const makeIdentity = (sql: SqlClient.SqlClient) => {
-  const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.orDie(effect);
-  const read = run(sql<{ readonly namespace: string; readonly marker_key: string | null }>`
-    SELECT namespace, marker_key FROM houston_task_source_identity WHERE id = 1
-  `).pipe(Effect.map(([row]) => row));
-  const namespace = Effect.gen(function* () {
-    const row = yield* read;
-    if (row !== undefined) return row.namespace;
-    const fresh = NodeCrypto.randomBytes(16).toString("hex");
-    yield* run(sql`
-      INSERT INTO houston_task_source_identity (id, namespace) VALUES (1, ${fresh})
-      ON CONFLICT (id) DO NOTHING
-    `);
-    return (yield* read)?.namespace ?? fresh;
-  });
-  const markerKey = Effect.gen(function* () {
-    yield* namespace;
-    const row = yield* read;
-    if (typeof row?.marker_key === "string") return row.marker_key;
-    const fresh = NodeCrypto.randomBytes(16).toString("hex");
-    yield* run(sql`
-      UPDATE houston_task_source_identity SET marker_key = ${fresh}
-      WHERE id = 1 AND marker_key IS NULL
-    `);
-    return (yield* read)?.marker_key ?? fresh;
-  });
-  return { namespace, markerKey };
-};
-
 export class HoustonTaskSourceOutbox extends Context.Service<
   HoustonTaskSourceOutbox,
   {
-    /** The marker namespace: Houston 1's after an import, else 32 random hex digits written once. */
-    readonly namespace: Effect.Effect<string>;
-    /** The key write-back markers are keyed with: 32 random hex digits written once. */
-    readonly markerKey: Effect.Effect<string>;
     /** Enqueues the write-back rows of a write's transitions. */
     readonly recorded: (transitions: ReadonlyArray<TaskTransition>) => Effect.Effect<void>;
     /** Enqueues the status write-back of a task's live status, again if it was already sent. */
@@ -234,13 +181,12 @@ export class HoustonTaskSourceOutbox extends Context.Service<
   }
 >()("@houston-app/cli/houston/taskSources/Outbox/HoustonTaskSourceOutbox") {}
 
-const PULL_REQUEST_ACTIONS = ["pr_reference", "pull_request_url"];
+const PULL_REQUEST_ACTIONS = ["pull_request_url"];
 
 const makeOutbox = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const reads = makeReads(sql);
   const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.orDie(effect);
-  const { namespace, markerKey } = makeIdentity(sql);
 
   /** One row per task, provider, action and revision; `revive` sends a sent row again. */
   const enqueue = Effect.fnUntraced(function* (
@@ -312,8 +258,6 @@ const makeOutbox = Effect.gen(function* () {
       slices: yield* reads.slices(taskId),
       summary: latest.summary,
       prUrl: latest.prUrl,
-      namespace: yield* namespace,
-      markerKey: yield* markerKey,
     });
     return { projectId, entries };
   });
@@ -336,11 +280,7 @@ const makeOutbox = Effect.gen(function* () {
         continue;
       }
       for (const row of found.entries) {
-        yield* enqueue(
-          found.projectId,
-          row,
-          row.action === "delivery_close" ? "superseded" : "never",
-        );
+        yield* enqueue(found.projectId, row, "never");
       }
     }
   });
@@ -355,7 +295,7 @@ const makeOutbox = Effect.gen(function* () {
     }
   });
 
-  return HoustonTaskSourceOutbox.of({ namespace, markerKey, recorded, statusResolved });
+  return HoustonTaskSourceOutbox.of({ recorded, statusResolved });
 });
 
 /** The outbox, and the port the Tasks store hands its transitions to. */
@@ -371,11 +311,6 @@ export const layer = Layer.effect(
 interface Receipt {
   readonly externalId: string | null;
   readonly url: string | null;
-  /** A created issue as a poll would read it: the base of its new link. */
-  readonly remote?: {
-    readonly fields: Readonly<Record<string, string>>;
-    readonly rev: string | null;
-  };
 }
 
 export class HoustonTaskSourceOutboxDrain extends Context.Service<
@@ -392,10 +327,8 @@ const makeDrain = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const store = yield* HoustonTaskSourceStore;
   const secrets = yield* HoustonSecrets;
-  const github = yield* GitHubRest.GitHubRest;
   const notion = yield* NotionClient;
   const reads = makeReads(sql);
-  const identity = makeIdentity(sql);
   const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.orDie(effect);
   const lock = yield* Semaphore.make(1);
 
@@ -474,56 +407,12 @@ const makeDrain = Effect.gen(function* () {
       WHERE id = ${row.id} AND receipt_json IS NULL
     `);
 
-  /** Records a sent row: a created issue or a pull request becomes a link. */
+  /** Records a sent row: a reported pull request becomes a link. */
   const sent = (row: OutboxRow, target: number, live: Json, receipt: Receipt) =>
     store.write(
       Effect.gen(function* () {
         const now = yield* nowIso;
         const touched: Array<number> = [];
-        if (row.action === "create" && receipt.externalId !== null) {
-          const [other] = yield* run(sql<{ readonly task_id: number }>`
-            SELECT task_id FROM houston_task_source_links
-            WHERE project_id = ${row.project_id} AND provider = ${row.provider}
-              AND external_id = ${receipt.externalId} AND source = 'source'
-          `);
-          if (other !== undefined && other.task_id !== target) {
-            return {
-              result: `issue ${receipt.externalId} is already linked to task ${other.task_id}`,
-              touched: [],
-              events: [],
-            };
-          }
-          if (other === undefined) {
-            const local = {
-              title: text(live.title) ?? "",
-              description: text(live.description) ?? "",
-              status: text(live.status) ?? "",
-            };
-            // GitHub's copy (the body carries the marker) is the base, so a later poll that
-            // finds it unchanged records no conflict against the task.
-            const remote = receipt.remote?.fields ?? local;
-            const snapshot = {
-              base: { ...remote },
-              local,
-              remote: { ...remote },
-              conflicts: [],
-              revision: 1,
-              projectExternalId: null,
-              project: null,
-            };
-            yield* run(sql`
-              INSERT INTO houston_task_source_links (
-                task_id, project_id, provider, external_id, source, url, remote_rev, fetched_at,
-                synced_at, snapshot_json, sync_state_json
-              ) VALUES (
-                ${target}, ${row.project_id}, ${row.provider}, ${receipt.externalId}, 'source',
-                ${receipt.url ?? receipt.externalId}, ${receipt.remote?.rev ?? null}, ${now},
-                ${now}, ${encodeSnapshot(snapshot)}, ${encodeSyncState(syncStateOf(snapshot))}
-              )
-            `);
-          }
-          touched.push(target);
-        }
         if (PULL_REQUEST_ACTIONS.includes(row.action)) {
           const url = text(live.url) as string;
           const empty = {
@@ -566,7 +455,6 @@ const makeDrain = Effect.gen(function* () {
   const livePayload = Effect.fnUntraced(function* (
     row: OutboxRow,
     payload: Json,
-    settings: StoredSettings,
   ): Effect.fn.Return<Json | null | string> {
     const task = yield* reads.task(row.task_id);
     if (task === undefined || task.row.project_id !== row.project_id) return null;
@@ -576,26 +464,8 @@ const makeDrain = Effect.gen(function* () {
     const source = target.task.links.find(
       (link) => link.provider === row.provider && link.source === "source",
     );
-    if (row.action === "create") {
-      return source !== undefined
-        ? null
-        : {
-            ...payload,
-            title: target.row.title,
-            description: target.row.description,
-            status: target.row.status,
-          };
-    }
     if (source === undefined) return null;
-    let located: Json = { externalId: source.externalId };
-    if (row.provider === "github_issues") {
-      const repository = settings.githubRepository ?? "";
-      const issueNumber = issueNumberOf(source.externalId, repository);
-      if (issueNumber === null) {
-        return `the source link ${quote(source.externalId)} is not an issue of ${quote(repository)}`;
-      }
-      located = { issueNumber };
-    }
+    const located: Json = { externalId: source.externalId };
     switch (row.action) {
       case "status":
         return {
@@ -604,7 +474,6 @@ const makeDrain = Effect.gen(function* () {
           status: target.row.status,
           revision: target.row.revision,
         };
-      case "summary_comment":
       case "handback_summary": {
         const latest = yield* reads.latestRun(row.task_id);
         return {
@@ -613,7 +482,6 @@ const makeDrain = Effect.gen(function* () {
           ...(latest.summary === null ? {} : { summary: `${task.row.title}: ${latest.summary}` }),
         };
       }
-      case "pr_reference":
       case "pull_request_url": {
         const latest = yield* reads.latestRun(row.task_id);
         const url = latest.prUrl ?? text(payload.url);
@@ -626,188 +494,9 @@ const makeDrain = Effect.gen(function* () {
         );
         return linked ? null : { ...payload, ...located, url };
       }
-      case "delivery_close": {
-        if (target.row.status !== "done" || target.task.domain?.kind !== "delivery") return null;
-        const slices = yield* reads.slices(target.row.id);
-        const allDone = slices.total > 0 && slices.done === slices.total;
-        return allDone || target.task.domain.userStatusOverride ? { ...payload, ...located } : null;
-      }
       default:
         return `unknown write-back action ${quote(row.action)}`;
     }
-  });
-
-  // GitHub writes.
-
-  const githubRest = Effect.fnUntraced(function* (
-    operation: string,
-    input: Omit<GitHubRest.GitHubRestInput, "host" | "operation" | "timeout">,
-  ) {
-    const timeout = yield* GitHubRequestTimeout;
-    const response = yield* github
-      .rest({ host: "github.com", operation: "houstonTaskSourcesWrite", timeout, ...input })
-      .pipe(Effect.mapError((error) => describeGitHubError(operation, error, timeout)));
-    if (response.truncated)
-      return yield* Effect.fail(`${operation} answered more than the response bound`);
-    return response;
-  });
-
-  const githubList = Effect.fnUntraced(function* (operation: string, path: string, page: number) {
-    const response = yield* githubRest(`${operation} page ${page}`, {
-      path: `${path}${path.includes("?") ? "&" : "?"}per_page=${GITHUB_PAGE_SIZE}&page=${page}`,
-    });
-    const parsed = Option.getOrNull(decodeJson(response.body));
-    if (!Array.isArray(parsed)) return yield* Effect.fail(`${operation} did not answer a list`);
-    return parsed as ReadonlyArray<unknown>;
-  });
-
-  /** The login the credential acts as, read once a marked item needs it. */
-  const viewerLogin = Effect.fnUntraced(function* () {
-    const response = yield* githubRest("GitHub authenticated user lookup", { path: "user" });
-    const user = Option.getOrNull(decodeJson(response.body));
-    const login = isObject(user) ? text(user.login) : null;
-    if (login === null)
-      return yield* Effect.fail("GitHub answered the user lookup without a login");
-    return login.toLowerCase();
-  });
-
-  /** The first listed item that ends with `marker` and that the credential's account wrote, read
-   * page by page up to the bound. A marker quoted in copied text, or written by someone else, is
-   * not Houston's. */
-  const findMarked = Effect.fnUntraced(function* (
-    operation: string,
-    path: string,
-    marker: string,
-    issuesOnly: boolean,
-  ) {
-    let login: string | null = null;
-    for (let page = 1; page <= GITHUB_MAX_PAGES; page += 1) {
-      const items = yield* githubList(operation, path, page);
-      for (const item of items) {
-        if (
-          !isObject(item) ||
-          (issuesOnly && item.pull_request !== undefined && item.pull_request !== null) ||
-          !endsWithMarker(text(item.body) ?? "", marker)
-        ) {
-          continue;
-        }
-        login ??= yield* viewerLogin();
-        const author = isObject(item.user) ? text(item.user.login) : null;
-        if (author?.toLowerCase() === login) return item;
-      }
-      if (items.length < GITHUB_PAGE_SIZE) return null;
-    }
-    return yield* Effect.fail(`${operation} exceeded the ${GITHUB_MAX_PAGES}-page bound`);
-  });
-
-  const issueReceipt = (repository: string, issue: Json): Receipt | string => {
-    const record = githubRecord(issue, repository);
-    if (record === null) return "GitHub answered an issue without a number or URL";
-    return {
-      externalId: record.externalId,
-      url: record.url,
-      remote: { fields: record.fields, rev: record.remoteRev },
-    };
-  };
-
-  const writeGitHub = Effect.fnUntraced(function* (
-    settings: StoredSettings,
-    row: OutboxRow,
-    payload: Json,
-  ): Effect.fn.Return<Receipt, string> {
-    const action = row.action;
-    const repository = parseRepository(settings.githubRepository ?? "");
-    if (repository === null) {
-      return yield* Effect.fail(
-        `GitHub repository ${quote(settings.githubRepository ?? "")} is not owner/name`,
-      );
-    }
-    if (action === "create") {
-      const marker = text(payload.marker) ?? "";
-      const found = yield* findMarked(
-        `GitHub delivery issue lookup in ${repository}`,
-        `repos/${repository}/issues?state=all`,
-        marker,
-        true,
-      );
-      const issue =
-        found ??
-        Option.getOrNull(
-          decodeJson(
-            (yield* githubRest(`GitHub delivery issue create in ${repository}`, {
-              method: "POST",
-              path: `repos/${repository}/issues`,
-              body: {
-                title: cutChars(text(payload.title) ?? "", WRITE_LIMITS.issueTitleChars),
-                body: `${neutralise(
-                  cutChars(text(payload.description) ?? "", WRITE_LIMITS.issueBodyChars),
-                )}\n\n${marker}`,
-              },
-            })).body,
-          ),
-        );
-      const receipt = isObject(issue)
-        ? issueReceipt(repository, issue)
-        : "GitHub answered the issue create without an issue";
-      return typeof receipt === "string" ? yield* Effect.fail(receipt) : receipt;
-    }
-    const number = typeof payload.issueNumber === "number" ? payload.issueNumber : null;
-    if (number === null) return yield* Effect.fail("the write-back row names no issue");
-    const issue = {
-      externalId: `${repository}#${number}`,
-      url: `https://github.com/${repository}/issues/${number}`,
-    };
-    if (action === "delivery_close") {
-      yield* githubRest(`GitHub delivery issue close of ${repository}#${number}`, {
-        method: "PATCH",
-        path: `repos/${repository}/issues/${number}`,
-        body: { state: "closed" },
-      });
-      return issue;
-    }
-    // The row's id names the transition, so a retry finds its first post whatever changed since.
-    const marker = commentMarker(
-      yield* identity.markerKey,
-      text(payload.taskIdentity) ?? "",
-      row.id,
-      action,
-    );
-    let body: string;
-    switch (action) {
-      case "status":
-        body = statusComment(text(payload.status) ?? "", text(payload.summary) ?? "", marker);
-        break;
-      case "summary_comment":
-        body = `${neutralise(cutChars(text(payload.summary) ?? "", WRITE_LIMITS.summaryChars))}\n${marker}`;
-        break;
-      case "pr_reference": {
-        const url = githubPullRequestUrl(text(payload.url) ?? "", repository);
-        if (url === null) {
-          return yield* Effect.fail(
-            `pull request reference ${quote(text(payload.url) ?? "")} must be an https://github.com/${repository}/pull/<number> URL`,
-          );
-        }
-        body = `Pull request: ${url}\n${marker}`;
-        break;
-      }
-      default:
-        return yield* Effect.fail(`unsupported GitHub Issues write action ${quote(action)}`);
-    }
-    const comments = `repos/${repository}/issues/${number}/comments`;
-    const posted = yield* findMarked(
-      `GitHub comment lookup on ${repository}#${number}`,
-      comments,
-      marker,
-      false,
-    );
-    if (posted === null) {
-      yield* githubRest(`GitHub comment on ${repository}#${number}`, {
-        method: "POST",
-        path: comments,
-        body: { body },
-      });
-    }
-    return issue;
   });
 
   const withNotion = <A, E>(effect: Effect.Effect<A, E, NotionClient>) =>
@@ -823,31 +512,24 @@ const makeDrain = Effect.gen(function* () {
     if (settingsRow.enabled === 0) return yield* failed(row, target, "tracker is disabled");
     if (!isObject(payload)) return yield* failed(row, target, "the write-back row is not JSON");
     const settings = settingsFromRow(settingsRow);
-    const live = yield* livePayload(row, payload, settings);
+    const live = yield* livePayload(row, payload);
     if (live === null) return yield* superseded(row);
     if (typeof live === "string") return yield* failed(row, target, live);
-    let receipt: Receipt;
-    if (row.provider === "github_issues") {
-      const written = yield* Effect.result(writeGitHub(settings, row, live));
-      if (written._tag === "Failure") return yield* failed(row, target, written.failure);
-      receipt = written.success;
-    } else {
-      const read = yield* Effect.result(secrets.get(trackerSecretName(row.project_id, "notion")));
-      if (read._tag === "Failure") return yield* failed(row, target, TOKEN_UNAVAILABLE);
-      if (Option.isNone(read.success)) return yield* failed(row, target, TOKEN_MISSING);
-      const written = yield* Effect.result(
-        withNotion(
-          writeNotion(read.success.value, settings, row.action, {
-            externalId: text(live.externalId) ?? "",
-            status: text(live.status),
-            url: text(live.url),
-            summary: text(live.summary),
-          }),
-        ),
-      );
-      if (written._tag === "Failure") return yield* failed(row, target, written.failure);
-      receipt = written.success;
-    }
+    const read = yield* Effect.result(secrets.get(trackerSecretName(row.project_id, "notion")));
+    if (read._tag === "Failure") return yield* failed(row, target, TOKEN_UNAVAILABLE);
+    if (Option.isNone(read.success)) return yield* failed(row, target, TOKEN_MISSING);
+    const written = yield* Effect.result(
+      withNotion(
+        writeNotion(read.success.value, settings, row.action, {
+          externalId: text(live.externalId) ?? "",
+          status: text(live.status),
+          url: text(live.url),
+          summary: text(live.summary),
+        }),
+      ),
+    );
+    if (written._tag === "Failure") return yield* failed(row, target, written.failure);
+    const receipt = written.success;
     const refused = yield* sent(row, target, live, receipt);
     if (refused !== null) yield* failed(row, target, refused);
   });

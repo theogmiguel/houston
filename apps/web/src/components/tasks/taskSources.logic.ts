@@ -7,7 +7,6 @@ import type {
 import type { HoustonSlackInfo, HoustonSlackRequest } from "@houston-app/contracts/houston/slack";
 
 export const TASK_SOURCE_PROVIDER_LABELS: Readonly<Record<HoustonTaskSourceProvider, string>> = {
-  github_issues: "GitHub issues",
   notion: "Notion",
 };
 
@@ -109,9 +108,6 @@ export function settingsInputFrom(
 ): HoustonTaskSourceSettingsInput {
   return {
     enabled: settings.enabled,
-    githubRepository: settings.githubRepository,
-    githubLabel: settings.githubLabel,
-    githubAssignedUser: settings.githubAssignedUser,
     notionDataSourceId: settings.notionDataSourceId,
     notionTitlePropertyId: settings.notionTitlePropertyId,
     notionDescriptionPropertyId: settings.notionDescriptionPropertyId,

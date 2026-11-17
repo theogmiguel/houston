@@ -1,12 +1,6 @@
 import type { EnvironmentId } from "@houston-app/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import {
-  CircleDotIcon,
-  ExternalLinkIcon,
-  FileTextIcon,
-  HashIcon,
-  TriangleAlertIcon,
-} from "lucide-react";
+import { ExternalLinkIcon, FileTextIcon, HashIcon, TriangleAlertIcon } from "lucide-react";
 import { AsyncResult } from "effect/reactivity";
 
 import { readLocalApi } from "~/localApi";
@@ -21,7 +15,6 @@ import { TaskSourceConflictResolver } from "./TaskSourceConflictResolver";
 import { slackRequestLabel, slackRequestTone, taskSourceProviderLabel } from "./taskSources.logic";
 
 const PROVIDER_ICONS = {
-  github_issues: CircleDotIcon,
   notion: FileTextIcon,
 } as const;
 

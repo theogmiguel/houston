@@ -5,7 +5,6 @@ import type {
   HoustonTaskSourceProvider,
   HoustonTaskSourceSyncResult,
 } from "@houston-app/contracts/houston/taskSources";
-import * as GitHubRest from "@houston-app/source-control-github/server/GitHubRest";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -17,7 +16,6 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import { HoustonSecrets } from "../secrets/HoustonSecrets.ts";
 import { nowIso } from "../tasks/TaskStore.ts";
-import { EMPTY_GITHUB_CURSOR, pollGitHub } from "./GitHubSource.ts";
 import { NotionClient, pollNotion, retrievePage } from "./NotionClient.ts";
 import {
   NOTION_REFRESH_PER_POLL,
@@ -26,7 +24,6 @@ import {
   TOKEN_UNAVAILABLE,
   errorText,
   trackerSecretName,
-  type GithubCursor,
   type NotionCursor,
   type StoredSettings,
 } from "./rules.ts";
@@ -60,14 +57,11 @@ const make = Effect.gen(function* () {
   const store = yield* HoustonTaskSourceStore;
   const sync = yield* HoustonTaskSourceSync;
   const secrets = yield* HoustonSecrets;
-  const github = yield* GitHubRest.GitHubRest;
   const notion = yield* NotionClient;
   // One poll at a time, so a tick and a Sync now never read the same source twice at once.
   const lock = yield* Semaphore.make(1);
   let loops = 0;
 
-  const withGitHub = <A, E>(effect: Effect.Effect<A, E, GitHubRest.GitHubRest>) =>
-    Effect.provideService(effect, GitHubRest.GitHubRest, github);
   const withNotion = <A, E>(effect: Effect.Effect<A, E, NotionClient>) =>
     Effect.provideService(effect, NotionClient, notion);
 
@@ -122,33 +116,6 @@ const make = Effect.gen(function* () {
 
   const skippedText = (skipped: ReadonlyArray<string>) =>
     skipped.length === 0 ? null : `skipped ${skipped.length} record(s): ${skipped.join("; ")}`;
-
-  const pollGitHubSource = Effect.fnUntraced(function* (
-    projectId: ProjectId,
-    settings: StoredSettings,
-    stored: unknown,
-    refreshAfter: string | null,
-  ) {
-    const cursor = (stored ?? EMPTY_GITHUB_CURSOR) as GithubCursor;
-    const result = yield* Effect.result(withGitHub(pollGitHub(settings, cursor)));
-    if (result._tag === "Failure") {
-      return yield* finish({
-        projectId,
-        provider: "github_issues",
-        cursor,
-        refreshAfter,
-        error: result.failure,
-      });
-    }
-    const skipped = yield* applyAll(projectId, "github_issues", result.success.records);
-    return yield* finish({
-      projectId,
-      provider: "github_issues",
-      cursor: result.success.cursor,
-      refreshAfter,
-      error: skippedText(skipped),
-    });
-  });
 
   /** Refreshes up to three linked pages the poll did not return; a failing page is skipped. */
   const refreshLinked = Effect.fnUntraced(function* (
@@ -229,9 +196,7 @@ const make = Effect.gen(function* () {
     const poll = yield* store.pollRow(projectId, provider);
     const stored = poll === undefined ? null : decodeCursor(poll.cursor_json);
     const refreshAfter = poll?.refresh_after ?? null;
-    return provider === "github_issues"
-      ? yield* pollGitHubSource(projectId, settings, stored, refreshAfter)
-      : yield* pollNotionSource(projectId, settings, stored, refreshAfter);
+    return yield* pollNotionSource(projectId, settings, stored, refreshAfter);
   });
 
   const poll: HoustonTaskSourcePoller["Service"]["poll"] = (projectId, provider) =>

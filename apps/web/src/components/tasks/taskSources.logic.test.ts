@@ -18,9 +18,6 @@ const SETTINGS: HoustonTaskSourceSettings = {
   provider: "notion",
   enabled: true,
   revision: 3,
-  githubRepository: "octo/project",
-  githubLabel: null,
-  githubAssignedUser: null,
   notionDataSourceId: "data-source",
   notionTitlePropertyId: null,
   notionDescriptionPropertyId: null,
@@ -122,7 +119,6 @@ describe("settingsInputFrom", () => {
     expect(input.enabled).toBe(false);
     expect(input.notionDataSourceId).toBe("data-source");
     expect(input.notionStatusMapping?.done).toBe("Done");
-    expect(input.githubLabel).toBeNull();
   });
 });
 

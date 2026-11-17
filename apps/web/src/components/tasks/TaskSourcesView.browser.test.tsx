@@ -87,16 +87,13 @@ function task(overrides: Partial<HoustonTaskSummary> = {}): HoustonTaskSummary {
   };
 }
 
-function settings(provider: "github_issues" | "notion"): HoustonTaskSourceSettings {
+function settings(): HoustonTaskSourceSettings {
   return {
     projectId: "p1" as never,
-    provider,
+    provider: "notion",
     enabled: true,
     revision: 2,
-    githubRepository: provider === "github_issues" ? "theogmiguel/houston" : null,
-    githubLabel: "houston-ready",
-    githubAssignedUser: null,
-    notionDataSourceId: provider === "notion" ? "8f3a-c21e" : null,
+    notionDataSourceId: "8f3a-c21e",
     notionTitlePropertyId: null,
     notionDescriptionPropertyId: null,
     notionStatusPropertyId: null,
@@ -115,9 +112,9 @@ function settings(provider: "github_issues" | "notion"): HoustonTaskSourceSettin
       done: null,
       canceled: null,
     },
-    hasCredential: provider === "notion",
+    hasCredential: true,
     lastSyncAt: "2026-01-01T00:00:00.000Z",
-    lastError: provider === "notion" ? "Token rejected (401)" : null,
+    lastError: "Token rejected (401)",
   };
 }
 
@@ -161,7 +158,7 @@ function conflict(fields: ReadonlyArray<string>): HoustonTaskSourceConflictEntry
 function reset() {
   fixture.calls = [];
   fixture.tasks = [task()];
-  fixture.settings = [settings("github_issues"), settings("notion")];
+  fixture.settings = [settings()];
   fixture.conflicts = [conflict(["title", "status"])];
   fixture.slackInfo = {
     enabled: true,
@@ -205,9 +202,12 @@ it("lists conflicts, source status and Slack requests for one workspace", async 
 
   expect(screen.container.textContent).toContain("HOU-142");
   expect(screen.container.textContent).toContain("Notion · title and status differ");
-  expect(screen.container.textContent).toContain("GitHub issues");
-  expect(screen.container.textContent).toContain("theogmiguel/houston");
+  expect(screen.container.textContent).toContain("Notion");
+  expect(screen.container.textContent).toContain("Data source 8f3a-c21e");
   expect(screen.container.textContent).toContain("Token rejected (401)");
+  expect(screen.container.textContent).toContain(
+    "GitHub issues are on the Issues page; a task can be created from an issue.",
+  );
   expect(screen.container.textContent).toContain("Awaiting approval");
   expect(screen.container.textContent).toContain("@maria in C07A1B2CD");
 });

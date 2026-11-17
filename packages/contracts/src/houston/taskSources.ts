@@ -18,13 +18,10 @@ export const HOUSTON_TASK_SOURCE_LIMITS = {
   tokenBytes: 2_048,
 } as const;
 
-export const HoustonTaskSourceProvider = Schema.Literals(["github_issues", "notion"]);
+export const HoustonTaskSourceProvider = Schema.Literals(["notion"]);
 export type HoustonTaskSourceProvider = typeof HoustonTaskSourceProvider.Type;
 
-export const HOUSTON_TASK_SOURCE_PROVIDERS: ReadonlyArray<HoustonTaskSourceProvider> = [
-  "github_issues",
-  "notion",
-];
+export const HOUSTON_TASK_SOURCE_PROVIDERS: ReadonlyArray<HoustonTaskSourceProvider> = ["notion"];
 
 const Text = Schema.String.check(Schema.isMaxLength(HOUSTON_TASK_SOURCE_LIMITS.fieldBytes));
 const OptionalText = Schema.optionalKey(Schema.NullOr(Text));
@@ -42,9 +39,6 @@ export type HoustonTaskSourceStatusMapping = typeof HoustonTaskSourceStatusMappi
 /** What a client sets; an absent field is stored empty. */
 export const HoustonTaskSourceSettingsInput = Schema.Struct({
   enabled: Schema.Boolean,
-  githubRepository: OptionalText,
-  githubLabel: OptionalText,
-  githubAssignedUser: OptionalText,
   notionDataSourceId: OptionalText,
   notionTitlePropertyId: OptionalText,
   notionDescriptionPropertyId: OptionalText,
@@ -70,9 +64,6 @@ export const HoustonTaskSourceSettings = Schema.Struct({
   enabled: Schema.Boolean,
   /** 0 for a provider never set. */
   revision: NonNegativeInt,
-  githubRepository: Schema.NullOr(Schema.String),
-  githubLabel: Schema.NullOr(Schema.String),
-  githubAssignedUser: Schema.NullOr(Schema.String),
   notionDataSourceId: Schema.NullOr(Schema.String),
   notionTitlePropertyId: Schema.NullOr(Schema.String),
   notionDescriptionPropertyId: Schema.NullOr(Schema.String),
@@ -86,7 +77,7 @@ export const HoustonTaskSourceSettings = Schema.Struct({
   notionProjectDescriptionPropertyId: Schema.NullOr(Schema.String),
   notionPrUrlPropertyId: Schema.NullOr(Schema.String),
   notionStatusMapping: HoustonTaskSourceStatusMapping,
-  /** Whether the secret store holds this project's token; always false for GitHub Issues. */
+  /** Whether the secret store holds this project's token. */
   hasCredential: Schema.Boolean,
   lastSyncAt: Schema.NullOr(IsoDateTime),
   lastError: Schema.NullOr(Schema.String),

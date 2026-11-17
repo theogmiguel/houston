@@ -544,9 +544,6 @@ function SlackSettings({ environmentId }: { environmentId: EnvironmentId }) {
 }
 
 interface ProviderForm {
-  readonly repository: string;
-  readonly label: string;
-  readonly assignedUser: string;
   readonly dataSourceId: string;
   readonly assigneeUserId: string;
   readonly activeStatuses: string;
@@ -564,9 +561,6 @@ interface ProviderForm {
 
 function formOf(settings: HoustonTaskSourceSettings): ProviderForm {
   return {
-    repository: settings.githubRepository ?? "",
-    label: settings.githubLabel ?? "",
-    assignedUser: settings.githubAssignedUser ?? "",
     dataSourceId: settings.notionDataSourceId ?? "",
     assigneeUserId: settings.notionAssigneeUserId ?? "",
     activeStatuses: joinStatusValues(settings.notionActiveStatusValues),
@@ -602,16 +596,12 @@ function ProviderCard({
   const [busy, setBusy] = useState(false);
   const providerLabel = taskSourceProviderLabel(settings.provider);
   const state = taskSourceState(settings);
-  const isGithub = settings.provider === "github_issues";
-  const Icon = isGithub ? CircleDotIcon : FileTextIcon;
+  const Icon = FileTextIcon;
 
   const input = (
     patch: Partial<HoustonTaskSourceSettingsInput> = {},
   ): HoustonTaskSourceSettingsInput => ({
     enabled: settings.enabled,
-    githubRepository: blankToNull(form.repository),
-    githubLabel: blankToNull(form.label),
-    githubAssignedUser: blankToNull(form.assignedUser),
     notionDataSourceId: blankToNull(form.dataSourceId),
     notionTitlePropertyId: blankToNull(form.titlePropertyId),
     notionDescriptionPropertyId: blankToNull(form.descriptionPropertyId),
@@ -731,253 +721,196 @@ function ProviderCard({
         </div>
       </div>
       <SettingsGroup>
-        {isGithub ? (
-          <>
-            <SettingsRow
-              title="Repository"
-              description="owner/repository. Reads issues with your gh sign-in."
-              control={
+        <SettingsRow
+          title="Integration token"
+          description="Stored as a secret on the server. A saved token is never shown again."
+          control={
+            settings.hasCredential ? (
+              <div className="flex items-center gap-2">
+                <Badge variant="success">Saved</Badge>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => setReplacingToken((value) => !value)}
+                >
+                  {replacingToken ? "Cancel" : "Replace…"}
+                </Button>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => void clearNotionToken()}
+                >
+                  Clear
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5">
                 <Input
-                  font="mono"
+                  type="password"
+                  autoComplete="off"
                   className="w-56"
-                  value={form.repository}
-                  placeholder="owner/repository"
-                  aria-label="GitHub repository"
-                  onChange={(event) => setForm({ ...form, repository: event.currentTarget.value })}
+                  value={token}
+                  placeholder="Enter a new token"
+                  aria-label="Notion integration token"
+                  onChange={(event) => setToken(event.currentTarget.value)}
                 />
-              }
-            />
-            <SettingsRow
-              title="Label"
-              description="Issues with this label become tasks."
-              control={
+                <Button
+                  size="xs"
+                  disabled={busy || token.trim().length === 0}
+                  onClick={() => void setNotionToken()}
+                >
+                  Save token
+                </Button>
+              </div>
+            )
+          }
+        />
+        {settings.hasCredential && replacingToken ? (
+          <SettingsRow
+            title="New token"
+            description="Replaces the saved token."
+            control={
+              <div className="flex items-center gap-1.5">
                 <Input
-                  font="mono"
+                  type="password"
+                  autoComplete="off"
                   className="w-56"
-                  value={form.label}
-                  placeholder="houston-ready"
-                  aria-label="GitHub label"
-                  onChange={(event) => setForm({ ...form, label: event.currentTarget.value })}
+                  value={token}
+                  placeholder="Enter a new token"
+                  aria-label="Integration token"
+                  onChange={(event) => setToken(event.currentTarget.value)}
                 />
-              }
+                <Button
+                  size="xs"
+                  disabled={busy || token.trim().length === 0}
+                  onClick={() => void setNotionToken()}
+                >
+                  Save token
+                </Button>
+              </div>
+            }
+          />
+        ) : null}
+        <SettingsRow
+          title="Tasks data source"
+          description="The Notion database Houston reads tasks from."
+          control={
+            <Input
+              font="mono"
+              className="w-56"
+              value={form.dataSourceId}
+              placeholder="8f3a…"
+              aria-label="Notion tasks data source"
+              onChange={(event) => setForm({ ...form, dataSourceId: event.currentTarget.value })}
             />
+          }
+        />
+        <SettingsRow
+          title="Assignee"
+          description="Only pages assigned to this Notion user."
+          control={
+            <Input
+              font="mono"
+              className="w-56"
+              value={form.assigneeUserId}
+              placeholder="b17d…"
+              aria-label="Notion assignee user"
+              onChange={(event) => setForm({ ...form, assigneeUserId: event.currentTarget.value })}
+            />
+          }
+        />
+        <SettingsRow
+          title="Active statuses"
+          description="Comma-separated Notion options Houston treats as open."
+          control={
+            <Input
+              className="w-56"
+              value={form.activeStatuses}
+              placeholder="Todo, In progress"
+              aria-label="Notion active statuses"
+              onChange={(event) => setForm({ ...form, activeStatuses: event.currentTarget.value })}
+            />
+          }
+        />
+        <FoldedSettingsSection
+          id={`notion-status-mapping-${settings.projectId}`}
+          title="Status mapping"
+          summary="Five Houston statuses to Notion options."
+        >
+          {(
+            [
+              ["todo", "Todo"],
+              ["inProgress", "In progress"],
+              ["inReview", "In review"],
+              ["done", "Done"],
+              ["canceled", "Canceled"],
+            ] as const
+          ).map(([key, label]) => (
             <SettingsRow
-              title="Assigned user"
-              description="Issues assigned to this user become tasks, with or without the label."
+              key={key}
+              title={label}
               control={
                 <Input
-                  font="mono"
                   className="w-56"
-                  value={form.assignedUser}
-                  placeholder="theo"
-                  aria-label="GitHub assigned user"
+                  value={form.statusMapping[key] ?? ""}
+                  aria-label={`Notion option for ${label}`}
                   onChange={(event) =>
-                    setForm({ ...form, assignedUser: event.currentTarget.value })
+                    setForm({
+                      ...form,
+                      statusMapping: {
+                        ...form.statusMapping,
+                        [key]: blankToNull(event.currentTarget.value),
+                      },
+                    })
                   }
                 />
               }
             />
-          </>
-        ) : (
-          <>
+          ))}
+        </FoldedSettingsSection>
+        <FoldedSettingsSection
+          id={`notion-property-mapping-${settings.projectId}`}
+          title="Property mapping"
+          summary="The Notion property IDs Houston reads and writes."
+        >
+          {(
+            [
+              ["titlePropertyId", "Title property", form.titlePropertyId],
+              ["descriptionPropertyId", "Description property", form.descriptionPropertyId],
+              ["statusPropertyId", "Status property", form.statusPropertyId],
+              ["assigneePropertyId", "Assignee property", form.assigneePropertyId],
+              [
+                "projectRelationPropertyId",
+                "Project relation property",
+                form.projectRelationPropertyId,
+              ],
+              ["projectsDataSourceId", "Projects data source", form.projectsDataSourceId],
+              ["projectTitlePropertyId", "Project title property", form.projectTitlePropertyId],
+              [
+                "projectDescriptionPropertyId",
+                "Project description property",
+                form.projectDescriptionPropertyId,
+              ],
+              ["prUrlPropertyId", "Pull request URL property", form.prUrlPropertyId],
+            ] as const
+          ).map(([key, label, value]) => (
             <SettingsRow
-              title="Integration token"
-              description="Stored as a secret on the server. A saved token is never shown again."
-              control={
-                settings.hasCredential ? (
-                  <div className="flex items-center gap-2">
-                    <Badge variant="success">Saved</Badge>
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => setReplacingToken((value) => !value)}
-                    >
-                      {replacingToken ? "Cancel" : "Replace…"}
-                    </Button>
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => void clearNotionToken()}
-                    >
-                      Clear
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1.5">
-                    <Input
-                      type="password"
-                      autoComplete="off"
-                      className="w-56"
-                      value={token}
-                      placeholder="Enter a new token"
-                      aria-label="Notion integration token"
-                      onChange={(event) => setToken(event.currentTarget.value)}
-                    />
-                    <Button
-                      size="xs"
-                      disabled={busy || token.trim().length === 0}
-                      onClick={() => void setNotionToken()}
-                    >
-                      Save token
-                    </Button>
-                  </div>
-                )
-              }
-            />
-            {settings.hasCredential && replacingToken ? (
-              <SettingsRow
-                title="New token"
-                description="Replaces the saved token."
-                control={
-                  <div className="flex items-center gap-1.5">
-                    <Input
-                      type="password"
-                      autoComplete="off"
-                      className="w-56"
-                      value={token}
-                      placeholder="Enter a new token"
-                      aria-label="Integration token"
-                      onChange={(event) => setToken(event.currentTarget.value)}
-                    />
-                    <Button
-                      size="xs"
-                      disabled={busy || token.trim().length === 0}
-                      onClick={() => void setNotionToken()}
-                    >
-                      Save token
-                    </Button>
-                  </div>
-                }
-              />
-            ) : null}
-            <SettingsRow
-              title="Tasks data source"
-              description="The Notion database Houston reads tasks from."
+              key={key}
+              title={label}
               control={
                 <Input
                   font="mono"
                   className="w-56"
-                  value={form.dataSourceId}
-                  placeholder="8f3a…"
-                  aria-label="Notion tasks data source"
-                  onChange={(event) =>
-                    setForm({ ...form, dataSourceId: event.currentTarget.value })
-                  }
+                  value={value}
+                  aria-label={label}
+                  onChange={(event) => setForm({ ...form, [key]: event.currentTarget.value })}
                 />
               }
             />
-            <SettingsRow
-              title="Assignee"
-              description="Only pages assigned to this Notion user."
-              control={
-                <Input
-                  font="mono"
-                  className="w-56"
-                  value={form.assigneeUserId}
-                  placeholder="b17d…"
-                  aria-label="Notion assignee user"
-                  onChange={(event) =>
-                    setForm({ ...form, assigneeUserId: event.currentTarget.value })
-                  }
-                />
-              }
-            />
-            <SettingsRow
-              title="Active statuses"
-              description="Comma-separated Notion options Houston treats as open."
-              control={
-                <Input
-                  className="w-56"
-                  value={form.activeStatuses}
-                  placeholder="Todo, In progress"
-                  aria-label="Notion active statuses"
-                  onChange={(event) =>
-                    setForm({ ...form, activeStatuses: event.currentTarget.value })
-                  }
-                />
-              }
-            />
-            <FoldedSettingsSection
-              id={`notion-status-mapping-${settings.projectId}`}
-              title="Status mapping"
-              summary="Five Houston statuses to Notion options."
-            >
-              {(
-                [
-                  ["todo", "Todo"],
-                  ["inProgress", "In progress"],
-                  ["inReview", "In review"],
-                  ["done", "Done"],
-                  ["canceled", "Canceled"],
-                ] as const
-              ).map(([key, label]) => (
-                <SettingsRow
-                  key={key}
-                  title={label}
-                  control={
-                    <Input
-                      className="w-56"
-                      value={form.statusMapping[key] ?? ""}
-                      aria-label={`Notion option for ${label}`}
-                      onChange={(event) =>
-                        setForm({
-                          ...form,
-                          statusMapping: {
-                            ...form.statusMapping,
-                            [key]: blankToNull(event.currentTarget.value),
-                          },
-                        })
-                      }
-                    />
-                  }
-                />
-              ))}
-            </FoldedSettingsSection>
-            <FoldedSettingsSection
-              id={`notion-property-mapping-${settings.projectId}`}
-              title="Property mapping"
-              summary="The Notion property IDs Houston reads and writes."
-            >
-              {(
-                [
-                  ["titlePropertyId", "Title property", form.titlePropertyId],
-                  ["descriptionPropertyId", "Description property", form.descriptionPropertyId],
-                  ["statusPropertyId", "Status property", form.statusPropertyId],
-                  ["assigneePropertyId", "Assignee property", form.assigneePropertyId],
-                  [
-                    "projectRelationPropertyId",
-                    "Project relation property",
-                    form.projectRelationPropertyId,
-                  ],
-                  ["projectsDataSourceId", "Projects data source", form.projectsDataSourceId],
-                  ["projectTitlePropertyId", "Project title property", form.projectTitlePropertyId],
-                  [
-                    "projectDescriptionPropertyId",
-                    "Project description property",
-                    form.projectDescriptionPropertyId,
-                  ],
-                  ["prUrlPropertyId", "Pull request URL property", form.prUrlPropertyId],
-                ] as const
-              ).map(([key, label, value]) => (
-                <SettingsRow
-                  key={key}
-                  title={label}
-                  control={
-                    <Input
-                      font="mono"
-                      className="w-56"
-                      value={value}
-                      aria-label={label}
-                      onChange={(event) => setForm({ ...form, [key]: event.currentTarget.value })}
-                    />
-                  }
-                />
-              ))}
-            </FoldedSettingsSection>
-          </>
-        )}
+          ))}
+        </FoldedSettingsSection>
       </SettingsGroup>
       {settings.lastError === null ? null : (
         <div className="px-1">
@@ -1034,6 +967,7 @@ function ProjectSourcesContent({
   onSelect: (projectId: string) => void;
 }) {
   const typedProjectId = projectId as ProjectId;
+  const navigate = useNavigate();
   const settingsResult = useAtomValue(
     taskSourcesEnvironment.settings({ environmentId, input: { projectId: typedProjectId } }),
   );
@@ -1079,14 +1013,29 @@ function ProjectSourcesContent({
           </AlertDescription>
         </Alert>
       ) : (
-        settingsResult.value.map((settings) => (
-          <ProviderCard
-            key={`${settings.provider}:${settings.revision}`}
-            environmentId={environmentId}
-            settings={settings}
-            projectId={typedProjectId}
-          />
-        ))
+        <>
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5 px-1">
+            <Glyph icon={CircleDotIcon} className="size-3.5" />
+            <Text variant="caption" tone="muted" breakWords>
+              GitHub issues are on the Issues page; a task can be created from an issue.
+            </Text>
+            <Button
+              size="xs"
+              variant="ghost"
+              onClick={() => void navigate({ to: "/issues", search: {} as never })}
+            >
+              Open Issues
+            </Button>
+          </div>
+          {settingsResult.value.map((settings) => (
+            <ProviderCard
+              key={`${settings.provider}:${settings.revision}`}
+              environmentId={environmentId}
+              settings={settings}
+              projectId={typedProjectId}
+            />
+          ))}
+        </>
       )}
     </SettingsSection>
   );

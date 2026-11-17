@@ -46,7 +46,6 @@ import {
 } from "./taskSources.logic";
 
 const PROVIDER_ICONS = {
-  github_issues: CircleDotIcon,
   notion: FileTextIcon,
 } as const;
 
@@ -132,13 +131,9 @@ function ProviderSourceRow({
   const state = taskSourceState(settings);
   const Icon = PROVIDER_ICONS[settings.provider];
   const description =
-    settings.provider === "github_issues"
-      ? settings.githubRepository === null
-        ? "No repository configured."
-        : `${settings.githubRepository}${settings.githubLabel === null ? "" : ` · label ${settings.githubLabel}`}`
-      : settings.notionDataSourceId === null
-        ? "No Notion data source configured."
-        : `Data source ${settings.notionDataSourceId}`;
+    settings.notionDataSourceId === null
+      ? "No Notion data source configured."
+      : `Data source ${settings.notionDataSourceId}`;
 
   const setEnabled = async (enabled: boolean) => {
     if (busy) return;
@@ -203,7 +198,7 @@ function ProviderSourceRow({
           {settings.provider === "notion" &&
           (!settings.hasCredential || settings.lastError !== null)
             ? "Update token"
-            : "Configure"}
+            : "Configure"}{" "}
         </Button>
       </div>
     </div>
@@ -296,6 +291,7 @@ function TaskSourcesContent({
   onOpenTask: (taskKey: string) => void;
 }) {
   const typedProjectId = projectId as ProjectId;
+  const navigate = useNavigate();
   const syncNow = useAtomCommand(taskSourcesEnvironment.syncNow);
   const [syncing, setSyncing] = useState(false);
   const settingsResult = useAtomValue(
@@ -443,6 +439,19 @@ function TaskSourcesContent({
             ))
           )}
         </ListCard>
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5 px-1">
+          <Glyph icon={CircleDotIcon} className="size-3.5" />
+          <Text variant="caption" tone="muted" breakWords>
+            GitHub issues are on the Issues page; a task can be created from an issue.
+          </Text>
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={() => void navigate({ to: "/issues", search: {} as never })}
+          >
+            Open Issues
+          </Button>
+        </div>
       </section>
 
       <section className="flex min-w-0 flex-col gap-1.5">

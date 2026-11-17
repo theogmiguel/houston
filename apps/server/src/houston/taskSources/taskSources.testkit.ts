@@ -1,19 +1,12 @@
 // @effect-diagnostics nodeBuiltinImport:off - serves the loopback Notion fake.
-// Task sources over one database with the real project service, the memory secret store, upstream's
-// GitHub client answered by an in-process fake of api.github.com, and a loopback Notion fake.
+// Task sources over one database with the real project service, the memory secret store and a
+// loopback Notion fake.
 import * as NodeHttp from "node:http";
 
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as SourceControlRateLimit from "@houston-app/source-control-core/server/SourceControlRateLimit";
-import * as GitHubAppSignIn from "@houston-app/source-control-github/server/GitHubAppSignIn";
-import * as GitHubCredentials from "@houston-app/source-control-github/server/GitHubCredentials";
-import * as GitHubQuota from "@houston-app/source-control-github/server/GitHubQuota";
-import * as GitHubRest from "@houston-app/source-control-github/server/GitHubRest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Redacted from "effect/Redacted";
-import { HttpClient, HttpClientResponse } from "effect/http";
 
 import * as ServerConfig from "../../config.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
@@ -37,112 +30,6 @@ import { layerTaskSources } from "./layer.ts";
 import * as NotionClient from "./NotionClient.ts";
 import * as HoustonTaskSourceOutbox from "./Outbox.ts";
 import * as HoustonTaskSourceStore from "./SourceStore.ts";
-
-/** The token GitHubCredentials hands out in tests, as a Settings token would be. */
-export const GITHUB_SETTINGS_TOKEN = "ghp_settings_token_for_tests";
-
-export interface GithubFakeRequest {
-  readonly method: string;
-  readonly url: string;
-  readonly authorization: string | undefined;
-  readonly ifNoneMatch: string | undefined;
-  /** The JSON body of a write. */
-  readonly body: unknown;
-}
-
-/** Answers requests to https://api.github.com in process; `"stall"` never answers. */
-export interface GithubFake {
-  readonly requests: Array<GithubFakeRequest>;
-  respond: (url: URL, request: GithubFakeRequest) => Response | "stall";
-}
-
-export const makeGithubFake = (): GithubFake => ({
-  requests: [],
-  respond: () => new Response("[]", { status: 200, headers: { etag: '"empty"' } }),
-});
-
-const appSignedOut = Layer.mock(GitHubAppSignIn.GitHubAppSignIn)({
-  enabled: false,
-  token: () => Effect.succeedNone,
-  invalidate: () => Effect.void,
-});
-
-/** Upstream's GitHub client with a Settings credential, answered by `fake`. */
-export const layerGitHubFake = (fake: GithubFake) => {
-  const credentials = Layer.succeed(
-    GitHubCredentials.GitHubCredentials,
-    GitHubCredentials.GitHubCredentials.of({
-      get: (host) =>
-        Effect.succeed({
-          host,
-          token: Redacted.make(GITHUB_SETTINGS_TOKEN),
-          source: "settings" as const,
-          fingerprint: `${host}:settings`,
-        }),
-      saved: () => Effect.succeedNone,
-      fingerprint: (host, token) => Effect.succeed(`${host}:${token.length}`),
-      invalidate: () => Effect.void,
-    }),
-  );
-  const http = Layer.succeed(
-    HttpClient.HttpClient,
-    HttpClient.make((request) => {
-      const entry: GithubFakeRequest = {
-        method: request.method,
-        url: request.url,
-        authorization: request.headers.authorization,
-        ifNoneMatch: request.headers["if-none-match"],
-        body:
-          request.body._tag === "Uint8Array"
-            ? (JSON.parse(new TextDecoder().decode(request.body.body)) as unknown)
-            : undefined,
-      };
-      fake.requests.push(entry);
-      const answer = fake.respond(new URL(request.url), entry);
-      return answer === "stall"
-        ? Effect.never
-        : Effect.succeed(HttpClientResponse.fromWeb(request, answer));
-    }),
-  );
-  return GitHubRest.layer.pipe(
-    Layer.provide(Layer.mergeAll(credentials, http, appSignedOut)),
-    Layer.provideMerge(GitHubQuota.layer),
-    Layer.provideMerge(SourceControlRateLimit.layer),
-  );
-};
-
-/** Serves `issues` as GitHub's paged list; a page's ETag changes with its content. */
-export const issuePages = (fake: GithubFake, issues: () => ReadonlyArray<unknown>) => {
-  fake.respond = (url) => {
-    const page = Number(url.searchParams.get("page") ?? "1");
-    const items = issues().slice((page - 1) * 100, page * 100);
-    const etag = `"p${page}-${JSON.stringify(items).length}-${String(
-      items
-        .map((item) => JSON.stringify(item))
-        .join("")
-        .split("")
-        .reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) | 0, 7),
-    )}"`;
-    return new Response(JSON.stringify(items), {
-      status: 200,
-      headers: { "content-type": "application/json", etag },
-    });
-  };
-};
-
-export const githubIssue = (number: number, patch: Record<string, unknown> = {}) => ({
-  number,
-  html_url: `https://github.com/octo-org/project/issues/${number}`,
-  title: `Issue ${number}`,
-  body: `Body ${number}`,
-  state: "open",
-  updated_at: "2026-10-01T00:00:00Z",
-  labels: [{ name: "import" }],
-  assignee: null,
-  assignees: [],
-  milestone: null,
-  ...patch,
-});
 
 // The loopback Notion fake.
 
@@ -216,19 +103,13 @@ export interface SourcesTestOptions {
   readonly baseDir?: string;
   readonly hosted?: boolean;
   readonly secrets?: MemorySecrets;
-  readonly github?: GithubFake;
   /** The loopback Notion fake's origin; requests fail to connect when absent. */
   readonly notionOrigin?: string;
 }
 
 /** Tasks and task sources as the server assembles them, with the test seams. */
 export const layerSources = (options: SourcesTestOptions = {}) =>
-  layerTaskSources(
-    Layer.mergeAll(
-      layerGitHubFake(options.github ?? makeGithubFake()),
-      NotionClient.layerTest(options.notionOrigin ?? "http://127.0.0.1:9"),
-    ),
-  ).pipe(
+  layerTaskSources(NotionClient.layerTest(options.notionOrigin ?? "http://127.0.0.1:9")).pipe(
     Layer.provideMerge(Layer.mergeAll(HoustonTaskService.layer, HoustonTaskV1Import.layer)),
     Layer.provideMerge(layerIssueService()),
     Layer.provideMerge(RuntimeLayer.layerProjectService),

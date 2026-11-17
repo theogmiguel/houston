@@ -138,14 +138,13 @@ import { createProject } from "../tasks/tasks.testkit.ts";
 import { makeMemory } from "../secrets/HoustonSecrets.ts";
 import { HoustonTaskSourceOutboxDrain } from "./Outbox.ts";
 import {
-  githubIssue,
-  issuePages,
+  NOTION_SOURCE,
   layerSources,
-  makeGithubFake,
   makeNotionFake,
   notionPage,
   notionServes,
   notionSettings,
+  pageId,
   type SourcesTestOptions,
 } from "./taskSources.testkit.ts";
 
@@ -652,319 +651,354 @@ describe("the token reaches no file, log, trace or reply", () => {
   });
 });
 
-const GITHUB_SETTINGS = {
-  enabled: true,
-  githubRepository: "octo-org/project",
-  githubLabel: "import",
-};
+const NOTION_SETTINGS = notionSettings();
+
+const configureNotion = (
+  client: { readonly call: (tag: string, payload: object) => Effect.Effect<unknown> },
+  projectId: string,
+) =>
+  Effect.gen(function* () {
+    yield* client.call(WS_METHODS.houstonTaskSourcesCredentialSet, {
+      projectId,
+      provider: "notion",
+      token: Redacted.make(TOKEN),
+    });
+    yield* client.call(WS_METHODS.houstonTaskSourcesSettingsSet, {
+      projectId,
+      provider: "notion",
+      settings: NOTION_SETTINGS,
+    });
+  });
 
 describe("links come back with their sync state", () => {
   it.effect("links come back with their sync state", () => {
-    const github = makeGithubFake();
-    issuePages(github, () => [githubIssue(1)]);
-    return withServer(
-      Effect.gen(function* () {
-        const projectId = yield* createProject("links");
-        const client = yield* makeWsClient(ALL_SCOPES);
-        yield* client.call(WS_METHODS.houstonTaskSourcesSettingsSet, {
-          projectId,
-          provider: "github_issues",
-          settings: GITHUB_SETTINGS,
-        });
-        yield* client.call(WS_METHODS.houstonTaskSourcesSyncNow, { projectId });
-        const sql = yield* SqlClient.SqlClient;
-        yield* sql`
-          INSERT INTO houston_task_source_links (
-            task_id, project_id, provider, external_id, source, url, snapshot_json, sync_state_json
-          ) VALUES (
-            1, ${projectId}, 'github_issues', 'https://github.com/octo-org/project/pull/9',
-            'pull_request', 'https://github.com/octo-org/project/pull/9',
-            '{"base":{},"local":{},"remote":{},"conflicts":[],"revision":1,"projectExternalId":null,"project":null}',
-            '{"state":"current"}'
-          )
-        `;
-        const links = (yield* client.call(WS_METHODS.houstonTaskSourcesLinksGet, {
-          taskId: "HOU-1",
-        })) as ReadonlyArray<HoustonTaskSourceLink>;
-        assert.deepEqual(
-          links.map((link) => [link.provider, link.externalId, link.source, link.syncState.state]),
-          [
+    return Effect.gen(function* () {
+      const notion = yield* makeNotionFake;
+      notionServes(notion, () => [notionPage(1)]);
+      return yield* withServer(
+        Effect.gen(function* () {
+          const projectId = yield* createProject("links");
+          const client = yield* makeWsClient(ALL_SCOPES);
+          yield* configureNotion(client, projectId);
+          yield* client.call(WS_METHODS.houstonTaskSourcesSyncNow, { projectId });
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`
+            INSERT INTO houston_task_source_links (
+              task_id, project_id, provider, external_id, source, url, snapshot_json, sync_state_json
+            ) VALUES (
+              1, ${projectId}, 'notion', 'https://www.notion.so/pull/9',
+              'pull_request', 'https://www.notion.so/pull/9',
+              '{"base":{},"local":{},"remote":{},"conflicts":[],"revision":1,"projectExternalId":null,"project":null}',
+              '{"state":"current"}'
+            )
+          `;
+          const links = (yield* client.call(WS_METHODS.houstonTaskSourcesLinksGet, {
+            taskId: "HOU-1",
+          })) as ReadonlyArray<HoustonTaskSourceLink>;
+          assert.deepEqual(
+            links.map((link) => [
+              link.provider,
+              link.externalId,
+              link.source,
+              link.syncState.state,
+            ]),
             [
-              "github_issues",
-              "https://github.com/octo-org/project/pull/9",
-              "pull_request",
-              "current",
+              ["notion", pageId(1), "source", "current"],
+              ["notion", "https://www.notion.so/pull/9", "pull_request", "current"],
             ],
-            ["github_issues", "octo-org/project#1", "source", "current"],
-          ],
-        );
-        const source = links.find((link) => link.source === "source");
-        assert.strictEqual(source?.url, "https://github.com/octo-org/project/issues/1");
-        assert.isString(source?.fetchedAt);
-        assert.isString(source?.syncedAt);
-        assert.deepEqual(source?.snapshot.conflicts, []);
-        assert.strictEqual(source?.snapshot.remote.title, "Issue 1");
-        const missing = failureOf(
-          yield* client.call(WS_METHODS.houstonTaskSourcesLinksGet, { taskId: "HOU-404" }),
-        );
-        assert.strictEqual(missing?.kind, "not_found");
-        assert.include(missing?.message ?? "", "HOU-404");
-      }),
-      { github },
-    );
+          );
+          const source = links.find((link) => link.source === "source");
+          assert.strictEqual(source?.url, "https://www.notion.so/page-1");
+          assert.isString(source?.fetchedAt);
+          assert.isString(source?.syncedAt);
+          assert.deepEqual(source?.snapshot.conflicts, []);
+          assert.strictEqual(source?.snapshot.remote.title, "Page 1");
+          const missing = failureOf(
+            yield* client.call(WS_METHODS.houstonTaskSourcesLinksGet, { taskId: "HOU-404" }),
+          );
+          assert.strictEqual(missing?.kind, "not_found");
+          assert.include(missing?.message ?? "", "HOU-404");
+        }),
+        { notionOrigin: notion.origin },
+      );
+    }).pipe(Effect.scoped);
   });
 });
 
 describe("conflicts list every task whose link diverged", () => {
   it.effect("conflicts list every task whose link diverged", () => {
-    const github = makeGithubFake();
-    let title = "Issue 1";
-    issuePages(github, () => [githubIssue(1, { title })]);
-    return withServer(
-      Effect.gen(function* () {
-        const projectId = yield* createProject("conflicted");
-        const client = yield* makeWsClient(ALL_SCOPES);
-        const tasks = yield* HoustonTaskService.HoustonTaskService;
-        yield* client.call(WS_METHODS.houstonTaskSourcesSettingsSet, {
-          projectId,
-          provider: "github_issues",
-          settings: GITHUB_SETTINGS,
+    return Effect.gen(function* () {
+      const notion = yield* makeNotionFake;
+      let title = "Page 1";
+      const page = () =>
+        notionPage(1, {
+          properties: {
+            ...notionPage(1).properties,
+            Name: { id: "title", type: "title", title: [{ plain_text: title }] },
+          },
         });
-        yield* client.call(WS_METHODS.houstonTaskSourcesSyncNow, { projectId });
-        const detail = yield* tasks.get({ id: "HOU-1" });
-        yield* tasks.save({
-          id: "HOU-1",
-          expectedRevision: detail.task.revision,
-          patch: { title: "Local" },
-        });
-        title = "Remote";
-        yield* client.call(WS_METHODS.houstonTaskSourcesSyncNow, { projectId });
-        const entries = (yield* client.call(WS_METHODS.houstonTaskSourcesConflictsList, {
-          projectId,
-        })) as ReadonlyArray<HoustonTaskSourceConflictEntry>;
-        assert.lengthOf(entries, 1);
-        assert.strictEqual(entries[0]?.taskKey, "HOU-1");
-        assert.strictEqual(entries[0]?.taskTitle, "Local");
-        assert.strictEqual(entries[0]?.link.provider, "github_issues");
-        assert.deepEqual(
-          entries[0]?.link.snapshot.conflicts.map((conflict) => conflict.field),
-          ["title"],
-        );
-        const all = (yield* client.call(
-          WS_METHODS.houstonTaskSourcesConflictsList,
-          {},
-        )) as ReadonlyArray<HoustonTaskSourceConflictEntry>;
-        assert.deepEqual(
-          all.map((entry) => entry.taskKey),
-          ["HOU-1"],
-        );
-      }),
-      { github },
-    );
+      notionServes(notion, () => [page()]);
+      return yield* withServer(
+        Effect.gen(function* () {
+          const projectId = yield* createProject("conflicted");
+          const client = yield* makeWsClient(ALL_SCOPES);
+          const tasks = yield* HoustonTaskService.HoustonTaskService;
+          yield* configureNotion(client, projectId);
+          yield* client.call(WS_METHODS.houstonTaskSourcesSyncNow, { projectId });
+          const detail = yield* tasks.get({ id: "HOU-1" });
+          yield* tasks.save({
+            id: "HOU-1",
+            expectedRevision: detail.task.revision,
+            patch: { title: "Local" },
+          });
+          title = "Remote";
+          yield* client.call(WS_METHODS.houstonTaskSourcesSyncNow, { projectId });
+          const entries = (yield* client.call(WS_METHODS.houstonTaskSourcesConflictsList, {
+            projectId,
+          })) as ReadonlyArray<HoustonTaskSourceConflictEntry>;
+          assert.lengthOf(entries, 1);
+          assert.strictEqual(entries[0]?.taskKey, "HOU-1");
+          assert.strictEqual(entries[0]?.taskTitle, "Local");
+          assert.strictEqual(entries[0]?.link.provider, "notion");
+          assert.deepEqual(
+            entries[0]?.link.snapshot.conflicts.map((conflict) => conflict.field),
+            ["title"],
+          );
+          const all = (yield* client.call(
+            WS_METHODS.houstonTaskSourcesConflictsList,
+            {},
+          )) as ReadonlyArray<HoustonTaskSourceConflictEntry>;
+          assert.deepEqual(
+            all.map((entry) => entry.taskKey),
+            ["HOU-1"],
+          );
+        }),
+        { notionOrigin: notion.origin },
+      );
+    }).pipe(Effect.scoped);
   });
 });
 
 describe("subscribe sends settings then each state and link change", () => {
   it.effect("subscribe sends settings then each state and link change", () => {
-    const github = makeGithubFake();
-    let issues = [githubIssue(1), githubIssue(2)];
-    issuePages(github, () => issues);
-    return withServer(
-      Effect.gen(function* () {
-        const projectId = yield* createProject("subscribed");
-        const other = yield* createProject("elsewhere");
-        const client = yield* makeWsClient(ALL_SCOPES);
-        for (const target of [projectId, other]) {
-          yield* client.call(WS_METHODS.houstonTaskSourcesSettingsSet, {
-            projectId: target,
-            provider: "github_issues",
-            settings: GITHUB_SETTINGS,
+    return Effect.gen(function* () {
+      const notion = yield* makeNotionFake;
+      let title = "Page 1";
+      const pages = () => [
+        notionPage(1, {
+          properties: {
+            ...notionPage(1).properties,
+            Name: { id: "title", type: "title", title: [{ plain_text: title }] },
+          },
+        }),
+        notionPage(2),
+      ];
+      notionServes(notion, pages);
+      return yield* withServer(
+        Effect.gen(function* () {
+          const projectId = yield* createProject("subscribed");
+          const other = yield* createProject("elsewhere");
+          const client = yield* makeWsClient(ALL_SCOPES);
+          for (const target of [projectId, other]) yield* configureNotion(client, target);
+          const listener = yield* makeWsClient(ALL_SCOPES);
+          const subscription = yield* listener.send(WS_METHODS.houstonTaskSourcesSubscribe, {
+            projectId,
           });
-        }
-        const listener = yield* makeWsClient(ALL_SCOPES);
-        const subscription = yield* listener.send(WS_METHODS.houstonTaskSourcesSubscribe, {
-          projectId,
-        });
-        const first = (yield* Queue.take(listener.responses)) as HoustonTaskSourceStreamEvent;
-        assert.isTrue("snapshot" in first);
-        if ("snapshot" in first) {
-          assert.deepEqual(
-            first.snapshot.settings.map((entry) => [entry.provider, entry.enabled]),
-            [
-              ["github_issues", true],
-              ["notion", false],
-            ],
-          );
-        }
-        yield* client.call(WS_METHODS.houstonTaskSourcesSyncNow, { projectId });
-        // Another project's poll reaches its own subscribers only.
-        yield* client.call(WS_METHODS.houstonTaskSourcesSyncNow, { projectId: other });
-        issues = [githubIssue(1, { title: "Renamed" }), githubIssue(2)];
-        yield* client.call(WS_METHODS.houstonTaskSourcesSyncNow, { projectId });
-        const events: Array<string> = [];
-        for (let index = 0; index < 5; index += 1) {
-          const event = (yield* Queue.take(listener.responses)) as HoustonTaskSourceStreamEvent;
-          events.push(
-            "links" in event
-              ? `links ${event.links.taskId}`
-              : "state" in event
-                ? `state ${event.state.provider} ${event.state.error}`
-                : "snapshot",
-          );
-        }
-        assert.deepEqual(events, [
-          "links 1",
-          "links 2",
-          "state github_issues null",
-          "links 1",
-          "state github_issues null",
-        ]);
-        assert.strictEqual(yield* Queue.size(listener.responses), 0);
-        yield* listener.interrupt(subscription);
-      }),
-      { github },
-    );
+          const first = (yield* Queue.take(listener.responses)) as HoustonTaskSourceStreamEvent;
+          assert.isTrue("snapshot" in first);
+          if ("snapshot" in first) {
+            assert.deepEqual(
+              first.snapshot.settings.map((entry) => [entry.provider, entry.enabled]),
+              [["notion", true]],
+            );
+          }
+          yield* client.call(WS_METHODS.houstonTaskSourcesSyncNow, { projectId });
+          // Another project's poll reaches its own subscribers only.
+          yield* client.call(WS_METHODS.houstonTaskSourcesSyncNow, { projectId: other });
+          title = "Renamed";
+          yield* client.call(WS_METHODS.houstonTaskSourcesSyncNow, { projectId });
+          const events: Array<string> = [];
+          for (let index = 0; index < 5; index += 1) {
+            const event = (yield* Queue.take(listener.responses)) as HoustonTaskSourceStreamEvent;
+            events.push(
+              "links" in event
+                ? `links ${event.links.taskId}`
+                : "state" in event
+                  ? `state ${event.state.provider} ${event.state.error}`
+                  : "snapshot",
+            );
+          }
+          assert.deepEqual(events, [
+            "links 1",
+            "links 2",
+            "state notion null",
+            "links 1",
+            "state notion null",
+          ]);
+          assert.strictEqual(yield* Queue.size(listener.responses), 0);
+          yield* listener.interrupt(subscription);
+        }),
+        { notionOrigin: notion.origin },
+      );
+    }).pipe(Effect.scoped);
   });
 });
 
 describe("each method requires its declared scope", () => {
   it.effect("each method requires its declared scope", () => {
-    const github = makeGithubFake();
-    let remoteTitle = "Issue 1";
-    issuePages(github, () => [githubIssue(1, { title: remoteTitle })]);
-    return withServer(
-      Effect.gen(function* () {
-        const read = yield* makeWsClient(ALL_SCOPES);
-        const projectId = yield* createProject("scoped");
-        const tasks = yield* HoustonTaskService.HoustonTaskService;
-        const sql = yield* SqlClient.SqlClient;
-        const fingerprint = Effect.all([
-          sql`SELECT * FROM houston_task_source_settings`,
-          sql`SELECT project_id, provider, cursor_json, last_error FROM houston_task_source_poll`,
-          sql`SELECT * FROM houston_task_source_links`,
-          sql`SELECT * FROM houston_task_source_import`,
-          sql`SELECT id, revision, title FROM houston_tasks`,
-        ]).pipe(Effect.map((rows) => JSON.stringify(rows)));
-        const resolvePayload = Effect.gen(function* () {
-          const detail = yield* tasks.get({ id: "HOU-1" });
-          const [link] = yield* sql<{ readonly snapshot_json: string }>`
-            SELECT snapshot_json FROM houston_task_source_links WHERE task_id = 1
-          `;
-          return {
-            taskId: "HOU-1",
-            expectedTaskRevision: detail.task.revision,
-            provider: "github_issues",
-            externalId: "octo-org/project#1",
-            field: "title",
-            expectedLinkRevision: Number(/"revision":(\d+)/.exec(link?.snapshot_json ?? "")?.[1]),
-            resolution: "local",
-          };
-        });
-        const methods: ReadonlyArray<{
-          readonly method: string;
-          readonly scope: AuthEnvironmentScope;
-          readonly payload: () => Effect.Effect<object, never, ServerServices>;
-        }> = [
-          {
-            method: WS_METHODS.houstonTaskSourcesImportV1Status,
-            scope: AuthOrchestrationReadScope,
-            payload: () => Effect.succeed({}),
+    return Effect.gen(function* () {
+      const notion = yield* makeNotionFake;
+      let remoteTitle = "Page 1";
+      notionServes(notion, () => [
+        notionPage(1, {
+          properties: {
+            ...notionPage(1).properties,
+            Name: { id: "title", type: "title", title: [{ plain_text: remoteTitle }] },
           },
-          {
-            method: WS_METHODS.houstonTaskSourcesSettingsGet,
-            scope: AuthOrchestrationReadScope,
-            payload: () => Effect.succeed({ projectId }),
-          },
-          {
-            method: WS_METHODS.houstonTaskSourcesSettingsSet,
-            scope: AuthSettingsWriteScope,
-            payload: () =>
-              Effect.succeed({ projectId, provider: "github_issues", settings: GITHUB_SETTINGS }),
-          },
-          {
-            method: WS_METHODS.houstonTaskSourcesCredentialSet,
-            scope: AuthSettingsWriteScope,
-            payload: () =>
-              Effect.succeed({ projectId, provider: "notion", token: Redacted.make(TOKEN) }),
-          },
-          {
-            method: WS_METHODS.houstonTaskSourcesCredentialClear,
-            scope: AuthSettingsWriteScope,
-            payload: () => Effect.succeed({ projectId, provider: "notion" }),
-          },
-          {
-            method: WS_METHODS.houstonTaskSourcesSyncNow,
-            scope: AuthOrchestrationOperateScope,
-            payload: () => Effect.succeed({ projectId }),
-          },
-          {
-            method: WS_METHODS.houstonTaskSourcesLinksGet,
-            scope: AuthOrchestrationReadScope,
-            payload: () => Effect.succeed({ taskId: "HOU-1" }),
-          },
-          {
-            method: WS_METHODS.houstonTaskSourcesConflictsList,
-            scope: AuthOrchestrationReadScope,
-            payload: () => Effect.succeed({ projectId }),
-          },
-          {
-            method: WS_METHODS.houstonTaskSourcesConflictResolve,
-            scope: AuthOrchestrationOperateScope,
-            payload: () =>
-              Effect.gen(function* () {
-                // A local title edit and a remote rename make the conflict to resolve.
-                const detail = yield* tasks.get({ id: "HOU-1" });
-                yield* tasks.save({
-                  id: "HOU-1",
-                  expectedRevision: detail.task.revision,
-                  patch: { title: "Local" },
-                });
-                remoteTitle = "Remote";
-                yield* read.call(WS_METHODS.houstonTaskSourcesSyncNow, { projectId });
-                return yield* resolvePayload;
-              }).pipe(Effect.orDie),
-          },
-          {
-            method: WS_METHODS.houstonTaskSourcesSubscribe,
-            scope: AuthOrchestrationReadScope,
-            payload: () => Effect.succeed({ projectId }),
-          },
-        ];
-        for (const entry of methods) {
-          const payload = yield* entry.payload();
+        }),
+      ]);
+      return yield* withServer(
+        Effect.gen(function* () {
+          const read = yield* makeWsClient(ALL_SCOPES);
+          const projectId = yield* createProject("scoped");
+          const tasks = yield* HoustonTaskService.HoustonTaskService;
+          const sql = yield* SqlClient.SqlClient;
+          yield* configureNotion(read, projectId);
+          yield* read.call(WS_METHODS.houstonTaskSourcesSyncNow, { projectId });
+          const fingerprint = Effect.all([
+            sql`SELECT * FROM houston_task_source_settings`,
+            sql`SELECT project_id, provider, cursor_json, last_error FROM houston_task_source_poll`,
+            sql`SELECT * FROM houston_task_source_links`,
+            sql`SELECT * FROM houston_task_source_import`,
+            sql`SELECT id, revision, title FROM houston_tasks`,
+          ]).pipe(Effect.map((rows) => JSON.stringify(rows)));
+          const resolvePayload = Effect.gen(function* () {
+            const detail = yield* tasks.get({ id: "HOU-1" });
+            const [link] = yield* sql<{ readonly snapshot_json: string }>`
+              SELECT snapshot_json FROM houston_task_source_links WHERE task_id = 1
+            `;
+            return {
+              taskId: "HOU-1",
+              expectedTaskRevision: detail.task.revision,
+              provider: "notion",
+              externalId: pageId(1),
+              field: "title",
+              expectedLinkRevision: Number(/"revision":(\d+)/.exec(link?.snapshot_json ?? "")?.[1]),
+              resolution: "local",
+            };
+          });
+          const methods: ReadonlyArray<{
+            readonly method: string;
+            readonly scope: AuthEnvironmentScope;
+            readonly payload: () => Effect.Effect<object, never, ServerServices>;
+          }> = [
+            {
+              method: WS_METHODS.houstonTaskSourcesImportV1Status,
+              scope: AuthOrchestrationReadScope,
+              payload: () => Effect.succeed({}),
+            },
+            {
+              method: WS_METHODS.houstonTaskSourcesSettingsGet,
+              scope: AuthOrchestrationReadScope,
+              payload: () => Effect.succeed({ projectId }),
+            },
+            {
+              method: WS_METHODS.houstonTaskSourcesSettingsSet,
+              scope: AuthSettingsWriteScope,
+              payload: () =>
+                Effect.succeed({
+                  projectId,
+                  provider: "notion",
+                  settings: NOTION_SETTINGS,
+                }),
+            },
+            {
+              method: WS_METHODS.houstonTaskSourcesCredentialSet,
+              scope: AuthSettingsWriteScope,
+              payload: () =>
+                Effect.succeed({ projectId, provider: "notion", token: Redacted.make(TOKEN) }),
+            },
+            {
+              method: WS_METHODS.houstonTaskSourcesSyncNow,
+              scope: AuthOrchestrationOperateScope,
+              payload: () => Effect.succeed({ projectId }),
+            },
+            {
+              method: WS_METHODS.houstonTaskSourcesLinksGet,
+              scope: AuthOrchestrationReadScope,
+              payload: () => Effect.succeed({ taskId: "HOU-1" }),
+            },
+            {
+              method: WS_METHODS.houstonTaskSourcesConflictsList,
+              scope: AuthOrchestrationReadScope,
+              payload: () => Effect.succeed({ projectId }),
+            },
+            {
+              method: WS_METHODS.houstonTaskSourcesConflictResolve,
+              scope: AuthOrchestrationOperateScope,
+              payload: () =>
+                Effect.gen(function* () {
+                  // A local title edit and a remote rename make the conflict to resolve.
+                  const detail = yield* tasks.get({ id: "HOU-1" });
+                  yield* tasks.save({
+                    id: "HOU-1",
+                    expectedRevision: detail.task.revision,
+                    patch: { title: "Local" },
+                  });
+                  remoteTitle = "Remote";
+                  yield* read.call(WS_METHODS.houstonTaskSourcesSyncNow, { projectId });
+                  return yield* resolvePayload;
+                }).pipe(Effect.orDie),
+            },
+            {
+              method: WS_METHODS.houstonTaskSourcesSubscribe,
+              scope: AuthOrchestrationReadScope,
+              payload: () => Effect.succeed({ projectId }),
+            },
+            {
+              method: WS_METHODS.houstonTaskSourcesCredentialClear,
+              scope: AuthSettingsWriteScope,
+              payload: () => Effect.succeed({ projectId, provider: "notion" }),
+            },
+          ];
+          for (const entry of methods) {
+            const payload = yield* entry.payload();
+            const before = yield* fingerprint;
+            const without = yield* makeWsClient(
+              ALL_SCOPES.filter((scope) => scope !== entry.scope),
+            );
+            const denied = failureOf(yield* without.call(entry.method, payload));
+            assert.strictEqual(denied?._tag, "EnvironmentAuthorizationError", entry.method);
+            assert.strictEqual(yield* fingerprint, before, `${entry.method} changed state`);
+            const only = yield* makeWsClient([entry.scope]);
+            const id = yield* only.send(entry.method, payload);
+            const allowed = yield* Queue.take(only.responses);
+            assert.isNull(
+              failureOf(allowed),
+              `${entry.method}: ${JSON.stringify(failureOf(allowed))}`,
+            );
+            if (entry.method === WS_METHODS.houstonTaskSourcesSubscribe) yield* only.interrupt(id);
+          }
+          // importV1.run: refused without its scope; with it, it reaches the import (no v1 here).
+          const without = yield* makeWsClient([
+            AuthOrchestrationReadScope,
+            AuthOrchestrationOperateScope,
+          ]);
           const before = yield* fingerprint;
-          const without = yield* makeWsClient(ALL_SCOPES.filter((scope) => scope !== entry.scope));
-          const denied = failureOf(yield* without.call(entry.method, payload));
-          assert.strictEqual(denied?._tag, "EnvironmentAuthorizationError", entry.method);
-          assert.strictEqual(yield* fingerprint, before, `${entry.method} changed state`);
-          const only = yield* makeWsClient([entry.scope]);
-          const id = yield* only.send(entry.method, payload);
-          const allowed = yield* Queue.take(only.responses);
-          assert.isNull(
-            failureOf(allowed),
-            `${entry.method}: ${JSON.stringify(failureOf(allowed))}`,
+          assert.strictEqual(
+            failureOf(yield* without.call(WS_METHODS.houstonTaskSourcesImportV1Run, {}))?._tag,
+            "EnvironmentAuthorizationError",
           );
-          if (entry.method === WS_METHODS.houstonTaskSourcesSubscribe) yield* only.interrupt(id);
-        }
-        // importV1.run: refused without its scope; with it, it reaches the import (no v1 here).
-        const without = yield* makeWsClient([
-          AuthOrchestrationReadScope,
-          AuthOrchestrationOperateScope,
-        ]);
-        const before = yield* fingerprint;
-        assert.strictEqual(
-          failureOf(yield* without.call(WS_METHODS.houstonTaskSourcesImportV1Run, {}))?._tag,
-          "EnvironmentAuthorizationError",
-        );
-        assert.strictEqual(yield* fingerprint, before);
-        const only = yield* makeWsClient([AuthSettingsWriteScope]);
-        assert.strictEqual(
-          failureOf(yield* only.call(WS_METHODS.houstonTaskSourcesImportV1Run, {}))?._tag,
-          "HoustonTaskSourceError",
-        );
-      }),
-      { github },
-    );
+          assert.strictEqual(yield* fingerprint, before);
+          const only = yield* makeWsClient([AuthSettingsWriteScope]);
+          assert.strictEqual(
+            failureOf(yield* only.call(WS_METHODS.houstonTaskSourcesImportV1Run, {}))?._tag,
+            "HoustonTaskSourceError",
+          );
+        }),
+        { notionOrigin: notion.origin },
+      );
+    }).pipe(Effect.scoped);
   });
 });
 
@@ -978,7 +1012,7 @@ describe("an unknown project is refused naming it", () => {
           [WS_METHODS.houstonTaskSourcesSettingsGet, { projectId }],
           [
             WS_METHODS.houstonTaskSourcesSettingsSet,
-            { projectId, provider: "github_issues", settings: { enabled: false } },
+            { projectId, provider: "notion", settings: { enabled: false } },
           ],
           [
             WS_METHODS.houstonTaskSourcesCredentialSet,
@@ -1005,13 +1039,13 @@ describe("sources survive a restart", () => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const dir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-sources-restart-" });
-      const github = makeGithubFake();
-      issuePages(github, () => [githubIssue(1)]);
+      const notion = yield* makeNotionFake;
+      notionServes(notion, () => [notionPage(1)]);
       const options: SourcesTestOptions = {
         databaseFile: NodePath.join(dir, "state.sqlite"),
         baseDir: dir,
         secrets: makeMemory(),
-        github,
+        notionOrigin: notion.origin,
       };
       const read = Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
@@ -1020,37 +1054,30 @@ describe("sources survive a restart", () => {
             sql`SELECT * FROM houston_task_source_settings`,
             sql`SELECT * FROM houston_task_source_poll`,
             sql`SELECT * FROM houston_task_source_links`,
-            sql`SELECT * FROM houston_task_source_identity`,
           ]),
         );
       });
       const before = yield* Effect.gen(function* () {
         const projectId = yield* createProject("restart", "/work/restart");
         const client = yield* makeWsClient(ALL_SCOPES);
-        yield* client.call(WS_METHODS.houstonTaskSourcesSettingsSet, {
-          projectId,
-          provider: "github_issues",
-          settings: GITHUB_SETTINGS,
-        });
+        yield* configureNotion(client, projectId);
         yield* client.call(WS_METHODS.houstonTaskSourcesSyncNow, { projectId });
         // Disabled before the reopen, so the reopened server's loop does not poll it.
         yield* client.call(WS_METHODS.houstonTaskSourcesSettingsSet, {
           projectId,
-          provider: "github_issues",
-          settings: { ...GITHUB_SETTINGS, enabled: false },
+          provider: "notion",
+          settings: { ...NOTION_SETTINGS, enabled: false },
         });
-        const sql = yield* SqlClient.SqlClient;
-        yield* sql`INSERT INTO houston_task_source_identity (id, namespace) VALUES (1, 'feedface')`;
         return yield* read;
       }).pipe(Effect.provide(layerServer(options)));
-      assert.include(before, "octo-org/project#1");
+      assert.include(before, pageId(1));
       yield* Effect.gen(function* () {
         assert.strictEqual(yield* read, before);
         const client = yield* makeWsClient(ALL_SCOPES);
         const settings = (yield* client.call(WS_METHODS.houstonTaskSourcesSettingsGet, {
           projectId: "project-restart",
         })) as ReadonlyArray<HoustonTaskSourceSettings>;
-        assert.strictEqual(settings[0]?.githubRepository, "octo-org/project");
+        assert.strictEqual(settings[0]?.notionDataSourceId, NOTION_SOURCE);
         assert.strictEqual(settings[0]?.revision, 2);
         assert.isString(settings[0]?.lastSyncAt);
         const links = (yield* client.call(WS_METHODS.houstonTaskSourcesLinksGet, {

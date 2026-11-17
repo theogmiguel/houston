@@ -34,7 +34,6 @@ import { HoustonTaskStore, nowIso } from "../tasks/TaskStore.ts";
 import { NotionClient, fetchSchemas } from "./NotionClient.ts";
 import { HoustonTaskSourcePoller } from "./Poller.ts";
 import {
-  checkGithubSettings,
   checkNotionSchema,
   checkNotionSettings,
   refuse,
@@ -43,8 +42,6 @@ import {
 } from "./rules.ts";
 import { HoustonTaskSourceStore, encodeSettings } from "./SourceStore.ts";
 import { HoustonTaskSourceSync } from "./Sync.ts";
-
-const GITHUB_CREDENTIAL = "GitHub Issues uses the GitHub credential in Settings ▸ Source Control";
 
 export class HoustonTaskSourceService extends Context.Service<
   HoustonTaskSourceService,
@@ -113,12 +110,8 @@ const make = Effect.gen(function* () {
     const operation = "houston.taskSources.settings.set";
     yield* requireProject(operation, input.projectId);
     const settings = storedSettings(input.settings);
-    yield* failIf(
-      input.provider === "github_issues"
-        ? checkGithubSettings(operation, settings)
-        : checkNotionSettings(operation, settings),
-    );
-    if (input.provider === "notion" && settings.enabled) {
+    yield* failIf(checkNotionSettings(operation, settings));
+    if (settings.enabled) {
       const read = yield* Effect.result(secrets.get(trackerSecretName(input.projectId, "notion")));
       if (read._tag === "Failure") {
         return yield* refuse("secret_store_unavailable", operation, read.failure.message);
@@ -175,9 +168,6 @@ const make = Effect.gen(function* () {
   )(function* (input) {
     const operation = "houston.taskSources.credential.set";
     yield* requireProject(operation, input.projectId);
-    if (input.provider === "github_issues") {
-      return yield* refuse("unsupported", operation, GITHUB_CREDENTIAL);
-    }
     const token = Redacted.value(input.token).trim();
     if (token.length === 0) {
       return yield* refuse("invalid", operation, "the Notion integration token is empty");
@@ -216,9 +206,6 @@ const make = Effect.gen(function* () {
   )(function* (input) {
     const operation = "houston.taskSources.credential.clear";
     yield* requireProject(operation, input.projectId);
-    if (input.provider === "github_issues") {
-      return yield* refuse("unsupported", operation, GITHUB_CREDENTIAL);
-    }
     yield* secrets
       .remove(trackerSecretName(input.projectId, "notion"))
       .pipe(
@@ -234,7 +221,7 @@ const make = Effect.gen(function* () {
     const operation = "houston.taskSources.syncNow";
     yield* requireProject(operation, input.projectId);
     const results: Array<HoustonTaskSourceSyncResult> = [];
-    for (const provider of ["github_issues", "notion"] as const) {
+    for (const provider of ["notion"] as const) {
       const result = yield* poller.poll(input.projectId, provider);
       if (result !== null) results.push(result);
     }

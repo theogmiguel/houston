@@ -19,21 +19,21 @@ const decodeCredential = Schema.decodeUnknownSync(
 const TOKEN = "ntn_contract_token_5b0c1d";
 
 describe("task source schemas bound their fields and redact the token", () => {
-  it("decodes both providers and refuses slack", () => {
-    expect(decodeProvider("github_issues")._tag).toBe("Success");
+  it("decodes notion and refuses GitHub issues and slack", () => {
     expect(decodeProvider("notion")._tag).toBe("Success");
+    expect(decodeProvider("github_issues")._tag).toBe("Failure");
     expect(decodeProvider("slack")._tag).toBe("Failure");
   });
 
   it("a settings object with a field over its bound fails to decode", () => {
-    const settings = { enabled: true, githubRepository: "octo-org/project", githubLabel: "import" };
-    expect(decodeSet({ projectId: "p", provider: "github_issues", settings })._tag).toBe("Success");
+    const settings = { enabled: true, notionDataSourceId: "0123456789abcdef0123456789abcdef" };
+    expect(decodeSet({ projectId: "p", provider: "notion", settings })._tag).toBe("Success");
     const long = "x".repeat(HOUSTON_TASK_SOURCE_LIMITS.fieldBytes + 1);
     expect(
       decodeSet({
         projectId: "p",
-        provider: "github_issues",
-        settings: { ...settings, githubLabel: long },
+        provider: "notion",
+        settings: { ...settings, notionTitlePropertyId: long },
       })._tag,
     ).toBe("Failure");
     expect(

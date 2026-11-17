@@ -686,12 +686,8 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     Layer.provideMerge(layerThreadIssueService),
     Layer.provideMerge(layerIssueService),
     Layer.provideMerge(layerOrchestrationApplication),
-    // The task source poller reads GitHub through its own client and the token from the secret store.
-    Layer.provideMerge(
-      layerTaskSources(
-        Layer.mergeAll(GitHubRest.layerWithDependencies, HoustonTaskSourceNotion.layer),
-      ),
-    ),
+    // The task source poller reads Notion through its client and the token from the secret store.
+    Layer.provideMerge(layerTaskSources(HoustonTaskSourceNotion.layer)),
     Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
     Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
     // Above the settings the theme service writes when an agent applies a theme.

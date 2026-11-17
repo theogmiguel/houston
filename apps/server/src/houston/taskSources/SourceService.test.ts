@@ -44,8 +44,8 @@ const withSources = <A, E>(
 
 const failure = <A, E>(effect: Effect.Effect<A, E>) => Effect.flip(effect);
 
-describe("settings return one entry per provider with current values", () => {
-  it.effect("settings return one entry per provider with current values", () =>
+describe("settings return the provider with current values", () => {
+  it.effect("settings return the provider with current values", () =>
     withSources(() =>
       Effect.gen(function* () {
         const sources = yield* HoustonTaskSourceService;
@@ -53,15 +53,12 @@ describe("settings return one entry per provider with current values", () => {
         const unset = yield* sources.getSettings({ projectId });
         assert.deepEqual(
           unset.map((entry) => [entry.provider, entry.enabled, entry.revision]),
-          [
-            ["github_issues", false, 0],
-            ["notion", false, 0],
-          ],
+          [["notion", false, 0]],
         );
         assert.isTrue(
           unset.every(
             (entry) =>
-              entry.githubRepository === null &&
+              entry.notionDataSourceId === null &&
               entry.notionActiveStatusValues.length === 0 &&
               !entry.hasCredential &&
               entry.lastSyncAt === null &&
@@ -70,27 +67,25 @@ describe("settings return one entry per provider with current values", () => {
         );
         yield* sources.setSettings({
           projectId,
-          provider: "github_issues",
+          provider: "notion",
           expectedRevision: 0,
-          settings: { enabled: true, githubRepository: "octo-org/project", githubLabel: "import" },
+          settings: { enabled: false, notionDataSourceId: NOTION_SOURCE },
         });
         const sql = yield* SqlClient.SqlClient;
         yield* sql`
           INSERT INTO houston_task_source_poll (project_id, provider, cursor_json, last_sync_at, last_error)
-          VALUES (${projectId}, 'github_issues', '{}', '2026-10-01T00:00:00.000Z', 'boom')
+          VALUES (${projectId}, 'notion', '{}', '2026-10-01T00:00:00.000Z', 'boom')
         `;
-        const [github, notion] = yield* sources.getSettings({ projectId });
-        assert.deepInclude(github, {
-          provider: "github_issues",
-          enabled: true,
+        const [notion] = yield* sources.getSettings({ projectId });
+        assert.deepInclude(notion, {
+          provider: "notion",
+          enabled: false,
           revision: 1,
-          githubRepository: "octo-org/project",
-          githubLabel: "import",
+          notionDataSourceId: NOTION_SOURCE,
           hasCredential: false,
           lastSyncAt: "2026-10-01T00:00:00.000Z",
           lastError: "boom",
         });
-        assert.strictEqual(notion?.revision, 0);
       }),
     ),
   );
@@ -103,14 +98,26 @@ describe("a refused setting stores nothing", () => {
         const sources = yield* HoustonTaskSourceService;
         const projectId = yield* createProject("refused");
         for (const settings of [
-          { enabled: true, githubRepository: "octo-org/project" },
-          { enabled: true, githubRepository: "evil.example/path?token=x", githubLabel: "import" },
-          { enabled: true, githubRepository: "a/b/c", githubLabel: "import" },
+          { enabled: false, notionActiveStatusValues: ["Ready", "  "] },
+          {
+            enabled: false,
+            notionActiveStatusValues: Array.from({ length: 33 }, (_, index) => `state-${index}`),
+          },
+          {
+            enabled: false,
+            notionStatusMapping: {
+              todo: "x".repeat(101),
+              inProgress: null,
+              inReview: null,
+              done: null,
+              canceled: null,
+            },
+          },
         ]) {
           const error = yield* failure(
-            sources.setSettings({ projectId, provider: "github_issues", settings }),
+            sources.setSettings({ projectId, provider: "notion", settings }),
           );
-          assert.strictEqual(error.kind, "invalid");
+          assert.include(["invalid", "limit"], error.kind);
         }
         const sql = yield* SqlClient.SqlClient;
         assert.deepEqual(yield* sql`SELECT * FROM houston_task_source_settings`, []);
@@ -234,32 +241,32 @@ describe("a stale settings revision is refused", () => {
       Effect.gen(function* () {
         const sources = yield* HoustonTaskSourceService;
         const projectId = yield* createProject("stale");
-        const settings = { enabled: false, githubRepository: "octo-org/project" };
+        const settings = { enabled: false, notionDataSourceId: NOTION_SOURCE };
         const first = yield* sources.setSettings({
           projectId,
-          provider: "github_issues",
+          provider: "notion",
           expectedRevision: 0,
           settings,
         });
         assert.strictEqual(first.revision, 1);
         const second = yield* sources.setSettings({
           projectId,
-          provider: "github_issues",
+          provider: "notion",
           expectedRevision: 1,
-          settings: { ...settings, githubLabel: "import" },
+          settings: { ...settings, notionTitlePropertyId: "title" },
         });
         assert.strictEqual(second.revision, 2);
         const stale = yield* failure(
           sources.setSettings({
             projectId,
-            provider: "github_issues",
+            provider: "notion",
             expectedRevision: 1,
-            settings: { ...settings, githubLabel: "other" },
+            settings: { ...settings, notionTitlePropertyId: "other" },
           }),
         );
         assert.deepInclude(stale, { kind: "conflict", expected: 1, actual: 2 });
         const [after] = yield* sources.getSettings({ projectId });
-        assert.strictEqual(after?.githubLabel, "import");
+        assert.strictEqual(after?.notionTitlePropertyId, "title");
         assert.strictEqual(after?.revision, 2);
       }),
     ),
@@ -311,16 +318,6 @@ describe("a notion token goes to the secret store only", () => {
         assert.include(over.message, "2048 bytes");
         assert.include(over.message, "Notion integration token");
         assert.strictEqual(secrets.entries.get(name), "x".repeat(2_048));
-        const github = yield* failure(
-          sources.setCredential({
-            projectId,
-            provider: "github_issues",
-            token: Redacted.make(TOKEN),
-          }),
-        );
-        assert.strictEqual(github.kind, "unsupported");
-        assert.include(github.message, "Settings ▸ Source Control");
-        assert.notInclude(github.message, TOKEN);
         const sql = yield* SqlClient.SqlClient;
         const dump = JSON.stringify([
           yield* sql`SELECT * FROM houston_task_source_settings`,
@@ -355,7 +352,7 @@ describe("an unreachable secret store is refused by name", () => {
         assert.include(refused.message, "org.freedesktop.secrets was not provided");
         assert.notInclude(refused.message, TOKEN);
         assert.strictEqual(secrets.entries.size, 0);
-        const [, notion] = yield* sources.getSettings({ projectId });
+        const [notion] = yield* sources.getSettings({ projectId });
         assert.isFalse(notion?.hasCredential);
         const polled = yield* poller.poll(projectId, "notion");
         assert.strictEqual(polled?.error, TOKEN_UNAVAILABLE);
@@ -385,7 +382,7 @@ describe("clearing the token stops the next poll", () => {
         });
         assert.strictEqual(secrets.entries.size, 0);
         yield* sources.clearCredential({ projectId, provider: "notion" });
-        const [, notion] = yield* sources.getSettings({ projectId });
+        const [notion] = yield* sources.getSettings({ projectId });
         assert.isFalse(notion?.hasCredential);
         fake.requests.length = 0;
         const polled = yield* poller.poll(projectId, "notion");
@@ -415,16 +412,12 @@ describe("deleting a project removes its sources and token", () => {
           });
           yield* sources.setSettings({
             projectId,
-            provider: "github_issues",
-            settings: {
-              enabled: false,
-              githubRepository: "octo-org/project",
-              githubLabel: "import",
-            },
+            provider: "notion",
+            settings: { enabled: false, notionDataSourceId: NOTION_SOURCE },
           });
           yield* sql`
             INSERT INTO houston_task_source_poll (project_id, provider, cursor_json)
-            VALUES (${projectId}, 'github_issues', '{}')
+            VALUES (${projectId}, 'notion', '{}')
           `;
         }
         const tasks = yield* HoustonTaskService.HoustonTaskService;
@@ -433,7 +426,7 @@ describe("deleting a project removes its sources and token", () => {
           INSERT INTO houston_task_source_links (
             task_id, project_id, provider, external_id, source, url, snapshot_json, sync_state_json
           ) VALUES (
-            ${task.id}, ${doomed}, 'github_issues', 'octo-org/project#1', 'source', 'u',
+            ${task.id}, ${doomed}, 'notion', '00000000-0000-0000-0000-000000000001', 'source', 'u',
             '{"base":{},"local":{},"remote":{},"conflicts":[],"revision":1,"projectExternalId":null,"project":null}',
             '{"state":"current"}'
           )

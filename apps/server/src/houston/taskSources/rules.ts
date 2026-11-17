@@ -1,8 +1,5 @@
 // The rules that decide a task source outcome, as pure functions over plain values: settings
-// validation, the GitHub and Notion mappings, the Notion checkpoint and the three-way merge.
-// @effect-diagnostics nodeBuiltinImport:off - keys write-back markers with HMAC-SHA256.
-import * as NodeCrypto from "node:crypto";
-
+// validation, the Notion mapping, the Notion checkpoint and the three-way merge.
 import type { ProjectId } from "@houston-app/contracts";
 import { HoustonTaskStatus } from "@houston-app/contracts/houston/tasks";
 import {
@@ -20,11 +17,8 @@ import {
 import * as Schema from "effect/Schema";
 
 const CONTROL_CHAR = /[\u0000-\u001f\u007f]/;
-const POSITIVE_INTEGER = /^[1-9][0-9]*$/;
 
 export const POLL_INTERVAL_SECONDS = 20;
-export const GITHUB_PAGE_SIZE = 100;
-export const GITHUB_MAX_PAGES = 20;
 export const NOTION_PAGE_SIZE = 100;
 export const NOTION_MAX_PAGES = 5;
 /** Linked Notion pages outside the filter refreshed after each complete poll. */
@@ -34,8 +28,6 @@ export const NOTION_MAX_RESPONSE_BYTES = 1_048_576;
 export const NOTION_MAX_RETRY_AFTER_SECONDS = 30;
 export const RECORD_LIMITS = {
   titleChars: 200,
-  githubBodyChars: 8_000,
-  milestoneDescriptionChars: 4_000,
   notionDescriptionChars: 16_384,
   snapshotBytes: 65_536,
   initiativeKeyChars: 512,
@@ -102,9 +94,6 @@ const blankToNull = (value: string | null | undefined) =>
 
 export const storedSettings = (input: HoustonTaskSourceSettingsInput): StoredSettings => ({
   enabled: input.enabled,
-  githubRepository: blankToNull(input.githubRepository),
-  githubLabel: blankToNull(input.githubLabel),
-  githubAssignedUser: blankToNull(input.githubAssignedUser),
   notionDataSourceId: blankToNull(input.notionDataSourceId),
   notionTitlePropertyId: blankToNull(input.notionTitlePropertyId),
   notionDescriptionPropertyId: blankToNull(input.notionDescriptionPropertyId),
@@ -141,32 +130,6 @@ export const parseRepository = (raw: string): string | null => {
   if (parts.length !== 2) return null;
   const safe = (part: string) => part !== "." && part !== ".." && SAFE_REPOSITORY_PART.test(part);
   return parts.every(safe) ? raw : null;
-};
-
-/** Enabled GitHub settings need a safe `owner/name` and a label or an assigned user. */
-export const checkGithubSettings = (
-  operation: string,
-  settings: StoredSettings,
-): HoustonTaskSourceError | undefined => {
-  if (!settings.enabled) return undefined;
-  const repository = settings.githubRepository ?? "";
-  if (parseRepository(repository) === null) {
-    return refuse(
-      "invalid",
-      operation,
-      `githubRepository ${quote(repository)} is not owner/name (each part ASCII letters, digits, "-", "_" or ".", not "." or "..")`,
-      { field: "githubRepository" },
-    );
-  }
-  if (settings.githubLabel === null && settings.githubAssignedUser === null) {
-    return refuse(
-      "invalid",
-      operation,
-      "githubLabel or githubAssignedUser is required: GitHub Issues imports issues with the label or assigned to the user",
-      { field: "githubLabel" },
-    );
-  }
-  return undefined;
 };
 
 const NOTION_ID =
@@ -479,87 +442,6 @@ export interface RemoteRecord {
   readonly fields: Readonly<Record<string, string>>;
   readonly project: HoustonTaskSourceProjectSnapshot | null;
 }
-
-export const githubMilestoneKey = (repository: string, number: number) =>
-  `github_issues:${repository}:milestone:${number}`;
-
-const logins = (value: unknown): ReadonlyArray<string> =>
-  Array.isArray(value)
-    ? value.flatMap((entry) => {
-        const login = isObject(entry) ? text(entry.login) : text(entry);
-        return login === null ? [] : [login];
-      })
-    : [];
-
-/** An issue matches when it carries the label or is assigned to the user (case-insensitive). */
-export const githubMatches = (issue: unknown, settings: StoredSettings): boolean => {
-  if (!isObject(issue)) return false;
-  const label = settings.githubLabel;
-  const labelled =
-    label !== null &&
-    Array.isArray(issue.labels) &&
-    issue.labels.some((entry) => (isObject(entry) ? text(entry.name) : text(entry)) === label);
-  const user = settings.githubAssignedUser?.toLowerCase() ?? null;
-  const assignees = [
-    ...logins(issue.assignees),
-    ...(isObject(issue.assignee) && text(issue.assignee.login) !== null
-      ? [text(issue.assignee.login) as string]
-      : []),
-  ];
-  const assigned = user !== null && assignees.some((login) => login.toLowerCase() === user);
-  return labelled || assigned;
-};
-
-/** A GitHub issue as a record; null for a pull request or an issue without a number or URL. */
-export const githubRecord = (issue: unknown, repository: string): RemoteRecord | null => {
-  if (!isObject(issue)) return null;
-  if (issue.pull_request !== undefined && issue.pull_request !== null) return null;
-  const number = typeof issue.number === "number" ? issue.number : null;
-  const url = text(issue.html_url);
-  if (number === null || url === null) return null;
-  const milestone = isObject(issue.milestone) ? issue.milestone : null;
-  const milestoneNumber =
-    milestone !== null && typeof milestone.number === "number" ? milestone.number : null;
-  return {
-    externalId: `${repository}#${number}`,
-    url,
-    remoteRev: text(issue.updated_at),
-    fields: {
-      title: cutChars(text(issue.title) ?? "", RECORD_LIMITS.titleChars),
-      description: cutChars(text(issue.body) ?? "", RECORD_LIMITS.githubBodyChars),
-      status: issue.state === "closed" ? "done" : "todo",
-    },
-    project:
-      milestone === null || milestoneNumber === null
-        ? null
-        : {
-            externalId: githubMilestoneKey(repository, milestoneNumber),
-            url: text(milestone.html_url) ?? "",
-            title: cutChars(text(milestone.title) ?? "", RECORD_LIMITS.titleChars),
-            description: cutChars(
-              text(milestone.description) ?? "",
-              RECORD_LIMITS.milestoneDescriptionChars,
-            ),
-            unverified: true,
-          },
-  };
-};
-
-/** The paging state GitHub reads keep: each page's ETag and size, for the filter it read. */
-export interface GithubCursor {
-  readonly repository: string | null;
-  readonly label: string | null;
-  readonly assignedUser: string | null;
-  readonly pages: Readonly<
-    Record<string, { readonly etag: string | null; readonly count: number }>
-  >;
-}
-
-/** Stored ETags only revalidate pages read for the same repository and filter. */
-export const githubCursorFits = (cursor: GithubCursor, settings: StoredSettings) =>
-  cursor.repository === settings.githubRepository &&
-  cursor.label === settings.githubLabel &&
-  cursor.assignedUser === settings.githubAssignedUser;
 
 // Notion records.
 
@@ -1000,10 +882,6 @@ export const errorText = (message: string) => cutChars(message, RECORD_LIMITS.er
 export const OUTBOX_BATCH = 25;
 export const OUTBOX_MAX_DELAY_MS = 3_600_000;
 export const WRITE_LIMITS = {
-  issueTitleChars: 500,
-  issueBodyChars: 7_600,
-  statusSummaryChars: 2_000,
-  summaryChars: 3_500,
   notionSummaryChars: 11_500,
   notionChunkChars: 2_000,
   notionChunks: 6,
@@ -1026,69 +904,6 @@ export const SUPERSEDED = { superseded: true } as const;
 /** 1 second × 2^attempts, at most an hour. */
 export const retryDelayMillis = (attempts: number) =>
   Math.min(1_000 * 2 ** Math.min(attempts, 12), OUTBOX_MAX_DELAY_MS);
-
-export const taskIdentity = (namespace: string, taskId: number) =>
-  `houston-task-${namespace}-${taskId}`;
-
-/** A marker ends with an HMAC of what it names under the installation's marker key, which never
- * leaves the database: what a public marker shows does not let anyone write the next one. */
-const keyedMarker = (kind: string, name: string, key: string) =>
-  `<!-- ${kind}:${name}:${NodeCrypto.createHmac("sha256", key)
-    .update(`${kind}:${name}`)
-    .digest("hex")
-    .slice(0, 32)} -->`;
-
-export const deliveryMarker = (namespace: string, key: string, taskId: number) =>
-  keyedMarker(
-    "houston-delivery",
-    `${taskIdentity(namespace, taskId)}:delivery-${namespace}-${taskId}`,
-    key,
-  );
-
-/** A comment's marker; `transitionId` is the outbox row's id, the same on every retry. */
-export const commentMarker = (
-  key: string,
-  identity: string,
-  transitionId: number,
-  action: string,
-) => keyedMarker("houston-task", `${identity}:${transitionId}:${action}`, key);
-
-/** Whether `body` ends with `marker`, where Houston writes it, rather than merely quoting it. */
-export const endsWithMarker = (body: string, marker: string) => body.trimEnd().endsWith(marker);
-
-const CLOSE_KEYWORDS = /\b(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\b/gi;
-
-/** GitHub closes an issue a comment or body names with these words; they are dropped. */
-export const withoutCloseKeywords = (text: string) => text.replaceAll(CLOSE_KEYWORDS, "");
-
-// `@user`, `@org/team`, `#12` and `owner/repo#12`, not inside a word, an address or inline code.
-const MENTIONS_AND_REFERENCES =
-  /(?<![\w`/.@-])(?:@[A-Za-z0-9][A-Za-z0-9-]*(?:\/[A-Za-z0-9][\w.-]*)?|(?:[A-Za-z0-9][\w.-]*\/[\w.-]+)?#[0-9]+)(?![\w`])/g;
-
-/** Mentions and references wrapped in inline code, so the text neither notifies nor links anything;
- * a close keyword before a wrapped reference closes nothing either. Idempotent. */
-export const withoutLinks = (text: string) =>
-  text.replaceAll(MENTIONS_AND_REFERENCES, (match) => `\`${match}\``);
-
-/** Text copied from a task to GitHub: close keywords dropped, and mentions and references wrapped
- * in inline code, so the copy neither notifies, links nor closes anything. */
-export const neutralise = (text: string) => withoutLinks(withoutCloseKeywords(text));
-
-/** `https://github.com/<repository>/pull/<n>` of the same repository, or null. */
-export const githubPullRequestUrl = (url: string, repository: string): string | null => {
-  const prefix = `https://github.com/${repository}/pull/`;
-  if (!url.startsWith(prefix)) return null;
-  const number = url.slice(prefix.length);
-  return POSITIVE_INTEGER.test(number) ? url : null;
-};
-
-/** The issue number of a GitHub source link `owner/repo#N` in `repository`, or null. */
-export const issueNumberOf = (externalId: string, repository: string): number | null => {
-  const [repo, number] = externalId.split("#");
-  return repo === repository && number !== undefined && POSITIVE_INTEGER.test(number)
-    ? Number(number)
-    : null;
-};
 
 export interface WritebackLink {
   readonly provider: HoustonTaskSourceProvider;
@@ -1126,9 +941,6 @@ export interface WritebackInput {
   /** The latest run summary and pull request of the task. */
   readonly summary: string | null;
   readonly prUrl: string | null;
-  readonly namespace: string;
-  /** The installation's marker key. */
-  readonly markerKey: string;
 }
 
 export interface OutboxEntry {
@@ -1142,9 +954,9 @@ export interface OutboxEntry {
 const sourceLink = (task: WritebackTask, provider: HoustonTaskSourceProvider) =>
   task.links.find((link) => link.provider === provider && link.source === "source");
 
-/** The rows a committed transition enqueues, as Houston 1 decided them; a string refuses it. */
+/** The rows a committed transition enqueues; a string refuses it. */
 export const writebackActions = (input: WritebackInput): ReadonlyArray<OutboxEntry> | string => {
-  const { transition, task, namespace } = input;
+  const { transition, task } = input;
   if (!(WRITEBACK_TRANSITIONS as ReadonlyArray<string>).includes(transition)) {
     return `unknown task transition ${quote(transition)}; expected one of ${WRITEBACK_TRANSITIONS.join(", ")}`;
   }
@@ -1152,77 +964,42 @@ export const writebackActions = (input: WritebackInput): ReadonlyArray<OutboxEnt
   const kind = task.domain.kind;
   const entries: Array<OutboxEntry> = [];
   for (const provider of input.enabled) {
-    // A slice's handback and merge report on its delivery's issue or page.
+    // A slice's handback and merge report on its delivery's page.
     const redirected =
       kind === "slice" && (transition === "handed_back" || transition === "merged");
     const target = redirected ? input.delivery : task;
     if (target === null || target.projectId !== task.projectId || target.domain === null) continue;
     if (redirected && target.domain.kind !== "delivery") continue;
     const source = sourceLink(target, provider);
+    if (source === undefined) continue;
     const entry = (action: string, revision: number, payload: Record<string, unknown>) =>
       entries.push({ taskId: task.id, provider, action, revision, payload });
     const delivered = target.id === task.id ? {} : { deliveryTaskId: target.id };
-    if (
-      (transition === "created" || transition === "updated") &&
-      kind === "delivery" &&
-      task.domain.initiativeId !== null &&
-      source === undefined &&
-      provider === "github_issues"
-    ) {
-      entry("create", task.revision, {
-        marker: deliveryMarker(namespace, input.markerKey, task.id),
-        title: task.title,
-        description: task.description,
-      });
-      continue;
-    }
-    if (source === undefined) continue;
-    const github = provider === "github_issues";
     const status = (revision: number) =>
-      entry(
-        "status",
-        revision,
-        github
-          ? {
-              ...delivered,
-              taskIdentity: taskIdentity(namespace, target.id),
-              status: target.status,
-              revision: target.revision,
-            }
-          : { ...delivered, externalId: source.externalId, status: target.status },
-      );
-    const close = () =>
-      entries.push({
-        taskId: target.id,
-        provider,
-        action: "delivery_close",
-        revision: target.revision,
-        payload: {},
+      entry("status", revision, {
+        ...delivered,
+        externalId: source.externalId,
+        status: target.status,
       });
     const summary = () => {
       const text = `${task.title}: ${input.summary ?? task.description}`;
-      entry(github ? "summary_comment" : "handback_summary", task.revision, {
+      entry("handback_summary", task.revision, {
         ...delivered,
-        taskIdentity: taskIdentity(namespace, task.id),
         summary: text,
         revision: task.revision,
       });
     };
     const pullRequest = () => {
       if (input.prUrl === null) return;
-      entry(github ? "pr_reference" : "pull_request_url", task.revision, {
+      entry("pull_request_url", task.revision, {
         ...delivered,
-        taskIdentity: taskIdentity(namespace, task.id),
         url: input.prUrl,
         revision: task.revision,
       });
     };
-    const overridden = target.status === "done" && target.domain.userStatusOverride;
     switch (transition) {
       case "updated":
-        if (!input.statusChanged) break;
-        status(task.revision);
-        if (github && kind === "delivery" && overridden) close();
+        if (input.statusChanged) status(task.revision);
         break;
       case "handed_back":
         status(task.revision);
@@ -1233,29 +1010,13 @@ export const writebackActions = (input: WritebackInput): ReadonlyArray<OutboxEnt
         summary();
         pullRequest();
         break;
-      case "delivery_rolled_up": {
-        if (kind !== "delivery") break;
-        const allDone = input.slices.total > 0 && input.slices.done === input.slices.total;
-        if (github && (allDone || overridden)) close();
-        else if (!github) status(target.revision);
+      case "delivery_rolled_up":
+        if (kind === "delivery") status(target.revision);
         break;
-      }
     }
   }
-  // The GitHub payloads name the issue; the drain checks it against the live link.
-  return entries.map((entry) => {
-    const target = entry.payload.deliveryTaskId === undefined ? task : input.delivery;
-    const link = target === null ? undefined : sourceLink(target, entry.provider);
-    const number = link?.externalId.split("#")[1];
-    return entry.provider === "github_issues" && number !== undefined
-      ? { ...entry, payload: { ...entry.payload, issueNumber: Number(number) } }
-      : entry;
-  });
+  return entries;
 };
-
-/** A GitHub status comment: the status, an optional summary and the marker. */
-export const statusComment = (status: string, summary: string, marker: string) =>
-  `Task status: ${status}\n${neutralise(cutChars(summary, WRITE_LIMITS.statusSummaryChars))}\n${marker}`;
 
 /** The marker of a Notion handback comment: a hash of the page and the summary. */
 export const notionHandbackMarker = (hash: string) => `houston-handback:${hash.slice(0, 24)}`;

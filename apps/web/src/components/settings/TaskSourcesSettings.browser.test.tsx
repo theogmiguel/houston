@@ -116,15 +116,12 @@ vi.mock("~/state/slack", async () => {
 import { render } from "../../../test/render";
 import { TaskSourcesSettingsPanel } from "./TaskSourcesSettings";
 
-const settings = (provider: "github_issues" | "notion"): HoustonTaskSourceSettings => ({
+const settings = (): HoustonTaskSourceSettings => ({
   projectId: "p1" as never,
-  provider,
+  provider: "notion",
   enabled: true,
   revision: 2,
-  githubRepository: provider === "github_issues" ? "theogmiguel/houston" : null,
-  githubLabel: "houston-ready",
-  githubAssignedUser: "theo",
-  notionDataSourceId: provider === "notion" ? "8f3a-c21e" : null,
+  notionDataSourceId: "8f3a-c21e",
   notionTitlePropertyId: null,
   notionDescriptionPropertyId: null,
   notionStatusPropertyId: null,
@@ -143,7 +140,7 @@ const settings = (provider: "github_issues" | "notion"): HoustonTaskSourceSettin
     done: "Done",
     canceled: null,
   },
-  hasCredential: provider === "notion",
+  hasCredential: true,
   lastSyncAt: "2026-01-01T00:00:00.000Z",
   lastError: null,
 });
@@ -165,7 +162,7 @@ const SLACK_INFO: HoustonSlackInfo = {
 
 function reset(): void {
   fixture.calls = [];
-  fixture.settings = [settings("github_issues"), settings("notion")];
+  fixture.settings = [settings()];
   fixture.conflicts = [];
   fixture.slackInfo = SLACK_INFO;
   fixture.slackRequests = [];
@@ -177,9 +174,11 @@ it("shows the connected Slack workspace and saves its configuration", async () =
 
   expect(screen.container.textContent).toContain("cdv-eng");
   await expect.element(screen.getByLabelText("Channel 1")).toHaveValue("C07A1B2CD");
-  await expect
-    .element(screen.getByLabelText("GitHub repository"))
-    .toHaveValue("theogmiguel/houston");
+  await expect.element(screen.getByLabelText("Notion tasks data source")).toHaveValue("8f3a-c21e");
+  expect(screen.container.textContent).toContain(
+    "GitHub issues are on the Issues page; a task can be created from an issue.",
+  );
+  expect(screen.container.textContent).not.toContain("GitHub repository");
   expect(screen.container.textContent).toContain("Saved");
 
   await screen.getByRole("button", { name: "Save" }).first().click();
