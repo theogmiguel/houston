@@ -1730,6 +1730,48 @@ describe("an issue-backed task starts and plans with its issue", () => {
   );
 
   it.effect(
+    "Claim links the issue-backed task's issue to the claiming thread",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeRunsHarness("issue-claim");
+        yield* runWith(harness, (context) =>
+          Effect.gen(function* () {
+            const first = yield* context.tasks.createFromIssue(issueRef(context.projectId));
+            const started = yield* context.runs.start({ id: first.key, overrideReadiness: true });
+            const threadId = started.run.threadId as ThreadId;
+            const claimed = yield* context.tasks.createFromIssue({
+              ...issueRef(context.projectId),
+              key: "13",
+            });
+            yield* context.tasks.save({
+              id: claimed.key,
+              expectedRevision: claimed.revision,
+              patch: { status: "todo", acceptance: ["it works"] },
+            });
+            yield* context.runs.claim(
+              {
+                threadId,
+                projectId: context.projectId,
+                actor: `agent:${threadId} (claimant)`,
+                provider: CLAUDE.driver,
+              },
+              { id: claimed.key },
+            );
+            yield* context.until(
+              "the claimed task's issue on the thread",
+              context.orchestrator
+                .getThreadShell(threadId)
+                .pipe(
+                  Effect.map((shell) => (shell?.issues ?? []).some((issue) => issue.key === "13")),
+                ),
+            );
+          }),
+        );
+      }),
+    TIMEOUT,
+  );
+
+  it.effect(
     "Plan links the planning thread and quotes the live issue body as untrusted context",
     () =>
       Effect.gen(function* () {

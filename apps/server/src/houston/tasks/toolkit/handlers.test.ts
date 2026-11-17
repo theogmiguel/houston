@@ -27,6 +27,7 @@ import * as Layer from "effect/Layer";
 import { McpSchema, McpServer } from "effect/ai";
 import { HttpBody, HttpClient, HttpRouter } from "effect/http";
 
+import * as IssueService from "../../../issue/IssueService.ts";
 import * as McpHttpServer from "../../../mcp/McpHttpServer.ts";
 import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
 import * as McpSessionRegistry from "../../../mcp/McpSessionRegistry.ts";
@@ -96,7 +97,7 @@ interface ToolResult {
   readonly value: any;
 }
 
-type TaskServices = HoustonTaskService | HoustonTaskRuns;
+type TaskServices = HoustonTaskService | HoustonTaskRuns | IssueService.IssueService;
 
 interface ToolkitContext extends RunsContext {
   readonly otherProjectId: ProjectId;
@@ -1439,6 +1440,65 @@ describe("execute starts a child for a delegating caller only", () => {
             (yield* context.detail(task)).runs.map((run) => run.kind),
             ["implementation"],
             "no denied call started a review",
+          );
+        }),
+      ),
+    TIMEOUT,
+  );
+});
+
+describe("an issue-backed task is created from a URL and linked on claim", () => {
+  const issueUrl = "https://github.com/acme/houston/issues/12";
+
+  it.effect(
+    "houston_task_create with issueUrl makes one issue-backed task and a repeat answers with it",
+    () =>
+      withToolkit("create-from-issue", (context) =>
+        Effect.gen(function* () {
+          const agent = context.caller("agent-a", { projectId: context.projectId });
+          const created = yield* context.call(agent, "houston_task_create", { issueUrl });
+          succeeded(created, "create from issue");
+          assert.strictEqual(created.value.task.issue.key, "12");
+          assert.strictEqual(created.value.task.issue.url, issueUrl);
+          assert.strictEqual(created.value.task.projectId, context.projectId);
+
+          const again = yield* context.call(agent, "houston_task_create", { issueUrl });
+          succeeded(again, "repeat create from issue");
+          assert.strictEqual(again.value.task.key, created.value.task.key);
+
+          const listed = yield* context.call(agent, "houston_task_list", {});
+          const backed = (
+            listed.value.tasks as ReadonlyArray<{ issue: { key: string } | null }>
+          ).filter((task) => task.issue?.key === "12");
+          assert.lengthOf(backed, 1, "one task per issue");
+        }),
+      ),
+    TIMEOUT,
+  );
+
+  it.effect(
+    "create refuses an issueUrl beside other fields, and a create with neither title nor issueUrl",
+    () =>
+      withToolkit("create-from-issue-refusals", (context) =>
+        Effect.gen(function* () {
+          const agent = context.caller("agent-a", { projectId: context.projectId });
+          refused(
+            yield* context.call(agent, "houston_task_create", { issueUrl, title: "Both" }),
+            "issueUrl with a title",
+            "invalid",
+            "issueUrl",
+          );
+          refused(
+            yield* context.call(agent, "houston_task_create", { issueUrl, status: "todo" }),
+            "issueUrl with a status",
+            "invalid",
+            "issueUrl",
+          );
+          refused(
+            yield* context.call(agent, "houston_task_create", {}),
+            "no title or issueUrl",
+            "invalid",
+            "title",
           );
         }),
       ),
