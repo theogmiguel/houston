@@ -76,7 +76,13 @@ export async function loadOrCreateDesktopBootstrapSecret(input: {
     );
   }
 
-  const entry = keychain.entry(bootstrapSecretServiceName(baseDir), KEYCHAIN_PROFILE);
+  // Opening an entry already reaches the platform store, and fails where there is none.
+  let entry: BootstrapSecretKeychainEntry;
+  try {
+    entry = keychain.entry(bootstrapSecretServiceName(baseDir), KEYCHAIN_PROFILE);
+  } catch (error) {
+    return keychainUnavailableWarning(keychainErrorMessage(error), fallbackSecret);
+  }
   let existing: string | null | undefined;
   try {
     existing = await entry.getPassword();

@@ -102,6 +102,24 @@ describe("loadOrCreateDesktopBootstrapSecret", () => {
     }
   });
 
+  it("falls back when the keychain refuses to open an entry", async () => {
+    const keychain: BootstrapSecretKeychain = {
+      entry: () => {
+        throw new Error("Couldn't access platform storage: PermissionDenied");
+      },
+    };
+    const value = await loadOrCreateDesktopBootstrapSecret({
+      baseDir: BASE_DIR,
+      keychain,
+      fallbackSecret: FALLBACK,
+    });
+    assert.strictEqual(value.secret, FALLBACK);
+    assert.isTrue(Option.isSome(value.warning));
+    if (Option.isSome(value.warning)) {
+      assert.include(value.warning.value, "PermissionDenied");
+    }
+  });
+
   it("falls back when no keychain provider is available", async () => {
     const value = await loadOrCreateDesktopBootstrapSecret({
       baseDir: BASE_DIR,

@@ -82,6 +82,20 @@ describe("connection catalog keychain entry", () => {
     assert.isNull(await readConnectionCatalog(store.keychain, BASE_DIR));
   });
 
+  it("reports a keychain that refuses to open an entry as a keychain error", async () => {
+    const keychain: DesktopKeychain = {
+      entry: () => {
+        throw new Error("Couldn't access platform storage: PermissionDenied");
+      },
+    };
+    const error = await readConnectionCatalog(keychain, BASE_DIR).then(
+      () => assert.fail("an unavailable keychain must not read as a catalog"),
+      (cause: unknown) => cause,
+    );
+    assert.instanceOf(error, DesktopConnectionCatalogStoreKeychainError);
+    assert.include(error.message, "PermissionDenied");
+  });
+
   it("refuses an over-cap catalog naming the cap and both sizes", async () => {
     const store = memoryKeychain();
     const catalog = "x".repeat(MAX_CONNECTION_CATALOG_BYTES + 1);
