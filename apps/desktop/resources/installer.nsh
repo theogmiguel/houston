@@ -32,6 +32,12 @@
     DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Houston"
   ${EndIf}
 
+  ; A Tauri install also left these beside the app; nothing here uses them. A
+  ; file still in use stays until the uninstaller removes the directory.
+  Delete "$INSTDIR\houston-core.exe"
+  Delete "$INSTDIR\tr-helper.exe"
+  Delete "$INSTDIR\uninstall.exe"
+
   ; A silent install stays silent unless the caller asked for a relaunch. Any
   ; other install starts the app, as electron-builder's run-after-finish would.
   ${If} ${isForceRun}
