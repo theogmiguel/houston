@@ -77,9 +77,9 @@ type PullRequestsSearchLike = Partial<PullRequestListPreferences> & {
   view?: unknown;
   repository?: string;
   number?: number;
-  selectedProjectId?: ProjectId;
-  selectedHost?: string;
-  selectedEnvironmentId?: EnvironmentId;
+  selectedProjectId?: ProjectId | undefined;
+  selectedHost?: string | undefined;
+  selectedEnvironmentId?: EnvironmentId | undefined;
 };
 
 export function pullRequestsSearchForRestore<S extends PullRequestsSearchLike>(
