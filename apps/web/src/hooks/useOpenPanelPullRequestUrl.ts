@@ -4,7 +4,7 @@ import { EnvironmentId, ProjectId, type ScopedThreadRef } from "@houston-app/con
 import {
   readPullRequestDetailSnapshot,
   resolvePullRequestReferenceHost,
-} from "../components/pullRequest/pullRequestDetail.logic";
+} from "../components/pullRequest/pullRequestDetailSnapshot";
 import { projectChangeRequestUrl } from "@houston-app/client-runtime/change-request-links";
 import { selectActiveRightPanelSurface, useRightPanelStore } from "../rightPanelStore";
 import { useProject } from "../state/entities";

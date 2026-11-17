@@ -1,7 +1,7 @@
 18 apps/web/src/browser/BrowserDeviceToolbar.tsx
 17 apps/web/src/browser/BrowserViewportResizeHandles.tsx
 39 apps/web/src/browser/ServerBrowserSurface.tsx
-38 apps/web/src/components/AddProjectToMachineDialog.tsx
+38 apps/web/src/components/AddProjectToMachineDialogForm.tsx
 3 apps/web/src/components/AnimatedHeight.tsx
 4 apps/web/src/components/AnimatedWidth.tsx
 8 apps/web/src/components/AppRouteModal.tsx
@@ -132,10 +132,11 @@
 33 apps/web/src/components/ChatMarkdown.tsx
 11 apps/web/src/components/ChatView.tsx
 8 apps/web/src/components/CommandBlock.tsx
-12 apps/web/src/components/CommandPalette.tsx
+11 apps/web/src/components/CommandPalette.tsx
 15 apps/web/src/components/CommandPaletteAddProject.tsx
 4 apps/web/src/components/CommandPaletteContent.tsx
 28 apps/web/src/components/CommandPaletteResults.tsx
+1 apps/web/src/components/CommandPaletteShell.tsx
 5 apps/web/src/components/CommandPaletteThemeItems.tsx
 6 apps/web/src/components/ComposerContextLabel.tsx
 29 apps/web/src/components/composerContextPresentation.tsx
@@ -144,7 +145,7 @@
 6 apps/web/src/components/ConnectionStatusDot.tsx
 7 apps/web/src/components/ContextChip.tsx
 17 apps/web/src/components/contextChipParts.tsx
-2 apps/web/src/components/CustomSnoozeDialog.tsx
+2 apps/web/src/components/CustomSnoozeDialogForm.tsx
 12 apps/web/src/components/desktop/SshPasswordPromptDialog.tsx
 7 apps/web/src/components/desktopUpdate.toast.tsx
 2 apps/web/src/components/DesktopWindowControls.tsx

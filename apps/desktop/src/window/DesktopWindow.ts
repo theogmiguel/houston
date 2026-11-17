@@ -1,5 +1,6 @@
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -851,7 +852,11 @@ export const make = Effect.gen(function* () {
       if (persistedSettings.mainWindowMaximized) {
         window.maximize();
       }
-      void runPromise(Effect.andThen(electronWindow.reveal(window), dismissConnectingSplash));
+      void runPromise(
+        Effect.andThen(electronWindow.reveal(window), dismissConnectingSplash).pipe(
+          Effect.ensuring(Deferred.succeed(desktopState.mainWindowRevealed, undefined)),
+        ),
+      );
     });
 
     loadApplication();

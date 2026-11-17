@@ -129,7 +129,6 @@ import {
   PULL_REQUEST_MERGE_METHOD_LABELS,
   checkoutFailureDescription,
   readableFailure,
-  resolvePullRequestReferenceHost,
   resolvePullRequestPrimaryControl,
   allowedPullRequestMergeMethods,
   allowsSinglePullRequestMerge,
@@ -141,6 +140,7 @@ import {
   type PullRequestFinding,
   shouldRefreshPullRequestActivity,
 } from "./pullRequestDetail.logic";
+import { resolvePullRequestReferenceHost } from "./pullRequestDetailSnapshot";
 import { resolvePickableEnvironments } from "./pullRequestProjectAssignment.logic";
 import { PullRequestReadinessCard } from "./PullRequestReadinessCard";
 import { useInlineActionConfirm } from "./useInlineActionConfirm";

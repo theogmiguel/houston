@@ -10,7 +10,6 @@ import * as Schema from "effect/Schema";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import { PASSKEY_CREATE_CHANNEL, PASSKEY_GET_CHANNEL } from "./GuestProtocol.ts";
 import type { PasskeyBackend, PasskeyCeremonyContext } from "./PasskeyBackend.ts";
-import { macPasskeyBackend } from "./PasskeyBackendMac.ts";
 import type { PasskeyCeremonyResult } from "./PasskeyBridge.ts";
 
 const PasskeyPackageMetadata = Schema.Struct({
@@ -109,9 +108,12 @@ const isTrustworthyOrigin = (origin: string) => {
   );
 };
 
-// Chromium already delegates to Windows Hello.
-const backendFor = (platform: NodeJS.Platform): PasskeyBackend | undefined =>
-  platform === "darwin" ? macPasskeyBackend : undefined;
+// Chromium already delegates to Windows Hello. The macOS backend pulls in a public suffix list,
+// so other platforms never load it.
+const backendFor = (platform: NodeJS.Platform): Promise<PasskeyBackend | undefined> =>
+  platform === "darwin"
+    ? import("./PasskeyBackendMac.ts").then((module) => module.macPasskeyBackend)
+    : Promise.resolve(undefined);
 
 const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
@@ -128,7 +130,10 @@ const make = Effect.gen(function* () {
           )
       : undefined;
   const keychainAccessGroup = metadata?.touchIdKeychainAccessGroup;
-  const backend = metadata?.browserPasskeys === true ? backendFor(environment.platform) : undefined;
+  const backend =
+    metadata?.browserPasskeys === true
+      ? yield* Effect.promise(() => backendFor(environment.platform))
+      : undefined;
   const bridgeEnabled = backend !== undefined;
   const sessionsWithHandlers = new WeakSet<Session>();
 
