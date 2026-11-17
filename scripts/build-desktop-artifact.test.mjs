@@ -165,6 +165,17 @@ NodeTest.test("the NSIS hook relaunches Houston with the updater's arguments", (
   NodeAssert.match(hook, /!ifdef RUN_AFTER_FINISH\n {2}!undef RUN_AFTER_FINISH/);
 });
 
+NodeTest.test("the NSIS hook removes the files only the Tauri install placed", () => {
+  const hook = NodeFS.readFileSync(
+    NodePath.join(REPO_ROOT, "apps/desktop/resources/installer.nsh"),
+    "utf8",
+  );
+  const install = /!macro customInstall\n([\s\S]*?)!macroend/.exec(hook)?.[1] ?? "";
+  for (const file of ["houston-core.exe", "tr-helper.exe", "uninstall.exe"]) {
+    NodeAssert.equal(install.includes(`Delete "$INSTDIR\\${file}"`), true, file);
+  }
+});
+
 NodeTest.test("the NSIS hook removes the Tauri uninstall registry entry", () => {
   const hook = NodeFS.readFileSync(
     NodePath.join(REPO_ROOT, "apps/desktop/resources/installer.nsh"),
