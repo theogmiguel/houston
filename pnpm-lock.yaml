@@ -246,7 +246,7 @@ overrides:
   micromark-extension-llm-math: 3.1.0
   micromark: 4.0.2
   mdast-util-to-hast: 13.2.1
-  alchemy: 2.0.0-beta.84
+  alchemy: 2.0.0-beta.87
   expo-audio: 58.0.9
   expo-network: 58.0.3
   '@clerk/expo-native-components': 0.4.0
