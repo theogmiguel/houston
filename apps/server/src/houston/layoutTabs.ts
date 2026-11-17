@@ -35,13 +35,33 @@ export const chatThreadIdsOf = (workspace: Pick<HoustonLayoutWorkspaceRecord, "c
     ),
   );
 
-/** `workspace` without the tab showing `key`; a pane or column it empties goes, and a pane it refocuses shows its first tab. */
+/** `workspace` without the tab showing `key`; a pane or column it empties goes, and a pane it
+ * refocuses shows its first tab. The columns that stay take an emptied column's room, up to the
+ * window's width: a strip that ran past the window fills it, a shorter one keeps its length. */
 export const withoutTab = (
   workspace: HoustonLayoutWorkspaceRecord,
   key: string,
-): HoustonLayoutWorkspaceRecord => ({
-  ...workspace,
-  columns: workspace.columns.flatMap((column): HoustonLayoutColumn[] => {
+): HoustonLayoutWorkspaceRecord => {
+  const columns = columnsWithoutTab(workspace.columns, key);
+  if (columns.length === workspace.columns.length || columns.length === 0) {
+    return { ...workspace, columns };
+  }
+  const sum = (list: ReadonlyArray<HoustonLayoutColumn>) =>
+    list.reduce((total, column) => total + column.width, 0);
+  const kept = sum(columns);
+  const scale = kept > 0 ? Math.max(1, Math.min(1, sum(workspace.columns)) / kept) : 1;
+  return {
+    ...workspace,
+    columns:
+      scale === 1 ? columns : columns.map((column) => ({ ...column, width: column.width * scale })),
+  };
+};
+
+const columnsWithoutTab = (
+  columns: ReadonlyArray<HoustonLayoutColumn>,
+  key: string,
+): HoustonLayoutColumn[] =>
+  columns.flatMap((column): HoustonLayoutColumn[] => {
     const kept = column.panes.flatMap((pane): HoustonLayoutPane[] => {
       const tabs = pane.tabs.filter((tab) => layoutTabContentKey(tab.content) !== key);
       if (tabs.length === 0) return [];
@@ -62,13 +82,10 @@ export const withoutTab = (
     }
     const total = kept.reduce((sum, pane) => sum + pane.size, 0);
     return [{ ...column, panes: kept.map((pane) => ({ ...pane, size: pane.size / total })) }];
-  }),
-});
+  });
 
-/**
- * `workspace` with `tab` at `at` when that pane is in it, else at the end of its last pane. A workspace with no column gets one, whose
- * pane shows the tab; in an existing pane the focused tab stays focused.
- */
+/** `workspace` with `tab` at `at` when that pane is in it, else at the end of its last pane. A
+ * workspace with no column gets one, whose pane shows the tab; an existing pane keeps its focus. */
 export const withTabAppended = (
   workspace: HoustonLayoutWorkspaceRecord,
   tab: HoustonLayoutTab,

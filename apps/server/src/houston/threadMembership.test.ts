@@ -377,6 +377,48 @@ describe("movement", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect(
+    "rule 11: the columns a move leaves behind take the room of the column it emptied",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* svc;
+        // Four columns at the readable floor of a 1620px strip (420px each) run past the window.
+        const floor = 420 / 1620;
+        const at = (width: number, ...tabs: HoustonLayoutTabContent[]) => ({
+          ...column(tabs),
+          width,
+        });
+        yield* create(
+          record("a", [
+            at(floor, chat("x")),
+            at(floor, chat("t")),
+            at(floor, chat("y")),
+            at(floor, chat("z")),
+          ]),
+        );
+        yield* create(record("b"));
+        yield* service.moveThread({ environmentId: ENV, threadId: "t", workspaceId: "b" });
+        const widths = (yield* service.get("a"))!.columns.map((left) => left.width);
+        assert.equal(widths.length, 3);
+        for (const width of widths) assert.closeTo(width, 1 / 3, 1e-9);
+      }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("rule 11: a strip arranged shorter than the window stays that short after a move", () =>
+    Effect.gen(function* () {
+      const service = yield* svc;
+      const at = (width: number, ...tabs: HoustonLayoutTabContent[]) => ({
+        ...column(tabs),
+        width,
+      });
+      yield* create(record("a", [at(0.25, chat("x")), at(0.25, chat("t")), at(0.25, chat("y"))]));
+      yield* create(record("b"));
+      yield* service.moveThread({ environmentId: ENV, threadId: "t", workspaceId: "b" });
+      const widths = (yield* service.get("a"))!.columns.map((left) => left.width);
+      assert.deepEqual(widths, [0.375, 0.375]);
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("rule 12: tabs land in the pane the caller names, at the index it names", () =>
     Effect.gen(function* () {
       const service = yield* svc;
