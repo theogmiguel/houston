@@ -42,6 +42,10 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
 // Boots the whole app; on a loaded 4-vCPU CI runner that has exceeded the default 15 s budget.
 const APP_BOOT_TEST_TIMEOUT_MS = 45_000;
 
+// Measured on CI: 5 s was exceeded on every retry of a loaded shard, while a local run
+// shows the button in under a second. 20 s stays well inside the 45 s test budget.
+const ATTACH_BUTTON_TIMEOUT_MS = 20_000;
+
 let bootCount = 0;
 
 async function bootDraftComposer() {
@@ -225,11 +229,12 @@ it(
     using _uploads = advertiseFileUploads();
     await using _app = await bootDraftComposer();
     // The upload capability arrives with the environment descriptor after boot; the attach
-    // button shows once the composer knows it can stage files. The descriptor round trip takes
-    // over a second on a loaded CI runner, past waitFor's 1s default.
+    // button shows once the composer knows it can stage files. On a loaded CI runner the
+    // descriptor round trip has taken longer than 5 s, so the wait takes most of what the
+    // boot leaves of the test's own budget.
     await vi.waitFor(
       () => expect(document.querySelector('button[aria-label="Attach files"]')).not.toBeNull(),
-      { timeout: 5000 },
+      { timeout: ATTACH_BUTTON_TIMEOUT_MS },
     );
     const readDroppedPath = vi.fn(() =>
       Promise.resolve({ name: "id_ed25519", directory: false, base64: btoa("key") }),
