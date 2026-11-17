@@ -3389,6 +3389,10 @@ export const layerWsRpc = (
         [WS_METHODS.houstonTasksPlanAnswer]: (input) => houstonTaskRuns.planAnswer(input),
         [WS_METHODS.houstonTasksPlanApprove]: (input) => houstonTaskRuns.planApprove(input),
         [WS_METHODS.houstonTasksReviewStart]: (input) => houstonTaskRuns.reviewStart(input),
+        [WS_METHODS.houstonTasksIssueCreate]: (input) => houstonTasks.createFromIssue(input),
+        [WS_METHODS.houstonTasksIssueLink]: (input) => houstonTasks.linkIssue(input),
+        [WS_METHODS.houstonTasksIssueUnlink]: (input) => houstonTasks.unlinkIssue(input),
+        [WS_METHODS.houstonTasksIssueTask]: (input) => houstonTasks.taskForIssue(input),
         [WS_METHODS.houstonTaskSourcesSettingsGet]: (input) =>
           houstonTaskSources.getSettings(input),
         [WS_METHODS.houstonTaskSourcesSettingsSet]: (input) =>

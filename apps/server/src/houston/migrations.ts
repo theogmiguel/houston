@@ -950,6 +950,31 @@ const SecretStoreImport = Effect.gen(function* () {
   `;
 });
 
+// The issue a task is backed by: at most one per task, named the way the issue service resolves
+// it. The identity index is not unique, so an archived task keeps its link while another task
+// may be created from the same issue; the service enforces one non-archived task per issue.
+const TaskIssues = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_task_issues (
+      task_id INTEGER PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      tracker TEXT NOT NULL,
+      host TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      key TEXT NOT NULL,
+      display_key TEXT NOT NULL,
+      url TEXT NOT NULL,
+      title TEXT NOT NULL,
+      linked_at TEXT NOT NULL
+    )
+  `;
+  yield* sql`
+    CREATE INDEX IF NOT EXISTS idx_houston_task_issues_identity
+    ON houston_task_issues(tracker, host, scope, key)
+  `;
+});
+
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
@@ -971,6 +996,7 @@ const houstonMigrationEntries = [
   [20, "RemoveGrids", RemoveGrids],
   [21, "LayoutThreadMembership", LayoutThreadMembership],
   [22, "IssueTrackerBindings", IssueTrackerBindings],
+  [23, "TaskIssues", TaskIssues],
 ] as const;
 
 // Ids land in merge order, so a database can record a higher id before a lower one; every

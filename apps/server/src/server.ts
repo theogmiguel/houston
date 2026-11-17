@@ -675,13 +675,17 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
         ),
       ),
     ),
-    Layer.provideMerge(layerOrchestrationApplication),
+    // Inner to the issue services below: a task service reads and moves its linked issue, and the
+    // orchestration runtime supplies both with the projects and runs they read.
     Layer.provideMerge(
       Layer.mergeAll(
         HoustonTaskService.layer,
         HoustonTaskV1Import.layer.pipe(Layer.provideMerge(RuntimeLayer.layerProjectService)),
       ),
     ),
+    Layer.provideMerge(layerThreadIssueService),
+    Layer.provideMerge(layerIssueService),
+    Layer.provideMerge(layerOrchestrationApplication),
     // The task source poller reads GitHub through its own client and the token from the secret store.
     Layer.provideMerge(
       layerTaskSources(
@@ -817,8 +821,6 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.provide(PeerLinkRequests.layer),
   // Share the service so HTTP/WS clients single-flight reads and invalidate each other's cached patches.
   Layer.provide(layerPullRequestService),
-  Layer.provide(layerThreadIssueService),
-  Layer.provide(layerIssueService),
   Layer.provide(SpeechService.layer.pipe(Layer.provide(SpeechModelStore.layer))),
   Layer.provide(CloudSpeech.layer.pipe(Layer.provide(FetchHttpClient.layer))),
   // The same activity instance RunExecutionService reports to, by layer memoization.

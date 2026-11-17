@@ -21,6 +21,7 @@ import type {
   HoustonTaskDetail,
   HoustonTaskRun,
   HoustonTaskStreamEvent,
+  HoustonTaskSummary,
 } from "@houston-app/contracts/houston/tasks";
 import * as AcpRegistryRuntimeCoordinator from "@houston-app/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
 import * as AcpRegistrySupport from "@houston-app/provider-acp-registry/server/AcpRegistrySupport";
@@ -80,7 +81,6 @@ import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import * as ProviderSessionManager from "../../orchestration-v2/ProviderSessionManager.ts";
 import * as PullRequestReviewGuideService from "../../pullRequest/PullRequestReviewGuideService.ts";
 import * as PullRequestService from "../../pullRequest/PullRequestService.ts";
-import * as IssueService from "../../issue/IssueService.ts";
 import * as IssueTrackerConnections from "../../issue/IssueTrackerConnections.ts";
 import * as PullRequestSyncReactor from "../../orchestration-v2/PullRequestSyncReactor.ts";
 import * as RemoteOpenTargets from "../../environment/RemoteOpenTargets.ts";
@@ -127,8 +127,17 @@ import * as HoustonTaskSourceV1Import from "../taskSources/V1Import.ts";
 import * as HoustonTaskRuns from "./TaskRuns.ts";
 import * as HoustonMergeQueueService from "../mergeQueue/Service.ts";
 import * as HoustonTaskService from "./TaskService.ts";
-import { createProject, layerTasks, type TasksTestOptions } from "./tasks.testkit.ts";
+import {
+  createProject,
+  layerIssueService,
+  layerTasks,
+  type TasksTestOptions,
+} from "./tasks.testkit.ts";
 import { writeV1Database } from "./v1Fixture.ts";
+
+// One tracker stand-in serves the issue RPCs and the issue-backed task RPCs.
+
+const ISSUE_SERVICE_LAYER = layerIssueService();
 
 // Build the production RPC layer; unrelated capabilities fail if these tests call them.
 const layerUnusedRpcServices = Layer.mergeAll(
@@ -178,7 +187,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({}),
   Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
   Layer.mock(PullRequestService.PullRequestService)({}),
-  Layer.mock(IssueService.IssueService)({}),
+  ISSUE_SERVICE_LAYER,
   Layer.mock(IssueTrackerConnections.IssueTrackerConnections)({}),
   Layer.mock(PullRequestSyncReactor.PullRequestSyncReactor)({}),
   Layer.mock(ResourceTelemetry.ResourceTelemetry)({}),
@@ -380,7 +389,7 @@ const layerRunsDouble = Layer.effect(
 const layerServer = (options: TasksTestOptions) =>
   layerUnusedRpcServices.pipe(
     Layer.provideMerge(layerRunsDouble),
-    Layer.provideMerge(layerTasks(options)),
+    Layer.provideMerge(layerTasks({ ...options, issueService: ISSUE_SERVICE_LAYER })),
   );
 
 type ServerServices = Layer.Success<ReturnType<typeof layerServer>> | Scope.Scope;
@@ -516,6 +525,61 @@ describe("subscribe sends a snapshot then one event per write", () => {
           ],
         );
         yield* client.interrupt(subscription);
+      }),
+    ),
+  );
+});
+
+describe("an issue-backed task round trips over the socket", () => {
+  it.effect("create answers once per issue; lookup, unlink and link follow the revisions", () =>
+    withServer(() =>
+      Effect.gen(function* () {
+        const projectId = yield* createProject("ws-issue");
+        const client = yield* makeWsClient(ALL_SCOPES);
+        const issue = {
+          projectId,
+          tracker: "github",
+          host: "github.com",
+          scope: "acme/houston",
+          key: "12",
+        };
+        const created = (yield* client.call(
+          WS_METHODS.houstonTasksIssueCreate,
+          issue,
+        )) as HoustonTask;
+        assert.isNull(failureOf(created));
+        assert.strictEqual(created.title, "Issue 12");
+        assert.strictEqual(created.issue?.key, "12");
+        assert.strictEqual(created.issue?.displayKey, "#12");
+
+        const again = (yield* client.call(
+          WS_METHODS.houstonTasksIssueCreate,
+          issue,
+        )) as HoustonTask;
+        assert.strictEqual(again.id, created.id);
+
+        const found = (yield* client.call(
+          WS_METHODS.houstonTasksIssueTask,
+          issue,
+        )) as HoustonTaskSummary;
+        assert.strictEqual(found.key, created.key);
+        assert.strictEqual(found.issue?.key, "12");
+
+        const unlinked = (yield* client.call(WS_METHODS.houstonTasksIssueUnlink, {
+          id: created.key,
+          expectedRevision: created.revision,
+        })) as HoustonTaskDetail;
+        assert.isNull(unlinked.task.issue);
+        assert.strictEqual(unlinked.task.revision, created.revision + 1);
+
+        const linked = (yield* client.call(WS_METHODS.houstonTasksIssueLink, {
+          id: created.key,
+          expectedRevision: unlinked.task.revision,
+          url: "https://github.com/acme/houston/issues/12",
+        })) as HoustonTaskDetail;
+        assert.strictEqual(linked.task.issue?.key, "12");
+        assert.strictEqual(linked.task.revision, unlinked.task.revision + 1);
+        assert.strictEqual(linked.history[0]?.action, "houston:issue-link");
       }),
     ),
   );
@@ -696,6 +760,42 @@ describe("each method requires its declared scope", () => {
       method: WS_METHODS.houstonTasksReviewStart,
       scope: AuthOrchestrationOperateScope,
       payload: () => ({ runId: 1 }),
+    },
+    {
+      method: WS_METHODS.houstonTasksIssueCreate,
+      scope: AuthOrchestrationOperateScope,
+      payload: ({ projectId }) => ({
+        projectId,
+        tracker: "github",
+        host: "github.com",
+        scope: "acme/houston",
+        key: "12",
+      }),
+    },
+    {
+      method: WS_METHODS.houstonTasksIssueTask,
+      scope: AuthOrchestrationReadScope,
+      payload: ({ projectId }) => ({
+        projectId,
+        tracker: "github",
+        host: "github.com",
+        scope: "acme/houston",
+        key: "13",
+      }),
+    },
+    {
+      method: WS_METHODS.houstonTasksIssueLink,
+      scope: AuthOrchestrationOperateScope,
+      payload: () => ({
+        id: "HOU-2",
+        expectedRevision: 5,
+        url: "https://github.com/acme/houston/issues/14",
+      }),
+    },
+    {
+      method: WS_METHODS.houstonTasksIssueUnlink,
+      scope: AuthOrchestrationOperateScope,
+      payload: () => ({ id: "HOU-2", expectedRevision: 6 }),
     },
   ];
 

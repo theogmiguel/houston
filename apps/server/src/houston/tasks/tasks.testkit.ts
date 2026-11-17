@@ -1,7 +1,13 @@
 // The Tasks backlog over one database with the real project service, as server.ts provides it.
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { CommandId, ProjectId, type ProviderInstanceId } from "@houston-app/contracts";
+import {
+  CommandId,
+  ProjectId,
+  type IssueDetail,
+  type IssueRef,
+  type ProviderInstanceId,
+} from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type * as PlatformError from "effect/PlatformError";
@@ -10,6 +16,7 @@ import type * as SqlClient from "effect/sql/SqlClient";
 import type { SqlError } from "effect/sql/SqlError";
 
 import * as ServerConfig from "../../config.ts";
+import * as IssueService from "../../issue/IssueService.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import * as RuntimeLayer from "../../orchestration-v2/runtimeLayer.ts";
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";
@@ -27,6 +34,81 @@ import * as HoustonTaskV1Import from "./V1Import.ts";
 
 /** Instances the settings check treats as configured unless a test names others. */
 export const CONFIGURED_INSTANCES: ReadonlyArray<string> = ["claudeAgent", "codex"];
+
+/** The states the stand-in tracker offers; a target state is chosen from these by name. */
+export const TEST_ISSUE_STATES: IssueDetail["states"] = [
+  { category: "open", name: "Open" },
+  { category: "open", name: "In Progress" },
+  { category: "open", name: "In Review" },
+  { category: "closed", name: "Completed", closeReason: "completed" },
+  { category: "open", name: "Canceled" },
+];
+
+/** A tracker's answer for any reference; tests that need another detail replace this layer. */
+export const issueDetailFor = (ref: IssueRef): IssueDetail => ({
+  projectId: ref.projectId,
+  projectTitle: "Test project",
+  tracker: ref.tracker,
+  host: ref.host ?? "github.com",
+  scope: ref.scope,
+  key: ref.key,
+  displayKey: `#${ref.key}`,
+  title: `Issue ${ref.key}`,
+  url: `https://${ref.host ?? "github.com"}/${ref.scope}/issues/${ref.key}`,
+  author: null,
+  state: { category: "open", name: "Open" },
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-02T00:00:00.000Z",
+  closedAt: null,
+  assignees: [],
+  labels: [],
+  commentCount: 0,
+  writable: true,
+  capabilities: {
+    create: true,
+    edit: true,
+    comment: true,
+    labels: true,
+    assignees: true,
+    reactions: false,
+    templates: false,
+    linkedPullRequests: false,
+    events: false,
+    search: false,
+  },
+  viewerPermissions: {
+    setState: true,
+    comment: true,
+    edit: true,
+    labels: true,
+    assignees: true,
+  },
+  states: TEST_ISSUE_STATES,
+  viewer: null,
+  body: `Body of ${ref.tracker} ${ref.scope}#${ref.key}`,
+  comments: [],
+  commentsCursor: null,
+  events: [],
+  linkedPullRequests: [],
+});
+
+/** A tracker that answers with `detail` and accepts any state move. */
+export const layerIssueService = (
+  detail: (ref: IssueRef) => IssueDetail = issueDetailFor,
+): Layer.Layer<IssueService.IssueService> =>
+  Layer.mock(IssueService.IssueService)({
+    detail: (ref) => Effect.succeed(detail(ref)),
+    setState: () => Effect.void,
+    resolveUrl: (url, preferredProjectId) =>
+      Effect.succeed({
+        projectId: (preferredProjectId ?? "project") as ProjectId,
+        tracker: "github" as never,
+        host: "github.com",
+        scope: "acme/houston",
+        key: url.replace(/[^0-9]+/g, "") || "1",
+        writable: true,
+      }),
+  });
 
 export const layerWorkspacePaths = Layer.succeed(WorkspacePaths.WorkspacePaths, {
   normalizeWorkspaceRoot: (workspaceRoot) => Effect.succeed(workspaceRoot),
@@ -63,6 +145,8 @@ export interface TasksTestOptions {
     SqlClient.SqlClient,
     MigrationError | PlatformError.PlatformError | SqlError
   >;
+  /** What the tracker answers; a stand-in that echoes the reference when absent. */
+  readonly issueService?: Layer.Layer<IssueService.IssueService>;
 }
 
 export const layerTasks = (options: TasksTestOptions = {}) =>
@@ -70,6 +154,7 @@ export const layerTasks = (options: TasksTestOptions = {}) =>
     Layer.provideMerge(RuntimeLayer.layerProjectService),
     Layer.provideMerge(ProjectStore.layer),
     Layer.provideMerge(HoustonTaskStore.layer),
+    Layer.provideMerge(options.issueService ?? layerIssueService()),
     Layer.provideMerge(layerInstances(options.configuredInstances ?? CONFIGURED_INSTANCES)),
     Layer.provideMerge(ProjectEnrichmentService.layer),
     Layer.provideMerge(layerWorkspacePaths),

@@ -71,6 +71,7 @@ function task(overrides: Partial<HoustonTaskSummary> = {}): HoustonTaskSummary {
     priority: "none",
     parentId: null,
     refUrl: null,
+    issue: null,
     revision: 3,
     createdBy: "slack",
     createdAt: "2026-01-01T00:00:00.000Z",

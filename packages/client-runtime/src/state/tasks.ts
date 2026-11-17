@@ -152,6 +152,8 @@ const TASK_WRITE_TAGS = [
   WS_METHODS.houstonTasksPlanAnswer,
   WS_METHODS.houstonTasksPlanApprove,
   WS_METHODS.houstonTasksHandback,
+  WS_METHODS.houstonTasksIssueLink,
+  WS_METHODS.houstonTasksIssueUnlink,
 ] as const;
 type TaskWriteTag = (typeof TASK_WRITE_TAGS)[number];
 
@@ -173,6 +175,13 @@ export function createTaskEnvironmentAtoms<R, E>(
     label: "environment-data:tasks:initiatives",
     tag: WS_METHODS.houstonTasksInitiativesList,
     staleTimeMs: 10_000,
+    idleTtlMs: 60_000,
+  });
+  /** The one unarchived task backed by an issue, which the issue panel shows instead of creating. */
+  const forIssue = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:tasks:for-issue",
+    tag: WS_METHODS.houstonTasksIssueTask,
+    staleTimeMs: 0,
     idleTtlMs: 60_000,
   });
   const refreshDetail = (
@@ -207,6 +216,7 @@ export function createTaskEnvironmentAtoms<R, E>(
     }),
     detail,
     initiatives,
+    forIssue,
     settings: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:tasks:settings",
       tag: WS_METHODS.houstonTasksSettingsGet,
@@ -271,5 +281,17 @@ export function createTaskEnvironmentAtoms<R, E>(
       scheduler,
       concurrency,
     }),
+    createFromIssue: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:tasks:issue-create",
+      tag: WS_METHODS.houstonTasksIssueCreate,
+      scheduler,
+      concurrency,
+      onSuccess: (target, registry) =>
+        Effect.sync(() =>
+          registry.refresh(forIssue({ environmentId: target.environmentId, input: target.input })),
+        ),
+    }),
+    linkIssue: write("environment-data:tasks:issue-link", WS_METHODS.houstonTasksIssueLink),
+    unlinkIssue: write("environment-data:tasks:issue-unlink", WS_METHODS.houstonTasksIssueUnlink),
   };
 }

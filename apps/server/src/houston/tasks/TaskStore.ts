@@ -12,6 +12,7 @@ import {
   type HoustonTaskDomain,
   type HoustonTaskDomainKind,
   type HoustonTaskError,
+  type HoustonTaskIssue,
   type HoustonTaskPriority,
   type HoustonTaskRun,
   type HoustonTaskRunState,
@@ -99,6 +100,19 @@ export interface DomainRow {
   readonly planning_thread_id: string | null;
 }
 
+export interface IssueRow {
+  readonly task_id: number;
+  readonly project_id: string;
+  readonly tracker: string;
+  readonly host: string;
+  readonly scope: string;
+  readonly key: string;
+  readonly display_key: string;
+  readonly url: string;
+  readonly title: string;
+  readonly linked_at: string;
+}
+
 export interface NewTask {
   readonly projectId: string | null;
   readonly title: string;
@@ -132,7 +146,7 @@ export class HoustonTaskTransitions extends Context.Service<
 /** The history action that records a head pushed to a run thread's pull request. */
 export const PUSHED_ACTION = "houston:pushed";
 
-export const toTask = (row: TaskRow): HoustonTask => ({
+export const toTask = (row: TaskRow, issue: HoustonTaskIssue | null = null): HoustonTask => ({
   id: row.id,
   number: row.number,
   key: houstonTaskKey(row.number),
@@ -143,11 +157,25 @@ export const toTask = (row: TaskRow): HoustonTask => ({
   priority: priorityFromValue(row.priority) ?? "none",
   parentId: row.parent_id,
   refUrl: row.ref_url,
+  issue,
   revision: row.revision,
   createdBy: row.created_by,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
   archivedAt: row.archived_at,
+});
+
+/** The stored link as the contract names it. */
+export const toIssue = (row: IssueRow): HoustonTaskIssue => ({
+  projectId: row.project_id as ProjectId,
+  tracker: row.tracker as HoustonTaskIssue["tracker"],
+  host: row.host,
+  scope: row.scope,
+  key: row.key,
+  displayKey: row.display_key,
+  url: row.url,
+  title: row.title,
+  linkedAt: row.linked_at,
 });
 
 /** History changes and other free-form JSON columns. */
@@ -223,6 +251,7 @@ interface DerivedInputs {
   >;
   readonly openRuns: ReadonlyMap<number, RunRow>;
   readonly trackerConflicts: ReadonlySet<number>;
+  readonly issues: ReadonlyMap<number, IssueRow>;
 }
 
 const groupBy = <A, K>(rows: ReadonlyArray<A>, key: (row: A) => K) => {
@@ -271,7 +300,11 @@ export const toSummary = (task: TaskRow, inputs: DerivedInputs): HoustonTaskSumm
   const ready = readinessOf(task, inputs, domain?.planning_thread_id != null).ready;
   const acceptance = inputs.acceptance.get(task.id) ?? [];
   const openRun = inputs.openRuns.get(task.id);
-  const { description: _description, ...rest } = toTask(task);
+  const issue = inputs.issues.get(task.id);
+  const { description: _description, ...rest } = toTask(
+    task,
+    issue === undefined ? null : toIssue(issue),
+  );
   return {
     ...rest,
     acceptanceChecked: acceptance.filter((item) => item.checked).length,
@@ -317,6 +350,16 @@ export class HoustonTaskStore extends Context.Service<
     readonly domain: (task: TaskRow) => Effect.Effect<HoustonTaskDomain>;
     readonly detail: (task: TaskRow) => Effect.Effect<HoustonTaskDetail>;
     readonly domainRow: (taskId: number) => Effect.Effect<DomainRow | undefined>;
+    /** The contract's task row with its issue link, read now. */
+    readonly taskOf: (task: TaskRow) => Effect.Effect<HoustonTask>;
+    readonly issueOf: (taskId: number) => Effect.Effect<HoustonTaskIssue | null>;
+    /** The one unarchived task backed by the issue, in any letter case of host and scope. */
+    readonly taskForIssue: (issue: {
+      readonly tracker: string;
+      readonly host: string;
+      readonly scope: string;
+      readonly key: string;
+    }) => Effect.Effect<TaskRow | undefined>;
     /** Delivery status rollup after a write to `taskId`; returns the delivery it moved, if any. */
     readonly rollup: (taskId: number) => Effect.Effect<number | undefined>;
     /** Unassigns a deleted project's tasks and interrupts their open runs. */
@@ -478,6 +521,9 @@ const make = Effect.gen(function* () {
         SELECT DISTINCT task_id FROM houston_task_source_links
         WHERE json_array_length(snapshot_json, '$.conflicts') > 0 AND ${only("task_id")}
       `;
+    const issues = yield* sql<IssueRow>`
+        SELECT * FROM houston_task_issues WHERE ${only("task_id")}
+      `;
     return {
       acceptance: new Map(
         [...groupBy(acceptance, (row) => row.task_id)].map(([id, rows]) => [
@@ -499,6 +545,7 @@ const make = Effect.gen(function* () {
       // Oldest first, so the newest open run per task wins.
       openRuns: new Map(runs.map((row) => [row.task_id, row])),
       trackerConflicts: new Set(conflicted.map((row) => row.task_id)),
+      issues: new Map(issues.map((row) => [row.task_id, row])),
     } satisfies DerivedInputs;
   }, Effect.orDie);
 
@@ -534,6 +581,32 @@ const make = Effect.gen(function* () {
 
   const domainRow = (taskId: number) =>
     sql<DomainRow>`SELECT * FROM houston_task_domain WHERE task_id = ${taskId}`.pipe(
+      Effect.map((rows) => rows[0]),
+      Effect.orDie,
+    );
+
+  const issueOf = (taskId: number) =>
+    sql<IssueRow>`SELECT * FROM houston_task_issues WHERE task_id = ${taskId}`.pipe(
+      Effect.map((rows) => (rows[0] === undefined ? null : toIssue(rows[0]))),
+      Effect.orDie,
+    );
+
+  const taskOf = (task: TaskRow) =>
+    issueOf(task.id).pipe(Effect.map((issue) => toTask(task, issue)));
+
+  const taskForIssue = (issue: {
+    readonly tracker: string;
+    readonly host: string;
+    readonly scope: string;
+    readonly key: string;
+  }) =>
+    sql<TaskRow>`
+      SELECT t.* FROM houston_tasks t JOIN houston_task_issues i ON i.task_id = t.id
+      WHERE i.tracker = ${issue.tracker} AND lower(i.host) = lower(${issue.host})
+        AND lower(i.scope) = lower(${issue.scope}) AND i.key = ${issue.key}
+        AND t.archived_at IS NULL
+      ORDER BY t.id LIMIT 1
+    `.pipe(
       Effect.map((rows) => rows[0]),
       Effect.orDie,
     );
@@ -626,7 +699,7 @@ const make = Effect.gen(function* () {
         WHERE task_id = ${task.id} ORDER BY created_at DESC, rowid DESC LIMIT 1
       `;
     return {
-      task: toTask(task),
+      task: toTask(task, yield* issueOf(task.id)),
       acceptance: acceptance.map((item) => ({
         id: item.id,
         position: item.position,
@@ -743,6 +816,9 @@ const make = Effect.gen(function* () {
     domain,
     detail,
     domainRow,
+    taskOf,
+    issueOf,
+    taskForIssue,
     rollup,
     projectRemoved,
   });

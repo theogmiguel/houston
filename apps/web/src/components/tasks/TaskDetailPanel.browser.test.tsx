@@ -57,6 +57,7 @@ function detail(overrides: Partial<HoustonTaskDetail> = {}): HoustonTaskDetail {
       priority: "high",
       parentId: null,
       refUrl: "https://github.com/acme/houston/issues/84",
+      issue: null,
       revision: 7,
       createdBy: "user",
       createdAt: "2026-01-01T00:00:00.000Z",

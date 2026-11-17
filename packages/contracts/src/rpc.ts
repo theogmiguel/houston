@@ -215,11 +215,16 @@ import {
   HoustonTaskInitiativeArchiveInput,
   HoustonTaskInitiativeSaveInput,
   HoustonTaskInitiativesListInput,
+  HoustonTaskFromIssueInput,
+  HoustonTaskIssueLinkInput,
+  HoustonTaskIssueTaskInput,
+  HoustonTaskIssueUnlinkInput,
   HoustonTaskSaveInput,
   HoustonTaskSettings,
   HoustonTaskSettingsGetInput,
   HoustonTaskSettingsSetInput,
   HoustonTaskStreamEvent,
+  HoustonTaskSummary,
   HoustonTaskSubscribeInput,
   HoustonTaskHandbackInput,
   HoustonTaskPlanAnswerInput,
@@ -676,6 +681,10 @@ export const WS_METHODS = {
   houstonTasksPlanAnswer: "houston.tasks.plan.answer",
   houstonTasksPlanApprove: "houston.tasks.plan.approve",
   houstonTasksReviewStart: "houston.tasks.review.start",
+  houstonTasksIssueCreate: "houston.tasks.issue.create",
+  houstonTasksIssueLink: "houston.tasks.issue.link",
+  houstonTasksIssueUnlink: "houston.tasks.issue.unlink",
+  houstonTasksIssueTask: "houston.tasks.issue.task",
   houstonTaskSourcesSettingsGet: "houston.taskSources.settings.get",
   houstonTaskSourcesSettingsSet: "houston.taskSources.settings.set",
   houstonTaskSourcesCredentialSet: "houston.taskSources.credential.set",
@@ -2163,6 +2172,30 @@ const WsHoustonTasksReviewStartRpc = Rpc.make(WS_METHODS.houstonTasksReviewStart
   error: HoustonTaskRpcError,
 });
 
+const WsHoustonTasksIssueCreateRpc = Rpc.make(WS_METHODS.houstonTasksIssueCreate, {
+  payload: HoustonTaskFromIssueInput,
+  success: HoustonTask,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksIssueLinkRpc = Rpc.make(WS_METHODS.houstonTasksIssueLink, {
+  payload: HoustonTaskIssueLinkInput,
+  success: HoustonTaskDetail,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksIssueUnlinkRpc = Rpc.make(WS_METHODS.houstonTasksIssueUnlink, {
+  payload: HoustonTaskIssueUnlinkInput,
+  success: HoustonTaskDetail,
+  error: HoustonTaskRpcError,
+});
+
+const WsHoustonTasksIssueTaskRpc = Rpc.make(WS_METHODS.houstonTasksIssueTask, {
+  payload: HoustonTaskIssueTaskInput,
+  success: Schema.NullOr(HoustonTaskSummary),
+  error: HoustonTaskRpcError,
+});
+
 const HoustonTaskSourceRpcError = Schema.Union([
   HoustonTaskSourceError,
   EnvironmentAuthorizationError,
@@ -3123,6 +3156,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonTasksPlanAnswerRpc,
   WsHoustonTasksPlanApproveRpc,
   WsHoustonTasksReviewStartRpc,
+  WsHoustonTasksIssueCreateRpc,
+  WsHoustonTasksIssueLinkRpc,
+  WsHoustonTasksIssueUnlinkRpc,
+  WsHoustonTasksIssueTaskRpc,
   WsHoustonTaskSourcesSettingsGetRpc,
   WsHoustonTaskSourcesSettingsSetRpc,
   WsHoustonTaskSourcesCredentialSetRpc,

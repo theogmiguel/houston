@@ -37,6 +37,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [20, "RemoveGrids"],
   [21, "LayoutThreadMembership"],
   [22, "IssueTrackerBindings"],
+  [23, "TaskIssues"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -47,6 +48,7 @@ const TASK_TABLES = [
   "houston_task_history",
   "houston_task_import",
   "houston_task_initiatives",
+  "houston_task_issues",
   "houston_task_planning",
   "houston_task_runs",
   "houston_task_runs_cursor",
@@ -1127,23 +1129,26 @@ describe("the grids removal migration", () => {
     }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
   );
 
-  it.effect("a file database at upstream's head applies 18 to 21 and ends without the table", () =>
-    withDatabaseFile((file) =>
-      Effect.gen(function* () {
-        yield* runMigrations();
-        assert.deepEqual(
-          (yield* runHoustonMigrations()).filter(([id]) => id >= 18),
-          [
-            [18, "Grids"],
-            [19, "LayoutWorkspaces"],
-            [20, "RemoveGrids"],
-            [21, "LayoutThreadMembership"],
-            [22, "IssueTrackerBindings"],
-          ],
-        );
-        assert.deepEqual(yield* gridObjects, []);
-      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: file }))),
-    ),
+  it.effect(
+    "a file database at the main track's head applies 18 to 23 and ends without the table",
+    () =>
+      withDatabaseFile((file) =>
+        Effect.gen(function* () {
+          yield* runMigrations();
+          assert.deepEqual(
+            (yield* runHoustonMigrations()).filter(([id]) => id >= 18),
+            [
+              [18, "Grids"],
+              [19, "LayoutWorkspaces"],
+              [20, "RemoveGrids"],
+              [21, "LayoutThreadMembership"],
+              [22, "IssueTrackerBindings"],
+              [23, "TaskIssues"],
+            ],
+          );
+          assert.deepEqual(yield* gridObjects, []);
+        }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: file }))),
+      ),
   );
 });
 
@@ -1207,6 +1212,51 @@ describe("the thread membership migration", () => {
           ["two", "b"],
         ],
       );
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+});
+
+describe("the task issues migration", () => {
+  it.effect("keys one issue link per task and indexes its identity", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
+      assert.deepEqual(
+        (yield* sql<{ readonly name: string }>`
+          SELECT name FROM pragma_table_info('houston_task_issues') ORDER BY cid
+        `).map((column) => column.name),
+        [
+          "task_id",
+          "project_id",
+          "tracker",
+          "host",
+          "scope",
+          "key",
+          "display_key",
+          "url",
+          "title",
+          "linked_at",
+        ],
+      );
+      assert.deepEqual(
+        (yield* sql<{ readonly name: string }>`
+          SELECT name FROM pragma_index_list('houston_task_issues') WHERE origin = 'c'
+        `).map((index) => index.name),
+        ["idx_houston_task_issues_identity"],
+      );
+      const link = (taskId: number) => sql`
+        INSERT INTO houston_task_issues (
+          task_id, project_id, tracker, host, scope, key, display_key, url, title, linked_at
+        ) VALUES (
+          ${taskId}, 'p1', 'github', 'github.com', 'acme/houston', '12', '#12',
+          'https://github.com/acme/houston/issues/12', 'An issue', '2026-01-01T00:00:00.000Z'
+        )
+      `;
+      yield* link(1);
+      assert.isTrue((yield* Effect.exit(link(1)))._tag === "Failure");
+      // The identity index is not unique: an archived task keeps its link and a new task may
+      // link the same issue, which the service decides against the tasks table.
+      yield* link(2);
     }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
   );
 });

@@ -29,6 +29,7 @@ import * as HoustonTaskV1Import from "../tasks/V1Import.ts";
 import {
   CONFIGURED_INSTANCES,
   layerInstances,
+  layerIssueService,
   layerProjectMetadata,
   layerWorkspacePaths,
 } from "../tasks/tasks.testkit.ts";
@@ -229,6 +230,7 @@ export const layerSources = (options: SourcesTestOptions = {}) =>
     ),
   ).pipe(
     Layer.provideMerge(Layer.mergeAll(HoustonTaskService.layer, HoustonTaskV1Import.layer)),
+    Layer.provideMerge(layerIssueService()),
     Layer.provideMerge(RuntimeLayer.layerProjectService),
     Layer.provideMerge(ProjectStore.layer),
     // Below the project service, so a project deletion reaches it, as in server.ts.

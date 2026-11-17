@@ -3,12 +3,15 @@
 import {
   DEFAULT_MODEL_BY_PROVIDER,
   ModelSelection,
+  type IssueRef,
   type ProjectId,
   ProviderDriverKind,
   defaultInstanceIdForDriver,
+  threadIssueKeyOf,
 } from "@houston-app/contracts";
 import {
   HOUSTON_TASK_LIMITS,
+  houstonTaskKey,
   type HoustonTask,
   type HoustonTaskArchiveInput,
   type HoustonTaskCheckInput,
@@ -18,11 +21,16 @@ import {
   type HoustonTaskDomain,
   type HoustonTaskDomainSaveInput,
   type HoustonTaskError,
+  type HoustonTaskFromIssueInput,
   type HoustonTaskGetInput,
   type HoustonTaskInitiative,
   type HoustonTaskInitiativeArchiveInput,
   type HoustonTaskInitiativeSaveInput,
   type HoustonTaskInitiativesListInput,
+  type HoustonTaskIssue,
+  type HoustonTaskIssueLinkInput,
+  type HoustonTaskIssueTaskInput,
+  type HoustonTaskIssueUnlinkInput,
   type HoustonTaskSaveInput,
   type HoustonTaskSettings,
   type HoustonTaskSettingsGetInput,
@@ -41,6 +49,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
+import * as IssueService from "../../issue/IssueService.ts";
 import * as ProviderInstanceRegistry from "../../provider/ProviderInstanceRegistry.ts";
 import {
   blockerCycle,
@@ -58,7 +67,7 @@ import {
   priorityValue,
   refuse,
 } from "./rules.ts";
-import { HoustonTaskStore, SnapshotReadHook, nowIso, toTask, type TaskRow } from "./TaskStore.ts";
+import { HoustonTaskStore, SnapshotReadHook, nowIso, type TaskRow } from "./TaskStore.ts";
 
 /** The actor of every write a client makes through `/ws`. */
 export const USER_ACTOR = "user";
@@ -121,6 +130,39 @@ export class HoustonTaskService extends Context.Service<
     readonly setSettings: (
       input: HoustonTaskSettingsSetInput,
     ) => Effect.Effect<HoustonTaskSettings, HoustonTaskError>;
+    /** Creates a task from an issue, or returns the one already backed by it. */
+    readonly createFromIssue: (
+      input: HoustonTaskFromIssueInput,
+      actor?: string,
+    ) => Effect.Effect<HoustonTask, HoustonTaskError>;
+    /** Backs a task with the issue a URL names, replacing any earlier link. */
+    readonly linkIssue: (
+      input: HoustonTaskIssueLinkInput,
+      actor?: string,
+    ) => Effect.Effect<HoustonTaskDetail, HoustonTaskError>;
+    readonly unlinkIssue: (
+      input: HoustonTaskIssueUnlinkInput,
+      actor?: string,
+    ) => Effect.Effect<HoustonTaskDetail, HoustonTaskError>;
+    /** The one unarchived task backed by an issue, as the issue panel looks it up. */
+    readonly taskForIssue: (
+      input: HoustonTaskIssueTaskInput,
+    ) => Effect.Effect<HoustonTaskSummary | null, HoustonTaskError>;
+    /**
+     * The live issue text a planning brief carries, or null for a task with no link. The text is
+     * quoted from the tracker and named as untrusted.
+     */
+    readonly issueText: (
+      taskId: number,
+    ) => Effect.Effect<
+      {
+        readonly displayKey: string;
+        readonly url: string;
+        readonly title: string;
+        readonly body: string;
+      } | null,
+      HoustonTaskError
+    >;
   }
 >()("@houston-app/cli/houston/tasks/TaskService/HoustonTaskService") {}
 
@@ -237,6 +279,7 @@ const make = Effect.gen(function* () {
   const store = yield* HoustonTaskStore;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const instances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
+  const issues = yield* IssueService.IssueService;
 
   // SQL failures are defects; refusals are the only expected failures.
   const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.orDie(effect);
@@ -390,7 +433,7 @@ const make = Effect.gen(function* () {
       acceptance,
       createdBy: actor,
     });
-    return { result: toTask(created), touched: yield* touchedBy(created) };
+    return { result: yield* store.taskOf(created), touched: yield* touchedBy(created) };
   });
 
   const updateTask = Effect.fn("HoustonTaskService.updateTask")(function* (
@@ -399,7 +442,7 @@ const make = Effect.gen(function* () {
   ) {
     const operation = "houston.tasks.save";
     const row = yield* store.resolve(operation, input.id);
-    const key = toTask(row).key;
+    const key = houstonTaskKey(row.number);
     if (input.expectedRevision === undefined) {
       return yield* refuse("invalid", operation, `expectedRevision is required to update ${key}`);
     }
@@ -467,7 +510,7 @@ const make = Effect.gen(function* () {
       `);
     yield* store.recordHistory(row.id, actor, "update", changes);
     const task = updated as TaskRow;
-    return { result: toTask(task), touched: yield* touchedBy(task, [row.parent_id]) };
+    return { result: yield* store.taskOf(task), touched: yield* touchedBy(task, [row.parent_id]) };
   });
 
   const save: HoustonTaskService["Service"]["save"] = (input, actor = USER_ACTOR) =>
@@ -494,7 +537,7 @@ const make = Effect.gen(function* () {
         `);
         const task = yield* bump(row.id);
         yield* store.recordHistory(row.id, actor, "comment", { comment: inserted?.id ?? null });
-        return { result: toTask(task), touched: [row.id] };
+        return { result: yield* store.taskOf(task), touched: [row.id] };
       }),
     );
 
@@ -510,7 +553,7 @@ const make = Effect.gen(function* () {
           return yield* refuse(
             "not_found",
             operation,
-            `${toTask(row).key} has no acceptance item ${input.item}`,
+            `${houstonTaskKey(row.number)} has no acceptance item ${input.item}`,
           );
         }
         const now = yield* nowIso;
@@ -524,7 +567,7 @@ const make = Effect.gen(function* () {
           item: input.item,
           text: item.text,
         });
-        return { result: toTask(task), touched: [row.id] };
+        return { result: yield* store.taskOf(task), touched: [row.id] };
       }),
     );
 
@@ -536,10 +579,24 @@ const make = Effect.gen(function* () {
         if (row.revision !== input.expectedRevision) {
           return yield* conflictRefusal(
             operation,
-            toTask(row).key,
+            houstonTaskKey(row.number),
             input.expectedRevision,
             row.revision,
           );
+        }
+        // Restoring an archived task must not give one issue two live tasks.
+        if (!input.archived) {
+          const issue = yield* store.issueOf(row.id);
+          if (issue !== null) {
+            const holder = yield* store.taskForIssue(issue);
+            if (holder !== undefined && holder.id !== row.id) {
+              return yield* refuse(
+                "conflict",
+                operation,
+                `${issue.displayKey} is already the issue of ${houstonTaskKey(holder.number)}`,
+              );
+            }
+          }
         }
         const now = yield* nowIso;
         const [updated] = yield* run(sql<TaskRow>`
@@ -549,9 +606,226 @@ const make = Effect.gen(function* () {
         `);
         yield* store.recordHistory(row.id, actor, input.archived ? "archive" : "restore", {});
         const task = updated as TaskRow;
-        return { result: toTask(task), touched: yield* touchedBy(task) };
+        return { result: yield* store.taskOf(task), touched: yield* touchedBy(task) };
       }),
     );
+
+  const issueRefOf = (issue: HoustonTaskIssue) => ({
+    projectId: issue.projectId,
+    tracker: issue.tracker,
+    host: issue.host,
+    scope: issue.scope,
+    key: issue.key,
+  });
+
+  /** A short pointer; the issue's own words stay on the tracker, not in the task. */
+  const issuePointer = (issue: Pick<HoustonTaskIssue, "displayKey" | "url">) =>
+    `Tracked in ${issue.displayKey}: ${issue.url}`;
+
+  /** Reads an issue through the project's tracker; a refusal names the issue and what failed. */
+  const readIssue = (operation: string, ref: IssueRef) =>
+    issues
+      .detail(ref)
+      .pipe(
+        Effect.mapError((error) =>
+          refuse(
+            error._tag === "IssueUnavailableError" ? "unsupported" : "invalid",
+            operation,
+            `issue ${ref.tracker} ${ref.scope}#${ref.key} could not be read: ${error.message}`,
+          ),
+        ),
+      );
+
+  const writeIssueLink = (taskId: number, issue: HoustonTaskIssue) =>
+    run(sql`
+      INSERT INTO houston_task_issues (
+        task_id, project_id, tracker, host, scope, key, display_key, url, title, linked_at
+      ) VALUES (
+        ${taskId}, ${issue.projectId}, ${issue.tracker}, ${issue.host}, ${issue.scope},
+        ${issue.key}, ${issue.displayKey}, ${issue.url}, ${issue.title}, ${issue.linkedAt}
+      )
+      ON CONFLICT (task_id) DO UPDATE SET project_id = excluded.project_id,
+        tracker = excluded.tracker, host = excluded.host, scope = excluded.scope,
+        key = excluded.key, display_key = excluded.display_key, url = excluded.url,
+        title = excluded.title, linked_at = excluded.linked_at
+    `);
+
+  const linkOf = (
+    detail: {
+      readonly tracker: string;
+      readonly host: string;
+      readonly scope: string;
+      readonly key: string;
+      readonly displayKey: string;
+      readonly url: string;
+      readonly title: string;
+      readonly projectId: ProjectId;
+    },
+    linkedAt: string,
+  ): HoustonTaskIssue => ({
+    projectId: detail.projectId,
+    tracker: detail.tracker as HoustonTaskIssue["tracker"],
+    host: detail.host,
+    scope: detail.scope,
+    key: detail.key,
+    displayKey: detail.displayKey,
+    url: detail.url,
+    title: detail.title,
+    linkedAt,
+  });
+
+  const createFromIssue: HoustonTaskService["Service"]["createFromIssue"] = (
+    input,
+    actor = USER_ACTOR,
+  ) =>
+    store.write(
+      Effect.gen(function* () {
+        const operation = "houston.tasks.issue.create";
+        const detail = yield* readIssue(operation, input);
+        const existing = yield* store.taskForIssue(detail);
+        // A second create for the same issue answers with the task it already has.
+        if (existing !== undefined) {
+          return { result: yield* store.taskOf(existing), touched: [] };
+        }
+        yield* requireProject(operation, detail.projectId);
+        const title = yield* valueOr(checkTitle(operation, detail.title));
+        yield* failIf(checkDescription(operation, issuePointer(detail)));
+        yield* failIf(checkTaskCount(operation, yield* store.taskCount));
+        const now = yield* nowIso;
+        const created = yield* store.createTask({
+          projectId: detail.projectId,
+          title,
+          description: issuePointer(detail),
+          status: "backlog",
+          priority: "none",
+          parentId: null,
+          refUrl: detail.url,
+          acceptance: [],
+          createdBy: actor,
+        });
+        const issue = linkOf(detail, now);
+        yield* writeIssueLink(created.id, issue);
+        yield* store.recordHistory(created.id, actor, "houston:issue-link", {
+          issue: { key: issue.key, displayKey: issue.displayKey, url: issue.url },
+        });
+        return { result: yield* store.taskOf(created), touched: [created.id] };
+      }),
+    );
+
+  const linkIssue: HoustonTaskService["Service"]["linkIssue"] = (input, actor = USER_ACTOR) =>
+    store
+      .write(
+        Effect.gen(function* () {
+          const operation = "houston.tasks.issue.link";
+          const row = yield* store.resolve(operation, input.id);
+          const key = houstonTaskKey(row.number);
+          if (row.revision !== input.expectedRevision) {
+            return yield* conflictRefusal(operation, key, input.expectedRevision, row.revision);
+          }
+          const preferred = (row.project_id ?? undefined) as ProjectId | undefined;
+          const resolved = yield* issues
+            .resolveUrl(input.url, preferred)
+            .pipe(
+              Effect.mapError((error) =>
+                refuse(
+                  error._tag === "IssueUnavailableError" ? "unsupported" : "invalid",
+                  operation,
+                  `issue URL "${input.url}" could not be resolved: ${error.message}`,
+                ),
+              ),
+            );
+          const detail = yield* readIssue(operation, resolved);
+          const holder = yield* store.taskForIssue(detail);
+          if (holder !== undefined && holder.id !== row.id) {
+            return yield* refuse(
+              "conflict",
+              operation,
+              `${detail.displayKey} is already the issue of ${houstonTaskKey(holder.number)}`,
+            );
+          }
+          const previous = yield* store.issueOf(row.id);
+          if (previous !== null && threadIssueKeyOf(previous) === threadIssueKeyOf(detail)) {
+            return { result: row, touched: [] };
+          }
+          const now = yield* nowIso;
+          const issue = linkOf(detail, now);
+          yield* writeIssueLink(row.id, issue);
+          const [updated] = yield* run(sql<TaskRow>`
+            UPDATE houston_tasks SET revision = revision + 1, updated_at = ${now}
+            WHERE id = ${row.id} RETURNING *
+          `);
+          yield* store.recordHistory(row.id, actor, "houston:issue-link", {
+            issue: { old: previous === null ? null : previous.url, new: issue.url },
+          });
+          return { result: updated as TaskRow, touched: [row.id] };
+        }),
+      )
+      .pipe(Effect.flatMap(store.detail));
+
+  const unlinkIssue: HoustonTaskService["Service"]["unlinkIssue"] = (input, actor = USER_ACTOR) =>
+    store
+      .write(
+        Effect.gen(function* () {
+          const operation = "houston.tasks.issue.unlink";
+          const row = yield* store.resolve(operation, input.id);
+          if (row.revision !== input.expectedRevision) {
+            return yield* conflictRefusal(
+              operation,
+              houstonTaskKey(row.number),
+              input.expectedRevision,
+              row.revision,
+            );
+          }
+          const previous = yield* store.issueOf(row.id);
+          if (previous === null) return { result: row, touched: [] };
+          const now = yield* nowIso;
+          yield* run(sql`DELETE FROM houston_task_issues WHERE task_id = ${row.id}`);
+          const [updated] = yield* run(sql<TaskRow>`
+            UPDATE houston_tasks SET revision = revision + 1, updated_at = ${now}
+            WHERE id = ${row.id} RETURNING *
+          `);
+          yield* store.recordHistory(row.id, actor, "houston:issue-unlink", {
+            issue: { key: previous.key, displayKey: previous.displayKey, url: previous.url },
+          });
+          return { result: updated as TaskRow, touched: [row.id] };
+        }),
+      )
+      .pipe(Effect.flatMap(store.detail));
+
+  const taskForIssue: HoustonTaskService["Service"]["taskForIssue"] = Effect.fn(
+    "HoustonTaskService.taskForIssue",
+  )(function* (input) {
+    const row = yield* store.taskForIssue({
+      tracker: input.tracker,
+      host: input.host ?? "",
+      scope: input.scope,
+      key: input.key,
+    });
+    if (row === undefined) return null;
+    const { summaries } = yield* store.summaries({ ids: [row.id] });
+    return summaries[0] ?? null;
+  });
+
+  const issueText: HoustonTaskService["Service"]["issueText"] = Effect.fn(
+    "HoustonTaskService.issueText",
+  )(function* (taskId) {
+    const link = yield* store.issueOf(taskId);
+    if (link === null) return null;
+    const detail = yield* readIssue("houston.tasks.plan.start", issueRefOf(link)).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning(`The issue of task ${taskId} could not be read for planning`, {
+          message: error.message,
+        }).pipe(Effect.as(null)),
+      ),
+    );
+    if (detail === null) return null;
+    return {
+      displayKey: detail.displayKey,
+      url: detail.url,
+      title: detail.title,
+      body: detail.body,
+    };
+  });
 
   const initiativeById = (id: number) =>
     run(sql<InitiativeRow>`SELECT * FROM houston_task_initiatives WHERE id = ${id}`).pipe(
@@ -712,7 +986,7 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const operation = "houston.tasks.domain.save";
           const row = yield* store.resolve(operation, input.id);
-          const key = toTask(row).key;
+          const key = houstonTaskKey(row.number);
           if (row.revision !== input.expectedRevision) {
             return yield* conflictRefusal(operation, key, input.expectedRevision, row.revision);
           }
@@ -876,6 +1150,11 @@ const make = Effect.gen(function* () {
     saveDomain,
     getSettings,
     setSettings,
+    createFromIssue,
+    linkIssue,
+    unlinkIssue,
+    taskForIssue,
+    issueText,
   });
 });
 
