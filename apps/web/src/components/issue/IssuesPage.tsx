@@ -4,21 +4,15 @@ import {
   mergeIssueListErrors,
   mergeIssueListPage,
 } from "@houston-app/client-runtime/state/issues";
-import { sourceControlClients } from "@houston-app/client-runtime/source-control-clients";
 import type {
   EnvironmentId,
   IssueInvolvement,
-  IssueListCursors,
-  IssueListEntry,
   IssueListInput,
-  IssueListProjectError,
-  IssueListResult,
   IssueListSort,
   IssueListState,
   IssueTrackerKind,
   IssueTrackerSummary,
   ProjectId,
-  SourceControlProviderKind,
 } from "@houston-app/contracts";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
@@ -36,12 +30,15 @@ import { Fragment, use, useEffect, useState, type ReactNode } from "react";
 
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { IssueDetailPanel } from "~/components/issue/IssueDetailPanel";
-import {
-  IssueRow,
-  type EnvironmentIssueEntry,
-  type IssueRowTarget,
-} from "~/components/issue/IssueRow";
+import { IssueRow, type IssueRowTarget } from "~/components/issue/IssueRow";
 import { issueFilterScopes } from "~/components/issue/issueFilterScopes";
+import {
+  groupIssues,
+  holdIssuePages,
+  issueCursorsForHost,
+  issueTrackerKey,
+  type HeldIssuePage,
+} from "~/components/issue/issueList";
 import {
   issueListPreferences,
   writeIssueListPreferences,
@@ -88,7 +85,6 @@ import {
 } from "~/rightPanelStore";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { squashAtomCommandFailure } from "@houston-app/client-runtime/state/runtime";
-import type { EnvironmentProject } from "@houston-app/client-runtime/state/shell";
 import { useProjects } from "~/state/entities";
 import { useEnvironments, useIssuesSupported } from "~/state/environments";
 import { issueEnvironment, useIssueList, type IssueListTarget } from "~/state/issues";
@@ -131,117 +127,6 @@ function getShortcutContext() {
     isWeb: !isDesktopHost,
     isDesktop: isDesktopHost,
   };
-}
-
-/** Rows from every environment that answered, with any continuation pages laid over them. */
-interface HeldPage {
-  readonly answer: IssueListResult;
-  readonly entries: ReadonlyArray<IssueListEntry>;
-  readonly errors: ReadonlyArray<IssueListProjectError>;
-  readonly nextCursors: IssueListCursors;
-  /** Why the last "Load more" failed, until a retry succeeds or a new first page arrives. */
-  readonly moreFailure: string | null;
-}
-
-function trackerKey(tracker: Pick<IssueTrackerSummary, "tracker" | "host">): string {
-  return `${tracker.tracker} ${tracker.host.toLowerCase()}`;
-}
-
-/** The cursors of one tracker host, so its "Load more" leaves the other trackers where they are. */
-function issueCursorsForHost(cursors: IssueListCursors, host: string): IssueListCursors {
-  return Object.fromEntries(Object.entries(cursors).filter(([key]) => key.startsWith(`${host} `)));
-}
-
-/** Newest first by the date the trackers were asked to sort on, so merged rows keep that order. */
-function issueOrder(sort: IssueListSort) {
-  const date = (issue: IssueListEntry) =>
-    Date.parse(sort === "created" ? issue.createdAt : issue.updatedAt);
-  return (left: IssueListEntry, right: IssueListEntry) => date(right) - date(left);
-}
-
-/** Continuations are laid over the first page they continue; a new first page forgets them. */
-function holdPages(
-  answers: ReadonlyArray<readonly [EnvironmentId, IssueListResult]>,
-  pages: ReadonlyMap<EnvironmentId, HeldPage>,
-): ReadonlyMap<EnvironmentId, HeldPage> {
-  const next = new Map<EnvironmentId, HeldPage>();
-  for (const [environmentId, answer] of answers) {
-    const previous = pages.get(environmentId);
-    next.set(
-      environmentId,
-      previous?.answer === answer
-        ? previous
-        : {
-            answer,
-            entries: answer.entries,
-            errors: answer.errors,
-            nextCursors: answer.nextCursors,
-            moreFailure: null,
-          },
-    );
-  }
-  return next;
-}
-
-function groupIssues(
-  held: ReadonlyMap<EnvironmentId, HeldPage>,
-  query: string,
-  projects: ReadonlyArray<EnvironmentProject>,
-  sort: IssueListSort = "updated",
-) {
-  const byTracker = new Map<
-    string,
-    {
-      tracker: IssueTrackerSummary;
-      rows: EnvironmentIssueEntry[];
-      errors: Array<{ projectTitle: string; message: string; environmentId: EnvironmentId }>;
-      more: EnvironmentId[];
-    }
-  >();
-  const needle = query.toLowerCase();
-  for (const [environmentId, page] of held) {
-    for (const tracker of page.answer.trackers) {
-      const key = trackerKey(tracker);
-      if (!byTracker.has(key)) byTracker.set(key, { tracker, rows: [], errors: [], more: [] });
-      const group = byTracker.get(key)!;
-      if (!group.tracker.configured && tracker.configured) group.tracker = tracker;
-      if (Object.keys(page.nextCursors).some((c) => c.startsWith(`${tracker.host} `)))
-        group.more.push(environmentId);
-    }
-    for (const entry of page.entries) {
-      const key = trackerKey(entry);
-      const group = byTracker.get(key);
-      if (!group) continue;
-      // A tracker that cannot search is narrowed here instead.
-      if (
-        needle.length > 0 &&
-        group.tracker.capabilities?.search !== true &&
-        !entry.title.toLowerCase().includes(needle) &&
-        !entry.displayKey.toLowerCase().includes(needle)
-      )
-        continue;
-      group.rows.push({ ...entry, environmentId });
-    }
-    for (const error of page.errors) {
-      const project = projects.find(
-        (p) => p.environmentId === environmentId && p.id === error.projectId,
-      );
-      const kind = project?.repositoryIdentity?.provider as SourceControlProviderKind | undefined;
-      const host = kind
-        ? sourceControlClients.changeRequestHost(project?.repositoryIdentity, kind)
-        : null;
-      const group =
-        (host ? byTracker.get(`${kind} ${host.toLowerCase()}`) : undefined) ??
-        [...byTracker.values()][0];
-      group?.errors.push({ ...error, environmentId });
-    }
-  }
-  for (const group of byTracker.values()) {
-    group.rows.sort(issueOrder(sort));
-  }
-  return [...byTracker.values()].sort((a, b) =>
-    trackerKey(a.tracker).localeCompare(trackerKey(b.tracker)),
-  );
 }
 
 function hostOptionsFor(groups: ReturnType<typeof groupIssues>, chosen: string | undefined) {
@@ -299,8 +184,8 @@ export function IssuesPage() {
   const list = useIssueList(targets);
   useLiveRefresh(list.refresh, { key: JSON.stringify(targets) });
 
-  const [pages, setPages] = useState<ReadonlyMap<EnvironmentId, HeldPage>>(new Map());
-  const held = holdPages(list.answers, pages);
+  const [pages, setPages] = useState<ReadonlyMap<EnvironmentId, HeldIssuePage>>(new Map());
+  const held = holdIssuePages(list.answers, pages);
   const loadPage = useAtomCommand(issueEnvironment.listPage, { reportFailure: false });
   const [loadingMore, setLoadingMore] = useState<string | null>(null);
   // One tracker group's button carries on that tracker's scopes only.
@@ -528,7 +413,7 @@ export function IssuesPage() {
         const presentation = issueTrackerPresentation(group.tracker.tracker);
         const showScope = new Set(group.rows.map((row) => row.scope.toLowerCase())).size > 1;
         return (
-          <section key={trackerKey(group.tracker)} className="flex flex-col gap-1">
+          <section key={issueTrackerKey(group.tracker)} className="flex flex-col gap-1">
             <h2 className="flex items-center gap-1.5 px-3 text-xs font-medium text-muted-foreground">
               <presentation.Icon aria-hidden className="size-3.5" />
               {presentation.providerName}
