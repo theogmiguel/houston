@@ -985,6 +985,150 @@ const TaskIssueStateSetting = Effect.gen(function* () {
   `;
 });
 
+// GitHub issues are no longer a task source: each imported GitHub link becomes the task's issue
+// link, and the source's settings, cursors and pending write-back rows go. A link that cannot be
+// converted leaves its task unlinked with a history note, never deleted; a task already backed by
+// the issue keeps that link.
+const GITHUB_EXTERNAL_ID = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)#([1-9][0-9]*)$/;
+
+interface GitHubIssueReference {
+  readonly owner: string;
+  readonly repository: string;
+  readonly number: string;
+  readonly host: string;
+}
+
+/** The issue a stored external id and URL name, or why they do not name one. */
+const githubIssueReference = (
+  externalId: string,
+  rawUrl: string,
+): GitHubIssueReference | string => {
+  const match = GITHUB_EXTERNAL_ID.exec(externalId);
+  if (match === null) return `${externalId} is not owner/repo#number`;
+  const owner = match[1] as string;
+  const repository = match[2] as string;
+  const number = match[3] as string;
+  if (owner === "." || owner === ".." || repository === "." || repository === "..") {
+    return `${externalId} is not owner/repo#number`;
+  }
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return `${externalId} has no readable URL`;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    return `${externalId} has no readable URL`;
+  }
+  const segments = url.pathname.split("/").filter((part) => part.length > 0);
+  const expected = [owner, repository, "issues", number] as Array<string | undefined>;
+  if (segments.length !== 4 || segments.some((part, index) => part !== expected[index])) {
+    return `${externalId} does not match its URL ${rawUrl}`;
+  }
+  return { owner, repository, number, host: url.host };
+};
+
+/** The title the snapshot recorded for the issue, preferring the tracker's own words. */
+const snapshotIssueTitle = (json: string): string | null => {
+  try {
+    const parsed = JSON.parse(json) as Record<string, unknown>;
+    for (const key of ["remote", "base", "local"]) {
+      const fields = parsed[key];
+      if (typeof fields !== "object" || fields === null) continue;
+      const title = (fields as Record<string, unknown>).title;
+      if (typeof title === "string" && title.trim().length > 0) return title.trim();
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
+const GitHubIssuesAsTaskIssues = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const now = DateTime.formatIso(yield* DateTime.now);
+  const rows = yield* sql<{
+    readonly task_id: number;
+    readonly project_id: string;
+    readonly external_id: string;
+    readonly url: string;
+    readonly snapshot_json: string;
+    readonly task_title: string;
+  }>`
+    SELECT l.task_id, l.project_id, l.external_id, l.url, l.snapshot_json, t.title AS task_title
+    FROM houston_task_source_links l
+    JOIN houston_tasks t ON t.id = l.task_id
+    WHERE l.provider = 'github_issues' AND l.source = 'source'
+    ORDER BY l.task_id
+  `;
+  const skip = (taskId: number, reason: string, externalId: string, url: string) =>
+    sql`
+      INSERT INTO houston_task_history (task_id, actor, action, changes, created_at)
+      VALUES (
+        ${taskId}, 'houston:issue-import', 'houston:issue-import-skipped',
+        ${JSON.stringify({ reason, externalId, url })}, ${now}
+      )
+    `;
+  for (const row of rows) {
+    const reference = githubIssueReference(row.external_id, row.url);
+    if (typeof reference === "string") {
+      yield* skip(row.task_id, reference, row.external_id, row.url);
+      continue;
+    }
+    const scope = `${reference.owner}/${reference.repository}`;
+    const [own] = yield* sql<{ readonly task_id: number }>`
+      SELECT task_id FROM houston_task_issues WHERE task_id = ${row.task_id}
+    `;
+    if (own !== undefined) {
+      yield* skip(
+        row.task_id,
+        `task ${row.task_id} already has an issue link`,
+        row.external_id,
+        row.url,
+      );
+      continue;
+    }
+    const [holder] = yield* sql<{
+      readonly task_id: number;
+      readonly archived_at: string | null;
+    }>`
+      SELECT i.task_id, t.archived_at FROM houston_task_issues i
+      JOIN houston_tasks t ON t.id = i.task_id
+      WHERE lower(i.tracker) = 'github' AND lower(i.host) = lower(${reference.host})
+        AND lower(i.scope) = lower(${scope}) AND i.key = ${reference.number}
+      ORDER BY t.archived_at IS NOT NULL, i.task_id LIMIT 1
+    `;
+    if (holder !== undefined && holder.archived_at === null) {
+      yield* skip(
+        row.task_id,
+        `${scope}#${reference.number} is already the issue of task ${holder.task_id}`,
+        row.external_id,
+        row.url,
+      );
+      continue;
+    }
+    const title = (snapshotIssueTitle(row.snapshot_json) ?? row.task_title).trim();
+    if (title.length === 0) {
+      yield* skip(row.task_id, `${row.external_id} has no title`, row.external_id, row.url);
+      continue;
+    }
+    yield* sql`
+      INSERT INTO houston_task_issues (
+        task_id, project_id, tracker, host, scope, key, display_key, url, title, linked_at
+      ) VALUES (
+        ${row.task_id}, ${row.project_id}, 'github', ${reference.host}, ${scope},
+        ${reference.number}, ${`#${reference.number}`},
+        ${`https://${reference.host}/${scope}/issues/${reference.number}`}, ${title}, ${now}
+      )
+    `;
+  }
+  yield* sql`DELETE FROM houston_task_source_links WHERE provider = 'github_issues'`;
+  yield* sql`DELETE FROM houston_task_source_settings WHERE provider = 'github_issues'`;
+  yield* sql`DELETE FROM houston_task_source_poll WHERE provider = 'github_issues'`;
+  yield* sql`DELETE FROM houston_task_source_outbox WHERE provider = 'github_issues'`;
+  yield* sql`DELETE FROM houston_task_source_credentials WHERE provider = 'github_issues'`;
+});
+
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
@@ -1008,6 +1152,7 @@ const houstonMigrationEntries = [
   [22, "IssueTrackerBindings", IssueTrackerBindings],
   [23, "TaskIssues", TaskIssues],
   [24, "TaskIssueStateSetting", TaskIssueStateSetting],
+  [25, "GitHubIssuesAsTaskIssues", GitHubIssuesAsTaskIssues],
 ] as const;
 
 // Ids land in merge order, so a database can record a higher id before a lower one; every
