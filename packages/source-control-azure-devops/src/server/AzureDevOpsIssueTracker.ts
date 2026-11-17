@@ -191,10 +191,10 @@ function stateClause(state: "all" | "open" | "closed", closedStates: ClosedState
   }
 }
 
-/** `<iso changed date>|<id>` of the last row handed over, which is where the next page starts. */
-function parseCursor(cursor: string): { readonly changedAt: string; readonly id: number } | null {
+/** `<iso date the list is sorted by>|<id>` of the last row handed over, where the next page starts. */
+function parseCursor(cursor: string): { readonly date: string; readonly id: number } | null {
   const match = LIST_CURSOR.exec(cursor);
-  return match === null ? null : { changedAt: match[1]!, id: Number(match[2]) };
+  return match === null ? null : { date: match[1]!, id: Number(match[2]) };
 }
 
 function reasonFor(error: AzureDevOpsCli.AzureDevOpsCliError): IssueTrackerError["reason"] {
@@ -562,6 +562,8 @@ export const make: Effect.Effect<
       }
       const limit = Math.min(Math.max(input.limit, 1), PAGE_SIZE);
       const text = input.query?.trim() ?? "";
+      const created = input.sort === "created";
+      const dateField = created ? "[System.CreatedDate]" : "[System.ChangedDate]";
       return yield* scoped("listIssues", input).pipe(
         Effect.flatMap((scope) =>
           closedStates({ ...scope, cwd: input.cwd, operation: "listIssues" }).pipe(
@@ -585,10 +587,16 @@ export const make: Effect.Effect<
                 stateClause(input.state, closed) +
                 involvementClause(input.involvement) +
                 (text.length === 0 ? "" : ` AND [System.Title] CONTAINS ${quoted(text)}`) +
+                (input.labels ?? [])
+                  .map((label) => ` AND [System.Tags] CONTAINS ${quoted(label)}`)
+                  .join("") +
+                (input.assignee === undefined
+                  ? ""
+                  : ` AND [System.AssignedTo] = ${quoted(input.assignee)}`) +
                 (cursor === undefined
                   ? ""
-                  : ` AND ([System.ChangedDate] < ${quoted(cursor.changedAt)} OR ([System.ChangedDate] = ${quoted(cursor.changedAt)} AND [System.Id] < ${cursor.id}))`) +
-                " ORDER BY [System.ChangedDate] DESC, [System.Id] DESC",
+                  : ` AND (${dateField} < ${quoted(cursor.date)} OR (${dateField} = ${quoted(cursor.date)} AND [System.Id] < ${cursor.id}))`) +
+                ` ORDER BY ${dateField} DESC, [System.Id] DESC`,
             },
           }).pipe(
             Effect.flatMap((raw) => {
@@ -616,13 +624,19 @@ export const make: Effect.Effect<
                     }),
                     decode: (raw) => decodeWorkItemsJson(raw, closed),
                   }).pipe(
-                    Effect.map((items) => {
+                    Effect.map((hydrated) => {
+                      // The cursor is the last row WIQL sorted, so its order is restored.
+                      const position = new Map(ids.map((row, index) => [String(row.id), index]));
+                      const items = hydrated.toSorted(
+                        (left, right) =>
+                          (position.get(left.key) ?? 0) - (position.get(right.key) ?? 0),
+                      );
                       const last = items.at(-1);
                       return {
                         items,
                         nextCursor:
                           ids.length > limit && last !== undefined
-                            ? `${last.updatedAt}|${last.key}`
+                            ? `${created ? last.createdAt : last.updatedAt}|${last.key}`
                             : null,
                       };
                     }),

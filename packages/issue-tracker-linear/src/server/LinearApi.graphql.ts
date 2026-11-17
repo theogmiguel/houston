@@ -217,10 +217,11 @@ export const HoustonIssues = GraphQL.query("HoustonIssues", {
     variables: [
       { name: "first", body: "Int!" },
       { name: "after", body: "String" },
-      { name: "filter", body: "IssueFilter!" }
+      { name: "filter", body: "IssueFilter!" },
+      { name: "orderBy", body: "PaginationOrderBy!" }
     ],
     selections: [
-      { name: "issues", body: ["(first:$", "first", " after:$", "after", " filter:$", "filter", " orderBy:updatedAt){nodes{...LinearIssue}pageInfo{...LinearPageInfo}}"] }
+      { name: "issues", body: ["(first:$", "first", " after:$", "after", " filter:$", "filter", " orderBy:$", "orderBy", "){nodes{...LinearIssue}pageInfo{...LinearPageInfo}}"] }
     ],
     fragments: [
       { name: "LinearIssue", body: ["on Issue{id identifier number title url description createdAt updatedAt completedAt canceledAt state{...LinearWorkflowState}team{key}creator{...LinearUser}assignee{...LinearUser}labels{nodes{...LinearLabel}}}"] },
@@ -233,7 +234,8 @@ export const HoustonIssues = GraphQL.query("HoustonIssues", {
   variables: {
     first: Shared.Int,
     after: Schema.optional(Schema.NullOr(Schema.String)),
-    filter: Shared.IssueFilter
+    filter: Shared.IssueFilter,
+    orderBy: Shared.PaginationOrderBy
   },
   result: Schema.Struct({
     /** All issues. Returns a paginated list of issues visible to the authenticated user. Can be filtered by various criteria including team, assignee, state, labels, project, and cycle. */

@@ -93,8 +93,13 @@ query HoustonViewer {
   }
 }
 
-query HoustonIssues($first: Int!, $after: String, $filter: IssueFilter!) {
-  issues(first: $first, after: $after, filter: $filter, orderBy: updatedAt) {
+query HoustonIssues(
+  $first: Int!
+  $after: String
+  $filter: IssueFilter!
+  $orderBy: PaginationOrderBy!
+) {
+  issues(first: $first, after: $after, filter: $filter, orderBy: $orderBy) {
     nodes {
       ...LinearIssue
     }

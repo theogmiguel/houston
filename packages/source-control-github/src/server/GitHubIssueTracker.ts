@@ -5,6 +5,7 @@ import {
   IssueTrackerKind,
   type IssueCapabilities,
   type IssueInvolvement,
+  type IssueListSort,
 } from "@houston-app/contracts";
 import {
   IssueTrackerError,
@@ -50,11 +51,16 @@ const REPOSITORY = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]+$/;
 const SEARCH_WORDS = /\s+/;
 const ISSUE_NUMBER = /^[1-9]\d*$/;
 
+/** Quoted, so no character in it can start a qualifier of its own. */
+function quotedTerm(value: string): string {
+  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+}
+
 function searchTerms(query: string): ReadonlyArray<string> {
   return query
     .split(SEARCH_WORDS)
     .filter((word) => word.length > 0)
-    .map((word) => `"${word.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`);
+    .map(quotedTerm);
 }
 
 const INVOLVEMENT_QUALIFIER: Record<IssueInvolvement, string | null> = {
@@ -70,6 +76,9 @@ function searchQuery(input: {
   readonly involvement: IssueInvolvement;
   readonly viewer: string;
   readonly query?: string | undefined;
+  readonly labels?: ReadonlyArray<string> | undefined;
+  readonly assignee?: string | undefined;
+  readonly sort: IssueListSort;
 }): string {
   const qualifier = INVOLVEMENT_QUALIFIER[input.involvement];
   return [
@@ -77,7 +86,9 @@ function searchQuery(input: {
     `repo:${input.scope.trim()}`,
     ...(input.state === "all" ? [] : [`is:${input.state}`]),
     ...(qualifier === null ? [] : [`${qualifier}:${input.viewer}`]),
-    "sort:updated-desc",
+    ...(input.labels ?? []).map((label) => `label:${quotedTerm(label)}`),
+    ...(input.assignee === undefined ? [] : [`assignee:${quotedTerm(input.assignee)}`]),
+    `sort:${input.sort}-desc`,
     ...searchTerms(input.query ?? ""),
   ].join(" ");
 }

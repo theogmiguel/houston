@@ -347,8 +347,10 @@ export const make: Effect.Effect<IssueTrackerApi, never, ForgejoCli.ForgejoCli> 
         const params = new URLSearchParams({
           type: "issues",
           state: input.state,
-          sort: "recentupdate",
+          sort: input.sort === "created" ? "latest" : "recentupdate",
         });
+        const labels = input.labels ?? [];
+        if (labels.length > 0) params.set("labels", labels.join(","));
         const text = input.query?.trim() ?? "";
         if (text.length > 0) params.set("q", text);
         const involvement =
@@ -360,6 +362,12 @@ export const make: Effect.Effect<IssueTrackerApi, never, ForgejoCli.ForgejoCli> 
                 ? "mentioned_by"
                 : null;
         if (involvement !== null) params.set(involvement, input.viewer);
+        if (input.assignee !== undefined) params.set("assigned_by", input.assignee);
+        // `assigned_by` names one person, so "assigned to me" is kept here beside a named assignee.
+        const alsoAssignedTo =
+          input.involvement === "assigned" && input.assignee !== undefined
+            ? input.viewer.toLowerCase()
+            : null;
         const { rows, nextCursor } = yield* readPage(
           input,
           "listIssues",
@@ -368,7 +376,15 @@ export const make: Effect.Effect<IssueTrackerApi, never, ForgejoCli.ForgejoCli> 
           ForgejoIssue,
         );
         return {
-          items: rows.flatMap((issue) => (issue.pull_request ? [] : [forgejoIssue(issue)])),
+          items: rows
+            .flatMap((issue) => (issue.pull_request ? [] : [forgejoIssue(issue)]))
+            // Forgejo documents `labels` as matching any of them; every one is what was asked.
+            .filter(
+              (issue) =>
+                labels.every((label) => issue.labels.some((carried) => carried.name === label)) &&
+                (alsoAssignedTo === null ||
+                  issue.assignees.some((actor) => actor.login.toLowerCase() === alsoAssignedTo)),
+            ),
           nextCursor,
         };
       }),

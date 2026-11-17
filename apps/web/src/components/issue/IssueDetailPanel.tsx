@@ -4,6 +4,7 @@ import {
   issueAssigneeHeld,
   issueAssigneesAfterPicks,
   issueLabelsAfterPicks,
+  issuePicksAfterFailedWrite,
   issuePicksFor,
   issueWriteAfterPicks,
   noIssuePicks,
@@ -198,12 +199,14 @@ function IssueLabelPicker({
   detail,
   allowed,
   disabledReason,
+  onChanged,
 }: {
   environmentId: EnvironmentId;
   reference: IssueRef;
   detail: IssueDetail;
   allowed: boolean;
   disabledReason: string;
+  onChanged?: (() => void) | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -235,10 +238,14 @@ function IssueLabelPicker({
       current.written,
     );
     if (labels === null) return;
-    setPicks({ ...current, written: labels });
+    const sent = { ...current, written: labels };
+    setPicks(sent);
     void update({ environmentId, input: { ...reference, labels } }).then((result) => {
-      if (result._tag !== "Failure") return;
-      setPicks((latest) => (latest.written === labels ? noIssuePicks() : latest));
+      if (result._tag !== "Failure") {
+        onChanged?.();
+        return;
+      }
+      setPicks((latest) => issuePicksAfterFailedWrite(latest, sent));
       toastManager.add({
         type: "error",
         title: "Could not change labels",
@@ -305,12 +312,14 @@ function IssueAssigneePicker({
   detail,
   allowed,
   disabledReason,
+  onChanged,
 }: {
   environmentId: EnvironmentId;
   reference: IssueRef;
   detail: IssueDetail;
   allowed: boolean;
   disabledReason: string;
+  onChanged?: (() => void) | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -341,10 +350,14 @@ function IssueAssigneePicker({
       current.written,
     );
     if (assignees === null) return;
-    setPicks({ ...current, written: assignees });
+    const sent = { ...current, written: assignees };
+    setPicks(sent);
     void update({ environmentId, input: { ...reference, assignees } }).then((result) => {
-      if (result._tag !== "Failure") return;
-      setPicks((latest) => (latest.written === assignees ? noIssuePicks() : latest));
+      if (result._tag !== "Failure") {
+        onChanged?.();
+        return;
+      }
+      setPicks((latest) => issuePicksAfterFailedWrite(latest, sent));
       toastManager.add({
         type: "error",
         title: "Could not change assignees",
@@ -468,6 +481,7 @@ export function IssueDetailPanel({
   threadRef = null,
   listEntry = null,
   onSelectPullRequest,
+  onChanged,
 }: {
   environmentId: EnvironmentId;
   reference: IssueRef;
@@ -476,6 +490,8 @@ export function IssueDetailPanel({
   threadRef?: ScopedThreadRef | null;
   /** Opens a linked change request beside this one; absent, the link goes to the host. */
   onSelectPullRequest?: ((reference: PullRequestRef) => void) | undefined;
+  /** A write landed, so the list this issue was opened from is stale. */
+  onChanged?: (() => void) | undefined;
 }) {
   const detailQuery = useEnvironmentQuery(
     issueEnvironment.detail({ environmentId, input: reference }),
@@ -570,6 +586,7 @@ export function IssueDetailPanel({
       });
       return;
     }
+    onChanged?.();
     setEditing(null);
   };
 
@@ -587,7 +604,9 @@ export function IssueDetailPanel({
         title: "The state could not be changed",
         description: readableFailure(squashAtomCommandFailure(result), "The tracker refused it."),
       });
+      return;
     }
+    onChanged?.();
   };
 
   const stateControl: ReactNode = canSetState ? (
@@ -783,6 +802,7 @@ export function IssueDetailPanel({
                     disabledReason={
                       blocked ?? "Changing labels needs triage access on this tracker."
                     }
+                    onChanged={onChanged}
                   />
                 ) : null}
               </span>
@@ -805,6 +825,7 @@ export function IssueDetailPanel({
                     disabledReason={
                       blocked ?? "Changing assignees needs triage access on this tracker."
                     }
+                    onChanged={onChanged}
                   />
                 ) : null}
               </span>

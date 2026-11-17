@@ -106,12 +106,15 @@ function query(params: ReadonlyArray<readonly [string, string]>): string {
 function involvementParams(input: {
   readonly involvement: IssueInvolvement;
   readonly viewer: string;
+  readonly assignee?: string | undefined;
 }): ReadonlyArray<readonly [string, string]> {
   switch (input.involvement) {
     case "authored":
       return [["author_username", input.viewer]];
     case "assigned":
-      return [["assignee_username", input.viewer]];
+      // A named assignee takes the one assignee parameter GitLab reads; `listIssues` keeps the
+      // viewer by dropping rows.
+      return input.assignee === undefined ? [["assignee_username", input.viewer]] : [];
     // GitLab's `my_reaction_emoji` and `iteration` filters aside, nothing narrows to mentions, so
     // the listing stays as wide as `all` rather than guessing.
     case "mentioned":
@@ -331,14 +334,18 @@ export const make: Effect.Effect<IssueTrackerApi, never, GitLabCli.GitLabCli> = 
 
       getViewer: (input) => viewer({ cwd: input.cwd, operation: "getViewer" }),
 
-      listIssues: (input) => {
+      listIssues: Effect.fn("GitLabIssueTracker.listIssues")(function* (input) {
         const page = parsePage(input.cursor);
         if (page === null) {
-          return Effect.fail(refused("listIssues", "The cursor was not one GitLab handed out."));
+          return yield* refused("listIssues", "The cursor was not one GitLab handed out.");
         }
         const perPage = Math.min(Math.max(input.limit, 1), PAGE_SIZE);
         const text = input.query?.trim() ?? "";
-        return read({
+        const alsoAssignedTo =
+          input.involvement === "assigned" && input.assignee !== undefined
+            ? input.viewer.toLowerCase()
+            : null;
+        const list = yield* read({
           cwd: input.cwd,
           operation: "listIssues",
           path: `projects/${projectPath(input.scope)}/issues?${query([
@@ -347,19 +354,29 @@ export const make: Effect.Effect<IssueTrackerApi, never, GitLabCli.GitLabCli> = 
             // GitLab's own `search` matches title and description, URL-encoded like every other
             // value here, so no text in it can become a parameter of its own.
             ...(text.length === 0 ? [] : [["search", text] as const]),
-            ["order_by", "updated_at"],
+            ...(input.labels === undefined || input.labels.length === 0
+              ? []
+              : [["labels", input.labels.join(",")] as const]),
+            ...(input.assignee === undefined
+              ? []
+              : [["assignee_username", input.assignee] as const]),
+            ["order_by", input.sort === "created" ? "created_at" : "updated_at"],
             ["sort", "desc"],
             ["per_page", String(perPage)],
             ["page", String(page)],
           ])}`,
           decode: decodeIssueListJson,
-        }).pipe(
-          Effect.map((list) => ({
-            items: list.items,
-            nextCursor: list.rawCount < perPage ? null : String(page + 1),
-          })),
-        );
-      },
+        });
+        return {
+          items:
+            alsoAssignedTo === null
+              ? list.items
+              : list.items.filter((issue) =>
+                  issue.assignees.some((actor) => actor.login.toLowerCase() === alsoAssignedTo),
+                ),
+          nextCursor: list.rawCount < perPage ? null : String(page + 1),
+        };
+      }),
 
       getIssue: (input) =>
         issuePath(input, "getIssue").pipe(

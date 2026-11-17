@@ -120,8 +120,9 @@ describe("LinearIssueTracker", () => {
           expect(variables.filter).toMatchObject({
             team: { key: { eq: "ENG" } },
             state: { type: { nin: ["completed", "canceled"] } },
-            assignee: { id: { eq: "usr_ada" } },
+            assignee: { displayName: { eq: "ada" } },
           });
+          expect(variables.orderBy).toBe("updatedAt");
           return {
             issues: {
               nodes: [
@@ -144,7 +145,8 @@ describe("LinearIssueTracker", () => {
         ...target,
         state: "open",
         involvement: "assigned",
-        viewer: "usr_ada",
+        viewer: "ada",
+        sort: "updated",
         limit: 50,
       });
       expect(page.nextCursor).toBe("cur_2");
@@ -154,12 +156,48 @@ describe("LinearIssueTracker", () => {
       ]);
       expect(page.items[0]).toMatchObject({
         closedAt: "2026-07-03T00:00:00.000Z",
-        author: { login: "usr_ada", name: "ada" },
-        assignees: [{ login: "usr_grace", name: "grace" }],
+        author: { login: "ada", name: "ada" },
+        assignees: [{ login: "grace", name: "grace" }],
         labels: [{ name: "Bug", color: "#f00" }],
       });
       // The stored key goes in as-is, not as a bearer token.
       expect(requests.map((request) => request.authorization)).toEqual(["lin_api_stored"]);
+    }),
+  );
+
+  it.effect("narrows a listing by labels and assignee and asks for its order", () =>
+    Effect.gen(function* () {
+      let sent: Record<string, unknown> = {};
+      const { tracker } = fakeLinear({
+        HoustonViewer: () => ({ viewer: ADA, teams: { nodes: [] } }),
+        HoustonIssues: (variables) => {
+          sent = variables;
+          return {
+            issues: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+          };
+        },
+      });
+      const api = yield* tracker;
+      yield* api.listIssues({
+        ...target,
+        state: "open",
+        involvement: "assigned",
+        viewer: "ada",
+        labels: ["Bug", "Needs triage"],
+        assignee: "grace",
+        sort: "created",
+        limit: 50,
+      });
+      // Each narrows without replacing "assigned to me", which stays its own clause.
+      expect(sent.filter).toMatchObject({
+        assignee: { displayName: { eq: "ada" } },
+        and: [
+          { assignee: { displayName: { eq: "grace" } } },
+          { labels: { some: { name: { eq: "Bug" } } } },
+          { labels: { some: { name: { eq: "Needs triage" } } } },
+        ],
+      });
+      expect(sent.orderBy).toBe("createdAt");
     }),
   );
 
@@ -220,7 +258,7 @@ describe("LinearIssueTracker", () => {
       });
       const api = yield* tracker;
       const detail = yield* api.getIssue({ ...target, key: "eng-7" });
-      expect(detail.viewer).toBe("usr_ada");
+      expect(detail.viewer).toBe("ada");
       expect(detail.commentsCursor).toBe("cmt_cur");
       expect(detail.comments[0]?.reactions).toEqual([
         { content: "thumbs-up", count: 1, actors: [], viewerHasReacted: true },

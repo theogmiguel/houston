@@ -356,6 +356,31 @@ describe("GitHubIssueTracker", () => {
     }),
   );
 
+  it.effect("asks search for the labels, assignee and order a listing names", () =>
+    Effect.gen(function* () {
+      const seen: unknown[] = [];
+      const api = yield* tracker((variables) => seen.push(variables));
+      // The canned answer is not a search result; only the query sent matters here.
+      yield* api
+        .listIssues({
+          cwd: "/w",
+          host: "github.com",
+          scope: "acme/web",
+          state: "open",
+          involvement: "all",
+          viewer: "mona",
+          labels: ['needs "repro"'],
+          assignee: "octavia",
+          sort: "created",
+          limit: 10,
+        })
+        .pipe(Effect.exit);
+      expect(seen[0]).toMatchObject({
+        q: 'is:issue repo:acme/web is:open label:"needs \\"repro\\"" assignee:"octavia" sort:created-desc',
+      });
+    }),
+  );
+
   it.effect("offers YAML issue forms when blank issues are disabled", () =>
     Effect.gen(function* () {
       const form = {

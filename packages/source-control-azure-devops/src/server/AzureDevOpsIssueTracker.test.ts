@@ -221,10 +221,53 @@ describe("AzureDevOpsIssueTracker", () => {
         state: "open",
         involvement: "all",
         viewer: "octo@acme.test",
+        sort: "updated",
         limit: 10,
       });
       expect(bodies).toHaveLength(1);
       expect(bodies[0]).toContain("AND [System.State] NOT IN ('shipped')");
+      // The date the listing sorts by is the one its cursor carries on from.
+      expect(bodies[0]).toContain("ORDER BY [System.ChangedDate] DESC, [System.Id] DESC");
+    }).pipe(Effect.provide(NodeFileSystem.layer)),
+  );
+
+  it.effect("asks the project for the labels, assignee and order a listing names", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const bodies: string[] = [];
+      const api = yield* AzureDevOpsIssueTracker.make.pipe(
+        Effect.provide(
+          Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({
+            execute: ({ args }) =>
+              args[args.indexOf("--resource") + 1] === "wiql"
+                ? fs.readFileString(args[args.indexOf("--in-file") + 1]!).pipe(
+                    Effect.orDie,
+                    Effect.map((body) => {
+                      bodies.push(body);
+                      return TestSourceControlHost.processOutput(encode({ workItems: [] }));
+                    }),
+                  )
+                : Effect.succeed(TestSourceControlHost.processOutput(answer(args))),
+          }),
+        ),
+      );
+      yield* api.listIssues({
+        cwd: "/w",
+        host: "dev.azure.com",
+        scope: "acme/Web App",
+        state: "open",
+        involvement: "all",
+        viewer: "octo@acme.test",
+        labels: ["bug", "it's ui"],
+        assignee: "octavia@acme.test",
+        sort: "created",
+        limit: 10,
+      });
+      expect(bodies[0]).toContain("AND [System.Tags] CONTAINS 'bug'");
+      // WIQL string literals double a quote rather than ending the literal.
+      expect(bodies[0]).toContain("AND [System.Tags] CONTAINS 'it''s ui'");
+      expect(bodies[0]).toContain("AND [System.AssignedTo] = 'octavia@acme.test'");
+      expect(bodies[0]).toContain("ORDER BY [System.CreatedDate] DESC, [System.Id] DESC");
     }).pipe(Effect.provide(NodeFileSystem.layer)),
   );
 

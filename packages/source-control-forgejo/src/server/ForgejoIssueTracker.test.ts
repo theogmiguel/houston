@@ -214,6 +214,7 @@ describe("ForgejoIssueTracker", () => {
         state: "open",
         involvement: "authored",
         viewer: "reviewer",
+        sort: "updated",
         limit: 50,
         cursor: "2",
       });
@@ -223,6 +224,34 @@ describe("ForgejoIssueTracker", () => {
       expect(page.items.map((item) => item.key)).toEqual(["42"]);
       // No `Link` header at all means the server may still have more; a full page carries on.
       expect(page.nextCursor).toBe("3");
+    }),
+  );
+
+  it.effect("names the labels, assignee and order a listing asks for", () =>
+    Effect.gen(function* () {
+      const paths: string[] = [];
+      const api = yield* tracker((input) => {
+        paths.push(input.path);
+        return { stdout: encode([ISSUE]) };
+      });
+      const page = yield* api.listIssues({
+        cwd: "/w",
+        host: "forgejo.test:3000",
+        scope: "acme/web",
+        state: "open",
+        involvement: "assigned",
+        viewer: "reviewer",
+        labels: ["bug"],
+        assignee: "octavia",
+        sort: "created",
+        limit: 50,
+      });
+      const params = new URLSearchParams(paths[0]!.split("?")[1]);
+      expect(params.get("sort")).toBe("latest");
+      expect(params.get("labels")).toBe("bug");
+      expect(params.get("assigned_by")).toBe("octavia");
+      // Every named label is required, not any one of them.
+      expect(page.items).toEqual([]);
     }),
   );
 });

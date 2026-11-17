@@ -106,11 +106,14 @@ function toState(state: LinearApi.LinearWorkflowState): IssueState {
     : { category: "open", name: state.name };
 }
 
-/** Linear identifies people by id, so that is the login; the display name is what people see. */
+/**
+ * The login is Linear's handle (its `displayName`, unique in a workspace), which is what people
+ * see and what filters and writes are named by; the id stays inside this adapter.
+ */
 function toActor(user: LinearApi.LinearUser): IssueActor {
   return {
-    login: user.id,
-    name: user.displayName ?? user.name,
+    login: user.displayName || user.id,
+    name: user.name ?? null,
     avatarUrl: user.avatarUrl ?? null,
   };
 }
@@ -275,11 +278,11 @@ function involvementFilter(input: {
 }): LinearApi.IssueFilter {
   switch (input.involvement) {
     case "assigned":
-      return { assignee: { id: { eq: input.viewer } } };
+      return { assignee: { displayName: { eq: input.viewer } } };
     case "authored":
-      return { creator: { id: { eq: input.viewer } } };
+      return { creator: { displayName: { eq: input.viewer } } };
     case "mentioned":
-      return { subscribers: { some: { id: { eq: input.viewer } } } };
+      return { subscribers: { some: { displayName: { eq: input.viewer } } } };
     case "all":
       return {};
   }
@@ -388,12 +391,20 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.Lin
           })),
         ),
 
-      // The id, not the display name: it is what the involvement filters compare against.
-      getViewer: () => linear.viewer().pipe(Effect.map((data) => data.viewer.id)),
+      // The handle, not the id: it is what the involvement filters compare against.
+      getViewer: () => linear.viewer().pipe(Effect.map((data) => toActor(data.viewer).login)),
 
       listIssues: (input) => {
+        // `ENG-12`, `#12` or `12` asks for one issue of this team by number.
         const reference =
           input.query === undefined ? null : ISSUE_NUMBER_REFERENCE.exec(input.query.trim());
+        // Each is its own clause: an assignee filter must narrow "assigned to me", not replace it.
+        const clauses: LinearApi.IssueFilter[] = [
+          ...(input.assignee === undefined
+            ? []
+            : [{ assignee: { displayName: { eq: input.assignee } } }]),
+          ...(input.labels ?? []).map((name) => ({ labels: { some: { name: { eq: name } } } })),
+        ];
         const filter: LinearApi.IssueFilter = {
           team: { key: { eq: input.scope.trim().toUpperCase() } },
           ...involvementFilter(input),
@@ -407,6 +418,7 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.Lin
                       : { nin: CLOSED_STATE_TYPES },
                 },
               }),
+          ...(clauses.length === 0 ? {} : { and: clauses }),
           ...(input.query === undefined
             ? {}
             : {
@@ -417,25 +429,37 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.Lin
                 ],
               }),
         };
-        return linear.listIssues({ filter, first: input.limit, after: input.cursor }).pipe(
-          Effect.map((page) => ({
-            items: page.nodes.map(toSummary),
-            nextCursor: page.nextCursor,
-          })),
-        );
+        return linear
+          .listIssues({
+            filter,
+            first: input.limit,
+            after: input.cursor,
+            orderBy: input.sort === "created" ? "createdAt" : "updatedAt",
+          })
+          .pipe(
+            Effect.map((page) => ({
+              items: page.nodes.map((node) => toSummary(node)),
+              nextCursor: page.nextCursor,
+            })),
+          );
       },
 
       getIssue: Effect.fn("LinearIssueTracker.getIssue")(function* (input) {
         const identifier = yield* requireIdentifier("getIssue", input.key);
-        const [issue, viewer] = yield* Effect.all([
+        // One read of the viewer: the id matches reactions, the handle is what the client sees.
+        const [issue, me] = yield* Effect.all([
           linear.getIssue(identifier, COMMENTS_PAGE),
-          viewerId,
+          linear.viewer().pipe(
+            Effect.map((data) => data.viewer),
+            Effect.orElseSucceed(() => null),
+          ),
         ]);
+        const viewer = me?.id ?? null;
         if (issue === null) return yield* notFound("getIssue");
         return {
           ...toSummary(issue, issue.comments.nodes.length),
           body: issue.description ?? "",
-          viewer,
+          viewer: me === null ? null : toActor(me).login,
           viewerPermissions: VIEWER_PERMISSIONS,
           reactions: toReactions(issue.reactions, viewer),
           comments: issue.comments.nodes.map((comment) => toComment(comment, viewer)),
