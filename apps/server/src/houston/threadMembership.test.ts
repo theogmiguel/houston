@@ -435,7 +435,11 @@ describe("movement", () => {
         [1, 1, 1],
       );
       assert.deepEqual(chatIdsIn(b), ["u", "v", "t"]);
-      for (const left of b.columns) assert.closeTo(left.width, 1 / 3, 1e-9);
+      // The others keep their widths; the window fits or scrolls the strip per its own setting.
+      assert.deepEqual(
+        b.columns.map((left) => left.width),
+        [0.5, 0.5, 0.5],
+      );
     }).pipe(Effect.provide(layer)),
   );
 
