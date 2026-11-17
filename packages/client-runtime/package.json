@@ -431,6 +431,10 @@
       "types": "./src/changeRequestLinks.ts",
       "default": "./src/changeRequestLinks.ts"
     },
+    "./issue-links": {
+      "types": "./src/issueLinks.ts",
+      "default": "./src/issueLinks.ts"
+    },
     "./thread-pull-requests": {
       "types": "./src/threadPullRequests.ts",
       "default": "./src/threadPullRequests.ts"

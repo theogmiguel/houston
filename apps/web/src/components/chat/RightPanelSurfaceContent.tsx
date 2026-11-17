@@ -85,6 +85,7 @@ export function RightPanelSurfaceContent(props: {
   readonly onCloseSurface: (surface: RightPanelSurface) => void;
   readonly terminal: RightPanelTerminalProps;
   readonly pullRequest: RightPanelPullRequestProps;
+  readonly issuesSupported: boolean;
   readonly files: RightPanelFileProps;
   readonly sideChatParentPanel: SideChatParentPanel;
 }) {
@@ -187,6 +188,15 @@ export function RightPanelSurfaceContent(props: {
     case "pull-requests":
       return <ThreadPullRequestsPanel threadRef={threadRef} />;
     case "issue":
+      if (!props.pullRequest.capabilityKnown) return <PullRequestDetailGhost />;
+      if (!props.issuesSupported) {
+        return (
+          <PullRequestsUnavailableState
+            title="Issues unavailable"
+            error="Update this environment's Houston server to browse issues."
+          />
+        );
+      }
       return (
         <LazySurfaceBoundary
           key={`${scopedThreadKey(threadRef)}:${surface.id}`}
