@@ -11,6 +11,7 @@ import {
   findLayoutTabByContent,
   focusLayoutPane,
   focusLayoutWorkspace,
+  isEmptyWorkspaceRetained,
   moveLayoutTab,
   normalizeLayout,
   placeLayoutContent,
@@ -31,13 +32,14 @@ export interface WorkspaceResult {
   readonly refusal: string | null;
 }
 
-/**
- * Workspaces as a person counts them: every one with something in it, plus the empty one only
- * while it has focus. The unfocused trailing empty workspace is plumbing, not a workspace.
- */
+/** Workspaces as a person counts them: those with tabs or threads, plus the empty one while it has
+ * focus. The unfocused trailing empty workspace is plumbing, not a workspace. */
 export function listLayoutWorkspaces(state: LayoutState): LayoutWorkspace[] {
   return state.workspaces.filter(
-    (workspace) => workspace.columns.length > 0 || workspace.id === state.focusedWorkspaceId,
+    (workspace) =>
+      workspace.columns.length > 0 ||
+      workspace.id === state.focusedWorkspaceId ||
+      isEmptyWorkspaceRetained(workspace.id),
   );
 }
 
