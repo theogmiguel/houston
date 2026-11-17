@@ -7,7 +7,7 @@
     "test": "vp test run --config ../vite.config.ts --dir ."
   },
   "dependencies": {
-    "@oxlint/plugins": "^1.63.0",
+    "@oxlint/plugins": "^1.93.0",
     "effect": "catalog:"
   },
   "devDependencies": {
