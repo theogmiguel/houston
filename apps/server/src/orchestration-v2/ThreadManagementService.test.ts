@@ -3,6 +3,7 @@ import {
   CommandId,
   EnvironmentId,
   MessageId,
+  NodeId,
   type OrchestrationV2Command,
   type OrchestrationV2Run,
   type OrchestrationV2ProviderThread,
@@ -146,6 +147,49 @@ it.effect(
         ThreadManagementService.ThreadManagementProviderInstanceDisabledError,
       );
       expect(error).toMatchObject({ projectId, instanceId });
+      expect(dispatched).toEqual([]);
+    }).pipe(Effect.provide(layerTest));
+  },
+);
+
+it.effect(
+  "the dispatch chokepoint checks a delegated task's provider against the project it runs in",
+  () => {
+    const otherProjectId = ProjectId.make("project:thread-management:other");
+    const instanceId = ProviderInstanceId.make("codex_work");
+    const dispatched: Array<string> = [];
+    const layerTest = layerDispatchChokepointTest(
+      ServerSettings.layerTest({
+        providerInstances: { [instanceId]: { driver: "codex", enabled: true } },
+        projectSettingsOverrides: {
+          [otherProjectId]: { providerInstances: { [instanceId]: { enabled: false } } },
+        },
+      }),
+    )(dispatched);
+
+    return Effect.gen(function* () {
+      const threads = yield* ThreadManagementService.ThreadManagementService;
+      const error = yield* Effect.flip(
+        threads.dispatch({
+          type: "delegated_task.request",
+          commandId: CommandId.make("command:thread-management:delegate-other"),
+          parentThreadId: ThreadId.make("thread:thread-management:chokepoint"),
+          parentRunId: RunId.make("run:thread-management:chokepoint"),
+          parentNodeId: NodeId.make("node:thread-management:chokepoint"),
+          task: "Review the other repository.",
+          projectId: otherProjectId,
+          modelSelection: { instanceId, model: "test" },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          createdBy: "agent",
+          creationSource: "mcp",
+        }),
+      );
+
+      expect(error).toBeInstanceOf(
+        ThreadManagementService.ThreadManagementProviderInstanceDisabledError,
+      );
+      expect(error).toMatchObject({ projectId: otherProjectId, instanceId });
       expect(dispatched).toEqual([]);
     }).pipe(Effect.provide(layerTest));
   },
