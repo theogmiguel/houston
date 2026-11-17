@@ -332,6 +332,11 @@ export interface SourceControlDefinition {
    */
   readonly repositorySelector?: (identity: RepositorySelectorIdentity) => string | null;
   /**
+   * The container the project's issues live in, where that is not its repository: Azure DevOps
+   * keeps work items per project. Null when the repository cannot be placed.
+   */
+  readonly issueScope?: (identity: RepositorySelectorIdentity) => string | null;
+  /**
    * For a host that spells one repository differently over SSH and on the web: the web spelling
    * of the `host/path` key `normalizeGitRemoteUrl` made from a remote that names a host. Null when
    * the key is not this host's. Persisted repository keys are built with it, so its output must
@@ -632,6 +637,8 @@ export interface SourceControlDefinitionRegistry {
   readonly repositorySelector: (
     identity: RepositorySelectorIdentity | null | undefined,
   ) => string | null;
+  /** Where the project's issues live: the host's `issueScope`, else its repository. */
+  readonly issueScope: (identity: RepositorySelectorIdentity | null | undefined) => string | null;
   readonly changeRequestHost: <const Kind extends string | undefined>(
     identity: ChangeRequestHostIdentity,
     kind: Kind,
@@ -696,6 +703,10 @@ export function makeSourceControlDefinitionRegistry(
     }
     return null;
   };
+  const repositorySelector = (identity: RepositorySelectorIdentity | null | undefined) =>
+    identity?.provider === undefined
+      ? defaultRepositorySelector(identity)
+      : (byKind.get(identity.provider)?.repositorySelector ?? defaultRepositorySelector)(identity);
   return {
     definitions,
     get: (kind) =>
@@ -768,12 +779,14 @@ export function makeSourceControlDefinitionRegistry(
     },
     canonicalRepositoryKey: (key) => repositoryKeyOwner(key)?.canonical ?? key,
     findByRepositoryKey: (key) => repositoryKeyOwner(key)?.definition,
-    repositorySelector: (identity) =>
-      identity?.provider === undefined
-        ? defaultRepositorySelector(identity)
-        : (byKind.get(identity.provider)?.repositorySelector ?? defaultRepositorySelector)(
-            identity,
-          ),
+    repositorySelector,
+    issueScope: (identity) => {
+      const issueScope =
+        identity?.provider === undefined ? undefined : byKind.get(identity.provider)?.issueScope;
+      return issueScope === undefined || identity == null
+        ? repositorySelector(identity)
+        : issueScope(identity);
+    },
     changeRequestHost: (identity, kind) =>
       (kind === undefined ? undefined : byKind.get(kind)?.changeRequestHost?.(identity)) ??
       projectChangeRequestHost(identity, kind),
