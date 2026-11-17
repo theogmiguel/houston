@@ -109,6 +109,8 @@ const CONTENT_BY_EMOJI = new Map(
 );
 
 const IDENTIFIER_SHAPE = /^[A-Za-z][A-Za-z0-9]*-[1-9]\d*$/;
+/** A link's identifier spells its team in capitals: `ENG-1`, never `ENG-0` or `eng-1`. */
+const LINK_IDENTIFIER = /^([A-Z][A-Z0-9_]*)-[1-9][0-9]*$/;
 
 /** `ENG-123`, or null for anything that is not a Linear identifier. */
 function parseIdentifier(key: string): string | null {
@@ -397,6 +399,13 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.Lin
       kind: LinearApi.KIND,
       capabilities: CAPABILITIES,
       standalone: DESCRIPTOR,
+      parseIssueUrl: (url) => {
+        if (url.protocol !== "https:" || url.host.toLowerCase() !== DESCRIPTOR.host) return null;
+        const [, workspace, resource, key] = url.pathname.split("/");
+        if (!workspace || resource !== "issue" || key === undefined) return null;
+        const scope = LINK_IDENTIFIER.exec(key)?.[1];
+        return scope === undefined ? null : { host: DESCRIPTOR.host, workspace, scope, key };
+      },
 
       probeCredential: (token) =>
         linear.viewer(token).pipe(

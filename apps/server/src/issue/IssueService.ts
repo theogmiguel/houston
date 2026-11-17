@@ -36,6 +36,7 @@ import {
   IssueTrackerError,
   isStandaloneIssueTracker,
   type IssueTrackerApi,
+  type StandaloneIssueTrackerApi,
 } from "@houston-app/source-control-core/server/IssueTracker";
 
 import * as IssueTrackerBindings from "../persistence/IssueTrackerBindings.ts";
@@ -95,6 +96,24 @@ function listCursorKey(host: string, scope: string): string {
   return `${host} ${scope}`;
 }
 
+function parseUrl(value: string): URL | null {
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
+}
+
+function findStandaloneIssueUrl(trackers: ReadonlyArray<StandaloneIssueTrackerApi>, value: string) {
+  const url = parseUrl(value);
+  if (url === null) return null;
+  for (const api of trackers) {
+    const link = api.parseIssueUrl(url);
+    if (link !== null) return { api, tracker: api.kind, link };
+  }
+  return null;
+}
+
 function isTrackerUnusable(error: IssueTrackerError): boolean {
   return error.reason === "missing-tool" || error.reason === "unauthenticated";
 }
@@ -151,7 +170,8 @@ export class IssueService extends Context.Service<
     /**
      * The reference behind an issue URL: served by the project whose binding is that host and
      * scope, else read-only through any project on the same tracker and host. `preferredProjectId`
-     * wins among equals, so a thread's own project serves its own issues.
+     * wins among equals, so a thread's own project serves its own issues. A standalone link must
+     * match the workspace in the issue's canonical URL from the connected tracker.
      */
     readonly resolveUrl: (
       url: string,
@@ -609,7 +629,12 @@ const make = Effect.gen(function* () {
 
   const resolveUrl: IssueService["Service"]["resolveUrl"] = Effect.fn("IssueService.resolveUrl")(
     function* (url, preferredProjectId) {
-      const parsed = sourceControlDefinitions.parseIssueUrl(url);
+      const gitHost = sourceControlDefinitions.parseIssueUrl(url);
+      const standalone = gitHost === null ? findStandaloneIssueUrl(registry.standalone, url) : null;
+      const parsed =
+        gitHost === null
+          ? standalone
+          : { tracker: IssueTrackerKind.make(gitHost.definition.kind), link: gitHost.link };
       if (parsed === null) {
         return yield* new IssueOperationError({
           operation: "resolveUrl",
@@ -617,19 +642,37 @@ const make = Effect.gen(function* () {
           detail: "This is not a recognised issue URL.",
         });
       }
-      const { definition, link } = parsed;
+      const { tracker, link } = parsed;
       const { supported } = yield* listProjects({ host: link.host });
-      const onTracker = supported.filter(
-        (project) => project.tracker === IssueTrackerKind.make(definition.kind),
-      );
+      const onTracker = supported.filter((project) => project.tracker === tracker);
       const preferFirst = (projects: ReadonlyArray<SupportedProject>) =>
         projects.find((project) => project.project.id === preferredProjectId) ?? projects[0];
       const own = preferFirst(
-        onTracker.filter((project) => project.scope.toLowerCase() === link.scope),
+        onTracker.filter((project) => project.scope.toLowerCase() === link.scope.toLowerCase()),
       );
       const lender = own ?? preferFirst(onTracker);
       if (lender === undefined) {
         return yield* new IssueUnavailableError({ reason: "tracker-unsupported" });
+      }
+      if (standalone !== null) {
+        // Team keys repeat across workspaces; only the credential's canonical issue URL identifies one.
+        const issue = yield* lender.api
+          .getIssue({
+            cwd: lender.project.workspaceRoot,
+            host: lender.host,
+            scope: link.scope,
+            key: link.key,
+          })
+          .pipe(Effect.mapError(toIssueError("resolveUrl")));
+        const canonicalUrl = parseUrl(issue.url);
+        const canonical = canonicalUrl === null ? null : standalone.api.parseIssueUrl(canonicalUrl);
+        if (canonical === null || canonical.workspace !== standalone.link.workspace) {
+          return yield* new IssueOperationError({
+            operation: "resolveUrl",
+            reason: "not-found",
+            detail: "This issue URL does not belong to the connected workspace.",
+          });
+        }
       }
       return {
         projectId: lender.project.id,

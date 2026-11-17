@@ -71,6 +71,7 @@ function tracker(): StandaloneIssueTrackerApi {
       scopeNoun: "team",
       credential: { label: "Personal API key", helpUrl: null },
     },
+    parseIssueUrl: () => null,
     probeCredential: (token) =>
       token === GOOD
         ? Effect.succeed({ account: "ada", scopes: [{ key: "ENG", name: "Engineering" }] })
