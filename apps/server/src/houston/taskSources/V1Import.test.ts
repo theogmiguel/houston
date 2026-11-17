@@ -12,6 +12,7 @@ import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Redacted from "effect/Redacted";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { makeMemory } from "../secrets/HoustonSecrets.ts";
@@ -22,10 +23,12 @@ import { HoustonTaskSourcePoller } from "./Poller.ts";
 import { HoustonTaskSourceService } from "./SourceService.ts";
 import { HoustonTaskSourceStore } from "./SourceStore.ts";
 import {
-  githubIssue,
-  issuePages,
   layerSources,
-  makeGithubFake,
+  makeNotionFake,
+  notionPage,
+  notionServes,
+  notionSettings,
+  pageId,
   type SourcesTestOptions,
 } from "./taskSources.testkit.ts";
 import { HoustonTaskSourceV1Import } from "./V1Import.ts";
@@ -60,9 +63,9 @@ const withChannel = <A, E, R>(body: (dirs: Dirs) => Effect.Effect<A, E, R>) =>
   );
 
 const issueSnapshot = (n: number) =>
-  JSON.stringify(v1Snapshot({ title: `Issue ${n}`, description: `Body ${n}`, status: "todo" }));
+  JSON.stringify(v1Snapshot({ title: `Page ${n}`, description: `Body ${n}`, status: "todo" }));
 
-/** v1 with three imported issues in a matched workspace, plus everything the import drops. */
+/** v1 with three imported pages in a matched workspace, plus everything the import drops. */
 const writeV1 = (
   source: string,
   tracker: Partial<V1TrackerFixture> = {},
@@ -76,7 +79,7 @@ const writeV1 = (
         id: n,
         workspace: ROOT,
         number: n,
-        title: `Issue ${n}`,
+        title: `Page ${n}`,
         description: `Body ${n}`,
         status: "todo",
         createdBy: "tracker:github_issues",
@@ -102,17 +105,17 @@ const writeV1 = (
     links: [
       ...[1, 2, 3].map((n) => ({
         taskId: n,
-        provider: "github_issues",
-        externalId: `octo-org/project#${n}`,
-        url: `https://github.com/octo-org/project/issues/${n}`,
+        provider: "notion",
+        externalId: pageId(n),
+        url: `https://www.notion.so/page-${n}`,
         snapshot:
           n === 2
             ? JSON.stringify(
                 v1Snapshot(
-                  { title: "Issue 2", description: "Body 2", status: "todo" },
+                  { title: "Page 2", description: "Body 2", status: "todo" },
                   {
                     conflicts: [
-                      { field: "title", base: "Issue 2", local: "Issue 2", remote: "Remote 2" },
+                      { field: "title", base: "Page 2", local: "Page 2", remote: "Remote 2" },
                     ],
                     remote: { title: "Remote 2", description: "Body 2", status: "todo" },
                   },
@@ -123,6 +126,27 @@ const writeV1 = (
       })),
       {
         taskId: 1,
+        provider: "github_issues",
+        externalId: "octo-org/project#7",
+        url: "https://github.com/octo-org/project/issues/7",
+        snapshot: JSON.stringify(v1Snapshot({ title: "Issue 7", description: "", status: "todo" })),
+      },
+      {
+        taskId: 2,
+        provider: "github_issues",
+        externalId: "not-an-issue",
+        url: "https://github.com/octo-org/project/issues/8",
+        snapshot: JSON.stringify(v1Snapshot({ title: "Issue 8", description: "", status: "todo" })),
+      },
+      {
+        taskId: 3,
+        provider: "github_issues",
+        externalId: "octo-org/project#7",
+        url: "https://github.com/octo-org/project/issues/7",
+        snapshot: JSON.stringify(v1Snapshot({ title: "Issue 7", description: "", status: "todo" })),
+      },
+      {
+        taskId: 1,
         provider: "slack",
         externalId: "C1/1",
         url: "https://slack.example/1",
@@ -130,7 +154,7 @@ const writeV1 = (
       },
     ],
     outbox: [{ workspace: ROOT, taskId: 1 }],
-    pollState: [{ workspace: ROOT, provider: "github_issues" }],
+    pollState: [{ workspace: ROOT, provider: "notion" }],
     refreshCursors: [{ workspace: ROOT, provider: "notion" }],
     ...tracker,
   });
@@ -197,7 +221,7 @@ describe("import status names each state", () => {
         assert.deepEqual(yield* sourcesImport.status, {
           state: "available",
           source: dirs.source,
-          settings: 3,
+          settings: 1,
           links: 3,
         });
         const result = yield* sourcesImport.run;
@@ -218,7 +242,7 @@ describe("import status names each state", () => {
         yield* sql`
           INSERT INTO houston_task_source_links (
             task_id, project_id, provider, external_id, source, url, snapshot_json, sync_state_json
-          ) VALUES (1, ${projectId}, 'github_issues', 'x/y#1', 'source', 'u', '{}', '{}')
+          ) VALUES (1, ${projectId}, 'notion', 'x', 'source', 'u', '{}', '{}')
         `;
         const status = yield* sourcesImport.status;
         assert.strictEqual(status.state, "blocked");
@@ -237,10 +261,12 @@ describe("v1 connections arrive disabled with their links", () => {
         const projectId = yield* createProject("shop", ROOT);
         yield* tasksImport.run;
         const result = yield* sourcesImport.run;
-        assert.deepEqual(result.imported, { settings: 2, links: 3 });
+        assert.deepEqual(result.imported, { settings: 1, links: 3 });
         const notes = result.notes.join("\n");
         for (const part of [
-          "1 task source setting(s) of Houston 1 workspaces that match no project",
+          "2 GitHub tracker setting(s) were dropped",
+          "1 GitHub issue link(s) became issue links",
+          "2 GitHub link(s) that named no issue were dropped",
           "1 Slack link(s)",
           "1 pending write-back row(s)",
           "1 poll cursor(s)",
@@ -248,25 +274,42 @@ describe("v1 connections arrive disabled with their links", () => {
         ]) {
           assert.include(notes, part);
         }
-        const [github, notion] = yield* sources.getSettings({ projectId });
-        assert.deepInclude(github, {
-          enabled: false,
-          githubRepository: "octo-org/project",
-          githubLabel: "import",
-          hasCredential: false,
-        });
+        assert.include(notes, "issue link not-an-issue is not owner/repo#number");
+        assert.include(notes, "#7 of task 3");
+        const [notion] = yield* sources.getSettings({ projectId });
         assert.deepInclude(notion, { enabled: false, hasCredential: false });
         assert.deepEqual(notion?.notionActiveStatusValues, ["Ready"]);
         const links = yield* store.linksOf(2);
         assert.lengthOf(links, 1);
         assert.deepEqual(links[0]?.syncState, { state: "diverged" });
         assert.deepEqual(links[0]?.snapshot.conflicts, [
-          { field: "title", base: "Issue 2", local: "Issue 2", remote: "Remote 2" },
+          { field: "title", base: "Page 2", local: "Page 2", remote: "Remote 2" },
         ]);
-        assert.deepEqual(yield* sql`SELECT namespace FROM houston_task_source_identity`, [
-          { namespace: NAMESPACE },
+        const issues = yield* sql<{
+          readonly task_id: number;
+          readonly tracker: string;
+          readonly host: string;
+          readonly scope: string;
+          readonly key: string;
+          readonly display_key: string;
+          readonly url: string;
+          readonly title: string;
+        }>`SELECT task_id, tracker, host, scope, key, display_key, url, title
+            FROM houston_task_issues ORDER BY task_id`;
+        assert.deepEqual(issues, [
+          {
+            task_id: 1,
+            tracker: "github",
+            host: "github.com",
+            scope: "octo-org/project",
+            key: "7",
+            display_key: "#7",
+            url: "https://github.com/octo-org/project/issues/7",
+            title: "Issue 7",
+          },
         ]);
-        assert.deepInclude(yield* sourceCounts, { polls: 0, outbox: 0 });
+        assert.deepEqual(yield* sql`SELECT * FROM houston_task_source_identity`, []);
+        assert.deepInclude(yield* sourceCounts, { polls: 0, outbox: 0, identity: 0 });
       }).pipe(Effect.provide(layerSources(options(dirs))));
     }),
   );
@@ -276,30 +319,35 @@ describe("an imported source creates no duplicate task when enabled", () => {
   it.effect("an imported source creates no duplicate task when enabled", () =>
     withChannel((dirs) => {
       writeV1(dirs.source);
-      const github = makeGithubFake();
-      issuePages(github, () => [githubIssue(1), githubIssue(2), githubIssue(3)]);
       return Effect.gen(function* () {
-        const { tasksImport, sourcesImport, sources, sql } = yield* services;
-        const projectId = yield* createProject("shop", ROOT);
-        yield* tasksImport.run;
-        yield* sourcesImport.run;
-        assert.deepEqual(github.requests, []);
-        const [imported] = yield* sources.getSettings({ projectId });
-        yield* sources.setSettings({
-          projectId,
-          provider: "github_issues",
-          expectedRevision: imported?.revision ?? 0,
-          settings: { enabled: true, githubRepository: "octo-org/project", githubLabel: "import" },
-        });
-        const poller = yield* HoustonTaskSourcePoller;
-        const polled = yield* poller.poll(projectId, "github_issues");
-        assert.isNull(polled?.error);
-        assert.isNotEmpty(github.requests);
-        assert.deepEqual(yield* sql`SELECT COUNT(*) AS n FROM houston_tasks`, [{ n: 3 }]);
-        assert.deepEqual(yield* sql`SELECT COUNT(*) AS n FROM houston_task_source_links`, [
-          { n: 3 },
-        ]);
-      }).pipe(Effect.provide(layerSources(options(dirs, { github }))));
+        const notion = yield* makeNotionFake;
+        notionServes(notion, () => [notionPage(1), notionPage(2), notionPage(3)]);
+        yield* Effect.gen(function* () {
+          const { tasksImport, sourcesImport, sources, sql } = yield* services;
+          const projectId = yield* createProject("shop", ROOT);
+          yield* tasksImport.run;
+          yield* sourcesImport.run;
+          yield* sources.setCredential({
+            projectId,
+            provider: "notion",
+            token: Redacted.make("ntn_imported"),
+          });
+          const [imported] = yield* sources.getSettings({ projectId });
+          yield* sources.setSettings({
+            projectId,
+            provider: "notion",
+            expectedRevision: imported?.revision ?? 0,
+            settings: notionSettings(),
+          });
+          const poller = yield* HoustonTaskSourcePoller;
+          const polled = yield* poller.poll(projectId, "notion");
+          assert.isNull(polled?.error);
+          assert.deepEqual(yield* sql`SELECT COUNT(*) AS n FROM houston_tasks`, [{ n: 3 }]);
+          assert.deepEqual(yield* sql`SELECT COUNT(*) AS n FROM houston_task_source_links`, [
+            { n: 3 },
+          ]);
+        }).pipe(Effect.provide(layerSources(options(dirs, { notionOrigin: notion.origin }))));
+      }).pipe(Effect.scoped);
     }),
   );
 });
@@ -351,7 +399,7 @@ describe("a refused or failed import stores nothing", () => {
         yield* sql`
           INSERT INTO houston_task_source_links (
             task_id, project_id, provider, external_id, source, url, snapshot_json, sync_state_json
-          ) VALUES (1, ${projectId}, 'github_issues', 'x/y#1', 'source', 'u', '{}', '{}')
+          ) VALUES (1, ${projectId}, 'notion', 'x', 'source', 'u', '{}', '{}')
         `;
         const linked = yield* Effect.flip(sourcesImport.run);
         assert.strictEqual(linked.kind, "invalid");
@@ -371,16 +419,16 @@ describe("a refused or failed import stores nothing", () => {
         links: [
           {
             taskId: 1,
-            provider: "github_issues",
-            externalId: "octo-org/project#1",
-            url: "u1",
+            provider: "notion",
+            externalId: pageId(1),
+            url: "https://www.notion.so/page-1",
             snapshot: issueSnapshot(1),
           },
           {
             taskId: 2,
-            provider: "github_issues",
-            externalId: "octo-org/project#2",
-            url: "u2",
+            provider: "notion",
+            externalId: pageId(2),
+            url: "https://www.notion.so/page-2",
             snapshot: "{not json",
           },
         ],
@@ -391,7 +439,7 @@ describe("a refused or failed import stores nothing", () => {
         yield* tasksImport.run;
         const failed = yield* Effect.flip(sourcesImport.run);
         assert.strictEqual(failed.kind, "unsupported");
-        assert.include(failed.message, "octo-org/project#2");
+        assert.include(failed.message, pageId(2));
         assert.deepEqual(yield* sourceCounts, {
           settings: 0,
           links: 0,

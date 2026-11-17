@@ -26,13 +26,14 @@ import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import { HostedLaunch } from "../baseDir.ts";
 import { v1PathMatches } from "../tasks/rules.ts";
 import { nowIso } from "../tasks/TaskStore.ts";
-import { refuse, storedSettings, type StoredSettings } from "./rules.ts";
+import { parseRepository, refuse, storedSettings, type StoredSettings } from "./rules.ts";
 import { HoustonTaskSourceStore, encodeSettings } from "./SourceStore.ts";
 
 const OPERATION = "houston.taskSources.importV1.run";
 const V1_DATABASE = "houston.db";
 const V1_COMPANIONS = ["-wal", "-shm"] as const;
-const PROVIDERS = new Set(["github_issues", "notion"]);
+const PROVIDERS = new Set(["notion"]);
+const GITHUB_EXTERNAL_ID = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)#([1-9][0-9]*)$/;
 
 type SqlValue = string | number | null;
 type Row = Readonly<Record<string, SqlValue>>;
@@ -40,7 +41,6 @@ type Row = Readonly<Record<string, SqlValue>>;
 interface V1Trackers {
   readonly settings: ReadonlyArray<Row>;
   readonly links: ReadonlyArray<Row>;
-  readonly namespace: string | null;
   readonly outbox: number;
   readonly pollState: number;
   readonly refreshCursors: number;
@@ -65,15 +65,9 @@ const readV1 = (path: string): V1Trackers | null => {
       tables.has(table)
         ? Number((db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as Row).n)
         : 0;
-    const identity = tables.has("task_tracker_database_identity")
-      ? (db
-          .prepare("SELECT namespace FROM task_tracker_database_identity WHERE singleton = 1")
-          .get() as Row | undefined)
-      : undefined;
     return {
       settings: all("task_tracker_settings", "workspace, provider"),
       links: all("task_external_links", "task_id, provider, external_id, source"),
-      namespace: typeof identity?.namespace === "string" ? identity.namespace : null,
       outbox: count("task_tracker_outbox"),
       pollState: count("task_tracker_poll_state"),
       refreshCursors: count("task_tracker_refresh_cursor"),
@@ -154,9 +148,6 @@ const convertSettings = (raw: string): StoredSettings => {
   const mapping = v1.notion_status_mapping;
   return storedSettings({
     enabled: false,
-    githubRepository: v1.github_repository ?? null,
-    githubLabel: v1.github_label ?? null,
-    githubAssignedUser: v1.github_assigned_user ?? null,
     notionDataSourceId: v1.notion_data_source_id ?? null,
     notionTitlePropertyId: v1.notion_title_property_id ?? null,
     notionDescriptionPropertyId: v1.notion_description_property_id ?? null,
@@ -208,6 +199,62 @@ const convertSyncState = (raw: SqlValue | undefined) =>
       ? decodeSyncState(JSON.stringify({ state: raw }))
       : decodeSyncState(raw),
   );
+
+interface IssueLink {
+  readonly projectId: string;
+  readonly tracker: string;
+  readonly host: string;
+  readonly scope: string;
+  readonly key: string;
+  readonly displayKey: string;
+  readonly url: string;
+  readonly title: string;
+  readonly linkedAt: string;
+}
+
+/** A v1 GitHub source link as a task's issue link; a string says why it cannot become one. */
+const convertGithubIssue = (
+  row: Row,
+  task: { readonly projectId: string; readonly title: string },
+  snapshot: ReturnType<typeof decodeV1Snapshot>,
+  now: string,
+): IssueLink | string => {
+  const externalId = String(row.external_id ?? "");
+  const match = GITHUB_EXTERNAL_ID.exec(externalId);
+  if (match === null) return `${externalId} is not owner/repo#number`;
+  const owner = match[1] as string;
+  const repository = match[2] as string;
+  const number = match[3] as string;
+  const scope = `${owner}/${repository}`;
+  if (parseRepository(scope) === null) return `${externalId} is not owner/repo#number`;
+  let parsed: URL;
+  try {
+    parsed = new URL(String(row.url ?? ""));
+  } catch {
+    return `${externalId} has no readable URL`;
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    return `${externalId} has no readable URL`;
+  }
+  const segments = parsed.pathname.split("/").filter((part) => part.length > 0);
+  const expected = [owner, repository, "issues", number] as Array<string | undefined>;
+  if (segments.length !== 4 || segments.some((part, index) => part !== expected[index])) {
+    return `${externalId} does not match its URL ${String(row.url ?? "")}`;
+  }
+  const title = (snapshot.remote?.title ?? snapshot.base.title ?? task.title).trim();
+  if (title.length === 0) return `${externalId} has no title`;
+  return {
+    projectId: task.projectId,
+    tracker: "github",
+    host: parsed.host,
+    scope,
+    key: number,
+    displayKey: `#${number}`,
+    url: `https://${parsed.host}/${owner}/${repository}/issues/${number}`,
+    title,
+    linkedAt: iso(row.synced_at_ms) ?? now,
+  };
+};
 
 const causeMessage = (error: unknown) => {
   let inner = error;
@@ -296,8 +343,8 @@ const make = Effect.gen(function* () {
     return {
       state: "available" as const,
       source: found,
-      settings: v1.settings.filter((row) => PROVIDERS.has(String(row.provider))).length,
-      links: v1.links.filter((row) => PROVIDERS.has(String(row.provider))).length,
+      settings: v1.settings.filter((row) => row.provider === "notion").length,
+      links: v1.links.filter((row) => row.provider === "notion").length,
     };
   });
 
@@ -359,8 +406,13 @@ const make = Effect.gen(function* () {
       let settings = 0;
       let unmatched = 0;
       let slack = 0;
+      let githubSettings = 0;
       for (const row of v1.settings) {
         const key = `${String(row.workspace)} ${String(row.provider)}`;
+        if (row.provider === "github_issues") {
+          githubSettings += 1;
+          continue;
+        }
         if (!PROVIDERS.has(String(row.provider))) {
           slack += 1;
           continue;
@@ -383,25 +435,83 @@ const make = Effect.gen(function* () {
       }
 
       const v2Tasks = new Map(
-        (yield* sql<{ readonly id: number; readonly project_id: string | null }>`
-          SELECT id, project_id FROM houston_tasks
-        `.pipe(Effect.orDie)).map((task) => [task.id, task.project_id]),
+        (yield* sql<{
+          readonly id: number;
+          readonly project_id: string | null;
+          readonly title: string;
+        }>`
+          SELECT id, project_id, title FROM houston_tasks
+        `.pipe(Effect.orDie)).map((task) => [task.id, task]),
       );
       let links = 0;
       let slackLinks = 0;
       let orphaned = 0;
+      let githubIssues = 0;
+      let githubLinksDropped = 0;
+      const skippedIssues: Array<string> = [];
       const touched = new Set<number>();
       for (const row of v1.links) {
         const key = `${String(row.task_id)} ${String(row.provider)} ${String(row.external_id)}`;
+        const task = v2Tasks.get(Number(row.task_id));
+        if (task === undefined || task.project_id === null) {
+          orphaned += 1;
+          continue;
+        }
+        if (row.provider === "github_issues") {
+          if ((row.source ?? "source") !== "source") {
+            githubLinksDropped += 1;
+            continue;
+          }
+          const snapshot = yield* Effect.try({
+            try: () => decodeV1Snapshot(String(row.snapshot)),
+            catch: failed("task_external_links", key),
+          });
+          const issue = convertGithubIssue(
+            row,
+            { projectId: task.project_id, title: task.title },
+            snapshot,
+            now,
+          );
+          if (typeof issue === "string") {
+            githubLinksDropped += 1;
+            skippedIssues.push(issue);
+            continue;
+          }
+          const [holder] = yield* sql<{
+            readonly task_id: number;
+            readonly archived_at: string | null;
+          }>`
+            SELECT i.task_id, t.archived_at FROM houston_task_issues i
+            JOIN houston_tasks t ON t.id = i.task_id
+            WHERE lower(i.tracker) = 'github' AND lower(i.host) = lower(${issue.host})
+              AND lower(i.scope) = lower(${issue.scope}) AND i.key = ${issue.key}
+            ORDER BY t.archived_at IS NOT NULL, i.task_id LIMIT 1
+          `.pipe(Effect.orDie);
+          const [own] = yield* sql<{ readonly task_id: number }>`
+            SELECT task_id FROM houston_task_issues WHERE task_id = ${row.task_id}
+          `.pipe(Effect.orDie);
+          if (own !== undefined || (holder !== undefined && holder.archived_at === null)) {
+            githubLinksDropped += 1;
+            skippedIssues.push(`${issue.displayKey} of task ${String(row.task_id)}`);
+            continue;
+          }
+          yield* sql`
+            INSERT INTO houston_task_issues (
+              task_id, project_id, tracker, host, scope, key, display_key, url, title, linked_at
+            ) VALUES (
+              ${row.task_id}, ${issue.projectId}, ${issue.tracker}, ${issue.host}, ${issue.scope},
+              ${issue.key}, ${issue.displayKey}, ${issue.url}, ${issue.title}, ${issue.linkedAt}
+            )
+          `.pipe(Effect.mapError(failed("task_external_links", key)));
+          touched.add(Number(row.task_id));
+          githubIssues += 1;
+          continue;
+        }
         if (!PROVIDERS.has(String(row.provider))) {
           slackLinks += 1;
           continue;
         }
-        const projectId = v2Tasks.get(Number(row.task_id));
-        if (projectId === undefined || projectId === null) {
-          orphaned += 1;
-          continue;
-        }
+        const projectId = task.project_id;
         const snapshot = yield* Effect.try({
           try: () => convertSnapshot(String(row.snapshot)),
           catch: failed("task_external_links", key),
@@ -423,18 +533,15 @@ const make = Effect.gen(function* () {
         touched.add(Number(row.task_id));
         links += 1;
       }
-      if (v1.namespace !== null) {
-        yield* sql`
-          INSERT INTO houston_task_source_identity (id, namespace) VALUES (1, ${v1.namespace})
-          ON CONFLICT (id) DO NOTHING
-        `.pipe(Effect.mapError(failed("task_tracker_database_identity", "1")));
-      }
       for (const [count, what] of [
         [
           unmatched,
           "task source setting(s) of Houston 1 workspaces that match no project were dropped",
         ],
         [slack, "Slack task source setting(s) were dropped"],
+        [githubSettings, "GitHub tracker setting(s) were dropped"],
+        [githubIssues, "GitHub issue link(s) became issue links"],
+        [githubLinksDropped, "GitHub link(s) that named no issue were dropped"],
         [slackLinks, "Slack link(s) were dropped"],
         [orphaned, "link(s) whose task was not imported or has no project were dropped"],
         [v1.outbox, "pending write-back row(s) were dropped"],
@@ -442,6 +549,9 @@ const make = Effect.gen(function* () {
         [v1.refreshCursors, "refresh cursor(s) were dropped"],
       ] as const) {
         if (count > 0) notes.push(`${count} ${what}`);
+      }
+      for (const skipped of skippedIssues) {
+        notes.push(`issue link ${skipped} was not created`);
       }
       if (settings > 0) {
         notes.push(`${settings} source(s) arrive disabled; a Notion source needs its token again`);
