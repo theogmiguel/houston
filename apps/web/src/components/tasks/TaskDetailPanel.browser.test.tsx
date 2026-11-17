@@ -3,6 +3,8 @@ import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../../test/render";
+import { selectThreadRightPanelState, useRightPanelStore } from "~/rightPanelStore";
+import { TASKS_PANEL_REF } from "./taskPanel";
 
 const fixture = vi.hoisted(() => ({
   detail: null as HoustonTaskDetail | null,
@@ -26,6 +28,9 @@ vi.mock("~/state/tasks", async () => {
       planAnswer: {},
       planApprove: {},
       reviewStart: {},
+      createFromIssue: {},
+      linkIssue: {},
+      unlinkIssue: {},
     },
     useTaskDetail: () => (fixture.detail === null ? null : AsyncResult.success(fixture.detail)),
     useTaskSettings: () => null,
@@ -233,4 +238,64 @@ it("disables Plan with the reason a task cannot be planned", async () => {
     .element(page.getByText("Set a kind (delivery or slice) before planning."))
     .toBeVisible();
   expect(fixture.calls).toEqual([]);
+});
+
+it("shows the linked issue, opens it in the panel and unlinks it", async () => {
+  const base = detail();
+  fixture.detail = {
+    ...base,
+    task: {
+      ...base.task,
+      issue: {
+        projectId: "p1" as never,
+        tracker: "github" as never,
+        host: "github.com",
+        scope: "acme/houston",
+        key: "84",
+        displayKey: "#84",
+        url: "https://github.com/acme/houston/issues/84",
+        title: "Rename Harness review",
+        linkedAt: "2026-01-02T00:00:00.000Z",
+      },
+    },
+  };
+  fixture.calls = [];
+  useRightPanelStore.getState().closeAllSurfaces(TASKS_PANEL_REF);
+  await using screen = await render(panel());
+
+  expect(screen.container.textContent).toContain("#84");
+  expect(screen.container.textContent).toContain("Rename Harness review");
+  await screen.getByRole("button", { name: "Open issue #84" }).click();
+  const state = useRightPanelStore.getState();
+  const surfaces = selectThreadRightPanelState(state.byThreadKey, TASKS_PANEL_REF).surfaces;
+  expect(surfaces).toContainEqual(
+    expect.objectContaining({ kind: "issue", scope: "acme/houston", key: "84" }),
+  );
+
+  await screen.getByRole("button", { name: "Unlink" }).click();
+  expect(fixture.calls).toContainEqual({
+    environmentId: "env",
+    input: { id: "HOU-45", expectedRevision: 7 },
+  });
+  useRightPanelStore.getState().closeAllSurfaces(TASKS_PANEL_REF);
+});
+
+it("links an issue by URL", async () => {
+  fixture.detail = detail();
+  fixture.calls = [];
+  await using screen = await render(panel());
+
+  await screen
+    .getByRole("textbox", { name: "Issue URL" })
+    .fill("https://github.com/acme/houston/issues/12");
+  await screen.getByRole("button", { name: "Link" }).click();
+
+  expect(fixture.calls).toContainEqual({
+    environmentId: "env",
+    input: {
+      id: "HOU-45",
+      expectedRevision: 7,
+      url: "https://github.com/acme/houston/issues/12",
+    },
+  });
 });

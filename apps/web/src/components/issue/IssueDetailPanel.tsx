@@ -70,6 +70,7 @@ import {
 } from "../pullRequest/pullRequestPresentation";
 import { IssueCommentComposer } from "./IssueCommentComposer";
 import { IssueDetailGhost } from "./IssueDetailGhost";
+import { IssueTaskSection } from "./IssueTaskSection";
 import { ReactionBar } from "../pullRequest/PullRequestReactions";
 import { PullRequestsUnavailableState } from "../pullRequest/PullRequestsUnavailableState";
 import {
@@ -756,6 +757,10 @@ export function IssueDetailPanel({
             ) : null}
             {detail.writable ? null : <span>Read-only</span>}
           </PullRequestMetaLine>
+
+          <div className="mt-3">
+            <IssueTaskSection environmentId={environmentId} detail={detail} />
+          </div>
 
           <div className="mt-4 space-y-2">
             <PullRequestMetaRow icon={<TagIcon className="size-3.5" />} label="Labels">

@@ -24,6 +24,7 @@ import type {
 } from "@houston-app/contracts/houston/tasks";
 import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
 import * as McpProviderSessions from "@houston-app/provider-core/server/McpProviderSessions";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { TestClock } from "effect/testing";
@@ -36,6 +37,7 @@ import * as EffectWorker from "../../orchestration-v2/EffectWorker.ts";
 import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
+import * as ThreadIssueService from "../../orchestration-v2/ThreadIssueService.ts";
 import * as ProviderReplayHarness from "../../orchestration-v2/testkit/ProviderReplayHarness.ts";
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as ManagedProjectFolders from "../../project/ManagedProjectFolders.ts";
@@ -253,7 +255,17 @@ export const layerRuns = (harness: RunsHarness, options: RunsOptions = {}) => {
   ).pipe(Layer.provide(orchestration));
   const runs = HoustonTaskRuns.layer.pipe(
     Layer.provide(
-      Layer.mergeAll(launch, orchestration, registry, threadManagement, tasks, recordsOnly),
+      Layer.mergeAll(
+        launch,
+        orchestration,
+        registry,
+        threadManagement,
+        tasks,
+        recordsOnly,
+        ThreadIssueService.layer.pipe(
+          Layer.provide(Layer.merge(orchestration, SecureRandom.layerWebCrypto)),
+        ),
+      ),
     ),
   );
   return Layer.mergeAll(runs, tasks, orchestration, threadManagement, launch);

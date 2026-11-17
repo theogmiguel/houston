@@ -40,6 +40,20 @@ The editor saves with **Save task**. The status, priority, kind and project pill
 detail save as you choose them. If the task changed elsewhere first, a **This task changed
 elsewhere** banner appears with **Reload** before you overwrite anything.
 
+## Issue-backed tasks
+
+A task can be backed by one issue. The issue's title names the task, and its description
+points at the issue instead of copying its text: the issue's own words stay on the tracker. The
+detail shows the issue; select it to read it in the right panel. **Unlink** removes the link
+without touching the task, and **Link** backs a task with the issue a URL names. An issue has
+at most one unarchived task.
+
+The issue panel offers **Create task**, **Start** and **Plan**. **Start** and **Plan** create the
+task from the issue first, then run the flow below; **Create task** only creates it. Starting,
+planning or reviewing an issue-backed task links the issue to the thread it launches, and the
+run brief names the issue's key and URL and asks the agent to read it with the issue tools.
+Planning reads the live issue body as untrusted context.
+
 ## Creating and editing
 
 Choose **New task** in the Tasks page, or **New task** in the command palette. The editor

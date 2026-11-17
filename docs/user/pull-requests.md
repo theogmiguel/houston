@@ -28,6 +28,10 @@ read-only.
 Linked pull requests appear in the issue panel and open beside it. Closing the panel or switching
 issues keeps the list where it was.
 
+An issue can back a task. The issue panel shows the task backed by it, with its key and status,
+and opens it on the Tasks page. An issue with no task offers **Create task**, **Start** and
+**Plan**; Start and Plan create the task from the issue and then start it or plan it.
+
 An issue can be kept with a thread the way a pull request can: open it beside the thread (issue
 links in the conversation open there) and use **Link to this thread** in its header; **Unlink**
 undoes it. Linked issues are listed in the thread's details beside its pull requests. Agents link

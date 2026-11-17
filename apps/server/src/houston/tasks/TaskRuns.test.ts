@@ -1683,3 +1683,89 @@ describe("small diffs skip and each head has an attempt cap", () => {
     TIMEOUT,
   );
 });
+
+describe("an issue-backed task starts and plans with its issue", () => {
+  const issueRef = (projectId: RunsContext["projectId"]) => ({
+    projectId,
+    tracker: "github" as never,
+    host: "github.com",
+    scope: "acme/houston",
+    key: "12",
+  });
+
+  it.effect(
+    "Start links the issue to the run's thread and the brief names its key and URL",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeRunsHarness("issue-start");
+        yield* runWith(harness, (context) =>
+          Effect.gen(function* () {
+            const task = yield* context.tasks.createFromIssue(issueRef(context.projectId));
+            const started = yield* context.runs.start({ id: task.key, overrideReadiness: true });
+            const threadId = started.run.threadId as ThreadId;
+            yield* context.until(
+              "the issue on the run's thread",
+              context.orchestrator
+                .getThreadShell(threadId)
+                .pipe(
+                  Effect.map((shell) => (shell?.issues ?? []).some((issue) => issue.key === "12")),
+                ),
+            );
+            const brief = userMessages(yield* projectionOf(context, threadId)).find((text) =>
+              text.includes(task.key),
+            );
+            assert.isDefined(brief, "the run's brief was sent");
+            assert.include(brief ?? "", "## Linked issue #12");
+            assert.include(brief ?? "", "https://github.com/acme/houston/issues/12");
+            assert.include(brief ?? "", "read_issue");
+            // The issue's own words stay on the tracker; Start only points at them.
+            assert.notInclude(brief ?? "", "Body of github");
+          }),
+        );
+      }),
+    TIMEOUT,
+  );
+
+  it.effect(
+    "Plan links the planning thread and quotes the live issue body as untrusted context",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeRunsHarness("issue-plan");
+        yield* runWith(harness, (context) =>
+          Effect.gen(function* () {
+            const created = yield* context.tasks.createFromIssue(issueRef(context.projectId));
+            yield* context.tasks.saveDomain({
+              id: created.key,
+              expectedRevision: created.revision,
+              kind: "delivery",
+            });
+            const task = (yield* detailOf(context, created)).task;
+            const planned = yield* context.runs.planStart({
+              id: task.key,
+              expectedRevision: task.revision,
+              modelSelection: selection("codex"),
+            });
+            const threadId = planned.planning?.threadId as ThreadId;
+            yield* context.until(
+              "the issue on the planning thread",
+              context.orchestrator
+                .getThreadShell(threadId)
+                .pipe(
+                  Effect.map((shell) => (shell?.issues ?? []).some((issue) => issue.key === "12")),
+                ),
+            );
+            const prompt = userMessages(yield* projectionOf(context, threadId)).find((text) =>
+              text.includes(task.key),
+            );
+            assert.isDefined(prompt, "the planner's prompt was sent");
+            assert.include(prompt ?? "", "## Linked issue #12");
+            assert.include(prompt ?? "", "Body of github acme/houston#12");
+            assert.include(prompt ?? "", "untrusted");
+            assert.include(prompt ?? "", "<<<HOUSTON-ISSUE-DATA");
+            assert.include(prompt ?? "", "HOUSTON-ISSUE-DATA>>>");
+          }),
+        );
+      }),
+    TIMEOUT,
+  );
+});
