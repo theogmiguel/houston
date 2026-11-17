@@ -137,7 +137,6 @@
       "ignore": ["vendor/**"],
       // The bootstrap and Vite+ hook are loaded by shell/package configuration.
       "entry": [
-        "alchemy.run.ts!",
         "scripts/install.ts",
         "scripts/install-ci.ts",
         "src/runHook.ts",
@@ -145,10 +144,6 @@
         "src/nativeRunHook.js",
         "src/preload.mjs",
       ],
-    },
-    "infra/relay": {
-      // Alchemy loads src/worker.ts as the Worker entry and reads its default export.
-      "entry": ["alchemy.run.ts!", "src/persistence/schema.ts!", "src/worker.ts!"],
     },
     "packages/*": {
       // These workspace packages are private to this monorepo.

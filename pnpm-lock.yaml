@@ -246,10 +246,8 @@ overrides:
   micromark-extension-llm-math: 3.1.0
   micromark: 4.0.2
   mdast-util-to-hast: 13.2.1
-  alchemy: 2.0.0-beta.84
   expo-audio: 58.0.9
   expo-network: 58.0.3
-  '@clerk/expo-native-components': 0.4.0
   expo-sharing: 58.0.19
   expo-widgets: 58.0.20
   '@ff-labs/fff-node': 0.11.0
@@ -283,26 +281,9 @@ overrides:
   '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-linux-x64-musl': '-'
   '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-win32-arm64': '-'
   '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-win32-x64': '-'
-  '@alchemy.run/sigil>react': '-'
-  '@alchemy.run/sigil>react-reconciler': '-'
-  '@alchemy.run/sigil>scheduler': '-'
-  '@clerk/backend': 3.25.0
-  '@clerk/clerk-js': 6.40.0
-  '@clerk/clerk-js>@base-org/account': '-'
-  '@clerk/clerk-js>@coinbase/wallet-sdk': '-'
-  '@clerk/clerk-js>@solana/wallet-adapter-base': '-'
-  '@clerk/clerk-js>@solana/wallet-adapter-react': '-'
-  '@clerk/clerk-js>@solana/wallet-standard': '-'
-  '@clerk/clerk-js>@wallet-standard/core': '-'
-  '@clerk/electron': 0.1.3
-  '@clerk/electron-passkeys': 0.0.3
-  '@clerk/expo': 4.14.0
-  '@clerk/react': 6.18.0
-  '@clerk/shared': 4.41.0
   '@effect/atom-react': 4.1.2
   '@effect/platform-node': 4.1.2
   '@effect/platform-node-shared': 4.1.2
-  '@effect/sql-pg': 4.1.2
   '@effect/vitest': 4.1.2
   '@effect/vitest>vitest': '-'
   '@expo/dom-webview': 58.0.2
@@ -333,7 +314,7 @@ overrides:
   vite-plus: 1.4.0
   yaml: ^2.9.0
 
-packageExtensionsChecksum: sha256-EowbsmlBFaoO0Ypufw901RnvdyjKG5dcdk2FRbc7Dr0=
+packageExtensionsChecksum: sha256-+v8ntounVLrYFu5whiqOiF5wsCM8sIM8cT3HaXVONag=
 
 pnpmfileChecksum: sha256-TZKKb3BFVNce7f47R+1Aq5RjFpCdY9NGAaHqwS7Chwg=
 
