@@ -295,8 +295,9 @@ their work is merged or closed, depending on those settings.
 ## Agent-to-agent work
 
 An agent can delegate work to other threads through the server's orchestration tools. The
-parent thread shows its children in the timeline and in the thread relationships card;
-**Open parent thread** returns from a child; a subagent's **Open parent** strip stays pinned under
+parent thread shows its children in the timeline and in the thread relationships card.
+Opening a child shows it in the tab that showed its parent, and **Open parent thread**
+returns to the parent in that same tab. A subagent's **Open parent** strip stays pinned under
 the thread header however far the timeline is scrolled. A child's question or approval request appears
 in the parent's pending approvals and needs your answer there. Agents reach threads,
 tasks and pulls through the server's MCP toolkits, not through the terminal.

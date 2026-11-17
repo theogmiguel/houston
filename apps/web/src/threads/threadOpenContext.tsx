@@ -4,7 +4,7 @@ import { createContext, useContext, type ReactNode } from "react";
 
 import { buildThreadRouteParams } from "../threadRoutes";
 
-/** `peek` follows a related thread (a subagent, its parent); `join` adds one, like a resume. */
+/** `peek` follows a related thread (a subagent, its parent) in its opener's tab; `join` adds one. */
 export type ThreadOpenIntent = "peek" | "join";
 
 type ThreadOpen = (ref: ScopedThreadRef, intent?: ThreadOpenIntent) => void;
