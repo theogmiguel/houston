@@ -45,7 +45,7 @@ catalog:
   "@clerk/shared": 4.41.0
   # Must match the version alchemy depends on: the relay overrides its
   # Cloudflare retry policy through this package's Retry service.
-  "@distilled.cloud/cloudflare": 1.0.0-rc.17
+  "@distilled.cloud/cloudflare": 1.0.0-rc.20
   "@effect/atom-react": 4.1.2
   "@effect/graphql-generator": 4.1.2
   "@effect/openapi-generator": 4.1.2
