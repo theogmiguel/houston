@@ -30,6 +30,7 @@ import * as Layer from "effect/Layer";
 import { TestClock } from "effect/testing";
 
 import * as GitWorkflow from "../../git/GitWorkflowService.ts";
+import * as IssueService from "../../issue/IssueService.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import * as McpSessionRegistryTestkit from "../../mcp/McpSessionRegistry.testkit.ts";
 import * as CommandReceiptStore from "../../orchestration-v2/CommandReceiptStore.ts";
@@ -182,6 +183,8 @@ export interface RunsOptions {
   readonly databaseFile?: string;
   /** Boots as a restarted server: upstream's recovery settles runs whose provider is gone. */
   readonly restarted?: boolean;
+  /** What the tracker answers; the tasks testkit's stand-in when absent. */
+  readonly issueService?: Layer.Layer<IssueService.IssueService>;
 }
 
 const databaseOf = (options: RunsOptions) =>
@@ -226,7 +229,10 @@ export const withThreadsOnly = <A, E, R>(
 export const layerRuns = (harness: RunsHarness, options: RunsOptions = {}) => {
   const database = databaseOf(options);
   const orchestration = layerOrchestration(harness, options, database);
-  const tasks = layerTasks({ databaseLayer: database });
+  const tasks = layerTasks({
+    databaseLayer: database,
+    ...(options.issueService === undefined ? {} : { issueService: options.issueService }),
+  });
   const receipts = CommandReceiptStore.layer.pipe(Layer.provide(database));
   const threadManagement = ThreadManagement.layer.pipe(
     Layer.provide(Layer.mergeAll(orchestration, receipts, tasks)),
@@ -350,6 +356,7 @@ export const runWith = <A, E, R>(
             reviewer: null,
             focus: "bugs",
             reworkRounds: 0,
+            updateIssueState: false,
             ...settings,
           },
         })

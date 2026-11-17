@@ -184,6 +184,12 @@ export function createTaskEnvironmentAtoms<R, E>(
     staleTimeMs: 0,
     idleTtlMs: 60_000,
   });
+  const settings = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:tasks:settings",
+    tag: WS_METHODS.houstonTasksSettingsGet,
+    staleTimeMs: 30_000,
+    idleTtlMs: 60_000,
+  });
   const refreshDetail = (
     registry: AtomRegistry.AtomRegistry,
     environmentId: EnvironmentId,
@@ -217,11 +223,21 @@ export function createTaskEnvironmentAtoms<R, E>(
     detail,
     initiatives,
     forIssue,
-    settings: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "environment-data:tasks:settings",
-      tag: WS_METHODS.houstonTasksSettingsGet,
-      staleTimeMs: 30_000,
-      idleTtlMs: 60_000,
+    settings,
+    setSettings: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:tasks:settings-set",
+      tag: WS_METHODS.houstonTasksSettingsSet,
+      scheduler,
+      concurrency,
+      onSuccess: (target, registry) =>
+        Effect.sync(() =>
+          registry.refresh(
+            settings({
+              environmentId: target.environmentId,
+              input: { projectId: target.input.projectId },
+            }),
+          ),
+        ),
     }),
     save: write("environment-data:tasks:save", WS_METHODS.houstonTasksSave),
     comment: write("environment-data:tasks:comment", WS_METHODS.houstonTasksComment),

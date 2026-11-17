@@ -15,9 +15,11 @@ import {
 } from "@houston-app/contracts/houston/tasks";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "../../config.ts";
+import * as IssueService from "../../issue/IssueService.ts";
 import { briefMessageId } from "./TaskRuns.ts";
 import {
   ANTIGRAVITY,
@@ -32,6 +34,7 @@ import {
   withThreadsOnly,
   type RunsContext,
 } from "./taskRuns.testkit.ts";
+import { issueDetailFor } from "./tasks.testkit.ts";
 
 const TIMEOUT = 120_000;
 
@@ -1766,6 +1769,37 @@ describe("an issue-backed task starts and plans with its issue", () => {
           }),
         );
       }),
+    TIMEOUT,
+  );
+
+  it.effect(
+    "with the switch on, Start and handback move the linked issue to its matching states",
+    () => {
+      const moves: Array<{ readonly key: string; readonly state: string }> = [];
+      const tracker = Layer.mock(IssueService.IssueService)({
+        detail: (ref) => Effect.succeed(issueDetailFor(ref)),
+        setState: (input) => {
+          moves.push({ key: input.key, state: input.state });
+          return Effect.void;
+        },
+      });
+      return Effect.gen(function* () {
+        const harness = yield* makeRunsHarness("issue-state");
+        yield* runWith(
+          harness,
+          (context) =>
+            Effect.gen(function* () {
+              yield* context.setSettings({ updateIssueState: true });
+              const task = yield* context.tasks.createFromIssue(issueRef(context.projectId));
+              yield* context.runs.start({ id: task.key, overrideReadiness: true });
+              assert.deepEqual(moves, [{ key: "12", state: "In Progress" }]);
+              yield* context.runs.handback({ id: task.key, summary: "done" });
+              assert.deepEqual(moves.at(-1), { key: "12", state: "In Review" });
+            }),
+          { issueService: tracker },
+        );
+      });
+    },
     TIMEOUT,
   );
 });

@@ -8,6 +8,7 @@ import { TASKS_PANEL_REF } from "./taskPanel";
 
 const fixture = vi.hoisted(() => ({
   detail: null as HoustonTaskDetail | null,
+  settings: null as Record<string, unknown> | null,
   calls: [] as unknown[],
 }));
 
@@ -31,9 +32,10 @@ vi.mock("~/state/tasks", async () => {
       createFromIssue: {},
       linkIssue: {},
       unlinkIssue: {},
+      setSettings: {},
     },
     useTaskDetail: () => (fixture.detail === null ? null : AsyncResult.success(fixture.detail)),
-    useTaskSettings: () => null,
+    useTaskSettings: () => fixture.settings,
     refreshTaskDetail: () => {},
   };
 });
@@ -298,4 +300,59 @@ it("links an issue by URL", async () => {
       url: "https://github.com/acme/houston/issues/12",
     },
   });
+});
+
+it("shows and saves the switch that moves the linked issue with the task", async () => {
+  const base = detail();
+  fixture.detail = {
+    ...base,
+    task: {
+      ...base.task,
+      issue: {
+        projectId: "p1" as never,
+        tracker: "github" as never,
+        host: "github.com",
+        scope: "acme/houston",
+        key: "84",
+        displayKey: "#84",
+        url: "https://github.com/acme/houston/issues/84",
+        title: "Rename Harness review",
+        linkedAt: "2026-01-02T00:00:00.000Z",
+      },
+    },
+  };
+  fixture.settings = {
+    access: "write",
+    startModel: { instanceId: "claudeAgent", model: "claude-opus-5-5" },
+    delivery: "send",
+    reviewer: null,
+    reviewMode: "manual",
+    focus: "bugs",
+    reworkRounds: 0,
+    updateIssueState: false,
+  };
+  fixture.calls = [];
+  await using screen = await render(panel());
+
+  expect(screen.container.textContent).toContain("Update the linked issue's state (Off)");
+  const toggle = screen.getByRole("checkbox", { name: "Update the linked issue's state" });
+  await toggle.click();
+
+  expect(fixture.calls).toContainEqual({
+    environmentId: "env",
+    input: {
+      projectId: "p1",
+      settings: {
+        access: "write",
+        startModel: { instanceId: "claudeAgent", model: "claude-opus-5-5" },
+        delivery: "send",
+        reviewer: null,
+        reviewMode: "manual",
+        focus: "bugs",
+        reworkRounds: 0,
+        updateIssueState: true,
+      },
+    },
+  });
+  fixture.settings = null;
 });

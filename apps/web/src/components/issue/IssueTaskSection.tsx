@@ -23,24 +23,26 @@ import { useTaskCommands } from "../tasks/useTaskCommands";
 function LinkedTaskRow({ task }: { task: Pick<HoustonTask, "key" | "title" | "status"> }) {
   const navigate = useNavigate();
   return (
-    <Card className="flex min-w-0 items-center gap-2 p-2">
-      <ListChecksIcon aria-hidden className="size-3.5 shrink-0" />
-      <InlineButton
-        tone="muted"
-        className="min-w-0 flex-1"
-        aria-label={`Open ${task.key}`}
-        onClick={() =>
-          void navigate({ to: "/tasks", search: { task: task.key } as never, replace: false })
-        }
-      >
-        <Text as="span" variant="callout" weight="medium" truncate>
-          {task.key}
-        </Text>
-        <Text as="span" variant="callout" tone="muted" truncate>
-          {task.title}
-        </Text>
-      </InlineButton>
-      <Badge size="sm">{TASK_STATUS_LABELS[task.status]}</Badge>
+    <Card>
+      <div className="flex min-w-0 items-center gap-2">
+        <ListChecksIcon aria-hidden className="size-3.5 shrink-0" />
+        <InlineButton
+          tone="muted"
+          className="min-w-0 flex-1"
+          aria-label={`Open ${task.key}`}
+          onClick={() =>
+            void navigate({ to: "/tasks", search: { task: task.key } as never, replace: false })
+          }
+        >
+          <Text as="span" variant="callout" weight="medium" truncate>
+            {task.key}
+          </Text>
+          <Text as="span" variant="callout" tone="muted" truncate>
+            {task.title}
+          </Text>
+        </InlineButton>
+        <Badge size="sm">{TASK_STATUS_LABELS[task.status]}</Badge>
+      </div>
     </Card>
   );
 }

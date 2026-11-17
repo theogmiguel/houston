@@ -274,3 +274,116 @@ describe("the task of an issue", () => {
     }).pipe(Effect.provide(layerTasks({ issueService: layerIssue() }))),
   );
 });
+
+describe("a task's status moves the linked issue when the project chose it", () => {
+  const settings = (updateIssueState: boolean) => ({
+    access: "write" as const,
+    startModel: { instanceId: "claudeAgent" as never, model: "claude-opus-5-5" },
+    delivery: "send" as const,
+    reviewer: null,
+    focus: "bugs" as const,
+    reworkRounds: 0,
+    updateIssueState,
+  });
+  type Move = { readonly key: string; readonly state: string };
+  const tracker = (moves: Array<Move>, refusal = false) =>
+    Layer.mock(IssueService.IssueService)({
+      detail: (ref) => Effect.succeed(issueDetailFor(ref)),
+      setState: (input) => {
+        moves.push({ key: input.key, state: input.state });
+        return refusal
+          ? Effect.fail(
+              new IssueOperationError({
+                operation: "setState",
+                detail: "the tracker is read-only today",
+              }),
+            )
+          : Effect.void;
+      },
+    });
+
+  it.effect("In progress, In review and Done choose the tracker's own states", () => {
+    const moves: Array<Move> = [];
+    return Effect.gen(function* () {
+      const tasks = yield* service;
+      const project = yield* createProject("issue-state");
+      yield* tasks.setSettings({ projectId: project, settings: settings(true) });
+      const task = yield* tasks.createFromIssue(refOf(project));
+
+      const progress = yield* tasks.save({
+        id: task.key,
+        expectedRevision: task.revision,
+        patch: { status: "in_progress" },
+      });
+      assert.deepEqual(moves, [{ key: "77", state: "In Progress" }]);
+
+      const review = yield* tasks.save({
+        id: task.key,
+        expectedRevision: progress.revision,
+        patch: { status: "in_review" },
+      });
+      assert.deepEqual(moves.at(-1), { key: "77", state: "In Review" });
+
+      yield* tasks.save({
+        id: task.key,
+        expectedRevision: review.revision,
+        patch: { status: "done" },
+      });
+      // Done takes the first closed state; the task's own status is never held back.
+      assert.deepEqual(moves.at(-1), { key: "77", state: "Completed" });
+      assert.strictEqual((yield* tasks.get({ id: task.key })).task.status, "done");
+    }).pipe(Effect.provide(layerTasks({ issueService: tracker(moves) })));
+  });
+
+  it.effect("with the setting off, a status change leaves the issue alone", () => {
+    const moves: Array<Move> = [];
+    return Effect.gen(function* () {
+      const tasks = yield* service;
+      const project = yield* createProject("issue-state-off");
+      const task = yield* tasks.createFromIssue(refOf(project));
+
+      yield* tasks.save({
+        id: task.key,
+        expectedRevision: task.revision,
+        patch: { status: "done" },
+      });
+      assert.deepEqual(moves, []);
+    }).pipe(Effect.provide(layerTasks({ issueService: tracker(moves) })));
+  });
+
+  it.effect("a refusal is noted once in the activity and the task still moves", () => {
+    const moves: Array<Move> = [];
+    return Effect.gen(function* () {
+      const tasks = yield* service;
+      const project = yield* createProject("issue-state-failed");
+      yield* tasks.setSettings({ projectId: project, settings: settings(true) });
+      const task = yield* tasks.createFromIssue(refOf(project));
+
+      const done = yield* tasks.save({
+        id: task.key,
+        expectedRevision: task.revision,
+        patch: { status: "done" },
+      });
+      assert.strictEqual(done.status, "done");
+      const detail = yield* tasks.get({ id: task.key });
+      const notes = detail.comments.filter((comment) => comment.body.includes("was not changed"));
+      assert.lengthOf(notes, 1);
+      assert.include(notes[0]?.body ?? "", "#77");
+      assert.include(notes[0]?.body ?? "", "read-only today");
+      assert.deepEqual(historyActions(detail).slice(0, 1), ["houston:issue-state-failed"]);
+
+      // The same refusal at the next revision is not repeated.
+      yield* tasks.save({
+        id: task.key,
+        expectedRevision: done.revision,
+        patch: { status: "done" },
+      });
+      assert.strictEqual(
+        (yield* tasks.get({ id: task.key })).comments.filter((comment) =>
+          comment.body.includes("was not changed"),
+        ).length,
+        1,
+      );
+    }).pipe(Effect.provide(layerTasks({ issueService: tracker(moves, true) })));
+  });
+});

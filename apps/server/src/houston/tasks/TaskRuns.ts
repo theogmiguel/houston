@@ -391,6 +391,10 @@ const make = Effect.gen(function* () {
     });
   });
 
+  /** Moves the linked issue with the task's current status, when the project asked for it. */
+  const syncIssueState = (taskId: number) =>
+    taskOf(taskId).pipe(Effect.flatMap((row) => tasks.writeIssueState(row.id, row.status)));
+
   /** Records the task's issue on the thread it launched, so the thread keeps it beside its PRs. */
   const linkIssueToThread = Effect.fn("HoustonTaskRuns.linkIssueToThread")(function* (
     row: TaskRow,
@@ -717,6 +721,7 @@ const make = Effect.gen(function* () {
             authority: { ...by.agent.modes, createdBy: "agent" as const },
           }),
     });
+    yield* syncIssueState(row.id);
     return { run: toRun(launched), ...(send ? {} : { brief }) };
   });
 
@@ -861,7 +866,7 @@ const make = Effect.gen(function* () {
             })),
           )
         : USER_LAUNCH;
-    return yield* launchRun(operation, row, recorded, {
+    const launched = yield* launchRun(operation, row, recorded, {
       authority,
       title: `${keyOf(row)} ${row.title} (attempt ${attempt})`,
       modelSelection,
@@ -872,6 +877,8 @@ const make = Effect.gen(function* () {
       },
       message: brief,
     });
+    yield* syncIssueState(row.id);
+    return launched;
   });
 
   const runControl: HoustonTaskRuns["Service"]["runControl"] = Effect.fn(
@@ -1005,6 +1012,7 @@ const make = Effect.gen(function* () {
           );
         }
       }
+      yield* syncIssueState(row.id);
       return toRun((yield* runById(open.id)) as RunRow);
     },
   );
@@ -1661,6 +1669,7 @@ const make = Effect.gen(function* () {
         }),
       );
       yield* linkIssueToThread(row, agent.threadId, "agent");
+      yield* syncIssueState(row.id);
       return toRun(claimed);
     },
   );
@@ -1780,6 +1789,7 @@ const make = Effect.gen(function* () {
     const next = taskRunStateOf(threadRun.status);
     const revives = taskRun.state === "interrupted" && OPEN_RUN_STATES.has(next);
     if (!OPEN_RUN_STATES.has(taskRun.state) && !revives) return;
+    let movedStatus = false;
     yield* store.write(
       Effect.gen(function* () {
         const touched: Array<number> = [taskRun.task_id];
@@ -1811,10 +1821,12 @@ const make = Effect.gen(function* () {
               run: taskRun.id,
             })),
           );
+          movedStatus = true;
         }
         return { result: undefined, touched };
       }),
     );
+    if (movedStatus) yield* syncIssueState(taskRun.task_id);
   });
 
   /** The thread's latest thread run, read alone; `None` when the thread cannot be read. */
@@ -1945,6 +1957,7 @@ const make = Effect.gen(function* () {
     );
     if (implementation === undefined) return;
     const row = yield* taskOf(implementation.task_id);
+    let merged = false;
     yield* store.write(
       Effect.gen(function* () {
         const touched: Array<number> = [];
@@ -1960,10 +1973,12 @@ const make = Effect.gen(function* () {
               pullRequest: link.url,
             })),
           );
+          merged = true;
         }
         return { result: undefined, touched };
       }),
     );
+    if (merged) yield* syncIssueState(row.id);
     yield* watchLinkedPullRequest(implementation, threadId, link);
     const head = link.watch?.headSha ?? null;
     if (head === null) return;

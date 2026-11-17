@@ -395,6 +395,8 @@ export const HoustonTaskSettings = Schema.Struct({
   reviewMode: HoustonTaskReviewMode,
   focus: HoustonTaskReviewFocus,
   reworkRounds: NonNegativeInt,
+  /** Whether a task's status moves the issue it is backed by. Off unless chosen. */
+  updateIssueState: Schema.Boolean,
 });
 export type HoustonTaskSettings = typeof HoustonTaskSettings.Type;
 
@@ -407,6 +409,7 @@ export const HoustonTaskSettingsInput = Schema.Struct({
   reviewMode: Schema.optionalKey(HoustonTaskReviewMode),
   focus: HoustonTaskReviewFocus,
   reworkRounds: NonNegativeInt,
+  updateIssueState: Schema.Boolean,
 });
 export type HoustonTaskSettingsInput = typeof HoustonTaskSettingsInput.Type;
 

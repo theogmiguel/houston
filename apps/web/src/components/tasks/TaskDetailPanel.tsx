@@ -603,6 +603,28 @@ export function TaskDetailPanel({
     }
   };
 
+  const runUpdateIssueState = async (enabled: boolean) => {
+    if (settings === null || task.projectId === null) return;
+    setBusy("issue-setting");
+    const outcome = await commands.setSettings({
+      projectId: task.projectId,
+      settings: {
+        access: settings.access,
+        startModel: settings.startModel,
+        delivery: settings.delivery,
+        reviewer: settings.reviewer,
+        reviewMode: settings.reviewMode,
+        focus: settings.focus,
+        reworkRounds: settings.reworkRounds,
+        updateIssueState: enabled,
+      },
+    });
+    setBusy(null);
+    if (outcome._tag === "Failure") {
+      handleFailure("Issue setting not saved", squashAtomCommandFailure(outcome));
+    }
+  };
+
   const openRunThread = (threadId: string) => {
     void openThread({
       environmentId,
@@ -952,6 +974,25 @@ export function TaskDetailPanel({
                     Unlink
                   </Button>
                 </div>
+              )}
+              {task.issue === null ? null : (
+                <label className="flex min-w-0 items-start gap-2 py-0.5">
+                  <Checkbox
+                    checked={settings?.updateIssueState ?? false}
+                    disabled={disabled || settings === null}
+                    onCheckedChange={(checked) => void runUpdateIssueState(checked === true)}
+                    aria-label="Update the linked issue's state"
+                  />
+                  <span className="flex min-w-0 flex-col">
+                    <Text variant="callout">
+                      Update the linked issue's state ({settings?.updateIssueState ? "On" : "Off"})
+                    </Text>
+                    <Text variant="caption" tone="muted">
+                      In progress, In review, Done and Canceled move the issue to its tracker's
+                      matching state; Done closes it with the first closed state.
+                    </Text>
+                  </span>
+                </label>
               )}
             </section>
             <section className="flex min-w-0 flex-col gap-1">

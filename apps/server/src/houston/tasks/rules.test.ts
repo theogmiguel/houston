@@ -21,6 +21,7 @@ import {
   checkTaskCount,
   checkTitle,
   compareReady,
+  issueStateForStatus,
   parentCycle,
   queueOf,
   readiness,
@@ -647,5 +648,76 @@ describe("review findings are bounded and name a wrong field", () => {
       fieldOf(checkFindings("op", [finding, { ...finding, message: "m".repeat(2001) }])),
     ).toMatch(/findings\[1\]\.message/);
     expect(fieldOf(checkFindings("op", [{ ...finding, line: -1 }]))).toMatch(/findings\[0\]\.line/);
+  });
+});
+
+describe("a brief names a linked issue and fences its text", () => {
+  const issue = {
+    displayKey: "#12",
+    url: "https://github.com/acme/houston/issues/12",
+    title: "Fix the flaky test",
+  };
+
+  it("points at the issue and asks the agent to read it with the issue tools", () => {
+    const brief = buildBrief({
+      key: "HOU-7",
+      title: "t",
+      description: "",
+      acceptance: ["a"],
+      links: [],
+      initiative: null,
+      issue,
+    });
+    expect(brief).toContain("## Linked issue #12");
+    expect(brief).toContain(issue.url);
+    expect(brief).toContain("Fix the flaky test");
+    expect(brief).toContain("read_issue");
+    expect(brief).not.toContain("<<<HOUSTON-ISSUE-DATA");
+  });
+
+  it("quotes the live body between the issue markers, labelled untrusted", () => {
+    const brief = buildBrief({
+      key: "HOU-7",
+      title: "t",
+      description: "",
+      acceptance: ["a"],
+      links: [],
+      initiative: null,
+      issue,
+      issueBody: "The tracker's own words.",
+    });
+    const open = brief.indexOf("<<<HOUSTON-ISSUE-DATA");
+    const close = brief.indexOf("HOUSTON-ISSUE-DATA>>>");
+    expect(open).toBeGreaterThanOrEqual(0);
+    expect(close).toBeGreaterThan(open);
+    expect(brief.slice(open, close)).toContain("The tracker's own words.");
+    expect(brief).toContain("Issue text quotes the tracker's authors");
+  });
+});
+
+describe("a task status picks the tracker's own state", () => {
+  const states = [
+    { category: "open" as const, name: "Open" },
+    { category: "open" as const, name: "In Progress" },
+    { category: "open" as const, name: "In Review" },
+    { category: "closed" as const, name: "Completed" },
+    { category: "closed" as const, name: "Canceled" },
+  ];
+
+  it("Done takes the first closed state; the others match by name, any letter case", () => {
+    expect(issueStateForStatus("done", states)).toBe("Completed");
+    expect(issueStateForStatus("in_progress", states)).toBe("In Progress");
+    expect(issueStateForStatus("in_review", states)).toBe("In Review");
+    expect(issueStateForStatus("canceled", states)).toBe("Canceled");
+  });
+
+  it("a tracker without the state leaves the issue alone", () => {
+    const github = [{ category: "open" as const, name: "Open" }];
+    expect(issueStateForStatus("in_progress", github)).toBeNull();
+    expect(issueStateForStatus("in_review", github)).toBeNull();
+    expect(issueStateForStatus("canceled", github)).toBeNull();
+    expect(issueStateForStatus("done", github)).toBeNull();
+    expect(issueStateForStatus("backlog", states)).toBeNull();
+    expect(issueStateForStatus("todo", states)).toBeNull();
   });
 });

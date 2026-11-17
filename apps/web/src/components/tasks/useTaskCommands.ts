@@ -15,6 +15,7 @@ import type {
   HoustonTaskReviewStartInput,
   HoustonTaskRunControlInput,
   HoustonTaskSaveInput,
+  HoustonTaskSettingsSetInput,
   HoustonTaskStartInput,
 } from "@houston-app/contracts/houston/tasks";
 
@@ -39,6 +40,7 @@ export function useTaskCommands(environmentId: EnvironmentId) {
   const createFromIssue = useAtomCommand(tasksEnvironment.createFromIssue);
   const linkIssue = useAtomCommand(tasksEnvironment.linkIssue);
   const unlinkIssue = useAtomCommand(tasksEnvironment.unlinkIssue);
+  const setSettings = useAtomCommand(tasksEnvironment.setSettings);
   return {
     save: (input: HoustonTaskSaveInput) => save({ environmentId, input }),
     comment: (input: HoustonTaskCommentInput) => comment({ environmentId, input }),
@@ -59,5 +61,6 @@ export function useTaskCommands(environmentId: EnvironmentId) {
       createFromIssue({ environmentId, input }),
     linkIssue: (input: HoustonTaskIssueLinkInput) => linkIssue({ environmentId, input }),
     unlinkIssue: (input: HoustonTaskIssueUnlinkInput) => unlinkIssue({ environmentId, input }),
+    setSettings: (input: HoustonTaskSettingsSetInput) => setSettings({ environmentId, input }),
   };
 }

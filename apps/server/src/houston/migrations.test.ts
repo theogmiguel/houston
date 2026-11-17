@@ -38,6 +38,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [21, "LayoutThreadMembership"],
   [22, "IssueTrackerBindings"],
   [23, "TaskIssues"],
+  [24, "TaskIssueStateSetting"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -1130,7 +1131,7 @@ describe("the grids removal migration", () => {
   );
 
   it.effect(
-    "a file database at the main track's head applies 18 to 23 and ends without the table",
+    "a file database at the main track's head applies 18 to 24 and ends without the table",
     () =>
       withDatabaseFile((file) =>
         Effect.gen(function* () {
@@ -1144,6 +1145,7 @@ describe("the grids removal migration", () => {
               [21, "LayoutThreadMembership"],
               [22, "IssueTrackerBindings"],
               [23, "TaskIssues"],
+              [24, "TaskIssueStateSetting"],
             ],
           );
           assert.deepEqual(yield* gridObjects, []);
@@ -1257,6 +1259,26 @@ describe("the task issues migration", () => {
       // The identity index is not unique: an archived task keeps its link and a new task may
       // link the same issue, which the service decides against the tasks table.
       yield* link(2);
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+});
+
+describe("the task issue state setting migration", () => {
+  it.effect("adds the state switch to task settings, off for every existing row", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
+      const columns = yield* sql<{ readonly name: string; readonly dflt_value: string | null }>`
+        SELECT name, dflt_value FROM pragma_table_info('houston_task_settings')
+      `;
+      assert.deepInclude(columns, { name: "update_issue_state", dflt_value: "0" });
+      const [row] = yield* sql<{ readonly update_issue_state: number }>`
+        INSERT INTO houston_task_settings (
+          project_id, access, start_model, delivery, focus, rework_rounds, updated_at
+        ) VALUES ('p1', 'write', '{}', 'send', 'bugs', 0, 'now')
+        RETURNING update_issue_state
+      `;
+      assert.strictEqual(row?.update_issue_state, 0);
     }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
   );
 });

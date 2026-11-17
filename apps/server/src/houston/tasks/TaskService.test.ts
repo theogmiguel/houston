@@ -733,6 +733,7 @@ describe("settings default and refuse out-of-range values", () => {
         reviewMode: "manual",
         focus: "bugs",
         reworkRounds: 0,
+        updateIssueState: false,
       } as never);
 
       const withReviewer = yield* tasks.setSettings({
@@ -744,6 +745,7 @@ describe("settings default and refuse out-of-range values", () => {
           reviewer: { instanceId: "claudeAgent", model: "claude-opus-5-5" },
           focus: "security",
           reworkRounds: 5,
+          updateIssueState: true,
         } as never,
       });
       // A reviewer without an explicit mode reviews on handback.

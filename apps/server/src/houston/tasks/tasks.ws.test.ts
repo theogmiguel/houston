@@ -714,6 +714,7 @@ describe("each method requires its declared scope", () => {
           reviewer: null,
           focus: "bugs",
           reworkRounds: 1,
+          updateIssueState: false,
         },
       }),
     },

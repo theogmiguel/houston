@@ -975,6 +975,16 @@ const TaskIssues = Effect.gen(function* () {
   `;
 });
 
+// The per-project switch that lets a task's status move the issue it is backed by. Off by
+// default, so an existing project's issues stay where their tracker has them.
+const TaskIssueStateSetting = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    ALTER TABLE houston_task_settings
+    ADD COLUMN update_issue_state INTEGER NOT NULL DEFAULT 0
+  `;
+});
+
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
@@ -997,6 +1007,7 @@ const houstonMigrationEntries = [
   [21, "LayoutThreadMembership", LayoutThreadMembership],
   [22, "IssueTrackerBindings", IssueTrackerBindings],
   [23, "TaskIssues", TaskIssues],
+  [24, "TaskIssueStateSetting", TaskIssueStateSetting],
 ] as const;
 
 // Ids land in merge order, so a database can record a higher id before a lower one; every

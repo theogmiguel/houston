@@ -555,6 +555,28 @@ export const smallDiffReason = (size: { readonly lines: number; readonly files: 
     ? `the diff is ${size.lines} changed line(s) in ${size.files} file(s); the skip caps are ${HOUSTON_TASK_LIMITS.reviewSkipMaxLines} lines and ${HOUSTON_TASK_LIMITS.reviewSkipMaxFiles} files`
     : null;
 
+/**
+ * The tracker state a task's status means, chosen from the issue's own workflow: Done closes
+ * with the first closed-category state, the other statuses move only where the tracker has a
+ * state by that name. Null leaves the issue alone.
+ */
+export const issueStateForStatus = (
+  status: HoustonTaskStatus,
+  states: ReadonlyArray<{ readonly category: "open" | "closed"; readonly name: string }>,
+): string | null => {
+  if (status === "done") return states.find((state) => state.category === "closed")?.name ?? null;
+  const wanted =
+    status === "in_progress"
+      ? "in progress"
+      : status === "in_review"
+        ? "in review"
+        : status === "canceled"
+          ? "canceled"
+          : null;
+  if (wanted === null) return null;
+  return states.find((state) => state.name.trim().toLowerCase() === wanted)?.name ?? null;
+};
+
 /** Windows paths compare without case or separator kind; trailing separators never count. */
 export const v1PathMatches = (v1Path: string, root: string, platform: NodeJS.Platform): boolean => {
   if (platform === "win32") {

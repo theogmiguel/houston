@@ -35,6 +35,7 @@ import {
   type HoustonTaskSettings,
   type HoustonTaskSettingsGetInput,
   type HoustonTaskSettingsSetInput,
+  type HoustonTaskStatus,
   type HoustonTaskStreamEvent,
   type HoustonTaskSubscribeInput,
   type HoustonTaskSummary,
@@ -61,13 +62,21 @@ import {
   checkTaskCount,
   checkTitle,
   conflictRefusal,
+  cutBytes,
+  issueStateForStatus,
   limitRefusal,
   parentCycle,
   priorityFromValue,
   priorityValue,
   refuse,
 } from "./rules.ts";
-import { HoustonTaskStore, SnapshotReadHook, nowIso, type TaskRow } from "./TaskStore.ts";
+import {
+  HoustonTaskStore,
+  SnapshotReadHook,
+  nowIso,
+  toJsonText,
+  type TaskRow,
+} from "./TaskStore.ts";
 
 /** The actor of every write a client makes through `/ws`. */
 export const USER_ACTOR = "user";
@@ -152,9 +161,7 @@ export class HoustonTaskService extends Context.Service<
      * The live issue text a planning brief carries, or null for a task with no link. The text is
      * quoted from the tracker and named as untrusted.
      */
-    readonly issueText: (
-      taskId: number,
-    ) => Effect.Effect<
+    readonly issueText: (taskId: number) => Effect.Effect<
       {
         readonly displayKey: string;
         readonly url: string;
@@ -163,6 +170,11 @@ export class HoustonTaskService extends Context.Service<
       } | null,
       HoustonTaskError
     >;
+    /**
+     * Moves the linked issue to the state the task's status means, when the project chose it.
+     * Never fails: a tracker's refusal becomes a note in the task's activity.
+     */
+    readonly writeIssueState: (taskId: number, status: HoustonTaskStatus) => Effect.Effect<void>;
   }
 >()("@houston-app/cli/houston/tasks/TaskService/HoustonTaskService") {}
 
@@ -196,6 +208,7 @@ interface SettingsRow {
   readonly review_mode: HoustonTaskSettings["reviewMode"] | null;
   readonly focus: HoustonTaskSettings["focus"];
   readonly rework_rounds: number;
+  readonly update_issue_state: number;
 }
 
 export const settingsFromRow = (row: SettingsRow | undefined): HoustonTaskSettings => {
@@ -208,6 +221,7 @@ export const settingsFromRow = (row: SettingsRow | undefined): HoustonTaskSettin
       reviewMode: "manual",
       focus: "bugs",
       reworkRounds: 0,
+      updateIssueState: false,
     };
   }
   const reviewer = row.reviewer === null ? null : decodeSelection(row.reviewer);
@@ -219,6 +233,7 @@ export const settingsFromRow = (row: SettingsRow | undefined): HoustonTaskSettin
     reviewMode: row.review_mode ?? (reviewer === null ? "manual" : "handback"),
     focus: row.focus,
     reworkRounds: row.rework_rounds,
+    updateIssueState: row.update_issue_state !== 0,
   };
 };
 
@@ -514,11 +529,20 @@ const make = Effect.gen(function* () {
   });
 
   const save: HoustonTaskService["Service"]["save"] = (input, actor = USER_ACTOR) =>
-    store.write(
-      input.id === undefined
-        ? createTask(input, actor)
-        : updateTask({ ...input, id: input.id }, actor),
-    );
+    store
+      .write(
+        input.id === undefined
+          ? createTask(input, actor)
+          : updateTask({ ...input, id: input.id }, actor),
+      )
+      // A user's status choice moves the linked issue only after the task write committed.
+      .pipe(
+        Effect.tap((task) =>
+          input.id !== undefined && input.patch.status !== undefined
+            ? writeIssueState(task.id, task.status)
+            : Effect.void,
+        ),
+      );
 
   const comment: HoustonTaskService["Service"]["comment"] = (input, actor = USER_ACTOR) =>
     store.write(
@@ -1090,6 +1114,75 @@ const make = Effect.gen(function* () {
       SELECT * FROM houston_task_settings WHERE project_id = ${projectId}
     `).pipe(Effect.map((rows) => rows[0]));
 
+  const ISSUE_ACTOR = "houston:issue";
+
+  /** A note about the linked issue, written once per key so a repeated failure is not repeated. */
+  const noteIssueOnce = (taskId: number, key: string, body: string) =>
+    store.write(
+      Effect.gen(function* () {
+        const [seen] = yield* run(sql<{ readonly one: number }>`
+          SELECT 1 AS one FROM houston_task_history
+          WHERE task_id = ${taskId} AND action = 'houston:issue-state-failed'
+            AND changes = ${toJsonText({ key })}
+        `);
+        if (seen !== undefined) return { result: undefined, touched: [] };
+        const now = yield* nowIso;
+        yield* run(sql`
+          INSERT INTO houston_task_comments (task_id, body, author, created_at)
+          VALUES (${taskId}, ${cutBytes(body, HOUSTON_TASK_LIMITS.commentBytes)}, ${ISSUE_ACTOR}, ${now})
+        `);
+        yield* store.recordHistory(taskId, ISSUE_ACTOR, "houston:issue-state-failed", { key });
+        return { result: undefined, touched: [taskId] };
+      }),
+    );
+
+  const issueStateFailure = (
+    taskId: number,
+    issue: HoustonTaskIssue,
+    key: string,
+    message: string,
+  ) =>
+    noteIssueOnce(
+      taskId,
+      key,
+      `The linked issue ${issue.displayKey} was not changed: ${message}`,
+    ).pipe(Effect.asVoid);
+
+  const writeIssueState: HoustonTaskService["Service"]["writeIssueState"] = Effect.fn(
+    "HoustonTaskService.writeIssueState",
+  )(function* (taskId, status) {
+    const issue = yield* store.issueOf(taskId);
+    if (issue === null) return;
+    const row = yield* store.taskById(taskId);
+    if (row === undefined || row.project_id === null) return;
+    const settings = yield* settingsRow(row.project_id as ProjectId);
+    // No row means the project never chose; the setting is off then.
+    if (settings === undefined || settings.update_issue_state === 0) return;
+    const detail = yield* issues.detail(issueRefOf(issue)).pipe(Effect.result);
+    if (detail._tag === "Failure") {
+      yield* issueStateFailure(
+        taskId,
+        issue,
+        `read:${status}`,
+        `the tracker could not be read: ${detail.failure.message}`,
+      );
+      return;
+    }
+    const target = issueStateForStatus(status, detail.success.states);
+    if (target === null || target === detail.success.state.name) return;
+    const moved = yield* issues
+      .setState({ ...issueRefOf(issue), state: target })
+      .pipe(Effect.result);
+    if (moved._tag === "Failure") {
+      yield* issueStateFailure(
+        taskId,
+        issue,
+        `set:${target}`,
+        `the tracker refused "${target}": ${moved.failure.message}`,
+      );
+    }
+  });
+
   const getSettings: HoustonTaskService["Service"]["getSettings"] = Effect.fn(
     "HoustonTaskService.getSettings",
   )(function* (input) {
@@ -1121,18 +1214,19 @@ const make = Effect.gen(function* () {
     yield* run(sql`
         INSERT INTO houston_task_settings (
           project_id, access, start_model, delivery, reviewer, review_mode, focus, rework_rounds,
-          updated_at
+          update_issue_state, updated_at
         ) VALUES (
           ${input.projectId}, ${settings.access}, ${encodeSelection(settings.startModel)},
           ${settings.delivery},
           ${settings.reviewer === null ? null : encodeSelection(settings.reviewer)},
-          ${settings.reviewMode ?? null}, ${settings.focus}, ${settings.reworkRounds}, ${now}
+          ${settings.reviewMode ?? null}, ${settings.focus}, ${settings.reworkRounds},
+          ${settings.updateIssueState ? 1 : 0}, ${now}
         )
         ON CONFLICT (project_id) DO UPDATE SET access = excluded.access,
           start_model = excluded.start_model, delivery = excluded.delivery,
           reviewer = excluded.reviewer, review_mode = excluded.review_mode,
           focus = excluded.focus, rework_rounds = excluded.rework_rounds,
-          updated_at = excluded.updated_at
+          update_issue_state = excluded.update_issue_state, updated_at = excluded.updated_at
       `);
     return settingsFromRow(yield* settingsRow(input.projectId));
   });
@@ -1155,6 +1249,7 @@ const make = Effect.gen(function* () {
     unlinkIssue,
     taskForIssue,
     issueText,
+    writeIssueState,
   });
 });
 
