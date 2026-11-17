@@ -15,6 +15,11 @@ on:
         type: boolean
         required: true
         default: false
+      launcher_only:
+        description: "The release is already public; publish only its npm launcher"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -45,21 +50,27 @@ jobs:
       - uses: actions/checkout@v5
 
       # A release whose promotion succeeded but whose launcher did not publish is
-      # public already. It is never promoted twice; only the launcher step runs.
+      # public already. It is never promoted twice: the reviewer asks for the
+      # launcher alone, and that request is refused for anything still a draft.
       - name: Read the release's state
         id: state
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
+          LAUNCHER_ONLY: ${{ inputs.launcher_only }}
         run: |
           set -euo pipefail
           draft=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)
-          if [ "$draft" = "false" ]; then
-            echo "public=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::release $TAG is already public; only the npm launcher is published"
-          else
+          if [ "$LAUNCHER_ONLY" != "true" ]; then
             echo "public=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          if [ "$draft" != "false" ]; then
+            echo "::error::launcher_only is ticked but release $TAG is still a draft (isDraft=$draft); promote it first with launcher_only unticked"
+            exit 1
+          fi
+          echo "public=true" >> "$GITHUB_OUTPUT"
+          echo "::notice::release $TAG is already public; only the npm launcher is published"
 
       - name: Install signature verifier
         if: steps.state.outputs.public != 'true'
