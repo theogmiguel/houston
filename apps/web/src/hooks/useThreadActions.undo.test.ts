@@ -6,6 +6,7 @@ import { useThreadActions } from "./useThreadActions";
 import { threadEnvironment } from "../state/threads";
 import { toastManager } from "../components/ui/toast";
 import { useThreadUndoNotice } from "./showThreadUndoNotice";
+import { useLayoutStore } from "../layout/layoutStore";
 
 const commands = vi.hoisted(() => ({
   pin: vi.fn(),
@@ -236,6 +237,45 @@ describe("archive navigation", () => {
     expect((await archived)._tag).toBe("Success");
     expect(useThreadUndoNotice.getState().notice).toMatchObject({ action: "Archived" });
     expect(router.state.location.href).toBe(route.expected);
+  });
+});
+
+describe("settleThread", () => {
+  const chatOf = (threadId: string) =>
+    ({
+      kind: "chat",
+      target: {
+        kind: "server",
+        threadRef: { environmentId: target.environmentId, threadId: ThreadId.make(threadId) },
+      },
+    }) as const;
+  const openThreadIds = () =>
+    useLayoutStore
+      .getState()
+      .layout.workspaces.flatMap((workspace) => workspace.columns)
+      .flatMap((column) => column.panes.flatMap((pane) => pane.tabs))
+      .flatMap((tab) =>
+        tab.content.kind === "chat" && tab.content.target.kind === "server"
+          ? [tab.content.target.threadRef.threadId as string]
+          : [],
+      );
+
+  it("takes the closed thread's tab off the layout once the server has closed it", async () => {
+    useLayoutStore.getState().reset();
+    useLayoutStore.getState().openKeptTab(chatOf("thread"));
+    useLayoutStore.getState().openKeptTab(chatOf("other"));
+    expect(openThreadIds().toSorted()).toEqual(["other", "thread"]);
+    await useThreadActions().settleThread(target);
+    expect(openThreadIds()).toEqual(["other"]);
+  });
+
+  it("leaves the tab open when the server refuses the close", async () => {
+    useLayoutStore.getState().reset();
+    useLayoutStore.getState().openKeptTab(chatOf("thread"));
+    commands.settle.mockResolvedValue({ _tag: "Failure", cause: Cause.fail(new Error("no")) });
+    vi.spyOn(toastManager, "add").mockReturnValue("toast");
+    await useThreadActions().settleThread(target);
+    expect(openThreadIds()).toEqual(["thread"]);
   });
 });
 

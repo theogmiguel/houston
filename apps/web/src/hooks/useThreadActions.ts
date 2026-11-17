@@ -69,6 +69,7 @@ import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { getClientSettings, useClientSettings } from "./useSettings";
 import * as ThreadUndo from "@houston-app/client-runtime/state/thread-undo";
 import { showThreadUndoNotice } from "./showThreadUndoNotice";
+import { closeLayoutThread } from "../layout/layoutActions";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
@@ -800,6 +801,8 @@ export function useThreadActions() {
     if (wokeAt !== null) {
       markThreadVisited(scopedThreadKey(target), wokeAt);
     }
+    // A closed thread leaves the layout as it leaves the list; reopening it opens it again.
+    closeLayoutThread(target);
     showThreadUndoNotice({
       action: "Closed",
       claim: action,
