@@ -8,15 +8,22 @@ two views: **Requests** and **Merge queue**.
 
 Open **Issues** from the command palette (**Open issues**) or a new tab's **Open a page** list.
 The page lists the issues of every project whose remote is on GitHub, GitLab, Azure DevOps or
-Forgejo, grouped by tracker account. Search by title or key, and filter by state and by
-involvement: everything, issues assigned to you, issues you opened, or issues that mention you.
-**Load more** continues the list from where each tracker stopped.
+Forgejo, grouped by tracker account. Search by title or key. **Filters** narrows by state, by
+involvement (everything, issues assigned to you, issues you opened, or issues that mention you),
+by label (every chosen label) and by assignee; **Sort** orders them by recent update or newest
+first. The labels and people a filter offers are read from the tracker when the menu opens.
+**Views** saves the current search, filters and sort under a name on this device; choosing a view
+restores it, and it can be updated, renamed or deleted. **Load more** continues the list from
+where each tracker stopped.
 
 A row shows the issue's state, key, title, assignees, comment count, author and labels. Select a
 row to read it beside the list. The panel shows the description and timeline, with comments,
 labels, assignments and state changes. Where the tracker and your account allow it, you can edit
-the title and description, comment, react, and change labels, assignees and state. An issue
-outside the projects you have open is read-only.
+the title and description, comment, react, and change labels, assignees and state. The state menu
+offers the issue's own workflow: GitHub's Open, Completed, Not planned and Duplicate; GitLab's and
+Forgejo's Open and Closed; an Azure DevOps work item's own type's states; a Linear team's columns.
+Moving an issue names one of those states. An issue outside the projects you have open is
+read-only.
 
 Linked pull requests appear in the issue panel and open beside it. Closing the panel or switching
 issues keeps the list where it was.

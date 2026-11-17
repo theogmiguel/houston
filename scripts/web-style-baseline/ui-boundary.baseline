@@ -205,9 +205,10 @@
 4 apps/web/src/components/Icons.tsx
 10 apps/web/src/components/issue/IssueCommentComposer.tsx
 27 apps/web/src/components/issue/IssueDetailGhost.tsx
-31 apps/web/src/components/issue/IssueDetailPanel.tsx
+32 apps/web/src/components/issue/IssueDetailPanel.tsx
+12 apps/web/src/components/issue/IssueListFilterPickers.tsx
 8 apps/web/src/components/issue/IssueRow.tsx
-19 apps/web/src/components/issue/IssuesPage.tsx
+24 apps/web/src/components/issue/IssuesPage.tsx
 9 apps/web/src/components/ManagedPolicy.tsx
 18 apps/web/src/components/media/MediaVideoPlayer.tsx
 3 apps/web/src/components/NoActiveThreadState.tsx
@@ -300,6 +301,7 @@
 1 apps/web/src/components/RightPanelSheet.tsx
 44 apps/web/src/components/RightPanelTabs.tsx
 1 apps/web/src/components/RouteErrorActions.tsx
+2 apps/web/src/components/SavedViewsMenu.tsx
 3 apps/web/src/components/search/HighlightedSearchLine.tsx
 38 apps/web/src/components/search/ProjectContentSearchDialog.tsx
 15 apps/web/src/components/ServerUpdateAction.tsx
