@@ -38,8 +38,14 @@ export function registerLayoutSurfaceCloser(closer: LayoutSurfaceCloser): () => 
   };
 }
 
-/** Remove a parked or discarded thread everywhere, without settling it again. */
-export function closeLayoutThread(threadRef: ScopedThreadRef): void {
+/**
+ * Remove a parked or discarded thread everywhere, without settling it again. `chatOnly` leaves its
+ * surface tabs, which end through their own close because they may run something.
+ */
+export function closeLayoutThread(
+  threadRef: ScopedThreadRef,
+  options: { readonly chatOnly?: boolean } = {},
+): void {
   const matches = (target: ThreadRouteTarget): boolean => {
     const draft =
       target.kind === "draft"
@@ -57,7 +63,8 @@ export function closeLayoutThread(threadRef: ScopedThreadRef): void {
   store.closeTabsWhere((tab) =>
     tab.content.kind === "chat"
       ? matches(tab.content.target)
-      : tab.content.kind === "surface" &&
+      : options.chatOnly !== true &&
+        tab.content.kind === "surface" &&
         matches({ kind: "server", threadRef: tab.content.threadRef }),
   );
   // The final close leaves a launcher. It must not offer the discarded thread's surfaces.
