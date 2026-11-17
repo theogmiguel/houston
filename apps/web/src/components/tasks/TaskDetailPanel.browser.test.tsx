@@ -302,7 +302,7 @@ it("links an issue by URL", async () => {
   });
 });
 
-it("shows and saves the switch that moves the linked issue with the task", async () => {
+it("shows whether the project moves the linked issue with the task, without a control", async () => {
   const base = detail();
   fixture.detail = {
     ...base,
@@ -334,25 +334,18 @@ it("shows and saves the switch that moves the linked issue with the task", async
   fixture.calls = [];
   await using screen = await render(panel());
 
-  expect(screen.container.textContent).toContain("Update the linked issue's state (Off)");
-  const toggle = screen.getByRole("checkbox", { name: "Update the linked issue's state" });
-  await toggle.click();
+  expect(screen.container.textContent).toContain(
+    "Issue state follows this task: Off — change in project settings.",
+  );
+  expect(
+    screen.getByRole("checkbox", { name: "Update the linked issue's state" }).elements(),
+  ).toHaveLength(0);
+  expect(fixture.calls).toEqual([]);
 
-  expect(fixture.calls).toContainEqual({
-    environmentId: "env",
-    input: {
-      projectId: "p1",
-      settings: {
-        access: "write",
-        startModel: { instanceId: "claudeAgent", model: "claude-opus-5-5" },
-        delivery: "send",
-        reviewer: null,
-        reviewMode: "manual",
-        focus: "bugs",
-        reworkRounds: 0,
-        updateIssueState: true,
-      },
-    },
-  });
+  fixture.settings = { ...fixture.settings, updateIssueState: true };
+  await screen.rerender(panel());
+  expect(screen.container.textContent).toContain(
+    "Issue state follows this task: On — change in project settings.",
+  );
   fixture.settings = null;
 });

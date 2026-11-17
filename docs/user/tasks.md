@@ -55,11 +55,12 @@ planning or reviewing an issue-backed task links the issue to the thread it laun
 run brief names the issue's key and URL and asks the agent to read it with the issue tools.
 Planning reads the live issue body as untrusted context.
 
-**Update the linked issue's state** in the task's issue section is off by default. When it is on,
-**In progress**, **In review**, **Done** and **Canceled** move the issue to its tracker's state:
-Done closes it with the tracker's first closed state, and the others use a state of that name when
-the tracker has one, leaving the issue alone otherwise. A tracker refusal appears in the task's
-activity and never holds the task back.
+**Update the linked issue's state** in the **By project** project editor is off by default. When
+it is on, **In progress**, **In review**, **Done** and **Canceled** move the issue to its tracker's
+state: Done closes it with the tracker's first closed state, and the others use a state of that
+name when the tracker has one, leaving the issue alone otherwise. A tracker refusal appears in the
+task's activity and never holds the task back. A task's issue section shows whether the setting is
+on and points to the project editor; the switch is project-wide, not per task.
 
 ## Creating and editing
 
