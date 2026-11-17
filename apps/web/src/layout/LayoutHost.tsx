@@ -5,6 +5,7 @@ import { useEffect } from "react";
 
 import { readLocalApi } from "../localApi";
 import type { ThreadRouteTarget } from "../threadRoutes";
+import { useCloseTabsOfClosedThreads } from "./closedThreadTabs";
 import { threadKeysOfTabs } from "./layoutThreadRef";
 import { LayoutHints } from "./LayoutHint";
 import { LayoutOnboarding } from "./LayoutOnboarding";
@@ -55,6 +56,7 @@ export function LayoutHost(props: LayoutHostProps) {
 function LoadedLayoutHost({ threadTarget, atIndex, active, narrow }: LayoutHostProps) {
   const router = useRouter();
   const layout = useLayoutRouteSync(threadTarget, atIndex);
+  useCloseTabsOfClosedThreads();
   useLayoutSurfaceSync();
   useThreeFingerSwipe(active);
   const tabLabel = useLayoutTabLabel();

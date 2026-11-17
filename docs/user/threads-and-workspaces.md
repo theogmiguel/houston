@@ -217,7 +217,9 @@ A thread's menu offers:
 - **Project settings**, **Auto-close behavior**
 - **Archive thread**, **Delete**
 
-Closing a thread leaves its history intact and moves it to **Closed**. **Archive** removes
+Closing a thread leaves its history intact, moves it to **Closed** and closes its chat tab,
+whether you closed it or its pull request merged. A thread opened from **Closed** keeps its tab
+until it is closed again. **Archive** removes
 it from the rail into **Settings ▸ Archive**, and is refused while a run is active.
 **Delete** removes the thread and its history after confirmation. Confirmation prompts are
 configurable in **Settings ▸ General ▸ Confirmations**.
