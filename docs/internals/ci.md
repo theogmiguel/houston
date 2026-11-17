@@ -97,9 +97,9 @@ the `static` job runs. It prints `nothing relevant changed` and exits 0 when the
 review, and blocks force pushes and deletion; repository admins
 can bypass it in an emergency. There is no merge queue, nightly run or CODEOWNERS file.
 
-`.github/dependabot.yml` opens one weekly pull request per ecosystem (npm, GitHub Actions, Cargo)
-for minor and patch updates, and one per major update. A dependency pull request fails `static`
-until the licence inventory is regenerated with `node scripts/gen-third-party-licenses.mjs`.
+Dependencies are updated by hand; no bot opens pull requests. A dependency pull request fails
+`static` until the licence inventory is regenerated with
+`node scripts/gen-third-party-licenses.mjs`.
 
 ## Lint ratchet
 
