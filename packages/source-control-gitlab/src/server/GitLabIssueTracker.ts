@@ -30,6 +30,7 @@ import {
   decodeTemplateEntriesJson,
   decodeTemplateJson,
   ISSUE_AWARD_EMOJI_GRAPHQL_QUERY,
+  ISSUE_STATES,
   PAGE_SIZE,
   type GitLabTemplateEntry,
 } from "./gitLabIssueJson.ts";
@@ -53,12 +54,6 @@ const CAPABILITIES: IssueCapabilities = {
   linkedPullRequests: true,
   events: true,
   search: true,
-  states: [
-    { category: "open", name: "open" },
-    { category: "closed", name: "closed" },
-  ],
-  // GitLab records nothing about why an issue was closed.
-  closeReasons: [],
 };
 
 /**
@@ -410,6 +405,7 @@ export const make: Effect.Effect<IssueTrackerApi, never, GitLabCli.GitLabCli> = 
               ...issue,
               viewer: viewerLogin,
               viewerPermissions: VIEWER_PERMISSIONS,
+              states: ISSUE_STATES,
               reactions: awardPage.reactions,
               comments: notes.comments.map((comment) => ({
                 ...comment,
@@ -498,18 +494,23 @@ export const make: Effect.Effect<IssueTrackerApi, never, GitLabCli.GitLabCli> = 
           ),
         ),
 
-      setState: (input) =>
-        issuePath(input, "setState").pipe(
+      setState: (input) => {
+        const wanted = ISSUE_STATES.find((state) => state.name === input.state);
+        if (wanted === undefined) {
+          return Effect.fail(refused("setState", `A GitLab issue has no "${input.state}" state.`));
+        }
+        return issuePath(input, "setState").pipe(
           Effect.flatMap(({ path }) =>
             write({
               cwd: input.cwd,
               operation: "setState",
               path,
               method: "PUT",
-              body: { state_event: input.state === "closed" ? "close" : "reopen" },
+              body: { state_event: wanted.category === "closed" ? "close" : "reopen" },
             }),
           ),
-        ),
+        );
+      },
 
       setReaction: (input) =>
         issuePath(input, "setReaction").pipe(

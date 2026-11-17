@@ -28,6 +28,7 @@ import {
   decodeUpdatesJson,
   decodeWorkItemJson,
   decodeWorkItemsJson,
+  workItemStates,
   pullRequestNumberOf,
   type AzureDevOpsWorkItem,
   type ClosedStates,
@@ -36,11 +37,6 @@ import { decodePullRequestJson } from "./azureDevOpsPullRequestJson.ts";
 
 const KIND = IssueTrackerKind.make("azure-devops");
 
-/**
- * The states the stock Basic, Agile and Scrum processes carry, which is what a project that has
- * not customised its workflow can be moved between. A project with states of its own refuses a
- * name it lacks at write time, with Azure's own message.
- */
 const CAPABILITIES: IssueCapabilities = {
   create: true,
   edit: true,
@@ -54,17 +50,6 @@ const CAPABILITIES: IssueCapabilities = {
   linkedPullRequests: true,
   events: true,
   search: true,
-  states: [
-    { category: "open", name: "New" },
-    { category: "open", name: "To Do" },
-    { category: "open", name: "Active" },
-    { category: "open", name: "Doing" },
-    { category: "closed", name: "Resolved" },
-    { category: "closed", name: "Done" },
-    { category: "closed", name: "Closed" },
-    { category: "closed", name: "Removed" },
-  ],
-  closeReasons: [],
 };
 
 /**
@@ -650,13 +635,14 @@ export const make: Effect.Effect<
     getIssue: (input) =>
       target("getIssue", input).pipe(
         Effect.flatMap((scope) =>
-          closedStates({ ...scope, cwd: input.cwd, operation: "getIssue" }).pipe(
-            Effect.flatMap((closed) =>
-              workItem({ ...scope, cwd: input.cwd, operation: "getIssue", closed }).pipe(
-                Effect.map((item) => ({ item, closed })),
-              ),
-            ),
-            Effect.flatMap(({ item, closed }) =>
+          workItemTypes({ ...scope, cwd: input.cwd, operation: "getIssue" }).pipe(
+            Effect.flatMap((types) => {
+              const closed = closedStateNames(types);
+              return workItem({ ...scope, cwd: input.cwd, operation: "getIssue", closed }).pipe(
+                Effect.map((item) => ({ item, closed, states: workItemStates(types, item) })),
+              );
+            }),
+            Effect.flatMap(({ item, closed, states }) =>
               Effect.all(
                 [
                   comments({ ...scope, cwd: input.cwd, operation: "getIssue" }),
@@ -677,6 +663,9 @@ export const make: Effect.Effect<
               ).pipe(
                 Effect.map(([conversation, events, links]) => ({
                   ...item,
+                  // Its type's own entry, so the category is the one that type gives the name.
+                  state: states.find((state) => state.name === item.state.name) ?? item.state,
+                  states,
                   // Nothing cheap names the viewer here; the service already read it per host.
                   viewer: null,
                   viewerPermissions: VIEWER_PERMISSIONS,
@@ -783,13 +772,27 @@ export const make: Effect.Effect<
 
     setState: (input) =>
       target("setState", input).pipe(
+        // The read also proves the item is the scope's own, as other writes do.
         Effect.flatMap((scope) =>
-          update({
-            ...scope,
-            cwd: input.cwd,
-            operation: "setState",
-            args: ["--state", input.state],
-          }),
+          workItem({ ...scope, cwd: input.cwd, operation: "setState", closed: new Set() }).pipe(
+            Effect.flatMap((item) =>
+              workItemTypes({ ...scope, cwd: input.cwd, operation: "setState" }).pipe(
+                Effect.map((types) => workItemStates(types, item)),
+              ),
+            ),
+            Effect.filterOrFail(
+              (states) => states.some((state) => state.name === input.state),
+              () => refused("setState", `This work item has no "${input.state}" state.`),
+            ),
+            Effect.flatMap(() =>
+              update({
+                ...scope,
+                cwd: input.cwd,
+                operation: "setState",
+                args: ["--state", input.state],
+              }),
+            ),
+          ),
         ),
       ),
 

@@ -42,7 +42,18 @@ const issue = (
   completedAt: null,
   canceledAt: null,
   state: state("In Progress", "started"),
-  team: { key: identifier.split("-")[0] },
+  // The detail query also asks for the team's workflow; a listing ignores it.
+  team: {
+    key: identifier.split("-")[0],
+    states: {
+      nodes: [
+        state("Canceled", "canceled", 4),
+        state("Done", "completed", 3),
+        state("In Progress", "started", 2),
+        state("Todo", "unstarted", 1),
+      ],
+    },
+  },
   creator: ADA,
   assignee: GRACE,
   labels: { nodes: [{ id: "lbl_bug", name: "Bug", color: "#f00" }] },
@@ -119,7 +130,7 @@ describe("LinearIssueTracker", () => {
         HoustonIssues: (variables) => {
           expect(variables.filter).toMatchObject({
             team: { key: { eq: "ENG" } },
-            state: { type: { nin: ["completed", "canceled"] } },
+            state: { type: { nin: ["completed", "canceled", "duplicate"] } },
             assignee: { displayName: { eq: "ada" } },
           });
           expect(variables.orderBy).toBe("updatedAt");
@@ -259,6 +270,13 @@ describe("LinearIssueTracker", () => {
       const api = yield* tracker;
       const detail = yield* api.getIssue({ ...target, key: "eng-7" });
       expect(detail.viewer).toBe("ada");
+      // The team's own workflow, in Linear's order, with the category each state falls in.
+      expect(detail.states.map((entry) => [entry.name, entry.category])).toEqual([
+        ["Todo", "open"],
+        ["In Progress", "open"],
+        ["Done", "closed"],
+        ["Canceled", "closed"],
+      ]);
       expect(detail.commentsCursor).toBe("cmt_cur");
       expect(detail.comments[0]?.reactions).toEqual([
         { content: "thumbs-up", count: 1, actors: [], viewerHasReacted: true },
@@ -281,7 +299,7 @@ describe("LinearIssueTracker", () => {
     }),
   );
 
-  it.effect("closes through the team's completed state, without a key or outside the team", () =>
+  it.effect("moves an issue to one of its team's states, without a key or outside the team", () =>
     Effect.gen(function* () {
       const updates: Array<Record<string, unknown>> = [];
       const { tracker } = fakeLinear(
@@ -318,7 +336,7 @@ describe("LinearIssueTracker", () => {
       );
       const api = yield* tracker;
       const unauthenticated = yield* Effect.flip(
-        api.setState({ ...target, key: "ENG-1", state: "closed" }),
+        api.setState({ ...target, key: "ENG-1", state: "Done" }),
       );
       expect(unauthenticated.reason).toBe("unauthenticated");
 
@@ -354,16 +372,17 @@ describe("LinearIssueTracker", () => {
       });
       const live = yield* connected.tracker;
       // An identifier from another team resolves in Linear, so the team is checked before writing.
-      const foreign = yield* Effect.flip(
-        live.setState({ ...target, key: "OPS-3", state: "closed" }),
-      );
+      const foreign = yield* Effect.flip(live.setState({ ...target, key: "OPS-3", state: "Done" }));
       expect(foreign.detail).toContain("OPS");
-      yield* live.setState({ ...target, key: "ENG-1", state: "closed", closeReason: "canceled" });
-      yield* live.setState({ ...target, key: "ENG-1", state: "closed" });
-      yield* live.setState({ ...target, key: "ENG-1", state: "open" });
+      // A move names one of the team's own states; nothing is asked for as "open" or "closed".
+      yield* live.setState({ ...target, key: "ENG-1", state: "Canceled" });
+      yield* live.setState({ ...target, key: "ENG-1", state: "Todo" });
+      const unknown = yield* Effect.flip(
+        live.setState({ ...target, key: "ENG-1", state: "closed" }),
+      );
+      expect(unknown.detail).toContain('no "closed" state');
       expect(updates.map((update) => update.input)).toEqual([
         { stateId: "st_canceled" },
-        { stateId: "st_done" },
         { stateId: "st_todo" },
       ]);
     }),

@@ -77,6 +77,10 @@ function issue(key: string, updatedAt = "2026-07-02T00:00:00Z"): TrackerIssueDet
     body: "",
     viewer: "mona",
     viewerPermissions: { setState: true, comment: true, edit: true, labels: true, assignees: true },
+    states: [
+      { category: "open", name: "open" },
+      { category: "closed", name: "closed" },
+    ],
     comments: [],
     commentsCursor: null,
     events: [],
@@ -98,11 +102,6 @@ function fakeTracker(overrides: Partial<IssueTrackerApi> = {}): IssueTrackerApi 
       linkedPullRequests: true,
       events: true,
       search: true,
-      states: [
-        { category: "open", name: "open" },
-        { category: "closed", name: "closed" },
-      ],
-      closeReasons: ["completed"],
     },
     getViewer: () => Effect.succeed("mona"),
     listIssues: () => Effect.succeed({ items: [], nextCursor: null }),
@@ -274,7 +273,7 @@ describe("IssueService", () => {
     }),
   );
 
-  it.effect("refuses what the tracker did not declare before calling it", () =>
+  it.effect("refuses a capability the tracker does not declare before calling it", () =>
     Effect.gen(function* () {
       let calls = 0;
       const service = yield* makeService({
@@ -294,18 +293,14 @@ describe("IssueService", () => {
       });
       const ref = { projectId: "web" as ProjectId, tracker: GITHUB, scope: "acme/web", key: "1" };
 
-      yield* service.setState({ ...ref, state: "closed", closeReason: "completed" });
-      const unknownState = yield* Effect.flip(service.setState({ ...ref, state: "In Review" }));
-      expect(unknownState._tag).toBe("IssueOperationError");
-      const unknownReason = yield* Effect.flip(
-        service.setState({ ...ref, state: "closed", closeReason: "not-planned" }),
-      );
-      expect(unknownReason._tag).toBe("IssueOperationError");
+      // The state's name is the tracker's to prove, so every name is passed on.
+      yield* service.setState({ ...ref, state: "closed" });
+      yield* service.setState({ ...ref, state: "In Review" });
       const reaction = yield* Effect.flip(
         service.react({ ...ref, content: "heart", reacted: true }),
       );
       expect(reaction._tag).toBe("IssueOperationError");
-      expect(calls).toBe(1);
+      expect(calls).toBe(2);
     }),
   );
 

@@ -26,33 +26,28 @@ export function issueTrackerPresentation(tracker: IssueTrackerKind | string) {
 
 /**
  * Open and completed borrow the ink the pull-request states use for open and merged, so green
- * and violet mean the same thing on both pages; not planned wears a draft's grey, because work
- * that stopped must not look like work that finished. The tracker's own state name is the label,
- * so a workflow tracker's "In Review" reads as itself.
+ * and violet mean the same thing on both pages; closed any other way than completed wears a
+ * draft's grey, because work that stopped must not look like work that finished. The tracker's
+ * own state name is the label, so a workflow tracker's "In Review" reads as itself.
  */
 export function issueStatePresentation(state: IssueState) {
   if (state.category === "open") {
     return {
       ...PULL_REQUEST_PRESENTATION.open,
-      label: state.name === "open" ? "Open" : state.name,
+      label: state.name,
       Icon: CircleDotIcon,
     };
   }
-  if (state.closeReason === "not-planned") {
+  if (state.closeReason !== undefined && state.closeReason !== "completed") {
     return {
       ...PULL_REQUEST_PRESENTATION.draft,
-      label: "Closed as not planned",
+      label: state.name,
       Icon: CircleSlashIcon,
     };
   }
   return {
     ...PULL_REQUEST_PRESENTATION.merged,
-    label:
-      state.name === "closed"
-        ? state.closeReason === "completed"
-          ? "Closed as completed"
-          : "Closed"
-        : state.name,
+    label: state.name,
     Icon: CircleCheckIcon,
   };
 }

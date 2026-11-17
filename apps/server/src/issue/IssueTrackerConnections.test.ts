@@ -38,6 +38,10 @@ function issue(key: string): TrackerIssueDetail {
     body: "",
     viewer: null,
     viewerPermissions: { setState: true, comment: true, edit: true, labels: true, assignees: true },
+    states: [
+      { category: "open", name: "open" },
+      { category: "closed", name: "closed" },
+    ],
     comments: [],
     commentsCursor: null,
     events: [],
@@ -59,11 +63,6 @@ function tracker(): StandaloneIssueTrackerApi {
       linkedPullRequests: true,
       events: true,
       search: true,
-      states: [
-        { category: "open", name: "open" },
-        { category: "closed", name: "closed" },
-      ],
-      closeReasons: ["completed"],
     },
     standalone: {
       tracker: LINEAR,

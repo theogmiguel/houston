@@ -52,8 +52,6 @@ describe("issueFilterScopes", () => {
     linkedPullRequests: true,
     events: true,
     search: true,
-    states: [],
-    closeReasons: [],
   };
   const tracker = (overrides: Partial<IssueTrackerSummary>): IssueTrackerSummary =>
     ({

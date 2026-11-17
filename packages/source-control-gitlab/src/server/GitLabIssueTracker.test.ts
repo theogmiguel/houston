@@ -121,11 +121,17 @@ function answer(path: string): string {
   throw new Error(`unexpected path ${path}`);
 }
 
-function tracker(onExecute: (args: ReadonlyArray<string>) => string) {
+function tracker(
+  onExecute: (
+    args: ReadonlyArray<string>,
+    input: { readonly host?: string | undefined; readonly stdin?: string },
+  ) => string,
+) {
   return GitLabIssueTracker.make.pipe(
     Effect.provide(
       Layer.mock(GitLabCli.GitLabCli)({
-        execute: ({ args }) => Effect.succeed(TestSourceControlHost.processOutput(onExecute(args))),
+        execute: (input) =>
+          Effect.succeed(TestSourceControlHost.processOutput(onExecute(input.args, input))),
       }),
     ),
   );
@@ -144,7 +150,11 @@ describe("GitLabIssueTracker", () => {
       expect(issue).toMatchObject({
         key: "42",
         displayKey: "#42",
-        state: { category: "closed", name: "closed" },
+        state: { category: "closed", name: "Closed" },
+        states: [
+          { category: "open", name: "Open" },
+          { category: "closed", name: "Closed" },
+        ],
         author: { login: "octocat", name: "Octo Cat" },
         assignees: [{ login: "octavia" }],
         labels: [{ name: "bug", color: null }],
@@ -221,6 +231,26 @@ describe("GitLabIssueTracker", () => {
       expect(both.items).toEqual([]);
       expect(page.items[0]?.key).toBe("42");
       expect(page.nextCursor).toBe("4");
+    }),
+  );
+
+  it.effect("moves an issue to a state by its name and refuses any other name", () =>
+    Effect.gen(function* () {
+      const writes: unknown[] = [];
+      const api = yield* tracker((args, input) => {
+        writes.push([args[1], JSON.parse(input.stdin ?? "null")]);
+        return "{}";
+      });
+      const target = { cwd: "/w", host: "gitlab.com", scope: "acme/web", key: "42" };
+      yield* api.setState!({ ...target, state: "Closed" });
+      yield* api.setState!({ ...target, state: "Open" });
+      // The category is not a state name: nothing is sent for it.
+      const error = yield* Effect.flip(api.setState!({ ...target, state: "closed" }));
+      expect(error).toMatchObject({ operation: "setState", reason: "failed" });
+      expect(writes).toEqual([
+        ["projects/acme%2Fweb/issues/42", { state_event: "close" }],
+        ["projects/acme%2Fweb/issues/42", { state_event: "reopen" }],
+      ]);
     }),
   );
 

@@ -24,6 +24,7 @@ const WORK_ITEM = {
     "System.AssignedTo": "Octavia <octavia@acme.test>",
     "System.Tags": "bug; ui; bug",
     "System.TeamProject": "Web App",
+    "System.WorkItemType": "Bug",
     "System.CommentCount": 2,
     "System.Description": "<p>Typing drops focus.</p>",
   },
@@ -36,6 +37,8 @@ const WORK_ITEM = {
 /** A custom process: "Shipped" is finished only because its category says so. */
 const WORK_ITEM_TYPES = {
   value: [
+    // Another type's workflow, which a Bug cannot be moved through.
+    { name: "Epic", states: [{ name: "Funded", category: "Proposed" }] },
     {
       name: "Bug",
       states: [
@@ -154,6 +157,11 @@ describe("AzureDevOpsIssueTracker", () => {
         url: "https://dev.azure.com/acme/Web%20App/_workitems/edit/7",
         // The project's own state name survives; the category is what the list filters by.
         state: { category: "closed", name: "Shipped" },
+        // Its own type's workflow, in Azure's order, not the stock list or another type's.
+        states: [
+          { category: "open", name: "Active" },
+          { category: "closed", name: "Shipped" },
+        ],
         author: { login: "octo@acme.test", name: "Octo Cat" },
         assignees: [{ login: "Octavia <octavia@acme.test>" }],
         labels: [
@@ -269,6 +277,45 @@ describe("AzureDevOpsIssueTracker", () => {
       expect(bodies[0]).toContain("AND [System.AssignedTo] = 'octavia@acme.test'");
       expect(bodies[0]).toContain("ORDER BY [System.CreatedDate] DESC, [System.Id] DESC");
     }).pipe(Effect.provide(NodeFileSystem.layer)),
+  );
+
+  it.effect("moves a work item to a state of its own type, custom ones included", () =>
+    Effect.gen(function* () {
+      const writes: string[][] = [];
+      const api = yield* tracker((args) => {
+        if (args[0] === "boards" && args[2] === "update") writes.push([...args]);
+        return answer(args);
+      });
+      const own = { cwd: "/w", host: "dev.azure.com", scope: "acme/Web App", key: "7" };
+      yield* api.setState!({ ...own, state: "Shipped" });
+      expect(writes.map((args) => args[args.indexOf("--state") + 1])).toEqual(["Shipped"]);
+      // A stock state and another type's state are both absent from this Bug's own workflow.
+      expect(yield* Effect.flip(api.setState!({ ...own, state: "Closed" }))).toMatchObject({
+        operation: "setState",
+        reason: "failed",
+      });
+      expect(yield* Effect.flip(api.setState!({ ...own, state: "Funded" }))).toMatchObject({
+        operation: "setState",
+        reason: "failed",
+      });
+      // A type that reports no states falls back to the stock workflow, plus where the item is.
+      const stock = yield* tracker((args) =>
+        args[args.indexOf("--resource") + 1] === "workitemtypes"
+          ? encode({ value: [{ name: "Bug" }] })
+          : answer(args),
+      );
+      expect((yield* stock.getIssue(own)).states.map((state) => state.name)).toEqual([
+        "New",
+        "To Do",
+        "Active",
+        "Doing",
+        "Resolved",
+        "Done",
+        "Closed",
+        "Removed",
+        "Shipped",
+      ]);
+    }),
   );
 
   it.effect("refuses a scope that is not organization/project without a request", () =>

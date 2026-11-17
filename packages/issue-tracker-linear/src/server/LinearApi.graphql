@@ -112,6 +112,13 @@ query HoustonIssues(
 query HoustonIssue($id: String!, $comments: Int!) {
   issue(id: $id) {
     ...LinearIssue
+    team {
+      states(first: 100) {
+        nodes {
+          ...LinearWorkflowState
+        }
+      }
+    }
     comments(first: $comments, orderBy: createdAt) {
       nodes {
         ...LinearComment
