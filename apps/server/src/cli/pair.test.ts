@@ -216,6 +216,8 @@ describe("houston pair", () => {
         assert.include(output, `Pairing URL: ${origin}/pair#token=`);
         assert.isTrue(output.includes("█") || output.includes("▀") || output.includes("▄"));
         assert.include(output, "only reachable from this machine");
+        assert.notInclude(output, "houston up");
+        assert.include(output, "--tailscale");
 
         const token = /#token=([A-Z2-9]+)/.exec(output)?.[1];
         assert.isString(token);
