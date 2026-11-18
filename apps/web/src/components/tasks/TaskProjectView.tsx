@@ -183,7 +183,8 @@ function ProjectEditorForm({
           rows={4}
         />
       </div>
-      <div className="flex min-w-0 flex-col gap-1.5 border-t pt-3">
+      <Separator />
+      <div className="flex min-w-0 flex-col gap-1.5">
         <Text variant="caption" tone="muted" weight="medium">
           Task settings
         </Text>

@@ -335,7 +335,7 @@ it("shows whether the project moves the linked issue with the task, without a co
   await using screen = await render(panel());
 
   expect(screen.container.textContent).toContain(
-    "Issue state follows this task: Off — change in project settings.",
+    "Issue state follows this task: Off. Change it in project settings.",
   );
   expect(
     screen.getByRole("checkbox", { name: "Update the linked issue's state" }).elements(),
@@ -345,7 +345,7 @@ it("shows whether the project moves the linked issue with the task, without a co
   fixture.settings = { ...fixture.settings, updateIssueState: true };
   await screen.rerender(panel());
   expect(screen.container.textContent).toContain(
-    "Issue state follows this task: On — change in project settings.",
+    "Issue state follows this task: On. Change it in project settings.",
   );
   fixture.settings = null;
 });

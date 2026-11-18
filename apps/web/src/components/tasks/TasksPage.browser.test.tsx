@@ -70,6 +70,7 @@ vi.mock("~/state/tasks", async () => {
     refreshTaskDetail: () => {},
     refreshTaskInitiatives: () => {},
     useTaskInitiativesResult: () => AsyncResult.success([]),
+    useTaskSettings: () => null,
   };
 });
 vi.mock("~/state/use-atom-command", () => ({

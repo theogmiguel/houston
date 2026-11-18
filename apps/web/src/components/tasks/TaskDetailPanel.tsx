@@ -955,8 +955,8 @@ export function TaskDetailPanel({
               )}
               {task.issue === null || settings === null ? null : (
                 <Text variant="caption" tone="muted">
-                  Issue state follows this task: {settings.updateIssueState ? "On" : "Off"} — change
-                  in project settings.
+                  Issue state follows this task: {settings.updateIssueState ? "On" : "Off"}. Change
+                  it in project settings.
                 </Text>
               )}
             </section>
