@@ -32,7 +32,15 @@ import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 
-import { chatContentOf, findTab, locateTab, withoutTab, withTabAppended } from "./layoutTabs.ts";
+import {
+  chatContentOf,
+  findTab,
+  hasPane,
+  locateTab,
+  withoutTab,
+  withTabAppended,
+  withTabInNewColumn,
+} from "./layoutTabs.ts";
 import { nowIso } from "./tasks/TaskStore.ts";
 
 const LIMITS = HOUSTON_LAYOUT_WORKSPACE_LIMITS;
@@ -842,16 +850,17 @@ const make = Effect.gen(function* () {
           const inTarget = working.get(target.id)!;
           if (findTab(inTarget, key) !== undefined) continue;
           const stem = yield* random.uuidV4();
+          // The thread opens in a column of its own unless the caller names a pane; its children
+          // follow it into that column.
+          const named =
+            position === 0 && input.paneId !== undefined
+              ? { paneId: input.paneId, index: input.index }
+              : undefined;
           working.set(
             target.id,
-            withTabAppended(
-              inTarget,
-              tab,
-              stem,
-              position === 0 && input.paneId !== undefined
-                ? { paneId: input.paneId, index: input.index }
-                : undefined,
-            ),
+            position === 0 && !hasPane(inTarget, input.paneId)
+              ? withTabInNewColumn(inTarget, tab, stem)
+              : withTabAppended(inTarget, tab, stem, named),
           );
           changed.add(target.id);
         }

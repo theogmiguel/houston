@@ -342,7 +342,7 @@ export type HoustonLayoutThreadAssignInput = typeof HoustonLayoutThreadAssignInp
 
 /**
  * Moves a thread, its children and their chat tabs to a workspace in one transaction. Tabs go
- * to `paneId` (at `index`) when that pane is in the target, else the end of its last pane.
+ * to `paneId` (at `index`) when that pane is in the target, else to a new column at the end.
  */
 export const HoustonLayoutThreadMoveInput = Schema.Struct({
   environmentId: Id,
