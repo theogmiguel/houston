@@ -40,6 +40,8 @@ const state = vi.hoisted(() => ({
   toasts: [] as string[],
   afterRequest: undefined as ((action: string) => void) | undefined,
   sessionLookupFails: false,
+  draftIdByThread: null as string | null,
+  failSettleWith: undefined as unknown,
 }));
 
 vi.mock("react", () => ({
@@ -64,6 +66,9 @@ vi.mock("../state/use-atom-command", () => ({
         action === "removeWorktree" ? AuthSourceControlWriteScope : AuthOrchestrationOperateScope;
       if (!state.scopes.get(request.environmentId)?.has(scope)) {
         return AsyncResult.failure(Cause.fail(new Error("Server denied the request")));
+      }
+      if (action === "settle" && state.failSettleWith !== undefined) {
+        return AsyncResult.failure(Cause.fail(state.failSettleWith));
       }
       state.afterRequest?.(action);
       return AsyncResult.success(undefined);
@@ -121,6 +126,7 @@ vi.mock("../composerDraftStore", () => ({
     select({
       clearDraftThread: () => state.localEffects.push("clear-draft"),
       clearProjectDraftThreadById: () => state.localEffects.push("clear-project-draft"),
+      getDraftIdByRef: () => state.draftIdByThread,
     }),
 }));
 vi.mock("../terminalUiStateStore", () => ({
@@ -248,9 +254,50 @@ beforeEach(() => {
   state.toasts = [];
   state.afterRequest = undefined;
   state.sessionLookupFails = false;
+  state.draftIdByThread = null;
+  state.failSettleWith = undefined;
   useRightPanelStore.setState(useRightPanelStore.getInitialState(), true);
   useDiffPanelStore.setState(useDiffPanelStore.getInitialState(), true);
   usePreviewMiniPlayerStore.setState(usePreviewMiniPlayerStore.getInitialState(), true);
+});
+
+describe("settling an unsent draft thread", () => {
+  it("closes the draft without asking the server", async () => {
+    state.threads = [];
+    state.draftIdByThread = "draft-1";
+    state.scopes.get(secondary)!.add(AuthOrchestrationOperateScope);
+
+    const result = await useThreadActions().settleThread(target);
+
+    expect(result._tag).toBe("Success");
+    expect(state.requests).toEqual([]);
+    expect(state.localEffects).toEqual(["clear-draft"]);
+    expect(state.toasts).toEqual([]);
+  });
+});
+
+describe("closing a thread the server never created", () => {
+  it("treats a settle refused for a missing projection as already closed", async () => {
+    state.scopes.get(secondary)!.add(AuthOrchestrationOperateScope);
+    state.failSettleWith = {
+      _tag: "OrchestrationV2DispatchCommandError",
+      reason: "thread_not_found",
+      message: `No orchestration projection exists for thread ${target.threadId}.`,
+    };
+
+    await useThreadActions().closeThread(target);
+
+    expect(state.toasts).toEqual([]);
+  });
+
+  it("still reports other settle failures", async () => {
+    state.scopes.get(secondary)!.add(AuthOrchestrationOperateScope);
+    state.failSettleWith = new Error(`Thread ${target.threadId} has queued run run-1.`);
+
+    await useThreadActions().closeThread(target);
+
+    expect(state.toasts).toEqual(["Failed to close thread"]);
+  });
 });
 
 describe("thread action permissions", () => {

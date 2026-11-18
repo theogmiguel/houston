@@ -945,15 +945,14 @@ const enrichProjectShells = Effect.fn("ws.orchestrationV2.enrichProjectShells")(
 );
 
 function isProjectionThreadNotFound(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "cause" in error &&
-    typeof error.cause === "object" &&
-    error.cause !== null &&
-    "_tag" in error.cause &&
-    error.cause._tag === "ProjectionStoreThreadNotFoundError"
-  );
+  const seen = new Set<unknown>();
+  let value = error;
+  while (typeof value === "object" && value !== null && !seen.has(value)) {
+    seen.add(value);
+    if ("_tag" in value && value._tag === "ProjectionStoreThreadNotFoundError") return true;
+    value = "cause" in value ? value.cause : undefined;
+  }
+  return false;
 }
 // The thread a dispatched command acts on, as its spans name it.
 const dispatchTargetThreadId = (command: OrchestrationV2Command) =>
@@ -2189,6 +2188,9 @@ export const layerWsRpc = (
                       commandType: command.type,
                       message: detail ?? "Failed to dispatch orchestration V2 command",
                       ...(detail === undefined ? {} : { detail }),
+                      ...(isProjectionThreadNotFound(cause)
+                        ? { reason: "thread_not_found" as const }
+                        : {}),
                       cause,
                     });
                   }),

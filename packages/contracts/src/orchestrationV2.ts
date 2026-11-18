@@ -3959,6 +3959,11 @@ export class OrchestrationV2DispatchCommandError extends Schema.TaggedError<Orch
     commandType: Schema.String,
     message: Schema.String,
     detail: Schema.optional(Schema.String),
+    /**
+     * Set when the server refused the command because the thread has no projection, so a
+     * client can treat a stale settle as already closed instead of reporting a failure.
+     */
+    reason: Schema.optional(Schema.Literal("thread_not_found")),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {}
