@@ -834,9 +834,9 @@ export const WS_METHODS = {
   issueTrackersList: "issueTrackers.list",
   issueTrackersConnect: "issueTrackers.connect",
   issueTrackersBindProject: "issueTrackers.bindProject",
-  issueTrackersProperties: "issueTrackers.properties",
-  issueTrackersImportV1Status: "issueTrackers.importV1.status",
-  issueTrackersImportV1Run: "issueTrackers.importV1.run",
+  issueTrackersProperties: "houston.issueTrackers.properties",
+  issueTrackersImportV1Status: "houston.issueTrackers.importV1.status",
+  issueTrackersImportV1Run: "houston.issueTrackers.importV1.run",
 
   sourceControlLookupRepository: "sourceControl.lookupRepository",
   sourceControlCloneRepository: "sourceControl.cloneRepository",
