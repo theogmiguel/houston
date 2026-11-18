@@ -19,6 +19,7 @@ import * as ServerLogger from "../serverLogger.ts";
 import * as ExportRedaction from "../houston/observability/ExportRedaction.ts";
 import * as ExportTracer from "../houston/observability/ExportTracer.ts";
 import * as ObservabilityExport from "../houston/observability/ObservabilityExport.ts";
+import * as QuietSqlSpans from "../houston/observability/QuietSqlSpans.ts";
 import * as UnsampledSpans from "../houston/observability/UnsampledSpans.ts";
 import * as BrowserTraceCollector from "./BrowserTraceCollector.ts";
 import * as HeapAttribution from "./HeapAttribution.ts";
@@ -88,6 +89,7 @@ export const layer = Layer.unwrap(
           maxFiles: config.traceMaxFiles,
           batchWindowMs: config.traceBatchWindowMs,
           sink,
+          record: QuietSqlSpans.keepServerTraceRecord,
           ...(delegate ? { delegate } : {}),
         });
 

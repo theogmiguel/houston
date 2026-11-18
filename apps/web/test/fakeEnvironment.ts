@@ -600,6 +600,29 @@ const subscribe = <A>(first: ReadonlyArray<A>, register?: (queue: Queue.Queue<A>
     }),
   );
 
+// A copy each time: the app keeps a config whose reference did not change, and
+// `advertiseCapabilities` edits the shared fixture in place.
+const serverConfigSnapshot = () => ({
+  version: 1 as const,
+  type: "snapshot" as const,
+  config: { ...serverConfig, environment: { ...serverConfig.environment } },
+});
+const serverConfigSubscribers = new Set<Queue.Queue<ReturnType<typeof serverConfigSnapshot>>>();
+
+// A subscription made between two tests receives the capabilities of that moment, and the app
+// keeps them: re-sending the snapshot when they change keeps every open subscription current.
+const subscribeServerConfig = () =>
+  subscribe([serverConfigSnapshot()], (queue) => {
+    serverConfigSubscribers.add(queue);
+    return () => serverConfigSubscribers.delete(queue);
+  });
+
+function publishServerConfig(): void {
+  for (const queue of serverConfigSubscribers) {
+    Effect.runSync(Queue.offer(queue, serverConfigSnapshot()));
+  }
+}
+
 const handlers: Record<string, (input: never) => unknown> = {
   // Recorded for assertions; still unanswered, like every state-changing call.
   [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (input: never) => {
@@ -796,8 +819,7 @@ const handlers: Record<string, (input: never) => unknown> = {
             pr: null,
           }),
         }),
-  [WS_METHODS.subscribeServerConfig]: () =>
-    subscribe([{ version: 1 as const, type: "snapshot" as const, config: serverConfig }]),
+  [WS_METHODS.subscribeServerConfig]: () => subscribeServerConfig(),
 };
 
 // Unanswered calls stay pending, like a server that has not replied yet.
@@ -813,8 +835,7 @@ const client = new Proxy(handlers, {
 const session: EnvironmentConnectionLease["session"] = {
   client: client as unknown as WsRpcProtocolClient,
   initialConfig: Effect.succeed(serverConfig),
-  subscribeServerConfig: () =>
-    subscribe([{ version: 1 as const, type: "snapshot" as const, config: serverConfig }]),
+  subscribeServerConfig: () => subscribeServerConfig(),
   ready: Effect.void,
   probe: Effect.void,
   inboundFrames: Effect.succeed(0),
@@ -990,6 +1011,7 @@ export function advertiseCapabilities(extra: Record<string, unknown>): Disposabl
   const configEnvironment = serverConfig.environment as { capabilities: object };
   const baseConfigCapabilities = configEnvironment.capabilities;
   configEnvironment.capabilities = capabilities;
+  publishServerConfig();
   globalThis.fetch = async (input, init) => {
     const response = await baseFetch(input, init);
     const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
@@ -1001,6 +1023,7 @@ export function advertiseCapabilities(extra: Record<string, unknown>): Disposabl
     [Symbol.dispose]: () => {
       globalThis.fetch = baseFetch;
       configEnvironment.capabilities = baseConfigCapabilities;
+      publishServerConfig();
     },
   };
 }

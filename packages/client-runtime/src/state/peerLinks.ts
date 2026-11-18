@@ -7,6 +7,14 @@ import { Atom } from "effect/reactivity";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import { createEnvironmentRpcCommand, createEnvironmentRpcQueryAtomFamily } from "./runtime.ts";
 
+/**
+ * A link made outside this client (the `houston environment link` CLI, another client) reaches
+ * no client by push. The composer keeps the list mounted for as long as a thread is open, so
+ * stale-on-mount never runs again; this interval is how such a reader learns of it. Each
+ * listing probes every linked machine, so it stays at a minute.
+ */
+export const PEER_LINK_LIST_REFRESH_INTERVAL_MS = 60_000;
+
 export function createPeerLinkEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
@@ -15,6 +23,7 @@ export function createPeerLinkEnvironmentAtoms<R, E>(
     tag: WS_METHODS.peerLinksList,
     // Listing probes every linked environment, so a list stays fresh briefly.
     staleTimeMs: 10_000,
+    refreshIntervalMs: PEER_LINK_LIST_REFRESH_INTERVAL_MS,
   });
   return {
     list,

@@ -96,7 +96,7 @@ export const reconcileService = Effect.fn("cli.service.reconcile")(function* (op
     return { changed: false, status } satisfies ServiceReconcileResult;
   }
   if (status.supported && !status.installed) {
-    // A new service listens on this machine only, until `houston up` opens the local network.
+    // A new service listens on this machine only, until its service.env sets HOUSTON_LAN or HOUSTON_HOST.
     const { entries } = yield* readServiceEnv(baseDir);
     if (entries.HOUSTON_LAN === undefined && entries.HOUSTON_HOST === undefined) {
       yield* writeServiceEnv(baseDir, { HOUSTON_LAN: "false" });
@@ -201,7 +201,7 @@ const serviceReconcileFlags = {
 
 const serviceInstallCommand = Command.make("install", serviceReconcileFlags).pipe(
   Command.withDescription(
-    "Install Houston as a background service for this user. `houston up` also chooses how your other devices reach it.",
+    "Install Houston as a background service for this user. A new service listens on this machine only.",
   ),
   Command.withHandler((flags) =>
     runServiceCommand(
@@ -216,7 +216,11 @@ const serviceInstallCommand = Command.make("install", serviceReconcileFlags).pip
         }
         yield* Console.log(formatServiceChange(result));
         if (!result.previouslyInstalled) {
-          yield* Console.log("Run `houston up` to choose how your other devices reach it.");
+          const { baseDir } = yield* ServerConfig.ServerConfig;
+          const { path } = yield* readServiceEnv(baseDir);
+          yield* Console.log(
+            `It listens on this machine only. To reach it from your other devices, run \`houston pair --tailscale\`, or set HOUSTON_LAN=true (or HOUSTON_HOST=<address>) in ${path} and run \`houston service restart\`.`,
+          );
         }
       }),
     ),
