@@ -8,5 +8,8 @@ import * as NotionIssueTracker from "./NotionIssueTracker.ts";
  * `IssueTrackerHost` for the integration token saved in Settings.
  */
 export const make = NotionIssueTracker.make.pipe(
-  Effect.provideServiceEffect(NotionApi.NotionApi, NotionApi.make({ origin: NotionApi.NOTION_ORIGIN })),
+  Effect.provideServiceEffect(
+    NotionApi.NotionApi,
+    NotionApi.make({ origin: NotionApi.NOTION_ORIGIN }),
+  ),
 );

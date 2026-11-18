@@ -174,9 +174,7 @@ const serve = (fake: Fake) => {
       return {
         body: {
           object: "list",
-          results: [
-            { object: "data_source", id: SOURCE, title: [{ plain_text: "Tasks" }] },
-          ],
+          results: [{ object: "data_source", id: SOURCE, title: [{ plain_text: "Tasks" }] }],
         },
       };
     }
@@ -312,7 +310,9 @@ describe("Notion lists a bound data source's pages", () => {
         ]);
         assert.deepEqual(listed.items[0]?.labels, [{ name: "bug", color: "red" }]);
         assert.strictEqual(listed.items[0]?.key, pageId(1).replaceAll("-", ""));
-        const query = fake.requests.find((request) => request.method === "POST" && request.path.endsWith("/query"));
+        const query = fake.requests.find(
+          (request) => request.method === "POST" && request.path.endsWith("/query"),
+        );
         assert.deepEqual(query?.body, {
           filter: {
             or: [
@@ -389,7 +389,10 @@ describe("a Notion page reads with its body and comments", () => {
             ["closed", "Done"],
           ],
         );
-        assert.deepEqual(detail.comments.map((comment) => comment.body), ["First note"]);
+        assert.deepEqual(
+          detail.comments.map((comment) => comment.body),
+          ["First note"],
+        );
         assert.strictEqual(detail.viewer, "Houston");
         assert.deepEqual(detail.viewerPermissions, {
           setState: true,
@@ -502,9 +505,7 @@ describe("Notion writes", () => {
           url: "https://github.com/octo-org/project/pull/4",
         });
         assert.deepEqual(
-          fake.requests
-            .filter((request) => request.method === "PATCH")
-            .at(-1)?.body,
+          fake.requests.filter((request) => request.method === "PATCH").at(-1)?.body,
           { properties: { pr: { url: "https://github.com/octo-org/project/pull/4" } } },
         );
       }),
@@ -526,9 +527,7 @@ describe("Notion URLs", () => {
   it("recognises page URLs on notion.so and notion.site, and nothing else", () => {
     const key = "0123456789abcdef0123456789abcdef";
     assert.deepEqual(
-      NotionIssueTracker.parseNotionIssueUrl(
-        new URL(`https://www.notion.so/Page-1-${key}`),
-      ),
+      NotionIssueTracker.parseNotionIssueUrl(new URL(`https://www.notion.so/Page-1-${key}`)),
       { host: "notion.so", scope: "", key, workspace: "" },
     );
     assert.deepEqual(
@@ -541,8 +540,3 @@ describe("Notion URLs", () => {
     assert.isNull(NotionIssueTracker.parseNotionIssueUrl(new URL("https://notion.so/not-a-page")));
   });
 });
-
-
-
-
-
