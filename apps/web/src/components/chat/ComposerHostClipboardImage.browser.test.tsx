@@ -233,7 +233,19 @@ it(
     // descriptor round trip has taken longer than 5 s, so the wait takes most of what the
     // boot leaves of the test's own budget.
     await vi.waitFor(
-      () => expect(document.querySelector('button[aria-label="Attach files"]')).not.toBeNull(),
+      () =>
+        expect(
+          document.querySelector('button[aria-label="Attach files"]'),
+          // DIAG: CI-only failure; remove before merge.
+          JSON.stringify({
+            width: window.innerWidth,
+            phone: window.matchMedia("(width < 40rem)").matches,
+            buttons: [...document.querySelectorAll("button[aria-label]")].map((b) =>
+              b.getAttribute("aria-label"),
+            ),
+            tiles: tiles().length,
+          }),
+        ).not.toBeNull(),
       { timeout: ATTACH_BUTTON_TIMEOUT_MS },
     );
     const readDroppedPath = vi.fn(() =>
