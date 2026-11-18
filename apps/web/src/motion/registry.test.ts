@@ -71,7 +71,8 @@ describe("reduced motion", () => {
     const root = new URL("../", import.meta.url);
     const files = await readdir(root, { recursive: true });
     const offenders: string[] = [];
-    for (const file of files) {
+    // `readdir` joins with the platform separator; OWNERS is written with `/`.
+    for (const file of files.map((name) => name.replaceAll("\\", "/"))) {
       if (!/\.(ts|tsx|css)$/.test(file) || /\.test\.tsx?$/.test(file) || OWNERS.has(file)) continue;
       const source = await readFile(new URL(file, root), "utf8");
       if (source.includes("prefers-reduced-motion")) offenders.push(file);
