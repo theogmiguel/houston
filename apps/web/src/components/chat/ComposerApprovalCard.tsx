@@ -5,6 +5,12 @@ import { memo } from "react";
 import type { PaneDensity } from "../../threads/density";
 import { type PendingApproval } from "../../session-logic";
 import { cn } from "../../lib/utils";
+import {
+  COMPOSER_STATUS_CARD_CLS,
+  COMPOSER_STATUS_CARD_ICON_CLS,
+  COMPOSER_STATUS_CARD_META_CLS,
+  COMPOSER_STATUS_CARD_TITLE_CLS,
+} from "../ui/composer-anatomy-recipes";
 import { SURFACE_LIFT_CLASS } from "../ui/surface-recipes";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
@@ -59,15 +65,13 @@ export const ComposerApprovalCard = memo(function ComposerApprovalCard({
     <div className={cn("flex min-w-0 gap-2", phone ? "items-start" : "items-center")}>
       <TriangleAlertIcon
         aria-hidden
-        className={cn("size-3.5 shrink-0 text-warning", phone && "mt-1")}
+        className={cn(COMPOSER_STATUS_CARD_ICON_CLS, phone && "mt-1")}
       />
-      <span
-        className={cn("min-w-0 text-sm font-medium text-foreground", phone ? "flex-1" : "truncate")}
-      >
+      <span className={cn(COMPOSER_STATUS_CARD_TITLE_CLS, phone ? "flex-1" : "truncate")}>
         {title}
       </span>
       {count > 1 ? (
-        <span className="shrink-0 text-2xs tabular-nums text-muted-foreground">
+        <span className={COMPOSER_STATUS_CARD_META_CLS}>
           {index + 1} of {count}
         </span>
       ) : null}
@@ -78,7 +82,8 @@ export const ComposerApprovalCard = memo(function ComposerApprovalCard({
       aria-label="Approval needed"
       data-composer-approval-card={density}
       className={cn(
-        "flex min-w-0 flex-col gap-2 rounded-xl border border-(--card-edge) bg-(--composer)",
+        "flex min-w-0 flex-col gap-2",
+        COMPOSER_STATUS_CARD_CLS,
         SURFACE_LIFT_CLASS,
         phone ? "p-4" : compact ? "px-2.5 py-2" : "px-3 py-3",
       )}

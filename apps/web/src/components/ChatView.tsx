@@ -385,6 +385,7 @@ import { useDraftEnvironmentRouting } from "./chat/useDraftEnvironmentRouting";
 import { branchMismatchBannerItem, extensionStatusBannerItem } from "./chat/ThreadActivityBanners";
 import { ThreadNow } from "./chat/ThreadNow";
 import { ComposerApprovalCard } from "./chat/ComposerApprovalCard";
+import { ComposerBackgroundWorkCard } from "./chat/ComposerBackgroundWorkCard";
 import { checkpointFileTotals } from "@houston-app/client-runtime/state/thread-checkpoints";
 import type { PaneDensity } from "../threads/density";
 import type { ThreadStructure } from "@houston-app/client-runtime/state/shell";
@@ -3183,7 +3184,12 @@ export default function ChatView(props: ChatViewProps) {
     activeEnvironmentUnavailable,
     defaultRuntimeMode,
   });
-  const { onSend } = useComposerSend({
+  const {
+    onSend,
+    blockedProviderSwitch,
+    resolveBlockedProviderSwitch,
+    dismissBlockedProviderSwitch,
+  } = useComposerSend({
     environmentId,
     routeThreadKey,
     currentRouteThreadKeyRef,
@@ -3272,6 +3278,19 @@ export default function ChatView(props: ChatViewProps) {
     });
   };
   const onWorktreeSetupWorkLocallyStable = useStableCallback(onWorktreeSetupWorkLocally);
+  const resolveBlockedProviderSwitchStable = useStableCallback(resolveBlockedProviderSwitch);
+  const dismissBlockedProviderSwitchStable = useStableCallback(dismissBlockedProviderSwitch);
+  const composerBackgroundWorkCard =
+    blockedProviderSwitch === null ? null : (
+      <ComposerBackgroundWorkCard
+        items={blockedProviderSwitch}
+        providerLabel={selectedProviderEntry?.displayName?.trim() || null}
+        isSending={isSendBusy}
+        onWait={() => resolveBlockedProviderSwitchStable("wait")}
+        onEnd={() => resolveBlockedProviderSwitchStable("end")}
+        onCancel={dismissBlockedProviderSwitchStable}
+      />
+    );
   const onComposerSendStable = useStableCallback(onSend);
   const sendPreviewAnnotation = (
     annotation: PreviewAnnotationPayload,
@@ -3853,6 +3872,9 @@ export default function ChatView(props: ChatViewProps) {
                       composerTasks.steps.some((step) => step.status !== "completed")) ? (
                       <ComposerTaskStatus key={composerTasks.planId} steps={composerTasks.steps} />
                     ) : null}
+                    {composerBackgroundWorkCard === null ? null : (
+                      <div className="mb-1">{composerBackgroundWorkCard}</div>
+                    )}
                     <ComposerSurface.Shell
                       className={activePendingApproval === null ? undefined : "hidden"}
                     >
