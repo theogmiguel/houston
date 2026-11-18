@@ -27,6 +27,8 @@ import * as DateTime from "effect/DateTime";
 import { useId, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from "react";
 
 import { useAssetUrls } from "../../assets/assetUrls";
+import { resolveProviderInstanceDisplayName } from "@houston-app/client-runtime/state/provider-instance-display";
+import { useEnvironmentProviders } from "../../state/environments";
 import { threadEnvironment } from "../../state/threads";
 import { useQuietThreadShell, useThreadProjection } from "../../state/entities";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -37,7 +39,8 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { TimestampFormat } from "@houston-app/contracts/settings";
 import { TimelineRowTimestamp } from "./TimelineRowParts";
 import { useScheduledTaskTitle } from "./TimelineUserMessageRow";
-import { messageDeliveryPresentation } from "./messageDelivery";
+import { messageDeliveryPresentation, queueHeldPresentation } from "./messageDelivery";
+import { getTriggerDisplayModelName } from "./providerIconUtils";
 import {
   QUEUE_MORE_CLS,
   QUEUE_ROW_CLS,
@@ -120,6 +123,24 @@ export function QueuedRunsControl({
   );
   const workflow = projection ? deriveThreadQueueWorkflowState(projection) : null;
   const queued = workflow?.queuedRuns ?? [];
+  const providers = useEnvironmentProviders().get(props.environmentId) ?? [];
+  const providerName = (instanceId: string) => {
+    const provider = providers.find((candidate) => candidate.instanceId === instanceId);
+    return provider === undefined ? instanceId : resolveProviderInstanceDisplayName(provider);
+  };
+  const currentSelection = projection?.thread?.modelSelection;
+  const currentProvider = providers.find(
+    (candidate) => candidate.instanceId === currentSelection?.instanceId,
+  );
+  const currentModel = currentProvider?.models.find(
+    (model) => model.slug === currentSelection?.model,
+  );
+  const currentModelLabel =
+    currentSelection === undefined
+      ? null
+      : currentModel === undefined
+        ? currentSelection.model
+        : getTriggerDisplayModelName(currentModel, currentProvider?.driver);
   const activeRun = workflow?.activeRun ?? null;
   // A fresh message starts its own turn: it may skip compaction, but not steer into a turn.
   const canSendRun = (freshContext: boolean) =>
@@ -142,6 +163,7 @@ export function QueuedRunsControl({
       runId: run.id,
       messageId: run.userMessageId,
       freshContext: run.freshContext === true,
+      heldReason: run.queueHeldReason ?? null,
       serverIndex,
       text,
       editable: true,
@@ -161,6 +183,7 @@ export function QueuedRunsControl({
       runId: null,
       messageId: null,
       freshContext: false,
+      heldReason: null,
       serverIndex: null,
       text: message.text,
       editable: true,
@@ -175,6 +198,16 @@ export function QueuedRunsControl({
       pending: true,
     })),
   ];
+
+  const sendHeldOnCurrentModel = async (queuedRunId: RunId) => {
+    if (currentSelection === undefined || busyRunId !== null) return;
+    setBusyRunId(queuedRunId);
+    await resume({
+      environmentId: props.environmentId,
+      input: { threadId: props.threadId, runId: queuedRunId, modelSelection: currentSelection },
+    });
+    setBusyRunId(null);
+  };
 
   const sendQueuedMessage = async (queuedRunId: RunId) => {
     const freshContext = queued.some(
@@ -281,7 +314,22 @@ export function QueuedRunsControl({
                 timestampFormat={props.timestampFormat}
                 onOpenThread={props.onOpenThread}
               >
-                {canSendRun(item.freshContext) && !isEditing ? (
+                {item.heldReason !== null ? (
+                  currentModelLabel === null ? null : (
+                    <Button
+                      size="xs"
+                      variant="ghost-muted"
+                      className="shrink-0"
+                      disabled={item.runId === null || busyRunId !== null}
+                      onClick={() => {
+                        if (item.runId !== null) void sendHeldOnCurrentModel(item.runId);
+                      }}
+                    >
+                      <ArrowUpIcon />
+                      {`Send on ${currentModelLabel}`}
+                    </Button>
+                  )
+                ) : canSendRun(item.freshContext) && !isEditing ? (
                   <Tooltip>
                     <TooltipTrigger render={<span className="flex shrink-0" />}>
                       <Button
@@ -303,7 +351,25 @@ export function QueuedRunsControl({
                     </TooltipPopup>
                   </Tooltip>
                 ) : null}
-                {item.message?.delivery ? (
+                {item.heldReason !== null ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        // The reason gives way before the message; the tooltip carries it whole.
+                        <span
+                          className="max-w-60 min-w-0 truncate px-1"
+                          data-queued-run-held-reason={item.heldReason.kind}
+                        />
+                      }
+                    >
+                      {queueHeldPresentation(item.heldReason, providerName).label}
+                    </TooltipTrigger>
+                    <TooltipPopup side="top" className="max-w-96">
+                      <p>{queueHeldPresentation(item.heldReason, providerName).label}</p>
+                      <p>{queueHeldPresentation(item.heldReason, providerName).detail}</p>
+                    </TooltipPopup>
+                  </Tooltip>
+                ) : item.message?.delivery ? (
                   <Tooltip>
                     <TooltipTrigger
                       render={
@@ -340,38 +406,40 @@ export function QueuedRunsControl({
                   </>
                 ) : (
                   <>
-                    <Tooltip>
-                      {/* The span keeps the tooltip, and its reason, on a disabled button. */}
-                      <TooltipTrigger render={<span className="flex shrink-0" />}>
-                        <Button
-                          size="icon-xs"
-                          variant="ghost-muted"
-                          aria-label="Edit queued message"
-                          disabled={
-                            item.runId === null ||
-                            !item.editable ||
-                            busyRunId !== null ||
-                            props.editBlockedReason !== null
-                          }
-                          onClick={() => {
-                            if (item.runId !== null && item.messageId !== null) {
-                              props.onEditQueuedRun({
-                                runId: item.runId,
-                                messageId: item.messageId,
-                                text: item.text,
-                                attachments: item.attachments,
-                              });
+                    {item.heldReason === null ? (
+                      <Tooltip>
+                        {/* The span keeps the tooltip, and its reason, on a disabled button. */}
+                        <TooltipTrigger render={<span className="flex shrink-0" />}>
+                          <Button
+                            size="icon-xs"
+                            variant="ghost-muted"
+                            aria-label="Edit queued message"
+                            disabled={
+                              item.runId === null ||
+                              !item.editable ||
+                              busyRunId !== null ||
+                              props.editBlockedReason !== null
                             }
-                          }}
-                        >
-                          <PencilIcon />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipPopup>
-                        {props.editBlockedReason ??
-                          `Edit in the composer${item.serverIndex === queued.length - 1 && props.editShortcutLabel ? ` (${props.editShortcutLabel})` : ""}`}
-                      </TooltipPopup>
-                    </Tooltip>
+                            onClick={() => {
+                              if (item.runId !== null && item.messageId !== null) {
+                                props.onEditQueuedRun({
+                                  runId: item.runId,
+                                  messageId: item.messageId,
+                                  text: item.text,
+                                  attachments: item.attachments,
+                                });
+                              }
+                            }}
+                          >
+                            <PencilIcon />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipPopup>
+                          {props.editBlockedReason ??
+                            `Edit in the composer${item.serverIndex === queued.length - 1 && props.editShortcutLabel ? ` (${props.editShortcutLabel})` : ""}`}
+                        </TooltipPopup>
+                      </Tooltip>
+                    ) : null}
                     <Tooltip>
                       <TooltipTrigger
                         render={
@@ -515,7 +583,7 @@ function QueuedMessage(props: {
         ) : (
           <Tooltip>
             <TooltipTrigger
-              render={<span className={cn("min-w-0 flex-1 truncate", textTone)} />}
+              render={<span className={cn("min-w-12 flex-1 truncate", textTone)} />}
               // The row shows one line; the tooltip carries the whole message.
             >
               {props.previewText.split(LINE_BREAK).join(" ")}
@@ -554,7 +622,7 @@ function QueuedMessage(props: {
             />
           </span>
         ) : null}
-        <div className="flex shrink-0 items-center gap-0.5 text-muted-foreground">
+        <div className="flex min-w-0 items-center gap-0.5 text-muted-foreground">
           {props.children}
         </div>
       </div>

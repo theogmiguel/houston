@@ -265,6 +265,8 @@ export interface MergeThreadBackInput extends CommandMetadata {
 
 export interface ResumeThreadQueueInput extends ThreadCommandInput {
   readonly runId?: RunId;
+  /** Starts the queued run on this selection instead of the one it was queued with. */
+  readonly modelSelection?: ModelSelection;
 }
 
 export interface PromoteQueuedRunInput extends ThreadCommandInput {
@@ -1070,7 +1072,11 @@ export const resumeThreadQueue = Effect.fn("EnvironmentCommands.resumeThreadQueu
   return yield* dispatch({
     ...(input.runId === undefined
       ? { type: "queue.resume" as const }
-      : { type: "queued-run.start" as const, runId: input.runId }),
+      : {
+          type: "queued-run.start" as const,
+          runId: input.runId,
+          ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
+        }),
     commandId: yield* allocateCommandId(input),
     threadId: input.threadId,
   });

@@ -148,10 +148,23 @@ describe("V2 environment commands", () => {
         commandId: CommandId.make("resume-queue"),
         threadId,
       }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+      yield* resumeThreadQueue({
+        commandId: CommandId.make("send-held-on-current-model"),
+        threadId,
+        runId: RunId.make("held"),
+        modelSelection: { instanceId: ProviderInstanceId.make("claude"), model: "opus" },
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
 
       expect(commands).toEqual([
         { type: "queued-run.start", commandId: "send-selected", threadId, runId: "selected" },
         { type: "queue.resume", commandId: "resume-queue", threadId },
+        {
+          type: "queued-run.start",
+          commandId: "send-held-on-current-model",
+          threadId,
+          runId: "held",
+          modelSelection: { instanceId: "claude", model: "opus" },
+        },
       ]);
     }).pipe(Effect.provide(layerTestRandom)),
   );
