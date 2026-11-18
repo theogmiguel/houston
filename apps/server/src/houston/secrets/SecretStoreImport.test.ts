@@ -12,7 +12,6 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as ServerConfig from "../../config.ts";
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import { slackSecretName } from "../slack/rules.ts";
-import { trackerSecretName } from "../taskSources/rules.ts";
 import { layerMemory, makeMemory, type MemorySecrets } from "./HoustonSecrets.ts";
 import {
   layerMemory as layerMemoryKeychain,
@@ -26,6 +25,7 @@ import { importKeychainSecrets } from "./SecretStoreImport.ts";
 const APP = "xapp-1-A0-keychain";
 const BOT = "xoxb-1-keychain";
 const NOTION = "ntn_keychain_token";
+const NOTION_NAME = "issue-tracker-notion-token";
 
 interface World {
   readonly keychain: MemoryKeychain;
@@ -65,8 +65,8 @@ const withWorld = <A, E, R>(body: (world: World) => Effect.Effect<A, E, R>) => {
   return body(world).pipe(Effect.provide(layerFor(world)));
 };
 
-/** Seeds what Houston's startup knows about a keychain-era install: a connected Slack and two
- * projects with a Notion credential on record. */
+/** Seeds what Houston's startup knows about a keychain-era install: a connected Slack and the\r
+ * project whose Notion credential is on record. */
 const seedConnections = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const config = yield* ServerConfig.ServerConfig;
@@ -75,8 +75,8 @@ const seedConnections = Effect.gen(function* () {
     VALUES (1, 1, 'en', 'then', 'then')
   `;
   yield* sql`
-    INSERT INTO houston_task_source_credentials (project_id, provider)
-    VALUES ('project-a', 'notion'), ('project-b', 'notion')
+    INSERT INTO houston_issue_tracker_token_adoption (tracker, project_id)
+    VALUES ('notion', 'project-a')
   `;
   const slack = legacyKeychainService({
     baseDir: config.baseDir,
@@ -97,8 +97,7 @@ const seedConnections = Effect.gen(function* () {
     seedKeychain: (keychain: MemoryKeychain) => {
       keychain.entries.set(keychainKey(slack, "app-token"), APP);
       keychain.entries.set(keychainKey(slack, "bot-token"), BOT);
-      keychain.entries.set(keychainKey(tracker("project-a"), "integration-token"), `${NOTION}-a`);
-      keychain.entries.set(keychainKey(tracker("project-b"), "integration-token"), `${NOTION}-b`);
+      keychain.entries.set(keychainKey(tracker("project-a"), "integration-token"), NOTION);
     },
   };
 });
@@ -111,21 +110,20 @@ const recorded = Effect.gen(function* () {
 });
 
 describe("the keychain import copies each token once into the secret store", () => {
-  it.effect("copies Slack's and every tracker's token and leaves the keychain untouched", () =>
+  it.effect("copies Slack's and the Notion token and leaves the keychain untouched", () =>
     withWorld((world) =>
       Effect.gen(function* () {
         const seeded = yield* seedConnections;
         seeded.seedKeychain(world.keychain);
         const before = new Map(world.keychain.entries);
         const result = yield* importKeychainSecrets;
-        assert.deepEqual(result, imported(4));
+        assert.deepEqual(result, imported(3));
         assert.deepEqual(
           [...world.secrets.entries].toSorted(),
           [
             [slackSecretName("app-token"), APP],
             [slackSecretName("bot-token"), BOT],
-            [trackerSecretName("project-a", "notion"), `${NOTION}-a`],
-            [trackerSecretName("project-b", "notion"), `${NOTION}-b`],
+            [NOTION_NAME, NOTION],
           ].toSorted(),
         );
         assert.deepEqual(world.keychain.entries, before, "the keychain keeps its entries");
@@ -134,7 +132,7 @@ describe("the keychain import copies each token once into the secret store", () 
           "the import only reads the keychain",
         );
         assert.deepEqual(JSON.parse((yield* recorded)[0]?.counts_json ?? "null"), {
-          copied: 4,
+          copied: 3,
           present: 0,
           absent: 0,
           refused: 0,
@@ -151,7 +149,7 @@ describe("the keychain import copies each token once into the secret store", () 
         const seeded = yield* seedConnections;
         seeded.seedKeychain(world.keychain);
         world.secrets.entries.set(DATADOG_KEY_SECRET, "0123456789abcdef0123456789abcdef");
-        assert.deepEqual(yield* importKeychainSecrets, imported(4));
+        assert.deepEqual(yield* importKeychainSecrets, imported(3));
         assert.isFalse(world.secrets.calls.some((call) => call.name === DATADOG_KEY_SECRET));
         assert.isFalse(
           world.keychain.calls.some((call) =>
@@ -189,13 +187,10 @@ describe("the keychain import copies each token once into the secret store", () 
       Effect.gen(function* () {
         const seeded = yield* seedConnections;
         seeded.seedKeychain(world.keychain);
-        world.secrets.entries.set(trackerSecretName("project-a", "notion"), "ntn_already_here");
+        world.secrets.entries.set(NOTION_NAME, "ntn_already_here");
         const result = yield* importKeychainSecrets;
-        assert.deepEqual(result, imported(3, 1));
-        assert.strictEqual(
-          world.secrets.entries.get(trackerSecretName("project-a", "notion")),
-          "ntn_already_here",
-        );
+        assert.deepEqual(result, imported(2, 1));
+        assert.strictEqual(world.secrets.entries.get(NOTION_NAME), "ntn_already_here");
         assert.isFalse(
           world.keychain.calls.some(
             (call) => call.service === seeded.tracker("project-a") && call.op === "get",
@@ -224,7 +219,7 @@ describe("the keychain import copies each token once into the secret store", () 
         world.keychain.entries.delete(keychainKey(seeded.slack, "app-token"));
         world.keychain.entries.delete(keychainKey(seeded.slack, "bot-token"));
         const result = yield* importKeychainSecrets;
-        assert.deepEqual(result, imported(2, 0, 2));
+        assert.deepEqual(result, imported(1, 0, 2));
         assert.isFalse(world.secrets.entries.has(slackSecretName("app-token")));
         assert.lengthOf(yield* recorded, 1);
       }),
@@ -244,7 +239,7 @@ describe("an unavailable keychain is a named warning, not an error", () => {
         seeded.seedKeychain(world.keychain);
         world.keychain.failWith = "org.freedesktop.secrets was not provided by any .service files";
         const first = yield* importKeychainSecrets;
-        assert.deepEqual(first, pending(4));
+        assert.deepEqual(first, pending(3));
         assert.strictEqual(world.secrets.entries.size, 0);
         assert.lengthOf(yield* recorded, 0, "an unread entry keeps the import open");
         const warnings = logs.filter((line) => line.includes("Secret store import"));
@@ -257,7 +252,7 @@ describe("an unavailable keychain is a named warning, not an error", () => {
 
         world.keychain.failWith = null;
         const second = yield* importKeychainSecrets;
-        assert.deepEqual(second, imported(4));
+        assert.deepEqual(second, imported(3));
         assert.lengthOf(yield* recorded, 1);
       }),
     ).pipe(Effect.provide(Logger.layer([logger])));
@@ -271,7 +266,7 @@ describe("an unavailable keychain is a named warning, not an error", () => {
         world.secrets.entries.set(slackSecretName("app-token"), APP);
         world.keychain.failWith = "locked";
         const result = yield* importKeychainSecrets;
-        assert.deepEqual(result, pending(3, 0, 1));
+        assert.deepEqual(result, pending(2, 0, 1));
         assert.strictEqual(world.secrets.entries.get(slackSecretName("app-token")), APP);
       }),
     ),
@@ -288,11 +283,11 @@ describe("a token the secret store cannot take keeps the import open", () => {
         seeded.seedKeychain(world.keychain);
         world.secrets.rejectSetWith = "ENOSPC: no space left on device";
         const first = yield* importKeychainSecrets;
-        assert.deepEqual(first, pending(4));
+        assert.deepEqual(first, pending(3));
         assert.include(logs.join("\n"), "ENOSPC");
         for (const token of [APP, BOT]) assert.notInclude(logs.join("\n"), token);
         world.secrets.rejectSetWith = null;
-        assert.deepEqual(yield* importKeychainSecrets, imported(4));
+        assert.deepEqual(yield* importKeychainSecrets, imported(3));
       }),
     ).pipe(Effect.provide(Logger.layer([logger])));
   });
@@ -304,7 +299,7 @@ describe("a token the secret store cannot take keeps the import open", () => {
         seeded.seedKeychain(world.keychain);
         world.keychain.entries.set(keychainKey(seeded.slack, "bot-token"), "x".repeat(2_049));
         const result = yield* importKeychainSecrets;
-        assert.deepEqual(result, imported(3, 0, 0, 1));
+        assert.deepEqual(result, imported(2, 0, 0, 1));
         assert.isFalse(world.secrets.entries.has(slackSecretName("bot-token")));
         assert.isTrue(world.secrets.entries.has(slackSecretName("app-token")));
       }),

@@ -43,10 +43,6 @@
       "types": "./src/houston/tasks.ts",
       "import": "./src/houston/tasks.ts"
     },
-    "./houston/taskSources": {
-      "types": "./src/houston/taskSources.ts",
-      "import": "./src/houston/taskSources.ts"
-    },
     "./houston/mergeQueue": {
       "types": "./src/houston/mergeQueue.ts",
       "import": "./src/houston/mergeQueue.ts"

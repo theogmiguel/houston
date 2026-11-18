@@ -250,7 +250,6 @@ interface DerivedInputs {
     }
   >;
   readonly openRuns: ReadonlyMap<number, RunRow>;
-  readonly trackerConflicts: ReadonlySet<number>;
   readonly issues: ReadonlyMap<number, IssueRow>;
 }
 
@@ -291,7 +290,6 @@ const readinessOf = (task: TaskRow, inputs: DerivedInputs, planningOpen: boolean
                   },
           },
     planningOpen,
-    trackerConflict: inputs.trackerConflicts.has(task.id),
   });
 };
 
@@ -516,11 +514,6 @@ const make = Effect.gen(function* () {
         WHERE state IN ${sql.in([...OPEN_RUN_STATES])} AND ${only("task_id")}
         ORDER BY id
       `;
-    // A task source link with a recorded conflict keeps its task unready until it is resolved.
-    const conflicted = yield* sql<{ readonly task_id: number }>`
-        SELECT DISTINCT task_id FROM houston_task_source_links
-        WHERE json_array_length(snapshot_json, '$.conflicts') > 0 AND ${only("task_id")}
-      `;
     const issues = yield* sql<IssueRow>`
         SELECT * FROM houston_task_issues WHERE ${only("task_id")}
       `;
@@ -544,7 +537,6 @@ const make = Effect.gen(function* () {
       domains: new Map(domains.map((row) => [row.task_id, row])),
       // Oldest first, so the newest open run per task wins.
       openRuns: new Map(runs.map((row) => [row.task_id, row])),
-      trackerConflicts: new Set(conflicted.map((row) => row.task_id)),
       issues: new Map(issues.map((row) => [row.task_id, row])),
     } satisfies DerivedInputs;
   }, Effect.orDie);

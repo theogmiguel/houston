@@ -237,25 +237,6 @@ import {
   HoustonTaskStartResult,
 } from "./houston/tasks.ts";
 import {
-  HoustonTaskSourceConflictResolveInput,
-  HoustonTaskSourceCredentialClearInput,
-  HoustonTaskSourceCredentialResult,
-  HoustonTaskSourceCredentialSetInput,
-  HoustonTaskSourceError,
-  HoustonTaskSourceImportInput,
-  HoustonTaskSourceImportResult,
-  HoustonTaskSourceImportStatus,
-  HoustonTaskSourceConflictEntry,
-  HoustonTaskSourceLink,
-  HoustonTaskSourceLinksGetInput,
-  HoustonTaskSourceProjectInput,
-  HoustonTaskSourceSettings,
-  HoustonTaskSourceSettingsSetInput,
-  HoustonTaskSourceStreamEvent,
-  HoustonTaskSourceSyncResult,
-  HoustonTaskSourcesConflictsInput,
-} from "./houston/taskSources.ts";
-import {
   HoustonSlackConfigureInput,
   HoustonSlackConnectInput,
   HoustonSlackEmptyInput,
@@ -380,7 +361,12 @@ import {
   IssueTrackerConnectInput,
   IssueTrackerConnection,
   IssueTrackerConnectionError,
+  IssueImportInput,
+  IssueImportResult,
+  IssueImportStatus,
   IssueTrackerConnectionList,
+  IssueTrackerPropertiesInput,
+  IssueTrackerPropertyList,
   IssueUnavailableError,
   IssueUpdateInput,
 } from "./issue.ts";
@@ -685,17 +671,6 @@ export const WS_METHODS = {
   houstonTasksIssueLink: "houston.tasks.issue.link",
   houstonTasksIssueUnlink: "houston.tasks.issue.unlink",
   houstonTasksIssueTask: "houston.tasks.issue.task",
-  houstonTaskSourcesSettingsGet: "houston.taskSources.settings.get",
-  houstonTaskSourcesSettingsSet: "houston.taskSources.settings.set",
-  houstonTaskSourcesCredentialSet: "houston.taskSources.credential.set",
-  houstonTaskSourcesCredentialClear: "houston.taskSources.credential.clear",
-  houstonTaskSourcesSyncNow: "houston.taskSources.syncNow",
-  houstonTaskSourcesLinksGet: "houston.taskSources.links.get",
-  houstonTaskSourcesConflictsList: "houston.taskSources.conflicts.list",
-  houstonTaskSourcesConflictResolve: "houston.taskSources.conflict.resolve",
-  houstonTaskSourcesSubscribe: "houston.taskSources.subscribe",
-  houstonTaskSourcesImportV1Status: "houston.taskSources.importV1.status",
-  houstonTaskSourcesImportV1Run: "houston.taskSources.importV1.run",
   houstonLayoutWorkspacesList: "houston.layoutWorkspaces.list",
   houstonLayoutWorkspacesPut: "houston.layoutWorkspaces.put",
   houstonLayoutWorkspacesReorder: "houston.layoutWorkspaces.reorder",
@@ -859,6 +834,9 @@ export const WS_METHODS = {
   issueTrackersList: "issueTrackers.list",
   issueTrackersConnect: "issueTrackers.connect",
   issueTrackersBindProject: "issueTrackers.bindProject",
+  issueTrackersProperties: "issueTrackers.properties",
+  issueTrackersImportV1Status: "issueTrackers.importV1.status",
+  issueTrackersImportV1Run: "issueTrackers.importV1.run",
 
   sourceControlLookupRepository: "sourceControl.lookupRepository",
   sourceControlCloneRepository: "sourceControl.cloneRepository",
@@ -1576,6 +1554,25 @@ const WsIssueTrackersBindProjectRpc = Rpc.make(WS_METHODS.issueTrackersBindProje
   error: IssueTrackerRpcError,
 });
 
+/** The properties a tracker's scope offers, read when a project's binding is edited. */
+const WsIssueTrackersPropertiesRpc = Rpc.make(WS_METHODS.issueTrackersProperties, {
+  payload: IssueTrackerPropertiesInput,
+  success: IssueTrackerPropertyList,
+  error: IssueTrackerRpcError,
+});
+
+const WsIssueTrackersImportV1StatusRpc = Rpc.make(WS_METHODS.issueTrackersImportV1Status, {
+  payload: IssueImportInput,
+  success: IssueImportStatus,
+  error: IssueTrackerRpcError,
+});
+
+const WsIssueTrackersImportV1RunRpc = Rpc.make(WS_METHODS.issueTrackersImportV1Run, {
+  payload: IssueImportInput,
+  success: IssueImportResult,
+  error: IssueTrackerRpcError,
+});
+
 const WsSourceControlLookupRepositoryRpc = Rpc.make(WS_METHODS.sourceControlLookupRepository, {
   payload: SourceControlRepositoryLookupInput,
   success: SourceControlRepositoryInfo,
@@ -2194,87 +2191,6 @@ const WsHoustonTasksIssueTaskRpc = Rpc.make(WS_METHODS.houstonTasksIssueTask, {
   payload: HoustonTaskIssueTaskInput,
   success: Schema.NullOr(HoustonTaskSummary),
   error: HoustonTaskRpcError,
-});
-
-const HoustonTaskSourceRpcError = Schema.Union([
-  HoustonTaskSourceError,
-  EnvironmentAuthorizationError,
-]);
-
-const WsHoustonTaskSourcesSettingsGetRpc = Rpc.make(WS_METHODS.houstonTaskSourcesSettingsGet, {
-  payload: HoustonTaskSourceProjectInput,
-  success: Schema.Array(HoustonTaskSourceSettings),
-  error: HoustonTaskSourceRpcError,
-});
-
-const WsHoustonTaskSourcesSettingsSetRpc = Rpc.make(WS_METHODS.houstonTaskSourcesSettingsSet, {
-  payload: HoustonTaskSourceSettingsSetInput,
-  success: HoustonTaskSourceSettings,
-  error: HoustonTaskSourceRpcError,
-});
-
-const WsHoustonTaskSourcesCredentialSetRpc = Rpc.make(WS_METHODS.houstonTaskSourcesCredentialSet, {
-  payload: HoustonTaskSourceCredentialSetInput,
-  success: HoustonTaskSourceCredentialResult,
-  error: HoustonTaskSourceRpcError,
-});
-
-const WsHoustonTaskSourcesCredentialClearRpc = Rpc.make(
-  WS_METHODS.houstonTaskSourcesCredentialClear,
-  {
-    payload: HoustonTaskSourceCredentialClearInput,
-    success: HoustonTaskSourceCredentialResult,
-    error: HoustonTaskSourceRpcError,
-  },
-);
-
-const WsHoustonTaskSourcesSyncNowRpc = Rpc.make(WS_METHODS.houstonTaskSourcesSyncNow, {
-  payload: HoustonTaskSourceProjectInput,
-  success: HoustonTaskSourceSyncResult,
-  error: HoustonTaskSourceRpcError,
-});
-
-const WsHoustonTaskSourcesLinksGetRpc = Rpc.make(WS_METHODS.houstonTaskSourcesLinksGet, {
-  payload: HoustonTaskSourceLinksGetInput,
-  success: Schema.Array(HoustonTaskSourceLink),
-  error: HoustonTaskSourceRpcError,
-});
-
-const WsHoustonTaskSourcesConflictsListRpc = Rpc.make(WS_METHODS.houstonTaskSourcesConflictsList, {
-  payload: HoustonTaskSourcesConflictsInput,
-  success: Schema.Array(HoustonTaskSourceConflictEntry),
-  error: HoustonTaskSourceRpcError,
-});
-
-const WsHoustonTaskSourcesConflictResolveRpc = Rpc.make(
-  WS_METHODS.houstonTaskSourcesConflictResolve,
-  {
-    payload: HoustonTaskSourceConflictResolveInput,
-    success: HoustonTaskSourceLink,
-    error: HoustonTaskSourceRpcError,
-  },
-);
-
-const WsHoustonTaskSourcesSubscribeRpc = Rpc.make(WS_METHODS.houstonTaskSourcesSubscribe, {
-  payload: HoustonTaskSourceProjectInput,
-  success: HoustonTaskSourceStreamEvent,
-  error: HoustonTaskSourceRpcError,
-  stream: true,
-});
-
-const WsHoustonTaskSourcesImportV1StatusRpc = Rpc.make(
-  WS_METHODS.houstonTaskSourcesImportV1Status,
-  {
-    payload: HoustonTaskSourceImportInput,
-    success: HoustonTaskSourceImportStatus,
-    error: HoustonTaskSourceRpcError,
-  },
-);
-
-const WsHoustonTaskSourcesImportV1RunRpc = Rpc.make(WS_METHODS.houstonTaskSourcesImportV1Run, {
-  payload: HoustonTaskSourceImportInput,
-  success: HoustonTaskSourceImportResult,
-  error: HoustonTaskSourceRpcError,
 });
 
 const HoustonLayoutWorkspacesRpcError = Schema.Union([
@@ -3059,6 +2975,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsIssueTrackersListRpc,
   WsIssueTrackersConnectRpc,
   WsIssueTrackersBindProjectRpc,
+  WsIssueTrackersPropertiesRpc,
+  WsIssueTrackersImportV1StatusRpc,
+  WsIssueTrackersImportV1RunRpc,
   WsSourceControlLookupRepositoryRpc,
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,
@@ -3160,17 +3079,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonTasksIssueLinkRpc,
   WsHoustonTasksIssueUnlinkRpc,
   WsHoustonTasksIssueTaskRpc,
-  WsHoustonTaskSourcesSettingsGetRpc,
-  WsHoustonTaskSourcesSettingsSetRpc,
-  WsHoustonTaskSourcesCredentialSetRpc,
-  WsHoustonTaskSourcesCredentialClearRpc,
-  WsHoustonTaskSourcesSyncNowRpc,
-  WsHoustonTaskSourcesLinksGetRpc,
-  WsHoustonTaskSourcesConflictsListRpc,
-  WsHoustonTaskSourcesConflictResolveRpc,
-  WsHoustonTaskSourcesSubscribeRpc,
-  WsHoustonTaskSourcesImportV1StatusRpc,
-  WsHoustonTaskSourcesImportV1RunRpc,
   WsHoustonLayoutWorkspacesListRpc,
   WsHoustonLayoutWorkspacesPutRpc,
   WsHoustonLayoutWorkspacesReorderRpc,

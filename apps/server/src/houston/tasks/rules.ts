@@ -301,7 +301,6 @@ export const readiness = (task: {
   } | null;
   readonly planningOpen: boolean;
   /** Whether a task source link of the task holds an unresolved conflict. */
-  readonly trackerConflict?: boolean;
 }): HoustonTaskReadiness => {
   const reasons: Array<string> = [];
   if (!task.hasProject) reasons.push("task has no project");
@@ -326,7 +325,6 @@ export const readiness = (task: {
   if (task.unfinishedBlockers.length > 0) {
     reasons.push(`task has ${task.unfinishedBlockers.length} unfinished blocker(s)`);
   }
-  if (task.trackerConflict === true) reasons.push("the task has an unresolved tracker conflict");
   return {
     ready: reasons.length === 0,
     reasons,

@@ -31,6 +31,7 @@ import * as WorkspacePaths from "../../workspace/WorkspacePaths.ts";
 import * as HoustonTaskService from "./TaskService.ts";
 import * as HoustonTaskStore from "./TaskStore.ts";
 import * as HoustonTaskV1Import from "./V1Import.ts";
+import * as HoustonIssueV1Import from "../../issue/V1Import.ts";
 
 /** Instances the settings check treats as configured unless a test names others. */
 export const CONFIGURED_INSTANCES: ReadonlyArray<string> = ["claudeAgent", "codex"];
@@ -165,6 +166,31 @@ export const layerTasks = (options: TasksTestOptions = {}) =>
         : options.databaseFile === undefined
           ? Layer.fresh(SqlitePersistence.layerMemory)
           : Layer.fresh(SqlitePersistence.layerFromPath(options.databaseFile)),
+    ),
+    Layer.provideMerge(ServerSettings.layerTest()),
+    Layer.provideMerge(
+      ServerConfig.layerTest(process.cwd(), options.baseDir ?? { prefix: "houston-tasks-test-" }),
+    ),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    Layer.provideMerge(
+      Layer.succeed(HostedLaunch, options.hosted ?? options.baseDir !== undefined),
+    ),
+  );
+
+export const layerIssueImport = (options: TasksTestOptions = {}) =>
+  Layer.mergeAll(HoustonTaskV1Import.layer, HoustonIssueV1Import.layer).pipe(
+    Layer.provideMerge(RuntimeLayer.layerProjectService),
+    Layer.provideMerge(ProjectStore.layer),
+    Layer.provideMerge(HoustonTaskStore.layer),
+    Layer.provideMerge(options.issueService ?? layerIssueService()),
+    Layer.provideMerge(layerInstances(options.configuredInstances ?? CONFIGURED_INSTANCES)),
+    Layer.provideMerge(ProjectEnrichmentService.layer),
+    Layer.provideMerge(layerWorkspacePaths),
+    Layer.provideMerge(layerProjectMetadata),
+    Layer.provideMerge(
+      options.databaseFile === undefined
+        ? Layer.fresh(SqlitePersistence.layerMemory)
+        : Layer.fresh(SqlitePersistence.layerFromPath(options.databaseFile)),
     ),
     Layer.provideMerge(ServerSettings.layerTest()),
     Layer.provideMerge(

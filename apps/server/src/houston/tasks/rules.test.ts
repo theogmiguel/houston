@@ -411,16 +411,6 @@ describe("readiness lists every missing condition", () => {
     expect(result.reasons).toHaveLength(4);
   });
 
-  it("an unresolved tracker conflict makes a task unready", () => {
-    const conflicted = readiness({ ...ready, trackerConflict: true });
-    expect(conflicted.ready).toBe(false);
-    expect(conflicted.reasons).toEqual(["the task has an unresolved tracker conflict"]);
-    expect(readiness({ ...ready, trackerConflict: false })).toMatchObject({
-      ready: true,
-      reasons: [],
-    });
-  });
-
   it("a task with no domain row needs no initiative; a delivery does", () => {
     expect(readiness({ ...ready, domain: null }).ready).toBe(true);
     expect(readiness({ ...ready, domain: { kind: "slice", initiative: null } }).ready).toBe(true);
@@ -563,20 +553,19 @@ describe("review triggers follow the mode", () => {
     handback: { handback: true, "new head": false },
     every_push: { handback: false, "new head": true },
   };
-  for (const mode of ["manual", "handback", "every_push"] as const) {
-    for (const { name, event } of events) {
-      it(`${mode} on ${name}`, () => {
-        expect(reviewTrigger({ mode, event, reviewOpen: false, reviewedHeads: ["a1"] })).toBe(
-          expected[mode]?.[name],
-        );
-      });
-      it(`${mode} on ${name} while a review is open`, () => {
-        expect(reviewTrigger({ mode, event, reviewOpen: true, reviewedHeads: ["a1"] })).toBe(
-          mode === "handback" && name === "handback",
-        );
-      });
-    }
-  }
+  const cases = (["manual", "handback", "every_push"] as const).flatMap((mode) =>
+    events.map(({ name, event }) => ({ mode, name, event })),
+  );
+  it.each(cases)("$mode on $name", ({ mode, name, event }) => {
+    expect(reviewTrigger({ mode, event, reviewOpen: false, reviewedHeads: ["a1"] })).toBe(
+      expected[mode]?.[name],
+    );
+  });
+  it.each(cases)("$mode on $name while a review is open", ({ mode, name, event }) => {
+    expect(reviewTrigger({ mode, event, reviewOpen: true, reviewedHeads: ["a1"] })).toBe(
+      mode === "handback" && name === "handback",
+    );
+  });
   it("every_push starts once per head", () => {
     expect(
       reviewTrigger({

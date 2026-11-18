@@ -222,11 +222,9 @@ import * as HoustonRpcSerialization from "./houston/rpcSerialization.ts";
 import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
 import * as HoustonTaskRuns from "./houston/tasks/TaskRuns.ts";
 import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
-import * as HoustonTaskSourceService from "./houston/taskSources/SourceService.ts";
 import * as HoustonLayoutWorkspaces from "./houston/layoutWorkspaces.ts";
 import * as HoustonSlackService from "./houston/slack/Service.ts";
 import * as HoustonSlackV1Import from "./houston/slack/V1Import.ts";
-import * as HoustonTaskSourceV1Import from "./houston/taskSources/V1Import.ts";
 import * as HoustonMergeQueueService from "./houston/mergeQueue/Service.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
@@ -263,6 +261,7 @@ import * as TriageService from "./triage/TriageService.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as IssueService from "./issue/IssueService.ts";
 import * as IssueTrackerConnections from "./issue/IssueTrackerConnections.ts";
+import * as HoustonIssueV1Import from "./issue/V1Import.ts";
 import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewGuideService.ts";
 import {
   listLinkedPullRequestThreads,
@@ -1529,6 +1528,7 @@ export const layerWsRpc = (
       const pullRequests = yield* PullRequestService.PullRequestService;
       const issues = yield* IssueService.IssueService;
       const issueTrackers = yield* IssueTrackerConnections.IssueTrackerConnections;
+      const issueImport = yield* HoustonIssueV1Import.HoustonIssueV1Import;
       const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
       const deviceService = yield* DeviceService.DeviceService;
@@ -1576,8 +1576,6 @@ export const layerWsRpc = (
       const houstonTasks = yield* HoustonTaskService.HoustonTaskService;
       const houstonTaskImport = yield* HoustonTaskV1Import.HoustonTaskV1Import;
       const houstonTaskRuns = yield* HoustonTaskRuns.HoustonTaskRuns;
-      const houstonTaskSources = yield* HoustonTaskSourceService.HoustonTaskSourceService;
-      const houstonTaskSourceImport = yield* HoustonTaskSourceV1Import.HoustonTaskSourceV1Import;
       const houstonLayoutWorkspaces = yield* HoustonLayoutWorkspaces.HoustonLayoutWorkspaceService;
       const houstonSlack = yield* HoustonSlackService.HoustonSlackService;
       const houstonSlackImport = yield* HoustonSlackV1Import.HoustonSlackV1Import;
@@ -2152,6 +2150,9 @@ export const layerWsRpc = (
         [WS_METHODS.issueTrackersList]: () => issueTrackers.list,
         [WS_METHODS.issueTrackersConnect]: (input) => issueTrackers.connect(input),
         [WS_METHODS.issueTrackersBindProject]: (input) => issueTrackers.bindProject(input),
+        [WS_METHODS.issueTrackersProperties]: (input) => issueTrackers.properties(input),
+        [WS_METHODS.issueTrackersImportV1Status]: () => issueImport.status,
+        [WS_METHODS.issueTrackersImportV1Run]: () => issueImport.run,
         [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
           Effect.annotateCurrentSpan({
             "orchestration_v2.command_id": command.commandId,
@@ -3393,23 +3394,6 @@ export const layerWsRpc = (
         [WS_METHODS.houstonTasksIssueLink]: (input) => houstonTasks.linkIssue(input),
         [WS_METHODS.houstonTasksIssueUnlink]: (input) => houstonTasks.unlinkIssue(input),
         [WS_METHODS.houstonTasksIssueTask]: (input) => houstonTasks.taskForIssue(input),
-        [WS_METHODS.houstonTaskSourcesSettingsGet]: (input) =>
-          houstonTaskSources.getSettings(input),
-        [WS_METHODS.houstonTaskSourcesSettingsSet]: (input) =>
-          houstonTaskSources.setSettings(input),
-        [WS_METHODS.houstonTaskSourcesCredentialSet]: (input) =>
-          houstonTaskSources.setCredential(input),
-        [WS_METHODS.houstonTaskSourcesCredentialClear]: (input) =>
-          houstonTaskSources.clearCredential(input),
-        [WS_METHODS.houstonTaskSourcesSyncNow]: (input) => houstonTaskSources.syncNow(input),
-        [WS_METHODS.houstonTaskSourcesLinksGet]: (input) => houstonTaskSources.links(input),
-        [WS_METHODS.houstonTaskSourcesConflictsList]: (input) =>
-          houstonTaskSources.conflicts(input),
-        [WS_METHODS.houstonTaskSourcesConflictResolve]: (input) =>
-          houstonTaskSources.resolve(input),
-        [WS_METHODS.houstonTaskSourcesSubscribe]: (input) => houstonTaskSources.subscribe(input),
-        [WS_METHODS.houstonTaskSourcesImportV1Status]: () => houstonTaskSourceImport.status,
-        [WS_METHODS.houstonTaskSourcesImportV1Run]: () => houstonTaskSourceImport.run,
         [WS_METHODS.houstonLayoutWorkspacesList]: () => houstonLayoutWorkspaces.list,
         [WS_METHODS.houstonLayoutWorkspacesPut]: (input) => houstonLayoutWorkspaces.put(input),
         [WS_METHODS.houstonLayoutWorkspacesReorder]: (input) =>
