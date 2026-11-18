@@ -8572,6 +8572,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...(command.title === undefined ? {} : { title: command.title }),
         ordinal: (yield* subagentCount(command.parentThreadId)) + 1,
       });
+      const otherProjectId =
+        command.projectId !== undefined && command.projectId !== parentProjection.thread.projectId
+          ? command.projectId
+          : undefined;
       const childThread: OrchestrationV2AppThread = {
         ...makeSubagentChildThread({
           parentThread: parentProjection.thread,
@@ -8588,6 +8592,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         runtimeMode: command.runtimeMode,
         interactionMode: command.interactionMode,
         ...(command.workspaceStrategy === undefined ? {} : { branch: null, worktreePath: null }),
+        // The parent's checkout and pull request belong to its own repository.
+        ...(otherProjectId === undefined
+          ? {}
+          : {
+              projectId: otherProjectId,
+              branch: null,
+              worktreePath: null,
+              branchPullRequest: null,
+            }),
       };
       const task: OrchestrationV2Subagent = {
         id: taskNodeId,

@@ -2336,7 +2336,7 @@ const make = Effect.gen(function* () {
         runtimeMode: limits.runtimeMode,
         interactionMode: limits.interactionMode,
         providers: providers.map((provider) => {
-          // Snapshots list instances any project enables; delegate_task checks the caller's project.
+          // Snapshots list instances any project enables; delegate_task checks the child's project.
           const enabledForCaller =
             parent === undefined ||
             resolveProjectProviderInstanceEnabled(
@@ -2418,15 +2418,24 @@ const make = Effect.gen(function* () {
           : readTask(scope, taskId, false, true);
       }
       const { scope, parent } = yield* loadThreadCaller(callerScope, "delegate_task");
-      if (
-        input.target?.projectId !== undefined &&
-        input.target.projectId !== parent.thread.projectId
-      ) {
-        return yield* failure(
-          "invalid_request",
-          "A local task runs in this thread's project. Omit target.projectId, or pass target.environmentId to run it in that environment's project.",
-        );
-      }
+      const otherProject =
+        input.target?.projectId === undefined || input.target.projectId === parent.thread.projectId
+          ? undefined
+          : yield* requireProject(input.target.projectId).pipe(
+              Effect.mapError((error) =>
+                error.code === "invalid_request"
+                  ? failure(
+                      "invalid_request",
+                      `Project ${input.target?.projectId} was not found in this environment. Pass target.projectId as a project id from houston_project_list, or omit it to run in this thread's project.`,
+                    )
+                  : error,
+              ),
+            );
+      // Provider choice and enablement follow the project the child runs in.
+      const parentInChildProject =
+        otherProject === undefined
+          ? parent
+          : { thread: { ...parent.thread, projectId: otherProject.id } };
       const parentRun = parent.runs
         .filter(ThreadManagementService.isActiveRun)
         .toSorted((left, right) => right.ordinal - left.ordinal)[0];
@@ -2449,7 +2458,7 @@ const make = Effect.gen(function* () {
       });
       const isRetryOfAcceptedDelegation = yield* threadManagement.hasReceipt(commandId);
       const target = yield* resolveTargetRechecking({
-        parent,
+        parent: parentInChildProject,
         target: input.target,
         providers,
         skipProjectEnablementFilter: isRetryOfAcceptedDelegation,
@@ -2465,21 +2474,30 @@ const make = Effect.gen(function* () {
       );
       let workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy | undefined;
       if (input.isolation === "worktree" && !isRetryOfAcceptedDelegation) {
-        const project = yield* requireProject(parent.thread.projectId);
+        const project = otherProject ?? (yield* requireProject(parent.thread.projectId));
+        // Another project's repository lacks the parent's commit, so its child starts from its HEAD.
         const base = yield* gitDriver
           .resolveCommit({
-            cwd: parent.thread.worktreePath ?? project.workspaceRoot,
+            cwd:
+              otherProject === undefined
+                ? (parent.thread.worktreePath ?? project.workspaceRoot)
+                : project.workspaceRoot,
             revision: "HEAD",
           })
           .pipe(
             Effect.mapError(() =>
-              failure("invalid_request", "Unable to resolve the parent checkout commit."),
+              failure(
+                "invalid_request",
+                otherProject === undefined
+                  ? "Unable to resolve the parent checkout commit."
+                  : `Unable to resolve HEAD in project "${project.title}" (${project.workspaceRoot}).`,
+              ),
             ),
           );
         // Launch preparation creates the worktree from the project root, so a
         // parent checkout in another repository (such as a Git folder inside
         // Scratch) would hand it a commit it cannot find.
-        if (parent.thread.worktreePath !== null) {
+        if (otherProject === undefined && parent.thread.worktreePath !== null) {
           yield* gitDriver
             .resolveCommit({ cwd: project.workspaceRoot, revision: base.commitSha })
             .pipe(
@@ -2512,6 +2530,7 @@ const make = Effect.gen(function* () {
               parentNodeId,
               task: taskPrompt(input),
               ...(input.title === undefined ? {} : { title: input.title }),
+              ...(otherProject === undefined ? {} : { projectId: otherProject.id }),
               modelSelection: target.modelSelection,
               runtimeMode,
               interactionMode,

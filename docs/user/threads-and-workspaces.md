@@ -302,6 +302,10 @@ the thread header however far the timeline is scrolled. A child's question or ap
 in the parent's pending approvals and needs your answer there. Agents reach threads,
 tasks, issues and pulls through the server's MCP toolkits, not through the terminal.
 
+A delegated child works in the parent's project unless the agent names another project. A child
+in another project works in that project's folder, or in a new worktree of it started from its
+current commit, and still reports to its parent.
+
 Agents also manage workspaces through the `houston_workspace_*` tools, with the app closed: list,
 create, rename, hide, pin, reorder and delete a workspace, and add a thread's chat to one or take
 it out. A thread's chat is in one workspace at a time, so adding it moves it out of its other

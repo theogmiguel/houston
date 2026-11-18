@@ -600,7 +600,10 @@ const makeLaptop = (
       Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
       Layer.provide(Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({})),
       Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
-      Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
+      // A local task's project lookup finds nothing here.
+      Layer.provide(
+        Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeedNone }),
+      ),
       Layer.provide(Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({})),
       Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
       Layer.provide(Layer.mock(ThreadLaunch.ThreadLaunchService)({})),
@@ -1919,7 +1922,7 @@ it.effect("a task whose thread there has no run ends with its last reply", () =>
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
 
-it.effect("a local task runs in this thread's project", () =>
+it.effect("a local task in a project this environment does not have is refused, naming it", () =>
   Effect.scoped(
     Effect.gen(function* () {
       const offers = yield* SubscriptionRef.make<
@@ -1934,7 +1937,9 @@ it.effect("a local task runs in this thread's project", () =>
         target: { projectId: "project:elsewhere" },
       });
       expect(result.isError).toBe(true);
-      expect(JSON.stringify(result.content)).toContain("invalid_request");
+      const content = JSON.stringify(result.content);
+      expect(content).toContain("invalid_request");
+      expect(content).toContain("project:elsewhere");
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
