@@ -1,0 +1,281 @@
+import { describe, expect, it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as TestSourceControlHost from "@houston-app/source-control-testing/TestSourceControlHost";
+
+import * as ForgejoCli from "./ForgejoCli.ts";
+import * as ForgejoIssueTracker from "./ForgejoIssueTracker.ts";
+
+const encode = (value: unknown) => JSON.stringify(value);
+
+const ISSUE = {
+  number: 42,
+  title: "Composer loses focus",
+  body: "Typing drops focus.",
+  html_url: "https://forgejo.test:3000/acme/web/issues/42",
+  user: { login: "octocat", full_name: "Octo Cat", avatar_url: "" },
+  state: "open",
+  created_at: "2026-07-01T00:00:00+02:00",
+  updated_at: "2026-07-03T00:00:00Z",
+  closed_at: null,
+  assignees: [{ login: "octavia" }],
+  labels: [{ id: 3, name: "bug", color: "d73a4a" }],
+  comments: 1,
+  is_locked: true,
+};
+
+/** Every endpoint the detail read touches, answered by path; stderr carries the `Link` header. */
+function answer(path: string): { readonly stdout: string; readonly stderr?: string } {
+  const [route] = path.split("?");
+  switch (route) {
+    case "user":
+      return { stdout: encode({ login: "reviewer" }) };
+    case "repos/acme/web":
+      return {
+        stdout: encode({ full_name: "acme/web", permissions: { push: false, admin: false } }),
+      };
+    case "repos/acme/web/issues/42":
+      return { stdout: encode(ISSUE) };
+    case "repos/acme/web/issues/42/timeline":
+      return {
+        stdout: encode([
+          {
+            id: 1,
+            type: "label",
+            body: "1",
+            user: { login: "octavia" },
+            created_at: "2026-07-01T01:00:00Z",
+            label: { id: 3, name: "bug" },
+          },
+          {
+            id: 2,
+            type: "comment",
+            body: "Repro attached.",
+            user: { login: "reviewer" },
+            created_at: "2026-07-02T00:00:00Z",
+          },
+          {
+            id: 3,
+            type: "pull_ref",
+            user: { login: "octavia" },
+            created_at: "2026-07-02T01:00:00Z",
+            ref_issue: {
+              number: 50,
+              html_url: "https://forgejo.test:3000/acme/web/pulls/50",
+              pull_request: { merged: false },
+            },
+          },
+          {
+            id: 4,
+            type: "milestone",
+            user: { login: "octavia" },
+            created_at: "2026-07-02T02:00:00Z",
+          },
+        ]),
+      };
+    case "repos/acme/web/issues/42/reactions":
+      return { stdout: encode([{ content: "eyes", user: { login: "octavia" } }]) };
+    case "repos/acme/web/issues/42/comments":
+      return {
+        stdout: encode([
+          {
+            id: 7,
+            body: "Repro attached.",
+            user: { login: "reviewer" },
+            created_at: "2026-07-02T00:00:00Z",
+            html_url: "https://forgejo.test:3000/acme/web/issues/42#issuecomment-7",
+          },
+        ]),
+        stderr:
+          'HTTP/1.1 200\nlink: <https://forgejo.test:3000/api/v1/repos/acme/web/issues/42/comments?page=2>; rel="next"\n',
+      };
+    case "repos/acme/web/issues/comments/7/reactions":
+      return {
+        stdout: encode([
+          { content: "+1", user: { login: "reviewer" } },
+          { content: "+1", user: { login: "octavia" } },
+        ]),
+      };
+    case "repos/acme/web/pulls/50":
+      return {
+        stdout: encode({
+          number: 50,
+          title: "fix(web): keep composer focus",
+          html_url: "https://forgejo.test:3000/acme/web/pulls/50",
+          state: "open",
+          merged: false,
+          draft: true,
+        }),
+      };
+    default:
+      throw new Error(`unexpected path ${path}`);
+  }
+}
+
+function tracker(
+  onApi: (input: ForgejoCli.ForgejoApiInput) => {
+    readonly stdout: string;
+    readonly stderr?: string;
+  },
+) {
+  return ForgejoIssueTracker.make.pipe(
+    Effect.provide(
+      Layer.mock(ForgejoCli.ForgejoCli)({
+        api: (input) => {
+          const { stdout, stderr } = onApi(input);
+          return Effect.succeed(
+            TestSourceControlHost.processOutput(stdout, { stderr: stderr ?? "" }),
+          );
+        },
+      }),
+    ),
+  );
+}
+
+describe("ForgejoIssueTracker", () => {
+  it.effect("joins the issue, timeline and conversation into the neutral issue shape", () =>
+    Effect.gen(function* () {
+      const hosts = new Set<string | undefined>();
+      const api = yield* tracker((input) => {
+        hosts.add(input.host);
+        return answer(input.path);
+      });
+      const issue = yield* api.getIssue({
+        cwd: "/w",
+        host: "forgejo.test:3000",
+        scope: "acme/web",
+        key: "42",
+      });
+      // The custom host and port reach the CLI, which resolves the login for them.
+      expect([...hosts]).toEqual(["forgejo.test:3000"]);
+      expect(issue).toMatchObject({
+        key: "42",
+        displayKey: "#42",
+        state: { category: "open", name: "Open" },
+        states: [
+          { category: "open", name: "Open" },
+          { category: "closed", name: "Closed" },
+        ],
+        author: { login: "octocat", name: "Octo Cat", avatarUrl: null },
+        createdAt: "2026-06-30T22:00:00.000Z",
+        labels: [{ name: "bug", color: "d73a4a" }],
+        viewer: "reviewer",
+        // No push and not the author: nothing but reading. Locked, so not even a comment.
+        viewerPermissions: {
+          setState: false,
+          comment: false,
+          edit: false,
+          labels: false,
+          assignees: false,
+        },
+        reactions: [{ content: "eyes", count: 1, actors: ["octavia"], viewerHasReacted: false }],
+        commentsCursor: "2",
+      });
+      expect(issue.comments).toEqual([
+        {
+          id: "7",
+          author: { login: "reviewer", name: null, avatarUrl: null },
+          body: "Repro attached.",
+          createdAt: "2026-07-02T00:00:00.000Z",
+          url: "https://forgejo.test:3000/acme/web/issues/42#issuecomment-7",
+          reactions: [
+            { content: "thumbs-up", count: 2, actors: ["octavia"], viewerHasReacted: true },
+          ],
+        },
+      ]);
+      // Comments and milestones on the timeline are not events in the shared vocabulary.
+      expect(issue.events.map((event) => [event.kind, event.detail])).toEqual([
+        ["labeled", "bug"],
+        ["referenced", "#50"],
+      ]);
+      expect(issue.linkedPullRequests).toEqual([
+        {
+          repository: "acme/web",
+          number: 50,
+          title: "fix(web): keep composer focus",
+          url: "https://forgejo.test:3000/acme/web/pulls/50",
+          state: "open",
+          isDraft: true,
+          closesIssue: false,
+        },
+      ]);
+    }),
+  );
+
+  it.effect("moves an issue to a state by its name and refuses any other name", () =>
+    Effect.gen(function* () {
+      const writes: unknown[] = [];
+      const api = yield* tracker((input) => {
+        writes.push([input.method, input.path, input.body]);
+        return { stdout: "{}" };
+      });
+      const target = { cwd: "/w", host: "forgejo.test:3000", scope: "acme/web", key: "42" };
+      yield* api.setState!({ ...target, state: "Closed" });
+      yield* api.setState!({ ...target, state: "Open" });
+      // The category is not a state name: nothing is sent for it.
+      const error = yield* Effect.flip(api.setState!({ ...target, state: "closed" }));
+      expect(error).toMatchObject({ operation: "setState", reason: "failed" });
+      expect(writes).toEqual([
+        ["PATCH", "repos/acme/web/issues/42", { state: "closed" }],
+        ["PATCH", "repos/acme/web/issues/42", { state: "open" }],
+      ]);
+    }),
+  );
+
+  it.effect("lists issues by page and leaves pull requests out of the rows", () =>
+    Effect.gen(function* () {
+      const paths: string[] = [];
+      const api = yield* tracker((input) => {
+        paths.push(input.path);
+        return {
+          stdout: encode([ISSUE, { ...ISSUE, number: 43, pull_request: { merged: false } }]),
+        };
+      });
+      const page = yield* api.listIssues({
+        cwd: "/w",
+        host: "forgejo.test:3000",
+        scope: "acme/web",
+        state: "open",
+        involvement: "authored",
+        viewer: "reviewer",
+        sort: "updated",
+        limit: 50,
+        cursor: "2",
+      });
+      expect(paths).toEqual([
+        "repos/acme/web/issues?type=issues&state=open&sort=recentupdate&created_by=reviewer&limit=50&page=2",
+      ]);
+      expect(page.items.map((item) => item.key)).toEqual(["42"]);
+      // No `Link` header at all means the server may still have more; a full page carries on.
+      expect(page.nextCursor).toBe("3");
+    }),
+  );
+
+  it.effect("names the labels, assignee and order a listing asks for", () =>
+    Effect.gen(function* () {
+      const paths: string[] = [];
+      const api = yield* tracker((input) => {
+        paths.push(input.path);
+        return { stdout: encode([ISSUE]) };
+      });
+      const page = yield* api.listIssues({
+        cwd: "/w",
+        host: "forgejo.test:3000",
+        scope: "acme/web",
+        state: "open",
+        involvement: "assigned",
+        viewer: "reviewer",
+        labels: ["bug"],
+        assignee: "octavia",
+        sort: "created",
+        limit: 50,
+      });
+      const params = new URLSearchParams(paths[0]!.split("?")[1]);
+      expect(params.get("sort")).toBe("latest");
+      expect(params.get("labels")).toBe("bug");
+      expect(params.get("assigned_by")).toBe("octavia");
+      // Every named label is required, not any one of them.
+      expect(page.items).toEqual([]);
+    }),
+  );
+});

@@ -7,7 +7,9 @@ import {
   ProjectId,
   RunId,
   ThreadId,
+  TrimmedNonEmptyString,
 } from "../baseSchemas.ts";
+import { IssueRef, IssueTrackerKind } from "../issue.ts";
 import { ModelSelection } from "../modelSelection.ts";
 
 const TASK_REF = /^[Hh][Oo][Uu]-([1-9][0-9]*)$/;
@@ -30,6 +32,8 @@ export const HOUSTON_TASK_LIMITS = {
   reworkRounds: 5,
   /** UTF-8 bytes in a run's brief, checked before anything is created. */
   briefBytes: 16_384,
+  /** UTF-8 bytes of a linked issue's body a planning brief carries as untrusted context. */
+  issueBodyInBriefBytes: 8_192,
   /** Implementation runs one task may have live at once. */
   liveImplementationRuns: 1,
   reviewFindings: 100,
@@ -150,6 +154,26 @@ export class HoustonTaskError extends Schema.TaggedError<HoustonTaskError>()("Ho
 
 const TaskId = PositiveInt;
 
+/**
+ * The issue a task is backed by: where the tracker keeps it, the URL it was opened at and the
+ * title it had when it was linked. A link is not a copy: nothing refreshes it, and opening the
+ * issue reads its live state.
+ */
+export const HoustonTaskIssue = Schema.Struct({
+  /** The project whose credentials read the issue; its link outlives a project binding change. */
+  projectId: ProjectId,
+  tracker: IssueTrackerKind,
+  host: TrimmedNonEmptyString,
+  scope: TrimmedNonEmptyString,
+  key: TrimmedNonEmptyString,
+  /** How the tracker writes the key for people: `#123` on a git host, `ENG-123` on Linear. */
+  displayKey: TrimmedNonEmptyString,
+  url: TrimmedNonEmptyString,
+  title: TrimmedNonEmptyString,
+  linkedAt: IsoDateTime,
+});
+export type HoustonTaskIssue = typeof HoustonTaskIssue.Type;
+
 export const HoustonTask = Schema.Struct({
   id: TaskId,
   number: PositiveInt,
@@ -161,6 +185,8 @@ export const HoustonTask = Schema.Struct({
   priority: HoustonTaskPriority,
   parentId: Schema.NullOr(TaskId),
   refUrl: Schema.NullOr(Schema.String),
+  /** The one issue this task is backed by, or null for a local-only task. */
+  issue: Schema.NullOr(HoustonTaskIssue),
   revision: PositiveInt,
   /** `user`, `agent:<threadId>`, or a `houston:` actor for derived writes. */
   createdBy: Schema.String,
@@ -226,6 +252,8 @@ export const HoustonTaskSummary = Schema.Struct({
   priority: HoustonTaskPriority,
   parentId: Schema.NullOr(TaskId),
   refUrl: Schema.NullOr(Schema.String),
+  /** The one issue this task is backed by, or null for a local-only task. */
+  issue: Schema.NullOr(HoustonTaskIssue),
   revision: PositiveInt,
   createdBy: Schema.String,
   createdAt: IsoDateTime,
@@ -367,6 +395,8 @@ export const HoustonTaskSettings = Schema.Struct({
   reviewMode: HoustonTaskReviewMode,
   focus: HoustonTaskReviewFocus,
   reworkRounds: NonNegativeInt,
+  /** Whether a task's status moves the issue it is backed by. Off unless chosen. */
+  updateIssueState: Schema.Boolean,
 });
 export type HoustonTaskSettings = typeof HoustonTaskSettings.Type;
 
@@ -379,6 +409,7 @@ export const HoustonTaskSettingsInput = Schema.Struct({
   reviewMode: Schema.optionalKey(HoustonTaskReviewMode),
   focus: HoustonTaskReviewFocus,
   reworkRounds: NonNegativeInt,
+  updateIssueState: Schema.Boolean,
 });
 export type HoustonTaskSettingsInput = typeof HoustonTaskSettingsInput.Type;
 
@@ -474,6 +505,28 @@ export type HoustonTaskSaveInput = typeof HoustonTaskSaveInput.Type;
 
 export const HoustonTaskCommentInput = Schema.Struct({ id: HoustonTaskRef, body: Schema.String });
 export type HoustonTaskCommentInput = typeof HoustonTaskCommentInput.Type;
+
+/** Creates a task from an issue; the issue's title names it and its project owns it. */
+export const HoustonTaskFromIssueInput = Schema.Struct({ ...IssueRef.fields });
+export type HoustonTaskFromIssueInput = typeof HoustonTaskFromIssueInput.Type;
+
+/** Backs an existing task with the issue a URL names; the URL resolves through the task's project. */
+export const HoustonTaskIssueLinkInput = Schema.Struct({
+  id: HoustonTaskRef,
+  expectedRevision: PositiveInt,
+  url: TrimmedNonEmptyString.check(Schema.isMaxLength(2_048)),
+});
+export type HoustonTaskIssueLinkInput = typeof HoustonTaskIssueLinkInput.Type;
+
+export const HoustonTaskIssueUnlinkInput = Schema.Struct({
+  id: HoustonTaskRef,
+  expectedRevision: PositiveInt,
+});
+export type HoustonTaskIssueUnlinkInput = typeof HoustonTaskIssueUnlinkInput.Type;
+
+/** The one non-archived task backed by an issue, for the issue panel to offer instead of creating. */
+export const HoustonTaskIssueTaskInput = Schema.Struct({ ...IssueRef.fields });
+export type HoustonTaskIssueTaskInput = typeof HoustonTaskIssueTaskInput.Type;
 
 export const HoustonTaskCheckInput = Schema.Struct({
   id: HoustonTaskRef,

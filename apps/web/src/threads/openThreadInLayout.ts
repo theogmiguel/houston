@@ -1,7 +1,8 @@
 import type { ScopedThreadRef } from "@houston-app/contracts";
 
-import { findLayoutTabByContent } from "../layout/layoutModel";
+import { findLayoutChatForThread, findLayoutTabByContent } from "../layout/layoutModel";
 import { runInNewLayoutTab, useLayoutStore } from "../layout/layoutStore";
+import { followLayoutCompanions } from "../layout/openRules";
 import { buildThreadRouteParams, isThreadRoutePathname } from "../threadRoutes";
 import type { ThreadOpenIntent } from "./threadOpenContext";
 
@@ -15,10 +16,9 @@ export interface ThreadOpenNavigation {
 }
 
 /**
- * Shows a thread in the layout: focuses the tab that already holds its chat wherever it is, or
- * opens one by the layout's own rules. `from` names the thread it was opened from, so a related
- * thread (a subagent, its parent) opens as a provisional tab beside it; `join` adds a kept tab in
- * the focused pane instead. The URL follows the focused tab.
+ * Shows a thread in the layout: a related thread takes over the tab it was opened from, else the
+ * tab already holding its chat is focused or one opens by the layout's rules; `join` adds a tab.
+ * The URL follows the focused tab.
  */
 export async function openThreadInLayout(
   navigation: ThreadOpenNavigation,
@@ -37,9 +37,23 @@ export async function openThreadInLayout(
         params: buildThreadRouteParams(ref),
       }),
     );
+  const syncRoute = async () => {
+    if (!isThreadRoutePathname(navigation.pathname(), ref)) await go();
+  };
+  if (options.from && options.intent !== "join") {
+    const fromTab = findLayoutChatForThread(store.layout, options.from);
+    if (fromTab !== null) {
+      followLayoutCompanions(() => {
+        store.replaceTabContent(fromTab.tab.id, content);
+        store.focusTab(fromTab.tab.id);
+      });
+      await syncRoute();
+      return;
+    }
+  }
   if (findLayoutTabByContent(store.layout, content) !== null) {
     store.focusChat(content.target);
-    if (!isThreadRoutePathname(navigation.pathname(), ref)) await go();
+    await syncRoute();
     return;
   }
   if (options.intent === "join") {

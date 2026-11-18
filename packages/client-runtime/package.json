@@ -15,6 +15,10 @@
       "types": "./src/zip/zipDirectory.ts",
       "default": "./src/zip/zipDirectory.ts"
     },
+    "./saved-views": {
+      "types": "./src/savedViews.ts",
+      "default": "./src/savedViews.ts"
+    },
     "./workspace-basename-lookup": {
       "types": "./src/workspaceBasenameLookup.ts",
       "default": "./src/workspaceBasenameLookup.ts"
@@ -247,6 +251,14 @@
       "types": "./src/state/providerInstanceDisplay.ts",
       "default": "./src/state/providerInstanceDisplay.ts"
     },
+    "./state/issues": {
+      "types": "./src/state/issues.ts",
+      "default": "./src/state/issues.ts"
+    },
+    "./state/issue-trackers": {
+      "types": "./src/state/issueTrackers.ts",
+      "default": "./src/state/issueTrackers.ts"
+    },
     "./state/pull-requests": {
       "types": "./src/state/pullRequests.ts",
       "default": "./src/state/pullRequests.ts"
@@ -427,6 +439,10 @@
       "types": "./src/changeRequestLinks.ts",
       "default": "./src/changeRequestLinks.ts"
     },
+    "./issue-links": {
+      "types": "./src/issueLinks.ts",
+      "default": "./src/issueLinks.ts"
+    },
     "./thread-pull-requests": {
       "types": "./src/threadPullRequests.ts",
       "default": "./src/threadPullRequests.ts"
@@ -530,6 +546,14 @@
     "./pull-request-reviewers": {
       "types": "./src/pullRequestReviewers.ts",
       "default": "./src/pullRequestReviewers.ts"
+    },
+    "./issue-selection": {
+      "types": "./src/issueSelection.ts",
+      "default": "./src/issueSelection.ts"
+    },
+    "./pull-request-selection": {
+      "types": "./src/pullRequestSelection.ts",
+      "default": "./src/pullRequestSelection.ts"
     },
     "./provider-clients": {
       "types": "./src/providerClients.ts",

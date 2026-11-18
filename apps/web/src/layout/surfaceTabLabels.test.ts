@@ -29,6 +29,16 @@ describe("surfaceTabTitle", () => {
     expect(surfaceTabTitle({ id: "pull-requests", kind: "pull-requests" }, null)).toBe(
       "Pull requests",
     );
+    const issue = (key: string): RightPanelSurface => ({
+      id: `issue:${key}`,
+      kind: "issue",
+      projectId: "p",
+      tracker: "github",
+      scope: "acme/app",
+      key,
+    });
+    expect(surfaceTabTitle(issue("42"), null)).toBe("#42");
+    expect(surfaceTabTitle(issue("ENG-9"), null)).toBe("ENG-9");
     expect(
       surfaceTabTitle({ id: "side-chat:t", kind: "side-chat", threadId: ThreadId.make("t") }, null),
     ).toBe("Side chat");

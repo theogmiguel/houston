@@ -1,11 +1,12 @@
 import { EnvironmentId } from "@houston-app/contracts";
+import type { IssueTrackerKind, ProjectId } from "@houston-app/contracts";
 import type { HoustonTaskSummary } from "@houston-app/contracts/houston/tasks";
 
 import { squashAtomCommandFailure } from "@houston-app/client-runtime/state/runtime";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { PlusIcon, SearchIcon } from "lucide-react";
-import { use, useEffect, useState } from "react";
+import { lazy, Suspense, use, useEffect, useState } from "react";
 
 import { environmentProjects } from "~/state/projects";
 import { usePrimaryEnvironmentId } from "~/state/environments";
@@ -67,6 +68,11 @@ import {
 } from "./tasks.logic";
 
 export type { TasksSearch, TasksView } from "./tasksSearch";
+
+// A task's linked issue opens beside it, loaded only when someone follows the link.
+const IssueDetailPanel = lazy(() =>
+  import("../issue/IssueDetailPanel").then((module) => ({ default: module.IssueDetailPanel })),
+);
 
 function readableFailure(error: unknown): string {
   if (error instanceof Error && error.message.length > 0) return error.message;
@@ -240,15 +246,18 @@ export function TasksPage() {
   const selectedSurface = useRightPanelStore((state) =>
     selectSelectedRightPanelSurface(state.byThreadKey, TASKS_PANEL_REF),
   );
-  const activeTaskSurface =
-    selectedSurface?.kind === "task" && selectedSurface.environmentId === environmentId
+  const activePanelSurface =
+    selectedSurface !== null &&
+    (selectedSurface.kind === "task" || selectedSurface.kind === "issue") &&
+    selectedSurface.environmentId === environmentId
       ? selectedSurface
       : null;
-  const taskSurfaces = rightPanelState.surfaces.filter(
-    (surface): surface is Extract<RightPanelSurface, { kind: "task" }> => surface.kind === "task",
+  const panelSurfaces = rightPanelState.surfaces.filter(
+    (surface): surface is Extract<RightPanelSurface, { kind: "task" | "issue" }> =>
+      surface.kind === "task" || surface.kind === "issue",
   );
   const taskRightPanelOpen =
-    rightPanelState.isOpen && activeTaskSurface !== null && environmentId !== null;
+    rightPanelState.isOpen && activePanelSurface !== null && environmentId !== null;
 
   type TasksSearchPatch = { [K in keyof TasksSearch]?: TasksSearch[K] | undefined };
   const updateSearch = (patch: TasksSearchPatch) => {
@@ -287,11 +296,6 @@ export function TasksPage() {
       useRightPanelStore.getState().activateSurface(TASKS_PANEL_REF, existing.id);
     }
   }, [environmentId, search.task]);
-
-  const activeKeyTask =
-    activeTaskSurface?.taskKey ??
-    taskSurfaces.find((surface) => surface.id === rightPanelState.activeSurfaceId)?.taskKey ??
-    null;
 
   const closeSurface = (surface: RightPanelSurface) => {
     useRightPanelStore.getState().closeSurface(TASKS_PANEL_REF, surface.id);
@@ -562,7 +566,6 @@ export function TasksPage() {
                       : workspace)
                   }
                   onProjectChange={setSourceProjectId}
-                  onOpenTask={openTask}
                 />
               ) : view === "queue" ? (
                 <TaskQueueView
@@ -609,9 +612,9 @@ export function TasksPage() {
             getShortcutContext={getShortcutContext}
             widthStorageKey="houston:tasks-panel-width"
             defaultWidth={400}
-            surfaces={taskSurfaces}
+            surfaces={panelSurfaces}
             environmentId={environmentId}
-            activeSurfaceId={activeTaskSurface.id}
+            activeSurfaceId={activePanelSurface.id}
             pendingSurfaceIds={new Set()}
             previewSessions={{}}
             desktopByTabId={{}}
@@ -650,14 +653,30 @@ export function TasksPage() {
             pullRequestsAvailable={false}
             deviceAvailable={false}
           >
-            {activeKeyTask === null ? null : (
+            {activePanelSurface === null ? null : activePanelSurface.kind === "task" ? (
               <TaskDetailPanel
-                key={activeKeyTask}
+                key={activePanelSurface.id}
                 environmentId={environmentId}
-                taskKey={activeKeyTask}
+                taskKey={activePanelSurface.taskKey}
                 projects={projectOptions}
                 deliveries={deliveries}
               />
+            ) : (
+              <Suspense fallback={null}>
+                <IssueDetailPanel
+                  key={activePanelSurface.id}
+                  environmentId={environmentId}
+                  reference={{
+                    projectId: activePanelSurface.projectId as ProjectId,
+                    tracker: activePanelSurface.tracker as IssueTrackerKind,
+                    ...(activePanelSurface.host === undefined
+                      ? {}
+                      : { host: activePanelSurface.host }),
+                    scope: activePanelSurface.scope,
+                    key: activePanelSurface.key,
+                  }}
+                />
+              </Suspense>
             )}
           </RightPanelTabs>
         ) : null}

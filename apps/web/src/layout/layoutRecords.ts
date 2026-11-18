@@ -74,6 +74,7 @@ export function tabContentToRecord(content: LayoutTabContent): HoustonLayoutTabC
         context: content.context === null ? null : chatTargetToRecord(content.context),
       };
     case "pull-requests":
+    case "issues":
     case "tasks":
       return {
         kind: "page",

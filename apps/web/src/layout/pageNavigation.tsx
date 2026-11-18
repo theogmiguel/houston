@@ -13,6 +13,7 @@ import {
   type LayoutTabDestination,
 } from "./layoutModel";
 import { useLayoutStore } from "./layoutStore";
+import { readIssueListPreferences } from "../components/issue/issueListPreferences";
 import { readPullRequestListPreferences } from "../components/pullRequest/pullRequestListPreferences";
 
 /** The page tab a URL shows in the layout. Settings is a card over it, never a tab. */
@@ -23,6 +24,9 @@ export function layoutRoutePage(location: {
   if (location.pathname === "/pull-requests") {
     return { kind: "pull-requests", href: location.href };
   }
+  if (location.pathname === "/issues") {
+    return { kind: "issues", href: location.href };
+  }
   return location.pathname === "/tasks" ? { kind: "tasks", href: location.href } : null;
 }
 
@@ -31,6 +35,9 @@ export function layoutPageHref(content: LayoutPageContent): string {
   const url = new URL(href, "http://houston.invalid");
   if (content.href === undefined && content.kind === "pull-requests") {
     url.search = defaultStringifySearch(readPullRequestListPreferences());
+  }
+  if (content.href === undefined && content.kind === "issues") {
+    url.search = defaultStringifySearch(readIssueListPreferences());
   }
   url.searchParams.delete("pane");
   return `${url.pathname}${url.search}${url.hash}`;

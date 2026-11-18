@@ -52,7 +52,7 @@ const ChatTarget = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("draft"), draftId: Id }),
 ]);
 
-export const HOUSTON_LAYOUT_PAGES = ["pull-requests", "tasks"] as const;
+export const HOUSTON_LAYOUT_PAGES = ["pull-requests", "issues", "tasks"] as const;
 
 /** A thread or draft (chat), a thread's surface (surface), an empty tab (launcher) or a page. */
 export const HoustonLayoutTabContent = Schema.Union([

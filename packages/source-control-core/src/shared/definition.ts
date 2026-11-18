@@ -27,6 +27,17 @@ export interface ChangeRequestLink {
   readonly authority?: string;
 }
 
+/**
+ * An issue as a URL names it: the host it is served from, the container the tracker addresses
+ * it by, and its native key there. Written like a project's own binding, lower case, because
+ * links are matched against those.
+ */
+export interface IssueLink {
+  readonly host: string;
+  readonly scope: string;
+  readonly key: string;
+}
+
 export interface ParsedChangeRequestUrl extends ChangeRequestLink {
   /** The repository's browser URL, without query or hash. */
   readonly repositoryUrl: string;
@@ -258,6 +269,8 @@ export interface SourceControlDefinition {
   readonly parseCommitUrl?: (url: URL, known: boolean) => CommitLink | null;
   /** Null when the URL is not one of this host's change requests. */
   readonly parseChangeRequestUrl: (url: URL) => ParsedChangeRequestUrl | null;
+  /** Null when the URL is not one of this host's issues. Absent for a host with none. */
+  readonly parseIssueUrl?: (url: URL) => IssueLink | null;
   /**
    * The change request URL a `reference` autolink might name, such as a GitHub `#123` written
    * through the issue route. Only a candidate: the caller must read it as a change request
@@ -331,6 +344,11 @@ export interface SourceControlDefinition {
    * path, `owner/name`.
    */
   readonly repositorySelector?: (identity: RepositorySelectorIdentity) => string | null;
+  /**
+   * The container the project's issues live in, where that is not its repository: Azure DevOps
+   * keeps work items per project. Null when the repository cannot be placed.
+   */
+  readonly issueScope?: (identity: RepositorySelectorIdentity) => string | null;
   /**
    * For a host that spells one repository differently over SSH and on the web: the web spelling
    * of the `host/path` key `normalizeGitRemoteUrl` made from a remote that names a host. Null when
@@ -407,6 +425,17 @@ export function parseChangeRequestPath(url: URL, route: RegExp): ParsedChangeReq
         number,
         repositoryUrl: `${url.origin}/${repository}`,
       }
+    : null;
+}
+
+/** Reads an issue from `url` with `route`, whose groups are the scope and the issue number. */
+export function parseIssuePath(url: URL, route: RegExp): IssueLink | null {
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  const match = route.exec(url.pathname);
+  const scope = match?.[1];
+  const number = Number(match?.[2]);
+  return scope && Number.isSafeInteger(number) && number > 0
+    ? { host: url.hostname.toLowerCase(), scope: scope.toLowerCase(), key: String(number) }
     : null;
 }
 
@@ -614,6 +643,10 @@ export interface SourceControlDefinitionRegistry {
   readonly findByPublicDomain: (hostname: string) => SourceControlDefinition | undefined;
   /** The first host, in registry order, that reads `url` as one of its change requests. */
   readonly parseChangeRequestUrl: (url: string) => ParsedChangeRequest | null;
+  /** The first host, in registry order, that reads `url` as one of its issues. */
+  readonly parseIssueUrl: (
+    url: string,
+  ) => { readonly definition: SourceControlDefinition; readonly link: IssueLink } | null;
   readonly parseCommitUrl: (url: string, kind?: SourceControlProviderKind) => ParsedCommit | null;
   readonly findByChangeRequestUrl: (url: string) => SourceControlDefinition | undefined;
   readonly hostLabelForChangeRequestUrl: (url: string) => string;
@@ -632,6 +665,8 @@ export interface SourceControlDefinitionRegistry {
   readonly repositorySelector: (
     identity: RepositorySelectorIdentity | null | undefined,
   ) => string | null;
+  /** Where the project's issues live: the host's `issueScope`, else its repository. */
+  readonly issueScope: (identity: RepositorySelectorIdentity | null | undefined) => string | null;
   readonly changeRequestHost: <const Kind extends string | undefined>(
     identity: ChangeRequestHostIdentity,
     kind: Kind,
@@ -696,6 +731,10 @@ export function makeSourceControlDefinitionRegistry(
     }
     return null;
   };
+  const repositorySelector = (identity: RepositorySelectorIdentity | null | undefined) =>
+    identity?.provider === undefined
+      ? defaultRepositorySelector(identity)
+      : (byKind.get(identity.provider)?.repositorySelector ?? defaultRepositorySelector)(identity);
   return {
     definitions,
     get: (kind) =>
@@ -714,6 +753,15 @@ export function makeSourceControlDefinitionRegistry(
       );
     },
     parseChangeRequestUrl,
+    parseIssueUrl: (value) => {
+      const url = httpUrl(value);
+      if (url === null) return null;
+      for (const definition of claimOrder) {
+        const link = definition.parseIssueUrl?.(url) ?? null;
+        if (link !== null) return { definition, link };
+      }
+      return null;
+    },
     parseCommitUrl: (value, kind) => {
       const url = httpUrl(value);
       if (url === null) return null;
@@ -768,12 +816,14 @@ export function makeSourceControlDefinitionRegistry(
     },
     canonicalRepositoryKey: (key) => repositoryKeyOwner(key)?.canonical ?? key,
     findByRepositoryKey: (key) => repositoryKeyOwner(key)?.definition,
-    repositorySelector: (identity) =>
-      identity?.provider === undefined
-        ? defaultRepositorySelector(identity)
-        : (byKind.get(identity.provider)?.repositorySelector ?? defaultRepositorySelector)(
-            identity,
-          ),
+    repositorySelector,
+    issueScope: (identity) => {
+      const issueScope =
+        identity?.provider === undefined ? undefined : byKind.get(identity.provider)?.issueScope;
+      return issueScope === undefined || identity == null
+        ? repositorySelector(identity)
+        : issueScope(identity);
+    },
     changeRequestHost: (identity, kind) =>
       (kind === undefined ? undefined : byKind.get(kind)?.changeRequestHost?.(identity)) ??
       projectChangeRequestHost(identity, kind),

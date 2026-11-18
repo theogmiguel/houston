@@ -262,6 +262,8 @@ import { pickableProjectGroups } from "@houston-app/client-runtime/state/project
 import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
+import { readIssueListPreferences } from "~/components/issue/issueListPreferences";
+import { IssueGlyph } from "~/components/issue/issuePresentation";
 import { useActiveThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import { buildLayoutPaletteItems } from "../layout/layoutPaletteItems";
 import { useThreadActions } from "../hooks/useThreadActions";
@@ -1586,6 +1588,23 @@ function OpenCommandPaletteDialog(props: {
         },
       });
     }
+  }
+
+  if (
+    environments.some(
+      (environment) => environment.serverConfig?.environment.capabilities.issues === true,
+    )
+  ) {
+    actionItems.push({
+      kind: "action",
+      value: "action:issues",
+      searchTerms: ["issues", "issue", "bugs", "tracker", "github", "triage"],
+      title: "Open issues",
+      icon: <IssueGlyph.issue className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await navigate({ to: "/issues", search: readIssueListPreferences() });
+      },
+    });
   }
 
   actionItems.push({

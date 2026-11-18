@@ -24,11 +24,13 @@ import type {
 } from "@houston-app/contracts/houston/tasks";
 import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
 import * as McpProviderSessions from "@houston-app/provider-core/server/McpProviderSessions";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { TestClock } from "effect/testing";
 
 import * as GitWorkflow from "../../git/GitWorkflowService.ts";
+import * as IssueService from "../../issue/IssueService.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import * as McpSessionRegistryTestkit from "../../mcp/McpSessionRegistry.testkit.ts";
 import * as CommandReceiptStore from "../../orchestration-v2/CommandReceiptStore.ts";
@@ -36,6 +38,7 @@ import * as EffectWorker from "../../orchestration-v2/EffectWorker.ts";
 import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
+import * as ThreadIssueService from "../../orchestration-v2/ThreadIssueService.ts";
 import * as ProviderReplayHarness from "../../orchestration-v2/testkit/ProviderReplayHarness.ts";
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as ManagedProjectFolders from "../../project/ManagedProjectFolders.ts";
@@ -180,6 +183,8 @@ export interface RunsOptions {
   readonly databaseFile?: string;
   /** Boots as a restarted server: upstream's recovery settles runs whose provider is gone. */
   readonly restarted?: boolean;
+  /** What the tracker answers; the tasks testkit's stand-in when absent. */
+  readonly issueService?: Layer.Layer<IssueService.IssueService>;
 }
 
 const databaseOf = (options: RunsOptions) =>
@@ -224,7 +229,10 @@ export const withThreadsOnly = <A, E, R>(
 export const layerRuns = (harness: RunsHarness, options: RunsOptions = {}) => {
   const database = databaseOf(options);
   const orchestration = layerOrchestration(harness, options, database);
-  const tasks = layerTasks({ databaseLayer: database });
+  const tasks = layerTasks({
+    databaseLayer: database,
+    ...(options.issueService === undefined ? {} : { issueService: options.issueService }),
+  });
   const receipts = CommandReceiptStore.layer.pipe(Layer.provide(database));
   const threadManagement = ThreadManagement.layer.pipe(
     Layer.provide(Layer.mergeAll(orchestration, receipts, tasks)),
@@ -253,7 +261,17 @@ export const layerRuns = (harness: RunsHarness, options: RunsOptions = {}) => {
   ).pipe(Layer.provide(orchestration));
   const runs = HoustonTaskRuns.layer.pipe(
     Layer.provide(
-      Layer.mergeAll(launch, orchestration, registry, threadManagement, tasks, recordsOnly),
+      Layer.mergeAll(
+        launch,
+        orchestration,
+        registry,
+        threadManagement,
+        tasks,
+        recordsOnly,
+        ThreadIssueService.layer.pipe(
+          Layer.provide(Layer.merge(orchestration, SecureRandom.layerWebCrypto)),
+        ),
+      ),
     ),
   );
   return Layer.mergeAll(runs, tasks, orchestration, threadManagement, launch);
@@ -338,6 +356,7 @@ export const runWith = <A, E, R>(
             reviewer: null,
             focus: "bugs",
             reworkRounds: 0,
+            updateIssueState: false,
             ...settings,
           },
         })

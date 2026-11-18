@@ -35,7 +35,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as ProjectEnrichmentService from "./ProjectEnrichmentService.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as HoustonTaskStore from "../houston/tasks/TaskStore.ts";
-import * as HoustonTaskSourceStore from "../houston/taskSources/SourceStore.ts";
+import * as IssueTrackerBindings from "../persistence/IssueTrackerBindings.ts";
 import * as HoustonSlackStore from "../houston/slack/Store.ts";
 import * as HoustonMergeQueueStore from "../houston/mergeQueue/Store.ts";
 
@@ -180,8 +180,8 @@ export const make = Effect.gen(function* () {
   // Houston: the server and the project CLI provide the Tasks store; upstream's own test
   // assemblies do not, and a deletion that misses it is swept at the next server start.
   const houstonTasks = yield* Effect.serviceOption(HoustonTaskStore.HoustonTaskStore);
-  const houstonTaskSources = yield* Effect.serviceOption(
-    HoustonTaskSourceStore.HoustonTaskSourceStore,
+  const issueTrackerBindings = yield* Effect.serviceOption(
+    IssueTrackerBindings.IssueTrackerBindingsRepository,
   );
   const houstonSlack = yield* Effect.serviceOption(HoustonSlackStore.HoustonSlackStore);
   const houstonMergeQueue = yield* Effect.serviceOption(
@@ -543,8 +543,10 @@ export const make = Effect.gen(function* () {
       if (isFirstDelete) {
         yield* clearProjectSettingsOverrides(projectId);
         if (Option.isSome(houstonTasks)) yield* houstonTasks.value.projectRemoved(projectId);
-        if (Option.isSome(houstonTaskSources)) {
-          yield* houstonTaskSources.value.projectRemoved(projectId);
+        if (Option.isSome(issueTrackerBindings)) {
+          yield* issueTrackerBindings.value
+            .removeProject(projectId)
+            .pipe(Effect.orElseSucceed(() => undefined));
         }
         if (Option.isSome(houstonSlack)) yield* houstonSlack.value.projectRemoved(projectId);
         if (Option.isSome(houstonMergeQueue)) {

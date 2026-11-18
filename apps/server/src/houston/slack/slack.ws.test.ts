@@ -85,6 +85,8 @@ import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import * as ProviderSessionManager from "../../orchestration-v2/ProviderSessionManager.ts";
 import * as PullRequestReviewGuideService from "../../pullRequest/PullRequestReviewGuideService.ts";
 import * as PullRequestService from "../../pullRequest/PullRequestService.ts";
+import * as IssueService from "../../issue/IssueService.ts";
+import * as IssueTrackerConnections from "../../issue/IssueTrackerConnections.ts";
 import * as PullRequestSyncReactor from "../../orchestration-v2/PullRequestSyncReactor.ts";
 import * as RemoteOpenTargets from "../../environment/RemoteOpenTargets.ts";
 import * as ResourceTelemetry from "../../resourceTelemetry/ResourceTelemetry.ts";
@@ -127,8 +129,7 @@ import * as HoustonReviewState from "../reviewState.ts";
 import * as HoustonLayoutWorkspaces from "../layoutWorkspaces.ts";
 import * as HoustonMergeQueueService from "../mergeQueue/Service.ts";
 import { makeMemory } from "../secrets/HoustonSecrets.ts";
-import * as HoustonTaskSourceService from "../taskSources/SourceService.ts";
-import * as HoustonTaskSourceV1Import from "../taskSources/V1Import.ts";
+import * as HoustonIssueV1Import from "../../issue/V1Import.ts";
 import { createProject } from "../tasks/tasks.testkit.ts";
 import { HoustonSlackOutbox } from "./Outbox.ts";
 import {
@@ -172,8 +173,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(HostResources.HostResources)({}),
   Layer.mock(HoustonReviewState.HoustonReviewState)({}),
   Layer.mock(HoustonResumeSessions.HoustonResumeSessions)({}),
-  Layer.mock(HoustonTaskSourceService.HoustonTaskSourceService)({}),
-  Layer.mock(HoustonTaskSourceV1Import.HoustonTaskSourceV1Import)({}),
+  Layer.mock(HoustonIssueV1Import.HoustonIssueV1Import)({}),
   Layer.mock(HoustonLayoutWorkspaces.HoustonLayoutWorkspaceService)({}),
   Layer.mock(HoustonMergeQueueService.HoustonMergeQueueService)({}),
   Layer.mock(KnownWorkspaces.KnownWorkspaces)({}),
@@ -196,6 +196,8 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({}),
   Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
   Layer.mock(PullRequestService.PullRequestService)({}),
+  Layer.mock(IssueService.IssueService)({}),
+  Layer.mock(IssueTrackerConnections.IssueTrackerConnections)({}),
   Layer.mock(PullRequestSyncReactor.PullRequestSyncReactor)({}),
   Layer.mock(ResourceTelemetry.ResourceTelemetry)({}),
   Layer.mock(ReviewService.ReviewService)({}),

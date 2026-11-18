@@ -12,6 +12,12 @@ describe("layoutRoutePage", () => {
     }
   });
 
+  it("shows every issues URL as the layout's page tab, keeping its search", () => {
+    for (const href of ["/issues", "/issues?status=closed&q=bug", "/issues?key=42"]) {
+      expect(layoutRoutePage({ pathname: "/issues", href })).toEqual({ kind: "issues", href });
+    }
+  });
+
   it("shows every tasks URL as the layout's page tab, keeping its search", () => {
     for (const href of ["/tasks", "/tasks?view=sources&q=a", "/tasks?task=T-1"]) {
       expect(layoutRoutePage({ pathname: "/tasks", href })).toEqual({ kind: "tasks", href });

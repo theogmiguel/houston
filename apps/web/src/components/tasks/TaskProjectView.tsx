@@ -9,10 +9,16 @@ import { ArchiveIcon, ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import { useState } from "react";
 
 import { readLocalApi } from "~/localApi";
-import { refreshTaskInitiatives, refreshTaskDetail, useTaskInitiativesResult } from "~/state/tasks";
+import {
+  refreshTaskInitiatives,
+  refreshTaskDetail,
+  useTaskInitiativesResult,
+  useTaskSettings,
+} from "~/state/tasks";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
+import { Checkbox } from "../ui/checkbox";
 import { Input } from "../ui/input";
 import { Progress } from "../ui/progress";
 import { Separator } from "../ui/separator";
@@ -42,6 +48,7 @@ function ProjectEditorForm({
   initiative: HoustonTaskInitiative | null;
 }) {
   const commands = useTaskCommands(environmentId);
+  const settings = useTaskSettings(environmentId, projectId);
   const [name, setName] = useState(initiative?.name ?? "");
   const [trackerDescription, setTrackerDescription] = useState(
     initiative?.trackerDescription ?? "",
@@ -73,6 +80,23 @@ function ProjectEditorForm({
       return;
     }
     refreshTaskInitiatives(environmentId, projectId);
+  };
+
+  const saveUpdateIssueState = async (enabled: boolean) => {
+    if (settings === null || busy) return;
+    setBusy(true);
+    const outcome = await commands.setSettings({
+      projectId: projectId as never,
+      settings: { ...settings, updateIssueState: enabled },
+    });
+    setBusy(false);
+    if (outcome._tag === "Failure") {
+      toastManager.add({
+        type: "error",
+        title: "Task settings not saved",
+        description: readableFailure(squashAtomCommandFailure(outcome)),
+      });
+    }
   };
 
   const archive = async () => {
@@ -158,6 +182,29 @@ function ProjectEditorForm({
           aria-label="Local decisions"
           rows={4}
         />
+      </div>
+      <Separator />
+      <div className="flex min-w-0 flex-col gap-1.5">
+        <Text variant="caption" tone="muted" weight="medium">
+          Task settings
+        </Text>
+        <label className="flex min-w-0 items-start gap-2 py-0.5">
+          <Checkbox
+            checked={settings?.updateIssueState ?? false}
+            disabled={busy || settings === null}
+            onCheckedChange={(checked) => void saveUpdateIssueState(checked === true)}
+            aria-label="Update the linked issue's state"
+          />
+          <span className="flex min-w-0 flex-col">
+            <Text variant="callout">
+              Update the linked issue's state ({settings?.updateIssueState ? "On" : "Off"})
+            </Text>
+            <Text variant="caption" tone="muted">
+              In progress, In review, Done and Canceled move a linked issue to its tracker's
+              matching state; Done closes it with the first closed state.
+            </Text>
+          </span>
+        </label>
       </div>
       <div className="flex min-w-0 items-center gap-2">
         <Button size="sm" disabled={busy || name.trim().length === 0} onClick={() => void save()}>

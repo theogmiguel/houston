@@ -1,10 +1,4 @@
-import type { EnvironmentId, ProjectId } from "@houston-app/contracts";
-import type {
-  HoustonTaskSourceSettings,
-  HoustonTaskSourceSettingsInput,
-  HoustonTaskSourceStatusMapping,
-  HoustonTaskSourceImportStatus,
-} from "@houston-app/contracts/houston/taskSources";
+import type { EnvironmentId, IssueImportStatus, ProjectId } from "@houston-app/contracts";
 import type {
   HoustonSlackImportStatus,
   HoustonSlackInfo,
@@ -12,17 +6,7 @@ import type {
 } from "@houston-app/contracts/houston/slack";
 import { squashAtomCommandFailure } from "@houston-app/client-runtime/state/runtime";
 import { useAtomValue } from "@effect/atom-react";
-import { useNavigate } from "@tanstack/react-router";
-import {
-  CircleDotIcon,
-  ExternalLinkIcon,
-  FileTextIcon,
-  HashIcon,
-  PlusIcon,
-  RefreshCwIcon,
-  TriangleAlertIcon,
-  XIcon,
-} from "lucide-react";
+import { CircleDotIcon, ExternalLinkIcon, HashIcon, PlusIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 import * as Redacted from "effect/Redacted";
 import { AsyncResult } from "effect/reactivity";
@@ -32,9 +16,9 @@ import { requestConfirmDialog } from "~/confirmDialog";
 import { environmentProjects } from "~/state/projects";
 import { usePrimaryEnvironmentId } from "~/state/environments";
 import { slackEnvironment } from "~/state/slack";
-import { taskSourcesEnvironment } from "~/state/taskSources";
+import { v1IssueImportRun, v1IssueImportStatus } from "~/state/v1Import";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { Alert, AlertAction, AlertDescription } from "../ui/alert";
+import { Alert, AlertDescription } from "../ui/alert";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyTitle } from "../ui/empty";
@@ -43,21 +27,12 @@ import { Input } from "../ui/input";
 import { Separator } from "../ui/separator";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Skeleton } from "../ui/skeleton";
-import { Switch } from "../ui/switch";
 import { Text } from "../ui/text";
 import { toastManager } from "../ui/toast";
 import { RelativeTime } from "../RelativeTime";
-import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { SettingsGroup } from "./SettingsGroup";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
-import {
-  blankToNull,
-  joinStatusValues,
-  parseStatusValues,
-  slackConnectionState,
-  taskSourceProviderLabel,
-  taskSourceState,
-} from "../tasks/taskSources.logic";
+import { slackConnectionState } from "../tasks/taskSources.logic";
 
 const SLACK_MANIFEST = {
   display_information: { name: "Houston" },
@@ -489,29 +464,18 @@ function SlackConfigured({
           }
         />
       </SettingsGroup>
-      <div className="flex justify-end">
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <Glyph icon={CircleDotIcon} className="size-3.5" />
+          <Text variant="caption" tone="muted" breakWords>
+            Notion pages are issues on the Issues page; a task can be created from one.
+          </Text>
+        </div>
         <Button size="sm" disabled={busy !== null} onClick={() => void save()}>
           Save
         </Button>
       </div>
     </SettingsSection>
-  );
-}
-
-/** A phone's loading state: card rows shaped like the settings rows they stand for. */
-function TaskSourcesSkeletonRows({ count }: { readonly count: number }) {
-  return (
-    <SettingsGroup className="phone:hidden" aria-hidden>
-      {Array.from({ length: count }, (_, index) => (
-        <div key={index} className="flex items-center justify-between gap-3 px-4 py-3">
-          <div className="min-w-0 flex-1 space-y-2">
-            <Skeleton shape="pill" className="h-4 w-28" />
-            <Skeleton shape="pill" className="h-3 w-full max-w-xs" />
-          </div>
-          <Skeleton className="size-7 shrink-0" />
-        </div>
-      ))}
-    </SettingsGroup>
   );
 }
 
@@ -521,12 +485,7 @@ function SlackSettings({ environmentId }: { environmentId: EnvironmentId }) {
     .filter((project) => project.environmentId === environmentId)
     .map((project) => ({ id: project.id as string, title: project.title }));
   if (AsyncResult.isInitial(infoResult) && !AsyncResult.isSuccess(infoResult)) {
-    return (
-      <>
-        <Skeleton className="h-40 w-full max-phone:hidden" />
-        <TaskSourcesSkeletonRows count={2} />
-      </>
-    );
+    return <Skeleton className="h-40 w-full max-phone:hidden" />;
   }
   if (AsyncResult.isFailure(infoResult)) {
     return (
@@ -543,595 +502,15 @@ function SlackSettings({ environmentId }: { environmentId: EnvironmentId }) {
   );
 }
 
-interface ProviderForm {
-  readonly repository: string;
-  readonly label: string;
-  readonly assignedUser: string;
-  readonly dataSourceId: string;
-  readonly assigneeUserId: string;
-  readonly activeStatuses: string;
-  readonly titlePropertyId: string;
-  readonly descriptionPropertyId: string;
-  readonly statusPropertyId: string;
-  readonly assigneePropertyId: string;
-  readonly projectRelationPropertyId: string;
-  readonly projectsDataSourceId: string;
-  readonly projectTitlePropertyId: string;
-  readonly projectDescriptionPropertyId: string;
-  readonly prUrlPropertyId: string;
-  readonly statusMapping: HoustonTaskSourceStatusMapping;
-}
-
-function formOf(settings: HoustonTaskSourceSettings): ProviderForm {
-  return {
-    repository: settings.githubRepository ?? "",
-    label: settings.githubLabel ?? "",
-    assignedUser: settings.githubAssignedUser ?? "",
-    dataSourceId: settings.notionDataSourceId ?? "",
-    assigneeUserId: settings.notionAssigneeUserId ?? "",
-    activeStatuses: joinStatusValues(settings.notionActiveStatusValues),
-    titlePropertyId: settings.notionTitlePropertyId ?? "",
-    descriptionPropertyId: settings.notionDescriptionPropertyId ?? "",
-    statusPropertyId: settings.notionStatusPropertyId ?? "",
-    assigneePropertyId: settings.notionAssigneePropertyId ?? "",
-    projectRelationPropertyId: settings.notionProjectRelationPropertyId ?? "",
-    projectsDataSourceId: settings.notionProjectsDataSourceId ?? "",
-    projectTitlePropertyId: settings.notionProjectTitlePropertyId ?? "",
-    projectDescriptionPropertyId: settings.notionProjectDescriptionPropertyId ?? "",
-    prUrlPropertyId: settings.notionPrUrlPropertyId ?? "",
-    statusMapping: settings.notionStatusMapping,
-  };
-}
-
-function ProviderCard({
-  environmentId,
-  settings,
-  projectId,
-}: {
-  environmentId: EnvironmentId;
-  settings: HoustonTaskSourceSettings;
-  projectId: ProjectId;
-}) {
-  const saveSettings = useAtomCommand(taskSourcesEnvironment.saveSettings);
-  const setCredential = useAtomCommand(taskSourcesEnvironment.setCredential);
-  const clearCredential = useAtomCommand(taskSourcesEnvironment.clearCredential);
-  const syncNow = useAtomCommand(taskSourcesEnvironment.syncNow);
-  const [form, setForm] = useState<ProviderForm>(() => formOf(settings));
-  const [token, setToken] = useState("");
-  const [replacingToken, setReplacingToken] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const providerLabel = taskSourceProviderLabel(settings.provider);
-  const state = taskSourceState(settings);
-  const isGithub = settings.provider === "github_issues";
-  const Icon = isGithub ? CircleDotIcon : FileTextIcon;
-
-  const input = (
-    patch: Partial<HoustonTaskSourceSettingsInput> = {},
-  ): HoustonTaskSourceSettingsInput => ({
-    enabled: settings.enabled,
-    githubRepository: blankToNull(form.repository),
-    githubLabel: blankToNull(form.label),
-    githubAssignedUser: blankToNull(form.assignedUser),
-    notionDataSourceId: blankToNull(form.dataSourceId),
-    notionTitlePropertyId: blankToNull(form.titlePropertyId),
-    notionDescriptionPropertyId: blankToNull(form.descriptionPropertyId),
-    notionStatusPropertyId: blankToNull(form.statusPropertyId),
-    notionAssigneePropertyId: blankToNull(form.assigneePropertyId),
-    notionProjectRelationPropertyId: blankToNull(form.projectRelationPropertyId),
-    notionAssigneeUserId: blankToNull(form.assigneeUserId),
-    notionActiveStatusValues: parseStatusValues(form.activeStatuses),
-    notionProjectsDataSourceId: blankToNull(form.projectsDataSourceId),
-    notionProjectTitlePropertyId: blankToNull(form.projectTitlePropertyId),
-    notionProjectDescriptionPropertyId: blankToNull(form.projectDescriptionPropertyId),
-    notionPrUrlPropertyId: blankToNull(form.prUrlPropertyId),
-    notionStatusMapping: form.statusMapping,
-    ...patch,
-  });
-
-  const save = async (patch: Partial<HoustonTaskSourceSettingsInput> = {}) => {
-    if (busy) return;
-    setBusy(true);
-    const outcome = await saveSettings({
-      environmentId,
-      input: {
-        projectId,
-        provider: settings.provider,
-        expectedRevision: settings.revision,
-        settings: input(patch),
-      },
-    });
-    setBusy(false);
-    if (outcome._tag === "Failure") {
-      toastManager.add({
-        type: "error",
-        title: `${providerLabel} not saved`,
-        description: readableFailure(squashAtomCommandFailure(outcome)),
-      });
-    }
-  };
-
-  const setNotionToken = async () => {
-    const value = token.trim();
-    if (value.length === 0 || busy) return;
-    setBusy(true);
-    const outcome = await setCredential({
-      environmentId,
-      input: {
-        projectId,
-        provider: "notion",
-        token: Redacted.make(value),
-      },
-    });
-    setBusy(false);
-    if (outcome._tag === "Failure") {
-      toastManager.add({
-        type: "error",
-        title: "Notion token not saved",
-        description: readableFailure(squashAtomCommandFailure(outcome)),
-      });
-      return;
-    }
-    setToken("");
-    setReplacingToken(false);
-  };
-
-  const clearNotionToken = async () => {
-    if (busy) return;
-    setBusy(true);
-    const outcome = await clearCredential({
-      environmentId,
-      input: { projectId, provider: "notion" },
-    });
-    setBusy(false);
-    if (outcome._tag === "Failure") {
-      toastManager.add({
-        type: "error",
-        title: "Notion token not removed",
-        description: readableFailure(squashAtomCommandFailure(outcome)),
-      });
-    }
-  };
-
-  const runSync = async () => {
-    if (busy) return;
-    setBusy(true);
-    const outcome = await syncNow({ environmentId, input: { projectId } });
-    setBusy(false);
-    if (outcome._tag === "Failure") {
-      toastManager.add({
-        type: "error",
-        title: `${providerLabel} not synced`,
-        description: readableFailure(squashAtomCommandFailure(outcome)),
-      });
-    }
-  };
-
-  return (
-    <div className="flex min-w-0 flex-col gap-1.5">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-1">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <Glyph icon={Icon} className="size-4" />
-          <Text variant="headline" weight="medium">
-            {providerLabel}
-          </Text>
-          {stateBadge(state)}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button size="xs" variant="outline" disabled={busy} onClick={() => void runSync()}>
-            <RefreshCwIcon aria-hidden />
-            Sync now
-          </Button>
-          <Switch
-            size="sm"
-            checked={settings.enabled}
-            disabled={busy}
-            aria-label={`Enable ${providerLabel}`}
-            onCheckedChange={(checked) => void save({ enabled: Boolean(checked) })}
-          />
-        </div>
-      </div>
-      <SettingsGroup>
-        {isGithub ? (
-          <>
-            <SettingsRow
-              title="Repository"
-              description="owner/repository. Reads issues with your gh sign-in."
-              control={
-                <Input
-                  font="mono"
-                  className="w-56"
-                  value={form.repository}
-                  placeholder="owner/repository"
-                  aria-label="GitHub repository"
-                  onChange={(event) => setForm({ ...form, repository: event.currentTarget.value })}
-                />
-              }
-            />
-            <SettingsRow
-              title="Label"
-              description="Issues with this label become tasks."
-              control={
-                <Input
-                  font="mono"
-                  className="w-56"
-                  value={form.label}
-                  placeholder="houston-ready"
-                  aria-label="GitHub label"
-                  onChange={(event) => setForm({ ...form, label: event.currentTarget.value })}
-                />
-              }
-            />
-            <SettingsRow
-              title="Assigned user"
-              description="Issues assigned to this user become tasks, with or without the label."
-              control={
-                <Input
-                  font="mono"
-                  className="w-56"
-                  value={form.assignedUser}
-                  placeholder="theo"
-                  aria-label="GitHub assigned user"
-                  onChange={(event) =>
-                    setForm({ ...form, assignedUser: event.currentTarget.value })
-                  }
-                />
-              }
-            />
-          </>
-        ) : (
-          <>
-            <SettingsRow
-              title="Integration token"
-              description="Stored as a secret on the server. A saved token is never shown again."
-              control={
-                settings.hasCredential ? (
-                  <div className="flex items-center gap-2">
-                    <Badge variant="success">Saved</Badge>
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => setReplacingToken((value) => !value)}
-                    >
-                      {replacingToken ? "Cancel" : "Replace…"}
-                    </Button>
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => void clearNotionToken()}
-                    >
-                      Clear
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1.5">
-                    <Input
-                      type="password"
-                      autoComplete="off"
-                      className="w-56"
-                      value={token}
-                      placeholder="Enter a new token"
-                      aria-label="Notion integration token"
-                      onChange={(event) => setToken(event.currentTarget.value)}
-                    />
-                    <Button
-                      size="xs"
-                      disabled={busy || token.trim().length === 0}
-                      onClick={() => void setNotionToken()}
-                    >
-                      Save token
-                    </Button>
-                  </div>
-                )
-              }
-            />
-            {settings.hasCredential && replacingToken ? (
-              <SettingsRow
-                title="New token"
-                description="Replaces the saved token."
-                control={
-                  <div className="flex items-center gap-1.5">
-                    <Input
-                      type="password"
-                      autoComplete="off"
-                      className="w-56"
-                      value={token}
-                      placeholder="Enter a new token"
-                      aria-label="Integration token"
-                      onChange={(event) => setToken(event.currentTarget.value)}
-                    />
-                    <Button
-                      size="xs"
-                      disabled={busy || token.trim().length === 0}
-                      onClick={() => void setNotionToken()}
-                    >
-                      Save token
-                    </Button>
-                  </div>
-                }
-              />
-            ) : null}
-            <SettingsRow
-              title="Tasks data source"
-              description="The Notion database Houston reads tasks from."
-              control={
-                <Input
-                  font="mono"
-                  className="w-56"
-                  value={form.dataSourceId}
-                  placeholder="8f3a…"
-                  aria-label="Notion tasks data source"
-                  onChange={(event) =>
-                    setForm({ ...form, dataSourceId: event.currentTarget.value })
-                  }
-                />
-              }
-            />
-            <SettingsRow
-              title="Assignee"
-              description="Only pages assigned to this Notion user."
-              control={
-                <Input
-                  font="mono"
-                  className="w-56"
-                  value={form.assigneeUserId}
-                  placeholder="b17d…"
-                  aria-label="Notion assignee user"
-                  onChange={(event) =>
-                    setForm({ ...form, assigneeUserId: event.currentTarget.value })
-                  }
-                />
-              }
-            />
-            <SettingsRow
-              title="Active statuses"
-              description="Comma-separated Notion options Houston treats as open."
-              control={
-                <Input
-                  className="w-56"
-                  value={form.activeStatuses}
-                  placeholder="Todo, In progress"
-                  aria-label="Notion active statuses"
-                  onChange={(event) =>
-                    setForm({ ...form, activeStatuses: event.currentTarget.value })
-                  }
-                />
-              }
-            />
-            <FoldedSettingsSection
-              id={`notion-status-mapping-${settings.projectId}`}
-              title="Status mapping"
-              summary="Five Houston statuses to Notion options."
-            >
-              {(
-                [
-                  ["todo", "Todo"],
-                  ["inProgress", "In progress"],
-                  ["inReview", "In review"],
-                  ["done", "Done"],
-                  ["canceled", "Canceled"],
-                ] as const
-              ).map(([key, label]) => (
-                <SettingsRow
-                  key={key}
-                  title={label}
-                  control={
-                    <Input
-                      className="w-56"
-                      value={form.statusMapping[key] ?? ""}
-                      aria-label={`Notion option for ${label}`}
-                      onChange={(event) =>
-                        setForm({
-                          ...form,
-                          statusMapping: {
-                            ...form.statusMapping,
-                            [key]: blankToNull(event.currentTarget.value),
-                          },
-                        })
-                      }
-                    />
-                  }
-                />
-              ))}
-            </FoldedSettingsSection>
-            <FoldedSettingsSection
-              id={`notion-property-mapping-${settings.projectId}`}
-              title="Property mapping"
-              summary="The Notion property IDs Houston reads and writes."
-            >
-              {(
-                [
-                  ["titlePropertyId", "Title property", form.titlePropertyId],
-                  ["descriptionPropertyId", "Description property", form.descriptionPropertyId],
-                  ["statusPropertyId", "Status property", form.statusPropertyId],
-                  ["assigneePropertyId", "Assignee property", form.assigneePropertyId],
-                  [
-                    "projectRelationPropertyId",
-                    "Project relation property",
-                    form.projectRelationPropertyId,
-                  ],
-                  ["projectsDataSourceId", "Projects data source", form.projectsDataSourceId],
-                  ["projectTitlePropertyId", "Project title property", form.projectTitlePropertyId],
-                  [
-                    "projectDescriptionPropertyId",
-                    "Project description property",
-                    form.projectDescriptionPropertyId,
-                  ],
-                  ["prUrlPropertyId", "Pull request URL property", form.prUrlPropertyId],
-                ] as const
-              ).map(([key, label, value]) => (
-                <SettingsRow
-                  key={key}
-                  title={label}
-                  control={
-                    <Input
-                      font="mono"
-                      className="w-56"
-                      value={value}
-                      aria-label={label}
-                      onChange={(event) => setForm({ ...form, [key]: event.currentTarget.value })}
-                    />
-                  }
-                />
-              ))}
-            </FoldedSettingsSection>
-          </>
-        )}
-      </SettingsGroup>
-      {settings.lastError === null ? null : (
-        <div className="px-1">
-          <Text variant="caption" tone="danger">
-            {settings.lastError}
-          </Text>
-        </div>
-      )}
-      <div className="flex justify-end">
-        <Button size="sm" disabled={busy} onClick={() => void save()}>
-          Save
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function ProjectSourcesSettings({ environmentId }: { environmentId: EnvironmentId }) {
-  const projects = useAtomValue(environmentProjects.projectsAtom)
-    .filter((project) => project.environmentId === environmentId)
-    .map((project) => ({ id: project.id as string, title: project.title }));
-  const [selected, setSelected] = useState<string | null>(null);
-  const projectId = selected ?? projects[0]?.id ?? null;
-  if (projectId === null) {
-    return (
-      <SettingsSection title="Project sources">
-        <Empty size="compact">
-          <EmptyTitle>No workspace to configure</EmptyTitle>
-          <EmptyDescription>Source settings belong to a workspace.</EmptyDescription>
-        </Empty>
-      </SettingsSection>
-    );
-  }
-  return (
-    <ProjectSourcesContent
-      key={projectId}
-      environmentId={environmentId}
-      projects={projects}
-      projectId={projectId}
-      onSelect={setSelected}
-    />
-  );
-}
-
-function ProjectSourcesContent({
-  environmentId,
-  projects,
-  projectId,
-  onSelect,
-}: {
-  environmentId: EnvironmentId;
-  projects: ReadonlyArray<{ readonly id: string; readonly title: string }>;
-  projectId: string;
-  onSelect: (projectId: string) => void;
-}) {
-  const typedProjectId = projectId as ProjectId;
-  const settingsResult = useAtomValue(
-    taskSourcesEnvironment.settings({ environmentId, input: { projectId: typedProjectId } }),
-  );
-  return (
-    <SettingsSection
-      id="task-sources-project"
-      title="Project sources"
-      headerAction={
-        <div className="w-48">
-          <Select
-            value={projectId}
-            onValueChange={(value) => {
-              if (typeof value === "string") onSelect(value);
-            }}
-          >
-            <SelectTrigger aria-label="Project sources workspace">
-              <SelectValue>
-                {projects.find((project) => project.id === projectId)?.title ??
-                  "Choose a workspace"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectPopup>
-              {projects.map((project) => (
-                <SelectItem key={project.id} value={project.id}>
-                  {project.title}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-        </div>
-      }
-      variant="plain"
-    >
-      {AsyncResult.isInitial(settingsResult) ? (
-        <>
-          <Skeleton className="h-52 w-full max-phone:hidden" />
-          <TaskSourcesSkeletonRows count={3} />
-        </>
-      ) : AsyncResult.isFailure(settingsResult) ? (
-        <Alert variant="error">
-          <AlertDescription>
-            {readableFailure(squashAtomCommandFailure(settingsResult))}
-          </AlertDescription>
-        </Alert>
-      ) : (
-        settingsResult.value.map((settings) => (
-          <ProviderCard
-            key={`${settings.provider}:${settings.revision}`}
-            environmentId={environmentId}
-            settings={settings}
-            projectId={typedProjectId}
-          />
-        ))
-      )}
-    </SettingsSection>
-  );
-}
-
-function ConflictsBanner({ environmentId }: { environmentId: EnvironmentId }) {
-  const navigate = useNavigate();
-  const conflictsResult = useAtomValue(
-    taskSourcesEnvironment.conflicts({ environmentId, input: {} }),
-  );
-  const count = AsyncResult.isSuccess(conflictsResult) ? conflictsResult.value.length : 0;
-  if (count === 0) return null;
-  return (
-    <Alert variant="warning" controlAlignment="first-line">
-      <TriangleAlertIcon aria-hidden />
-      <AlertDescription>
-        {count} task{count === 1 ? "" : "s"} changed in both Houston and a tracker. Choose which
-        value to keep on each task.
-      </AlertDescription>
-      <AlertAction>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => void navigate({ to: "/tasks", search: { view: "sources" } as never })}
-        >
-          Review in Tasks
-        </Button>
-      </AlertAction>
-    </Alert>
-  );
-}
-
-function importDescription(
-  status: HoustonTaskSourceImportStatus | HoustonSlackImportStatus,
-): string {
+function importDescription(status: IssueImportStatus | HoustonSlackImportStatus): string {
   switch (status.state) {
-    case "available": {
-      if ("settings" in status) {
-        return `${status.settings} source settings and ${status.links} task links in ${status.source}.`;
-      }
-      return `${status.channels} channels and ${status.requests} requests in ${status.source}.`;
-    }
+    case "available":
+      return "links" in status
+        ? `${status.links} Notion page link(s) in ${status.source}.`
+        : `${status.channels} channels and ${status.requests} requests in ${status.source}.`;
     case "imported":
       return "links" in status.counts
-        ? `${status.counts.settings} source settings and ${status.counts.links} links imported.`
+        ? `${status.counts.links} Notion page link(s) imported, ${status.counts.skipped} skipped.`
         : `${status.counts.channels} channels and ${status.counts.requests} requests imported.`;
     case "blocked":
       return status.reason;
@@ -1141,20 +520,18 @@ function importDescription(
 }
 
 function ImportSection({ environmentId }: { environmentId: EnvironmentId }) {
-  const sourcesStatus = useAtomValue(
-    taskSourcesEnvironment.importStatus({ environmentId, input: {} }),
-  );
+  const issuesStatus = useAtomValue(v1IssueImportStatus({ environmentId, input: {} }));
   const slackStatus = useAtomValue(slackEnvironment.importStatus({ environmentId, input: {} }));
-  const runSources = useAtomCommand(taskSourcesEnvironment.importRun);
+  const runIssues = useAtomCommand(v1IssueImportRun);
   const runSlack = useAtomCommand(slackEnvironment.importRun);
-  const [busy, setBusy] = useState<"sources" | "slack" | null>(null);
+  const [busy, setBusy] = useState<"issues" | "slack" | null>(null);
 
-  const run = async (kind: "sources" | "slack") => {
+  const run = async (kind: "issues" | "slack") => {
     if (busy !== null) return;
     setBusy(kind);
     const outcome =
-      kind === "sources"
-        ? await runSources({ environmentId, input: {} })
+      kind === "issues"
+        ? await runIssues({ environmentId, input: {} })
         : await runSlack({ environmentId, input: {} });
     setBusy(null);
     if (outcome._tag === "Failure") {
@@ -1167,14 +544,14 @@ function ImportSection({ environmentId }: { environmentId: EnvironmentId }) {
   };
 
   const rows: ReadonlyArray<{
-    readonly kind: "sources" | "slack";
+    readonly kind: "issues" | "slack";
     readonly title: string;
-    readonly status: HoustonTaskSourceImportStatus | HoustonSlackImportStatus | null;
+    readonly status: IssueImportStatus | HoustonSlackImportStatus | null;
   }> = [
     {
-      kind: "sources",
-      title: "Task source history",
-      status: AsyncResult.isSuccess(sourcesStatus) ? sourcesStatus.value : null,
+      kind: "issues",
+      title: "Notion issue links",
+      status: AsyncResult.isSuccess(issuesStatus) ? issuesStatus.value : null,
     },
     {
       kind: "slack",
@@ -1224,9 +601,7 @@ export function TaskSourcesSettingsPanel() {
   }
   return (
     <SettingsPageContainer>
-      <ConflictsBanner environmentId={environmentId} />
       <SlackSettings environmentId={environmentId} />
-      <ProjectSourcesSettings environmentId={environmentId} />
       <ImportSection environmentId={environmentId} />
     </SettingsPageContainer>
   );

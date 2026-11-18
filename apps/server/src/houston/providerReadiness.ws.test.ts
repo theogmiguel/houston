@@ -93,6 +93,8 @@ import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ProviderSessionManager from "../orchestration-v2/ProviderSessionManager.ts";
 import * as PullRequestReviewGuideService from "../pullRequest/PullRequestReviewGuideService.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
+import * as IssueService from "../issue/IssueService.ts";
+import * as IssueTrackerConnections from "../issue/IssueTrackerConnections.ts";
 import * as PullRequestSyncReactor from "../orchestration-v2/PullRequestSyncReactor.ts";
 import * as RemoteOpenTargets from "../environment/RemoteOpenTargets.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
@@ -138,11 +140,10 @@ import * as HoustonReviewState from "./reviewState.ts";
 import * as HoustonTaskService from "./tasks/TaskService.ts";
 import * as HoustonTaskRuns from "./tasks/TaskRuns.ts";
 import * as HoustonTaskV1Import from "./tasks/V1Import.ts";
-import * as HoustonTaskSourceService from "./taskSources/SourceService.ts";
 import * as HoustonLayoutWorkspaces from "./layoutWorkspaces.ts";
 import * as HoustonSlackService from "./slack/Service.ts";
 import * as HoustonSlackV1Import from "./slack/V1Import.ts";
-import * as HoustonTaskSourceV1Import from "./taskSources/V1Import.ts";
+import * as HoustonIssueV1Import from "../issue/V1Import.ts";
 import * as HoustonMergeQueueService from "./mergeQueue/Service.ts";
 
 const decodeReadiness = Schema.decodeUnknownSync(ProviderReadiness);
@@ -425,6 +426,8 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({}),
   Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
   Layer.mock(PullRequestService.PullRequestService)({}),
+  Layer.mock(IssueService.IssueService)({}),
+  Layer.mock(IssueTrackerConnections.IssueTrackerConnections)({}),
   Layer.mock(PullRequestSyncReactor.PullRequestSyncReactor)({}),
   Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({}),
   Layer.mock(ResourceTelemetry.ResourceTelemetry)({}),
@@ -434,11 +437,10 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(HoustonTaskService.HoustonTaskService)({}),
   Layer.mock(HoustonTaskRuns.HoustonTaskRuns)({}),
   Layer.mock(HoustonTaskV1Import.HoustonTaskV1Import)({}),
-  Layer.mock(HoustonTaskSourceService.HoustonTaskSourceService)({}),
   Layer.mock(HoustonLayoutWorkspaces.HoustonLayoutWorkspaceService)({}),
   Layer.mock(HoustonSlackService.HoustonSlackService)({}),
   Layer.mock(HoustonSlackV1Import.HoustonSlackV1Import)({}),
-  Layer.mock(HoustonTaskSourceV1Import.HoustonTaskSourceV1Import)({}),
+  Layer.mock(HoustonIssueV1Import.HoustonIssueV1Import)({}),
   Layer.mock(HoustonMergeQueueService.HoustonMergeQueueService)({}),
   Layer.mock(ScheduledTasks.ScheduledTaskService)({}),
   Layer.mock(SecretRequests.SecretRequests)({}),

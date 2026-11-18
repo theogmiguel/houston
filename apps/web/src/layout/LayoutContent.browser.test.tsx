@@ -17,7 +17,9 @@ import {
   threadWithHistory,
 } from "../../test/fakeEnvironment";
 import { render } from "../../test/render";
+import { useClosedViewStore } from "../closedViewStore";
 import { openThreadInLayout } from "../threads/openThreadInLayout";
+import { closeLayoutTabByUser } from "./layoutActions";
 import { buildLayout } from "./layoutFixtures";
 import { selectFocusedTab, type LayoutState } from "./layoutModel";
 import { useLayoutStore } from "./layoutStore";
@@ -192,6 +194,23 @@ it(
   APP_BOOT_TEST_TIMEOUT_MS,
 );
 
+it(
+  "an issues route opens an Issues tab in the layout instead of replacing the window",
+  async () => {
+    await using app = await bootAt(threadPath("thread-a"));
+    await vi.waitFor(() => {
+      expect(app.screen.container.querySelector("[data-layout-tab-add]")).not.toBeNull();
+    });
+    await app.router.navigate({ to: "/issues", search: {} as never });
+    await vi.waitFor(() => {
+      expect(app.screen.container.querySelector('[data-layout-page-tab="issues"]')).not.toBeNull();
+    });
+    expect(selectFocusedTab(useLayoutStore.getState().layout)?.content.kind).toBe("issues");
+    expect(app.screen.container.querySelector("[data-layout-chat-tab]")).not.toBeNull();
+  },
+  APP_BOOT_TEST_TIMEOUT_MS,
+);
+
 const rowStartingWith = (container: Element, label: string) =>
   Array.from(container.querySelectorAll<HTMLElement>("[data-layout-launcher-row]")).find((row) =>
     row.textContent?.startsWith(label),
@@ -263,6 +282,49 @@ it(
         kind: "chat",
         target: { threadRef: { threadId: "thread-c" } },
       });
+    });
+  },
+  APP_BOOT_TEST_TIMEOUT_MS,
+);
+
+it(
+  "a related thread takes over its opener's tab, and the same tab returns to the opener",
+  async () => {
+    await using app = await bootAt(threadPath("thread-a"), [[[["thread-a", "thread-c"]]]]);
+    await vi.waitFor(() => expect(focusedTabId()).toBe("thread-a"));
+    const tabId = focusedTabId()!;
+    const open = (from: string, to: string) =>
+      openThreadInLayout(
+        {
+          navigate: (options) => app.router.navigate(options),
+          pathname: () => app.router.state.location.pathname,
+        },
+        scopeThreadRef(ENVIRONMENT_ID, ThreadId.make(to)),
+        { from: scopeThreadRef(ENVIRONMENT_ID, ThreadId.make(from)) },
+      );
+    const tabLabel = () =>
+      app.screen.container.querySelector(`[data-layout-pane-tab="${tabId}"]`)?.textContent ?? "";
+
+    await open("thread-a", "thread-b");
+    await vi.waitFor(() => {
+      expect(app.router.state.location.pathname).toBe(threadPath("thread-b"));
+      expect(tabLabel()).toContain("Thread thread-b");
+    });
+    expect(focusedTabId()).toBe(tabId);
+    expect(tabCount()).toBe(2);
+
+    await open("thread-b", "thread-a");
+    await vi.waitFor(() => {
+      expect(app.router.state.location.pathname).toBe(threadPath("thread-a"));
+      expect(tabLabel()).toContain("Thread thread-a");
+    });
+    expect(focusedTabId()).toBe(tabId);
+    expect(tabCount()).toBe(2);
+
+    closeLayoutTabByUser(tabId);
+    expect(useClosedViewStore.getState().entries[0]).toMatchObject({
+      kind: "chat",
+      threadRef: { environmentId: ENVIRONMENT_ID, threadId: "thread-a" },
     });
   },
   APP_BOOT_TEST_TIMEOUT_MS,

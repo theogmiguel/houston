@@ -3,6 +3,8 @@ import { getTerminalLabel } from "@houston-app/shared/terminalLabels";
 
 import type { RightPanelSurface } from "../rightPanelStore";
 
+const NUMERIC_ISSUE_KEY = /^\d+$/;
+
 /** Tabs show the command; the tooltip retains the complete terminal label. */
 export function terminalTabTitle(terminalId: string, label: string | undefined): string {
   const command = label?.split(" · ").at(-1)?.trim();
@@ -30,6 +32,8 @@ export function surfaceTabTitle(
       return `#${surface.number}`;
     case "pull-requests":
       return "Pull requests";
+    case "issue":
+      return NUMERIC_ISSUE_KEY.test(surface.key) ? `#${surface.key}` : surface.key;
     case "device":
       return surface.title ?? surface.target?.name ?? "Device";
     case "side-chat":

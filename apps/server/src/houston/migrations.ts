@@ -1,6 +1,7 @@
 import { HoustonLayoutWorkspaceRecord } from "@houston-app/contracts/houston/layoutWorkspaces";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Migrator from "effect/sql/Migrator";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -37,6 +38,10 @@ const Grids = Effect.gen(function* () {
 });
 
 const encodeWorkspace = Schema.encodeSync(Schema.fromJsonString(HoustonLayoutWorkspaceRecord));
+
+const JsonText = Schema.fromJsonString(Schema.Unknown);
+const decodeJson = Schema.decodeUnknownOption(JsonText);
+const encodeJson = Schema.encodeSync(JsonText);
 
 // One row per layout workspace (record_json is the contract's record). Every grid is copied in as
 // columns of panes, houston_grids untouched; a lossy conversion is logged per workspace. An empty
@@ -125,12 +130,10 @@ const LayoutWorkspaces = Effect.gen(function* () {
 });
 
 const readStoredColumns = (json: string): StoredWorkspaceTabs["columns"] | null => {
-  try {
-    const parsed = JSON.parse(json) as { columns?: StoredWorkspaceTabs["columns"] };
-    return Array.isArray(parsed.columns) ? parsed.columns : [];
-  } catch {
-    return null;
-  }
+  const parsed = Option.getOrNull(decodeJson(json)) as {
+    columns?: StoredWorkspaceTabs["columns"];
+  } | null;
+  return parsed === null ? null : Array.isArray(parsed.columns) ? parsed.columns : [];
 };
 
 // Which workspace each chat thread belongs to, and the last workspace a client reported as
@@ -922,12 +925,439 @@ const TaskSourceMarkerKey = Effect.gen(function* () {
   yield* sql`ALTER TABLE houston_task_source_identity ADD COLUMN marker_key TEXT`;
 });
 
+// One row per project bound to a standalone issue tracker (Linear): which tracker and which of
+// its scopes (a team key). Unbinding deletes the row; a project with no row reads only its git
+// host's issues. The credential itself lives in the secret store.
+const IssueTrackerBindings = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS issue_tracker_bindings (
+      project_id TEXT PRIMARY KEY,
+      tracker TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    ) WITHOUT ROWID
+  `;
+});
+
 // The one-time copy of tokens from the OS keychain, where earlier builds kept them, into the
 // secret store. The row exists once every token on record has been read or accounted for.
 const SecretStoreImport = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   yield* sql`
     CREATE TABLE IF NOT EXISTS houston_secret_store_import (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      imported_at TEXT NOT NULL,
+      counts_json TEXT NOT NULL
+    )
+  `;
+});
+
+// The issue a task is backed by: at most one per task, named the way the issue service resolves
+// it. The identity index is not unique, so an archived task keeps its link while another task
+// may be created from the same issue; the service enforces one non-archived task per issue.
+const TaskIssues = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_task_issues (
+      task_id INTEGER PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      tracker TEXT NOT NULL,
+      host TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      key TEXT NOT NULL,
+      display_key TEXT NOT NULL,
+      url TEXT NOT NULL,
+      title TEXT NOT NULL,
+      linked_at TEXT NOT NULL
+    )
+  `;
+  yield* sql`
+    CREATE INDEX IF NOT EXISTS idx_houston_task_issues_identity
+    ON houston_task_issues(tracker, host, scope, key)
+  `;
+});
+
+// The per-project switch that lets a task's status move the issue it is backed by. Off by
+// default, so an existing project's issues stay where their tracker has them.
+const TaskIssueStateSetting = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    ALTER TABLE houston_task_settings
+    ADD COLUMN update_issue_state INTEGER NOT NULL DEFAULT 0
+  `;
+});
+
+// GitHub issues are no longer a task source: each imported GitHub link becomes the task's issue
+// link, and the source's settings, cursors and pending write-back rows go. A link that cannot be
+// converted leaves its task unlinked with a history note, never deleted; a task already backed by
+// the issue keeps that link.
+const GITHUB_EXTERNAL_ID = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)#([1-9][0-9]*)$/;
+
+interface GitHubIssueReference {
+  readonly owner: string;
+  readonly repository: string;
+  readonly number: string;
+  readonly host: string;
+}
+
+/** The issue a stored external id and URL name, or why they do not name one. */
+const githubIssueReference = (
+  externalId: string,
+  rawUrl: string,
+): GitHubIssueReference | string => {
+  const match = GITHUB_EXTERNAL_ID.exec(externalId);
+  if (match === null) return `${externalId} is not owner/repo#number`;
+  const owner = match[1] as string;
+  const repository = match[2] as string;
+  const number = match[3] as string;
+  if (owner === "." || owner === ".." || repository === "." || repository === "..") {
+    return `${externalId} is not owner/repo#number`;
+  }
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return `${externalId} has no readable URL`;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    return `${externalId} has no readable URL`;
+  }
+  const segments = url.pathname.split("/").filter((part) => part.length > 0);
+  const expected = [owner, repository, "issues", number] as Array<string | undefined>;
+  if (segments.length !== 4 || segments.some((part, index) => part !== expected[index])) {
+    return `${externalId} does not match its URL ${rawUrl}`;
+  }
+  return { owner, repository, number, host: url.host };
+};
+
+/** The title the snapshot recorded for the issue, preferring the tracker's own words. */
+const snapshotIssueTitle = (json: string): string | null => {
+  const parsed = Option.getOrNull(decodeJson(json)) as Record<string, unknown> | null;
+  if (parsed !== null) {
+    for (const key of ["remote", "base", "local"]) {
+      const fields = parsed[key];
+      if (typeof fields !== "object" || fields === null) continue;
+      const title = (fields as Record<string, unknown>).title;
+      if (typeof title === "string" && title.trim().length > 0) return title.trim();
+    }
+  }
+  return null;
+};
+
+const GitHubIssuesAsTaskIssues = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const now = DateTime.formatIso(yield* DateTime.now);
+  const rows = yield* sql<{
+    readonly task_id: number;
+    readonly project_id: string;
+    readonly external_id: string;
+    readonly url: string;
+    readonly snapshot_json: string;
+    readonly task_title: string;
+  }>`
+    SELECT l.task_id, l.project_id, l.external_id, l.url, l.snapshot_json, t.title AS task_title
+    FROM houston_task_source_links l
+    JOIN houston_tasks t ON t.id = l.task_id
+    WHERE l.provider = 'github_issues' AND l.source = 'source'
+    ORDER BY l.task_id
+  `;
+  const skip = (taskId: number, reason: string, externalId: string, url: string) =>
+    sql`
+      INSERT INTO houston_task_history (task_id, actor, action, changes, created_at)
+      VALUES (
+        ${taskId}, 'houston:issue-import', 'houston:issue-import-skipped',
+        ${encodeJson({ reason, externalId, url })}, ${now}
+      )
+    `;
+  for (const row of rows) {
+    const reference = githubIssueReference(row.external_id, row.url);
+    if (typeof reference === "string") {
+      yield* skip(row.task_id, reference, row.external_id, row.url);
+      continue;
+    }
+    const scope = `${reference.owner}/${reference.repository}`;
+    const [own] = yield* sql<{ readonly task_id: number }>`
+      SELECT task_id FROM houston_task_issues WHERE task_id = ${row.task_id}
+    `;
+    if (own !== undefined) {
+      yield* skip(
+        row.task_id,
+        `task ${row.task_id} already has an issue link`,
+        row.external_id,
+        row.url,
+      );
+      continue;
+    }
+    const [holder] = yield* sql<{
+      readonly task_id: number;
+      readonly archived_at: string | null;
+    }>`
+      SELECT i.task_id, t.archived_at FROM houston_task_issues i
+      JOIN houston_tasks t ON t.id = i.task_id
+      WHERE lower(i.tracker) = 'github' AND lower(i.host) = lower(${reference.host})
+        AND lower(i.scope) = lower(${scope}) AND i.key = ${reference.number}
+      ORDER BY t.archived_at IS NOT NULL, i.task_id LIMIT 1
+    `;
+    if (holder !== undefined && holder.archived_at === null) {
+      yield* skip(
+        row.task_id,
+        `${scope}#${reference.number} is already the issue of task ${holder.task_id}`,
+        row.external_id,
+        row.url,
+      );
+      continue;
+    }
+    const title = (snapshotIssueTitle(row.snapshot_json) ?? row.task_title).trim();
+    if (title.length === 0) {
+      yield* skip(row.task_id, `${row.external_id} has no title`, row.external_id, row.url);
+      continue;
+    }
+    yield* sql`
+      INSERT INTO houston_task_issues (
+        task_id, project_id, tracker, host, scope, key, display_key, url, title, linked_at
+      ) VALUES (
+        ${row.task_id}, ${row.project_id}, 'github', ${reference.host}, ${scope},
+        ${reference.number}, ${`#${reference.number}`},
+        ${`https://${reference.host}/${scope}/issues/${reference.number}`}, ${title}, ${now}
+      )
+    `;
+  }
+  yield* sql`DELETE FROM houston_task_source_links WHERE provider = 'github_issues'`;
+  yield* sql`DELETE FROM houston_task_source_settings WHERE provider = 'github_issues'`;
+  yield* sql`DELETE FROM houston_task_source_poll WHERE provider = 'github_issues'`;
+  yield* sql`DELETE FROM houston_task_source_outbox WHERE provider = 'github_issues'`;
+  yield* sql`DELETE FROM houston_task_source_credentials WHERE provider = 'github_issues'`;
+});
+
+// A standalone tracker's binding carries the property mapping its container needs (Notion's
+// title, status and optional properties); Linear's empty mapping is the default.
+const IssueTrackerBindingProperties = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    ALTER TABLE issue_tracker_bindings
+    ADD COLUMN properties_json TEXT NOT NULL DEFAULT '{}'
+  `;
+});
+
+const NOTION_ID =
+  /^(?:[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
+const notionId = (value: string) => value.replaceAll("-", "").toLowerCase();
+const isNotionPageId = (value: string) => NOTION_ID.test(value.trim());
+
+/** A stored Notion settings JSON's data source and the property mapping it names. */
+const notionBindingOf = (
+  json: string,
+): {
+  readonly dataSourceId: string;
+  readonly properties: Readonly<Record<string, string>>;
+} | null => {
+  const parsed = Option.getOrNull(decodeJson(json));
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+  const fields = parsed as Record<string, unknown>;
+  const read = (key: string) => {
+    const value = fields[key];
+    return typeof value === "string" && value.trim().length > 0 ? value : null;
+  };
+  const dataSourceId = read("notionDataSourceId");
+  if (dataSourceId === null || !isNotionPageId(dataSourceId)) return null;
+  const properties: Record<string, string> = {};
+  for (const [bindingKey, settingKey] of [
+    ["title", "notionTitlePropertyId"],
+    ["status", "notionStatusPropertyId"],
+    ["body", "notionDescriptionPropertyId"],
+    ["assignee", "notionAssigneePropertyId"],
+    ["prUrl", "notionPrUrlPropertyId"],
+  ] as const) {
+    const value = read(settingKey);
+    if (value !== null) properties[bindingKey] = value;
+  }
+  return Object.keys(properties).length === 0
+    ? null
+    : { dataSourceId: notionId(dataSourceId), properties };
+};
+
+/** The title a stored Notion link's snapshot recorded, preferring the tracker's own words. */
+const notionSnapshotTitle = (json: string): string | null => {
+  const parsed = Option.getOrNull(decodeJson(json)) as Record<string, unknown> | null;
+  if (parsed !== null) {
+    for (const key of ["remote", "base", "local"]) {
+      const fields = parsed[key];
+      if (typeof fields !== "object" || fields === null) continue;
+      const title = (fields as Record<string, unknown>).title;
+      if (typeof title === "string" && title.trim().length > 0) return title.trim();
+    }
+  }
+  return null;
+};
+
+const notionPageUrl = (id: string, rawUrl: string): string => {
+  try {
+    const url = new URL(rawUrl);
+    const host = url.hostname.toLowerCase();
+    if (
+      url.protocol === "https:" &&
+      (host === "notion.so" || host.endsWith(".notion.so") || host.endsWith(".notion.site"))
+    ) {
+      return url.toString();
+    }
+  } catch {
+    // A missing URL still has a canonical page address.
+  }
+  return `https://www.notion.so/${notionId(id)}`;
+};
+
+// Notion pages are no longer a task source: each linked page becomes the task's issue link and
+// the per-project Notion settings become the project's tracker binding. The token already in the
+// secret store is adopted by the tracker at its first read. The source's tables go afterwards; a
+// link that cannot be converted leaves its task unlinked with a history note, never deleted.
+const NotionPagesAsTaskIssues = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const now = DateTime.formatIso(yield* DateTime.now);
+  const rows = yield* sql<{
+    readonly task_id: number;
+    readonly project_id: string;
+    readonly external_id: string;
+    readonly url: string;
+    readonly snapshot_json: string;
+    readonly synced_at: string | null;
+    readonly task_title: string;
+    readonly settings_json: string;
+  }>`
+    SELECT l.task_id, l.project_id, l.external_id, l.url, l.snapshot_json, l.synced_at,
+      t.title AS task_title, s.settings_json
+    FROM houston_task_source_links l
+    JOIN houston_tasks t ON t.id = l.task_id
+    LEFT JOIN houston_task_source_settings s
+      ON s.project_id = l.project_id AND s.provider = 'notion'
+    WHERE l.provider = 'notion' AND l.source = 'source'
+    ORDER BY l.task_id
+  `;
+  const skip = (taskId: number, reason: string, externalId: string, url: string) =>
+    sql`
+      INSERT INTO houston_task_history (task_id, actor, action, changes, created_at)
+      VALUES (
+        ${taskId}, 'houston:issue-import', 'houston:issue-import-skipped',
+        ${encodeJson({ reason, externalId, url })}, ${now}
+      )
+    `;
+  for (const row of rows) {
+    const externalId = row.external_id.trim();
+    if (!isNotionPageId(externalId)) {
+      yield* skip(row.task_id, `${externalId} is not a Notion page id`, row.external_id, row.url);
+      continue;
+    }
+    const binding = row.settings_json === null ? null : notionBindingOf(row.settings_json);
+    if (binding === null) {
+      yield* skip(
+        row.task_id,
+        `project ${row.project_id} has no Notion data source binding`,
+        row.external_id,
+        row.url,
+      );
+      continue;
+    }
+    const key = notionId(externalId);
+    const [own] = yield* sql<{ readonly task_id: number }>`
+      SELECT task_id FROM houston_task_issues WHERE task_id = ${row.task_id}
+    `;
+    if (own !== undefined) {
+      yield* skip(
+        row.task_id,
+        `task ${row.task_id} already has an issue link`,
+        row.external_id,
+        row.url,
+      );
+      continue;
+    }
+    const [holder] = yield* sql<{
+      readonly task_id: number;
+      readonly archived_at: string | null;
+    }>`
+      SELECT i.task_id, t.archived_at FROM houston_task_issues i
+      JOIN houston_tasks t ON t.id = i.task_id
+      WHERE lower(i.tracker) = 'notion'
+        AND lower(replace(i.scope, '-', '')) = ${notionId(binding.dataSourceId)}
+        AND lower(replace(i.key, '-', '')) = ${key}
+      ORDER BY t.archived_at IS NOT NULL, i.task_id LIMIT 1
+    `;
+    if (holder !== undefined && holder.archived_at === null) {
+      yield* skip(
+        row.task_id,
+        `${externalId} is already the issue of task ${holder.task_id}`,
+        row.external_id,
+        row.url,
+      );
+      continue;
+    }
+    const title = (notionSnapshotTitle(row.snapshot_json) ?? row.task_title).trim();
+    if (title.length === 0) {
+      yield* skip(row.task_id, `${externalId} has no title`, row.external_id, row.url);
+      continue;
+    }
+    yield* sql`
+      INSERT INTO houston_task_issues (
+        task_id, project_id, tracker, host, scope, key, display_key, url, title, linked_at
+      ) VALUES (
+        ${row.task_id}, ${row.project_id}, 'notion', 'notion.so', ${binding.dataSourceId},
+        ${key}, ${key.slice(0, 8)}, ${notionPageUrl(externalId, row.url)}, ${title},
+        ${row.synced_at ?? now}
+      )
+    `;
+  }
+
+  // Each project that configured Notion becomes bound to its data source, unless it already picked
+  // a tracker binding itself.
+  const settings = yield* sql<{
+    readonly project_id: string;
+    readonly settings_json: string;
+    readonly updated_at: string;
+  }>`
+    SELECT project_id, settings_json, updated_at FROM houston_task_source_settings
+    WHERE provider = 'notion'
+  `;
+  for (const row of settings) {
+    const binding = notionBindingOf(row.settings_json);
+    if (binding === null) continue;
+    yield* sql`
+      INSERT INTO issue_tracker_bindings (project_id, tracker, scope, properties_json, updated_at)
+      VALUES (
+        ${row.project_id}, 'notion', ${binding.dataSourceId},
+        ${encodeJson(binding.properties)}, ${row.updated_at}
+      )
+      ON CONFLICT (project_id) DO NOTHING
+    `;
+  }
+
+  // The token's new home: the first project whose Notion token earlier builds stored. The
+  // tracker adopts it at its first read, so no token is copied into the database.
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_issue_tracker_token_adoption (
+      tracker TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL
+    ) WITHOUT ROWID
+  `;
+  yield* sql`
+    INSERT OR IGNORE INTO houston_issue_tracker_token_adoption (tracker, project_id)
+    SELECT 'notion', project_id FROM houston_task_source_credentials
+    WHERE provider = 'notion' ORDER BY project_id LIMIT 1
+  `;
+
+  // The Notion task source is retired; its tables, cursors and write-back rows go with it.
+  for (const table of [
+    "houston_task_source_links",
+    "houston_task_source_settings",
+    "houston_task_source_poll",
+    "houston_task_source_outbox",
+    "houston_task_source_identity",
+    "houston_task_source_import",
+    "houston_task_source_credentials",
+  ]) {
+    yield* sql`DROP TABLE IF EXISTS ${sql(table)}`;
+  }
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_issue_import (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       imported_at TEXT NOT NULL,
       counts_json TEXT NOT NULL
@@ -955,6 +1385,12 @@ const houstonMigrationEntries = [
   [19, "LayoutWorkspaces", LayoutWorkspaces],
   [20, "RemoveGrids", RemoveGrids],
   [21, "LayoutThreadMembership", LayoutThreadMembership],
+  [22, "IssueTrackerBindings", IssueTrackerBindings],
+  [23, "TaskIssues", TaskIssues],
+  [24, "TaskIssueStateSetting", TaskIssueStateSetting],
+  [25, "GitHubIssuesAsTaskIssues", GitHubIssuesAsTaskIssues],
+  [26, "IssueTrackerBindingProperties", IssueTrackerBindingProperties],
+  [27, "NotionPagesAsTaskIssues", NotionPagesAsTaskIssues],
 ] as const;
 
 // Ids land in merge order, so a database can record a higher id before a lower one; every

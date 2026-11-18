@@ -183,7 +183,7 @@ describe("Houston's secrets never reach the OS keychain", () => {
     );
     assert.deepEqual(
       files
-        .filter((file) => /houston\/(slack|taskSources)\/(?!V1Import)/.test(relative(file)))
+        .filter((file) => /houston\/(slack|tasks|issue)\/(?!V1Import)/.test(relative(file)))
         .filter((file) => /keychain|keyring/i.test(text(file)))
         .map(relative),
       [],

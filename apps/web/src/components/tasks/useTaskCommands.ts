@@ -4,14 +4,18 @@ import type {
   HoustonTaskCheckInput,
   HoustonTaskCommentInput,
   HoustonTaskDomainSaveInput,
+  HoustonTaskFromIssueInput,
   HoustonTaskInitiativeArchiveInput,
   HoustonTaskInitiativeSaveInput,
+  HoustonTaskIssueLinkInput,
+  HoustonTaskIssueUnlinkInput,
   HoustonTaskPlanAnswerInput,
   HoustonTaskPlanApproveInput,
   HoustonTaskPlanStartInput,
   HoustonTaskReviewStartInput,
   HoustonTaskRunControlInput,
   HoustonTaskSaveInput,
+  HoustonTaskSettingsSetInput,
   HoustonTaskStartInput,
 } from "@houston-app/contracts/houston/tasks";
 
@@ -33,6 +37,10 @@ export function useTaskCommands(environmentId: EnvironmentId) {
   const planAnswer = useAtomCommand(tasksEnvironment.planAnswer);
   const planApprove = useAtomCommand(tasksEnvironment.planApprove);
   const reviewStart = useAtomCommand(tasksEnvironment.reviewStart);
+  const createFromIssue = useAtomCommand(tasksEnvironment.createFromIssue);
+  const linkIssue = useAtomCommand(tasksEnvironment.linkIssue);
+  const unlinkIssue = useAtomCommand(tasksEnvironment.unlinkIssue);
+  const setSettings = useAtomCommand(tasksEnvironment.setSettings);
   return {
     save: (input: HoustonTaskSaveInput) => save({ environmentId, input }),
     comment: (input: HoustonTaskCommentInput) => comment({ environmentId, input }),
@@ -49,5 +57,10 @@ export function useTaskCommands(environmentId: EnvironmentId) {
     planAnswer: (input: HoustonTaskPlanAnswerInput) => planAnswer({ environmentId, input }),
     planApprove: (input: HoustonTaskPlanApproveInput) => planApprove({ environmentId, input }),
     reviewStart: (input: HoustonTaskReviewStartInput) => reviewStart({ environmentId, input }),
+    createFromIssue: (input: HoustonTaskFromIssueInput) =>
+      createFromIssue({ environmentId, input }),
+    linkIssue: (input: HoustonTaskIssueLinkInput) => linkIssue({ environmentId, input }),
+    unlinkIssue: (input: HoustonTaskIssueUnlinkInput) => unlinkIssue({ environmentId, input }),
+    setSettings: (input: HoustonTaskSettingsSetInput) => setSettings({ environmentId, input }),
   };
 }

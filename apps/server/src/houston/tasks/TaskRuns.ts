@@ -51,6 +51,7 @@ import * as Stream from "effect/Stream";
 import * as EventSink from "../../orchestration-v2/EventSink.ts";
 import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapterRegistry.ts";
+import * as ThreadIssueService from "../../orchestration-v2/ThreadIssueService.ts";
 import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
 import {
@@ -273,6 +274,7 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
   const launcher = yield* ThreadLaunch.ThreadLaunchService;
   const orchestrator = yield* Orchestrator.OrchestratorV2;
+  const threadIssues = yield* ThreadIssueService.ThreadIssueService;
   const eventSink = yield* EventSink.EventSinkV2;
   const adapters = yield* ProviderAdapterRegistry.ProviderAdapterRegistryV2;
   const readOnlyThreads = readOnlyThreadsOf(sql);
@@ -357,9 +359,11 @@ const make = Effect.gen(function* () {
   const briefFor = Effect.fn("HoustonTaskRuns.briefFor")(function* (
     row: TaskRow,
     findings?: ReadonlyArray<HoustonTaskReviewFinding>,
+    issueBody?: string,
   ) {
     const detail = yield* store.detail(row);
     const initiative = yield* initiativeOf(row.id);
+    const issue = yield* store.issueOf(row.id);
     // A requester's words from Slack reach the agent only attributed and fenced.
     const slack = yield* slackBrief(row);
     return buildBrief({
@@ -368,6 +372,13 @@ const make = Effect.gen(function* () {
       description: Option.isNone(slack) ? row.description : slack.value.description,
       acceptance: detail.acceptance.map((item) => item.text),
       links: row.ref_url === null ? [] : [row.ref_url],
+      issue:
+        issue === null
+          ? null
+          : { displayKey: issue.displayKey, url: issue.url, title: issue.title },
+      ...(issueBody === undefined
+        ? {}
+        : { issueBody: cutBytes(issueBody, HOUSTON_TASK_LIMITS.issueBodyInBriefBytes) }),
       initiative:
         initiative === undefined
           ? null
@@ -378,6 +389,44 @@ const make = Effect.gen(function* () {
             },
       ...(findings === undefined ? {} : { findings }),
     });
+  });
+
+  /** Moves the linked issue with the task's current status, when the project asked for it. */
+  const syncIssueState = (taskId: number) =>
+    taskOf(taskId).pipe(Effect.flatMap((row) => tasks.writeIssueState(row.id, row.status)));
+
+  /** Records the task's issue on the thread it launched, so the thread keeps it beside its PRs. */
+  const linkIssueToThread = Effect.fn("HoustonTaskRuns.linkIssueToThread")(function* (
+    row: TaskRow,
+    threadId: string,
+    source: "manual" | "agent",
+  ) {
+    const issue = yield* store.issueOf(row.id);
+    if (issue === null) return;
+    yield* threadIssues
+      .link({
+        threadId: threadId as ThreadId,
+        ref: {
+          projectId: issue.projectId,
+          tracker: issue.tracker,
+          host: issue.host,
+          scope: issue.scope,
+          key: issue.key,
+        },
+        url: issue.url,
+        displayKey: issue.displayKey,
+        title: issue.title,
+        source,
+      })
+      .pipe(
+        Effect.catch((error) =>
+          noteOnce(
+            row.id,
+            `issue-link:${threadId}`,
+            `The linked issue ${issue.displayKey} was not attached to thread ${threadId}: ${error.message}`,
+          ),
+        ),
+      );
   });
 
   const checkBrief = (operation: string, brief: string) => {
@@ -555,6 +604,13 @@ const make = Effect.gen(function* () {
         ).pipe(Effect.as({ result: undefined, touched: [row.id] })),
       );
     }
+    if (runRow.thread_id !== null) {
+      yield* linkIssueToThread(
+        row,
+        runRow.thread_id,
+        authority.createdBy === "agent" ? "agent" : "manual",
+      );
+    }
     return (yield* runById(runRow.id)) as RunRow;
   });
 
@@ -665,6 +721,7 @@ const make = Effect.gen(function* () {
             authority: { ...by.agent.modes, createdBy: "agent" as const },
           }),
     });
+    yield* syncIssueState(row.id);
     return { run: toRun(launched), ...(send ? {} : { brief }) };
   });
 
@@ -809,7 +866,7 @@ const make = Effect.gen(function* () {
             })),
           )
         : USER_LAUNCH;
-    return yield* launchRun(operation, row, recorded, {
+    const launched = yield* launchRun(operation, row, recorded, {
       authority,
       title: `${keyOf(row)} ${row.title} (attempt ${attempt})`,
       modelSelection,
@@ -820,6 +877,8 @@ const make = Effect.gen(function* () {
       },
       message: brief,
     });
+    yield* syncIssueState(row.id);
+    return launched;
   });
 
   const runControl: HoustonTaskRuns["Service"]["runControl"] = Effect.fn(
@@ -953,6 +1012,7 @@ const make = Effect.gen(function* () {
           );
         }
       }
+      yield* syncIssueState(row.id);
       return toRun((yield* runById(open.id)) as RunRow);
     },
   );
@@ -1307,10 +1367,11 @@ const make = Effect.gen(function* () {
           return { result: undefined, touched: [row.id] };
         }),
       );
+      const issue = yield* tasks.issueText(row.id);
       const prompt = [
         `Plan Houston task ${keyOf(row)}. Read the code you need; do not change any files.`,
         `When done, call houston_task_plan_submit with id "${keyOf(row)}" and a proposal: description, acceptance (a list of checkable items), pointers (files or docs), outOfScope and questions (only those the user must answer).`,
-        yield* briefFor(row),
+        yield* briefFor(row, undefined, issue?.body ?? undefined),
       ].join("\n\n");
       yield* launcher
         .launch({
@@ -1330,6 +1391,7 @@ const make = Effect.gen(function* () {
           Effect.tapError(() => settlePlanning(threadId, "cancelled")),
           Effect.mapError(launchFailure(operation, row)),
         );
+      yield* linkIssueToThread(row, threadId, "manual");
       return yield* detailOf(row.id);
     },
   );
@@ -1606,6 +1668,8 @@ const make = Effect.gen(function* () {
           return { result: runRow, touched };
         }),
       );
+      yield* linkIssueToThread(row, agent.threadId, "agent");
+      yield* syncIssueState(row.id);
       return toRun(claimed);
     },
   );
@@ -1725,6 +1789,7 @@ const make = Effect.gen(function* () {
     const next = taskRunStateOf(threadRun.status);
     const revives = taskRun.state === "interrupted" && OPEN_RUN_STATES.has(next);
     if (!OPEN_RUN_STATES.has(taskRun.state) && !revives) return;
+    let movedStatus = false;
     yield* store.write(
       Effect.gen(function* () {
         const touched: Array<number> = [taskRun.task_id];
@@ -1756,10 +1821,12 @@ const make = Effect.gen(function* () {
               run: taskRun.id,
             })),
           );
+          movedStatus = true;
         }
         return { result: undefined, touched };
       }),
     );
+    if (movedStatus) yield* syncIssueState(taskRun.task_id);
   });
 
   /** The thread's latest thread run, read alone; `None` when the thread cannot be read. */
@@ -1890,6 +1957,7 @@ const make = Effect.gen(function* () {
     );
     if (implementation === undefined) return;
     const row = yield* taskOf(implementation.task_id);
+    let merged = false;
     yield* store.write(
       Effect.gen(function* () {
         const touched: Array<number> = [];
@@ -1905,10 +1973,12 @@ const make = Effect.gen(function* () {
               pullRequest: link.url,
             })),
           );
+          merged = true;
         }
         return { result: undefined, touched };
       }),
     );
+    if (merged) yield* syncIssueState(row.id);
     yield* watchLinkedPullRequest(implementation, threadId, link);
     const head = link.watch?.headSha ?? null;
     if (head === null) return;

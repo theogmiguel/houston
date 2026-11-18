@@ -547,6 +547,7 @@ describe("v1 settings follow matched workspaces", () => {
           reviewMode: "every_push",
           focus: "performance",
           reworkRounds: 3,
+          updateIssueState: false,
         } as never);
         assert.strictEqual((yield* tasks.getSettings({ projectId: other })).access, "write");
       }).pipe(Effect.provide(layerTasks({ baseDir: dirs.baseDir }))),

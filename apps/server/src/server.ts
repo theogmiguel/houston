@@ -42,6 +42,10 @@ import { speechHttpApiLayer } from "./speech/http.ts";
 import { speechStreamRouteLayer } from "./speech/stream.ts";
 import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
+import * as IssueService from "./issue/IssueService.ts";
+import * as IssueTrackerConnections from "./issue/IssueTrackerConnections.ts";
+import * as IssueTrackerBindings from "./persistence/IssueTrackerBindings.ts";
+import * as IssueTrackerRegistry from "./issue/IssueTrackerRegistry.ts";
 import * as SqlitePersistence from "./persistence/Sqlite.ts";
 import * as PullRequestFilesViewed from "./persistence/PullRequestFilesViewed.ts";
 import * as PullRequestReviewGuides from "./persistence/PullRequestReviewGuides.ts";
@@ -127,13 +131,11 @@ import * as HoustonTaskRuns from "./houston/tasks/TaskRuns.ts";
 import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
 import * as HoustonTaskStore from "./houston/tasks/TaskStore.ts";
 import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
+import * as HoustonIssueV1Import from "./issue/V1Import.ts";
 import * as HoustonSecrets from "./houston/secrets/HoustonSecrets.ts";
 import * as LegacyKeychain from "./houston/secrets/LegacyKeychain.ts";
 import * as SecretStoreImport from "./houston/secrets/SecretStoreImport.ts";
-import * as HoustonTaskSourceNotion from "./houston/taskSources/NotionClient.ts";
-import * as HoustonTaskSourceOutbox from "./houston/taskSources/Outbox.ts";
-import * as HoustonTaskSourceStore from "./houston/taskSources/SourceStore.ts";
-import { layerTaskSources } from "./houston/taskSources/layer.ts";
+import * as HoustonTaskIssueWriteback from "./houston/tasks/TaskIssueWriteback.ts";
 import * as SlackConnection from "./houston/slack/Connection.ts";
 import * as HoustonLayoutWorkspaces from "./houston/layoutWorkspaces.ts";
 import * as HoustonThreadMembership from "./houston/threadMembership.ts";
@@ -192,6 +194,7 @@ import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
 import * as ThreadSettlementService from "./orchestration-v2/ThreadSettlementService.ts";
 import * as IdleCompactionService from "./orchestration-v2/IdleCompactionService.ts";
 import * as ThreadPullRequestService from "./orchestration-v2/ThreadPullRequestService.ts";
+import * as ThreadIssueService from "./orchestration-v2/ThreadIssueService.ts";
 import * as RunFinalizationService from "./orchestration-v2/RunFinalizationService.ts";
 import * as ProjectionMaintenance from "./orchestration-v2/ProjectionMaintenance.ts";
 import * as ProjectionStoreV2 from "./orchestration-v2/ProjectionStore.ts";
@@ -390,6 +393,15 @@ const layerPullRequestService = PullRequestService.layer.pipe(
   Layer.provide(SourceControlRateLimit.layer),
 );
 
+// Both read the one registry, so a standalone tracker connected in Settings is the same
+// instance the listing reads through.
+const layerIssueService = Layer.merge(IssueService.layer, IssueTrackerConnections.layer).pipe(
+  Layer.provideMerge(Layer.merge(IssueTrackerRegistry.layer, IssueTrackerBindings.layer)),
+);
+
+// One instance serves MCP link calls and every thread-link command.
+const layerThreadIssueService = ThreadIssueService.layer;
+
 const layerGitManager = GitManager.layer.pipe(
   Layer.provide(Layer.merge(ProjectionStoreV2.layer, ProjectStore.layer)),
   Layer.provideMerge(RuntimeLayer.layerProjectSetupScriptRunner),
@@ -572,8 +584,8 @@ const layerProviderInstallationRefresh = Layer.effectDiscard(
 export const layerHoustonTaskPersistence = Layer.empty.pipe(
   Layer.provideMerge(HoustonTaskRuns.layerReadOnlyThreads),
   Layer.provideMerge(HoustonTaskStore.layer),
-  // The task source outbox hears each task write's transitions inside its transaction.
-  Layer.provideMerge(HoustonTaskSourceOutbox.layer),
+  // The issue write-back hears each task write's hand-back inside its transaction.
+  Layer.provideMerge(HoustonTaskIssueWriteback.transitionsLayer),
 );
 
 // Tokens earlier builds kept in the OS keychain are copied in before any consumer reads one.
@@ -624,7 +636,6 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ReplayMarkers.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
   Layer.effectDiscard(HoustonTaskProjectSweep.sweep),
-  Layer.effectDiscard(HoustonTaskSourceStore.sweep),
   Layer.effectDiscard(HoustonSlackStore.sweep),
   HoustonLayoutWorkspaces.layer,
   Layer.effectDiscard(
@@ -661,19 +672,18 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
         ),
       ),
     ),
-    Layer.provideMerge(layerOrchestrationApplication),
+    // Inner to the issue services below: a task service reads and moves its linked issue, and the
+    // orchestration runtime supplies both with the projects and runs they read.
     Layer.provideMerge(
       Layer.mergeAll(
         HoustonTaskService.layer,
         HoustonTaskV1Import.layer.pipe(Layer.provideMerge(RuntimeLayer.layerProjectService)),
+        HoustonIssueV1Import.layer.pipe(Layer.provideMerge(RuntimeLayer.layerProjectService)),
       ),
     ),
-    // The task source poller reads GitHub through its own client and the token from the secret store.
-    Layer.provideMerge(
-      layerTaskSources(
-        Layer.mergeAll(GitHubRest.layerWithDependencies, HoustonTaskSourceNotion.layer),
-      ),
-    ),
+    Layer.provideMerge(layerThreadIssueService),
+    Layer.provideMerge(layerIssueService),
+    Layer.provideMerge(layerOrchestrationApplication),
     Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
     Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
     // Above the settings the theme service writes when an agent applies a theme.
@@ -687,7 +697,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     // Split from the chain above: Effect's `pipe` overloads accept at most 20 stages.
     Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
     // Below the orchestration runtime so its ProjectService sees the store on project deletion.
-    Layer.provideMerge(Layer.mergeAll(HoustonTaskSourceStore.layer, HoustonMergeQueueStore.layer)),
+    Layer.provideMerge(HoustonMergeQueueStore.layer),
     Layer.provideMerge(HoustonSlackStore.layer),
     Layer.provideMerge(layerHoustonSecrets),
     Layer.provideMerge(layerHoustonTaskPersistence),
