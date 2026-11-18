@@ -11,6 +11,7 @@ import {
   openLayoutTab,
   selectFocusedChatTab,
   selectFocusedWorkspace,
+  setEmptyWorkspaceRetention,
   type LayoutState,
   type LayoutTabContent,
 } from "./layoutModel";
@@ -47,6 +48,27 @@ function twoWorkspaces(): LayoutState {
 }
 
 const names = (state: LayoutState) => listLayoutWorkspaces(state).map((w) => w.name);
+
+describe("listLayoutWorkspaces", () => {
+  it("lists an empty workspace that threads belong to while another has focus", () => {
+    // A thread dropped on the rail's blank space with no tab open lands in a new, empty workspace.
+    const created = createLayoutWorkspaceNamed(
+      openLayoutTab(createLayoutState(), chat("a")),
+      "New",
+    );
+    const home = selectFocusedWorkspace(created.state).id;
+    setEmptyWorkspaceRetention((workspaceId) => workspaceId === home);
+    try {
+      const away = normalizeLayout({
+        ...created.state,
+        focusedWorkspaceId: created.state.workspaces[0]!.id,
+      });
+      expect(names(away)).toEqual([null, "New"]);
+    } finally {
+      setEmptyWorkspaceRetention(() => false);
+    }
+  });
+});
 
 describe("createLayoutWorkspaceNamed", () => {
   it("focuses the trailing empty workspace and names it", () => {

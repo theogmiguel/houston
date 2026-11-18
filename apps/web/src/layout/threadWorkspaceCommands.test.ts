@@ -13,7 +13,10 @@ import { openLayoutLauncherInWorkspaceAction } from "./layoutWorkspaceActions";
 import { useLayoutStore } from "./layoutStore";
 import { reportFocus, layoutWorkspacesEnvironment } from "./layoutSyncRuntime";
 import { createLayoutWorkspaceNamed } from "./layoutWorkspaces";
-import { claimWorkspaceForNewThread } from "./threadWorkspaceCommands";
+import {
+  claimWorkspaceForNewThread,
+  moveThreadToWorkspaceOnServer,
+} from "./threadWorkspaceCommands";
 
 const phone = vi.hoisted(() => ({ isPhone: false }));
 vi.mock("../mobile/usePhone", async (original) => ({
@@ -33,12 +36,15 @@ const draftId = DraftId.make("draft-1");
 
 const assign = vi.fn();
 const setFocus = vi.fn();
+const move = vi.fn();
 
 beforeEach(() => {
   assign.mockReset().mockResolvedValue({ _tag: "Success", value: {} });
   setFocus.mockReset().mockResolvedValue({ _tag: "Success", value: {} });
   vi.spyOn(layoutWorkspacesEnvironment.assignThread, "run").mockImplementation(assign);
   vi.spyOn(layoutWorkspacesEnvironment.setFocus, "run").mockImplementation(setFocus);
+  move.mockReset().mockResolvedValue({ _tag: "Success", value: {} });
+  vi.spyOn(layoutWorkspacesEnvironment.moveThread, "run").mockImplementation(move);
   phone.isPhone = false;
 });
 
@@ -68,6 +74,16 @@ function seedDraftInSecondWorkspace(): string {
   });
   return state.workspaces[1]!.id;
 }
+
+describe("moveThreadToWorkspaceOnServer", () => {
+  it("names no pane unless the caller does, so the server gives the thread its own column", async () => {
+    const workspaceId = seedDraftInSecondWorkspace();
+    expect(useLayoutStore.getState().layout.workspaces[1]!.focusedPaneId).not.toBeNull();
+    await moveThreadToWorkspaceOnServer({ thread: { environmentId, threadId }, workspaceId });
+    expect(move).toHaveBeenCalledTimes(1);
+    expect(move.mock.calls[0]![1].input).not.toHaveProperty("paneId");
+  });
+});
 
 describe("claimWorkspaceForNewThread", () => {
   it("records the workspace holding the draft's tab as the new thread's workspace", async () => {

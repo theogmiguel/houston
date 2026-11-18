@@ -79,6 +79,28 @@ describe("ThreadTitleInput", () => {
     expect(onCancel).not.toHaveBeenCalled();
   });
 
+  it("keeps the Enter that commits from clicking the control that takes focus next", async () => {
+    // Composed: the rail returns focus to a workspace heading as the input unmounts.
+    const onHeading = vi.fn();
+    await using screen = await render(
+      <div>
+        <button type="button" onClick={onHeading}>
+          Workspace
+        </button>
+        <ThreadTitleInput
+          title="Greeting"
+          onCommit={() => screen.getByRole("button").element().focus()}
+          onCancel={() => {}}
+        />
+      </div>,
+      { router: false },
+    );
+    await userEvent.fill(screen.getByRole("textbox").element(), "Hello");
+    await userEvent.keyboard("{Enter}");
+    expect(document.activeElement).toBe(screen.getByRole("button").element());
+    expect(onHeading).not.toHaveBeenCalled();
+  });
+
   it("cancels on Escape without committing", async () => {
     const onCommit = vi.fn();
     const onCancel = vi.fn();
