@@ -38,6 +38,7 @@ import { Button } from "../components/ui/button";
 import { StandalonePage, StandalonePageHeader } from "../components/ui/standalone-page";
 import { AnchoredToastProvider, ToastProvider } from "../components/ui/toast";
 import { isDesktopHost } from "../env";
+import { useAutoCloseOnMergeToast } from "../hooks/useAutoCloseOnMergeToast";
 import { useClientSettings } from "../hooks/useSettings";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -150,6 +151,7 @@ function RootRouteBranch() {
   const hostedPromptLinkLanding = useHostedPromptLinkLanding(
     authGateState.status === "hosted-static",
   );
+  useAutoCloseOnMergeToast();
 
   if (pathname === "/pair" || pathname === "/connect-agent" || pathname === "/quick-composer") {
     return <Outlet />;

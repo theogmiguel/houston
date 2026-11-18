@@ -351,7 +351,10 @@ export function ThreadCard({
     (source) => onDropOnThread(source),
   );
 
-  const statusShown = shelf === null && (threadHasStatus(thread, state) || state === "back");
+  // A closed row keeps its "Closed 2h" age even when its last run left an unseen status behind.
+  const closedInPlace = shelf === null && thread.settledOverride === "settled";
+  const statusShown =
+    shelf === null && !closedInPlace && (threadHasStatus(thread, state) || state === "back");
   const backShown = statusShown && state === "back";
 
   const rowCls = cn(

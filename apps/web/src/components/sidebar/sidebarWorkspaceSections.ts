@@ -76,15 +76,19 @@ function rowRanker(layout: LayoutState, memory: SidebarRowOrderMemory | undefine
   return (key: string) => slots.get(key) ?? UNPLACED;
 }
 
-/** Threads that still belong on the rail: not archived, deleted, closed, held or a subagent child. */
-export function isRailThread(thread: EnvironmentThreadShell, nowIso: string): boolean {
+/** A thread the rail can draw: not archived, deleted, held or a subagent child. */
+function isLiveRailThread(thread: EnvironmentThreadShell, nowIso: string): boolean {
   return (
     thread.archivedAt === null &&
     thread.deletedAt === null &&
-    thread.settledOverride !== "settled" &&
     !isSidebarHiddenThread(thread) &&
     !effectiveSnoozed(thread, { now: nowIso })
   );
+}
+
+/** Threads that still belong on the rail: live and not closed. */
+export function isRailThread(thread: EnvironmentThreadShell, nowIso: string): boolean {
+  return isLiveRailThread(thread, nowIso) && thread.settledOverride !== "settled";
 }
 
 /** The order the chat tabs sit in the layout, by `scopedThreadKey`; rows follow it. */
@@ -134,11 +138,16 @@ export function buildSidebarWorkspaceSections(
   if (first === undefined) return { sections: [], hiddenSections: [] };
 
   const rank = rowRanker(input.layout, input.rowOrder);
+  const openTabKeys = new Set(chatTabOrder(input.layout));
   const listed = new Set(workspaces.map((workspace) => workspace.id));
   const rows = input.threads
     .filter(
       (thread) =>
-        isRailThread(thread, input.nowIso) &&
+        (isRailThread(thread, input.nowIso) ||
+          // A closed thread whose chat is still open stays where it was until the tab closes.
+          (isLiveRailThread(thread, input.nowIso) &&
+            thread.settledOverride === "settled" &&
+            openTabKeys.has(keyOf(thread)))) &&
         (input.projectKeys === null ||
           input.projectKeys.has(projectKeyOf(thread.environmentId, thread.projectId))),
     )

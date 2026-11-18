@@ -226,7 +226,8 @@ configurable in **Settings ▸ General ▸ Confirmations**.
 
 **Settings ▸ Threads ▸ Auto-close** is off by default, so a merged pull request leaves its
 thread open. Turn on **Auto-close merged threads** to close a thread when its pull request
-merges.
+merges; Houston says so in a notice whose **Reopen** action returns it. A closed thread whose
+chat tab is still open stays in its workspace until the tab closes.
 The same page can close threads with no activity after a chosen number of days, and a thread
 with a pull request can be exempted from inactivity closing. New activity brings a closed
 thread back.

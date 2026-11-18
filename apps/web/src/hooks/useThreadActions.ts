@@ -27,6 +27,7 @@ import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/reactivity";
 import { useRouter } from "@tanstack/react-router";
 
+import { forgetLocallySettled, noteLocallySettled } from "../autoCloseOnMerge";
 import { getFallbackThreadIdAfterDelete, pinOrderKeyBetween } from "../components/Sidebar.logic";
 import { resolveSnoozePresets as resolveThreadSnoozePresets } from "../components/Sidebar.snooze";
 import { openThreadFind } from "../components/chat/threadFindStore";
@@ -800,11 +801,13 @@ export function useThreadActions() {
     ThreadUndo.invalidate("pin", scopedThreadKey(target));
     ThreadUndo.invalidate("snooze", scopedThreadKey(target));
     const action = ThreadUndo.begin("settle", scopedThreadKey(target));
+    const locallySettledKey = noteLocallySettled(target);
     const result = await settleThreadMutation({
       environmentId: target.environmentId,
       input: { threadId: target.threadId },
     });
     if (result._tag !== "Success") {
+      forgetLocallySettled(locallySettledKey);
       action.finish();
       // A stale leaf points at a thread the server never created; closing it is done.
       return isThreadNotFoundDispatchFailure(result) ? AsyncResult.success(undefined) : result;
