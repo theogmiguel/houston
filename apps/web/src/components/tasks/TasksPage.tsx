@@ -566,7 +566,6 @@ export function TasksPage() {
                       : workspace)
                   }
                   onProjectChange={setSourceProjectId}
-                  onOpenTask={openTask}
                 />
               ) : view === "queue" ? (
                 <TaskQueueView

@@ -42,7 +42,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { TaskEditorDialog, type TaskDeliveryOption } from "./TaskEditorDialog";
 import { TASKS_PANEL_REF } from "./taskPanel";
-import { TaskSourceLinks } from "./TaskSourceLinks";
 import { useTaskCommands } from "./useTaskCommands";
 import {
   TASK_KIND_LABELS,
@@ -899,13 +898,6 @@ export function TaskDetailPanel({
         </div>
         {tab === "overview" ? (
           <div className="flex min-w-0 flex-col gap-4">
-            <TaskSourceLinks
-              environmentId={environmentId}
-              taskKey={taskKey}
-              taskId={task.id}
-              taskRevision={task.revision}
-              refUrl={task.refUrl}
-            />
             <section className="flex min-w-0 flex-col gap-1.5">
               <Text variant="caption" tone="muted" weight="medium">
                 Issue

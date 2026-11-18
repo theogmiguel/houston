@@ -20,16 +20,16 @@ export const v1TaskImportRun = createEnvironmentRpcCommand(connectionAtomRuntime
   tag: WS_METHODS.houstonTasksImportV1Run,
 });
 
-export const v1TaskSourceImportStatus = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
-  label: "environment-data:houston-v1:task-sources-status",
-  tag: WS_METHODS.houstonTaskSourcesImportV1Status,
+export const v1IssueImportStatus = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
+  label: "environment-data:houston-v1:issue-links-status",
+  tag: WS_METHODS.issueTrackersImportV1Status,
   staleTimeMs: 0,
   idleTtlMs: 30_000,
 });
 
-export const v1TaskSourceImportRun = createEnvironmentRpcCommand(connectionAtomRuntime, {
-  label: "environment-data:houston-v1:task-sources-run",
-  tag: WS_METHODS.houstonTaskSourcesImportV1Run,
+export const v1IssueImportRun = createEnvironmentRpcCommand(connectionAtomRuntime, {
+  label: "environment-data:houston-v1:issue-links-run",
+  tag: WS_METHODS.issueTrackersImportV1Run,
 });
 
 export const v1SlackImportStatus = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {

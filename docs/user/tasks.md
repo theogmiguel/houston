@@ -12,9 +12,9 @@ The Tasks page has three views:
   list under **Done and archived**.
 - **By project** lists each project's deliveries, their slices, then ungrouped tasks. It
   shows delivery count and slice progress and opens the project editor.
-- **Sources** shows where work comes from: Slack requests, Notion, unresolved tracker
-  conflicts and each source's state. GitHub issues are on the Issues page, and a task can be
-  created from an issue.
+- **Sources** shows where work comes from: Slack requests and each source's state. Notion
+  pages and GitHub, GitLab, Azure DevOps, Forgejo and Linear issues are on the Issues page,
+  and a task can be created from an issue.
 
 Search by title or key, and scope the list to one project or **All workspaces**. Select a
 task to open its detail in the right panel; the task's URL carries its key.
@@ -100,20 +100,17 @@ merges, the task moves to **Done**. A stopped, failed or interrupted attempt can
 
 ## Sources
 
-Slack and Notion are configured in **Settings ▸ Task sources**; project sources can also be
-opened from the **Sources** view. GitHub issues are tracked on the **Issues** page, and a task
-is created from an issue rather than imported by a source.
+Slack is configured in **Settings ▸ Task sources**; it can also be opened from the **Sources**
+view. Every issue tracker is on the **Issues** page, and a task is created from an issue rather
+than imported by a source.
 
 - **Slack** turns a bot mention in a mapped channel into a pending task. The configured
   owner starts it with Slack's white-check reaction; another member's reaction does not
   approve it. Tokens live in the server's secret store.
-- **Notion** reads a configured tasks data source and writes status, pull request links and
-  handback summaries.
 
-Imported remote text is a labelled snapshot; local decisions and corrections are kept
-separately. If the same field changed on both sides, Houston keeps both values until you
-resolve the conflict. The **Sources** view lists unresolved conflicts from Notion and opens
-the task that holds the resolver.
+A task's hand-back is posted as a comment on its linked issue. When the project's issue-tracker
+binding maps a pull request URL property, the task's pull request URL is written there as well.
+A tracker refusal appears in the task's activity and never holds the task back.
 
 ## Agent access
 

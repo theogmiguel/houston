@@ -38,9 +38,14 @@ undoes it. Linked issues are listed in the thread's details beside its pull requ
 the issues they work on with the `link_issue` tool, and can list, read, file and comment on issues
 and change their state through the other issue tools.
 
-To list a Linear team's issues beside a project's, connect Linear with an API key under
-**Settings ▸ Source control**, then choose the team for that project there. Removing the key
-disconnects Linear and removes those project bindings.
+To list a Linear team's or a Notion data source's issues beside a project's, connect the
+tracker under **Settings ? Source control**, then choose the team or data source for that
+project there. A Notion binding also maps the data source's title, status and optional
+description, assignee, labels and pull request URL properties; its status options are the
+issue states, in the data source's own order, and a status group named Complete closes one.
+Notion cannot filter a listing by involvement or by an assignee's login; the page names that
+when those filters are chosen. Removing the tracker's credential disconnects it and removes
+those project bindings.
 
 ## Requests
 

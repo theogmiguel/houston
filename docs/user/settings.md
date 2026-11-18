@@ -125,8 +125,9 @@ settings and merge history. See [Merge queue](pull-requests.md#merge-queue).
 
 ## Source control
 
-Accounts and tokens for each host, issue trackers (connect Linear with an API key and bind each
-project to a team), repository conventions, generated change description and pull request text,
+Accounts and tokens for each host, issue trackers (connect Linear with an API key and Notion
+with an integration token, then bind each project to a team or data source and map its
+properties), repository conventions, generated change description and pull request text,
 review guides (beta), automatic pull and the default merge method.
 
 ## Worktrees
@@ -143,8 +144,8 @@ between trusted environments. See [Environments and task sources](connections.md
 
 ## Task sources
 
-Slack intake, per-project Notion, the Houston 1 import, and a pointer to issue-backed tasks
-on the Issues page.
+Slack intake, the Houston 1 import of Notion page links as issue-backed tasks, and a pointer
+to issue-backed tasks on the Issues page.
 
 ## Sharing & access
 
@@ -155,8 +156,8 @@ and can be revoked.
 ## Secrets
 
 Secret providers, currently 1Password, used as the source of a provider credential. A
-stored credential is never shown again. Source control and task source tokens are set on
-their own pages.
+stored credential is never shown again. Source control, issue-tracker and Slack tokens are set
+on their own pages.
 
 ## Maintenance
 
