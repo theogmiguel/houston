@@ -224,9 +224,12 @@ it from the rail into **Settings ▸ Archive**, and is refused while a run is ac
 **Delete** removes the thread and its history after confirmation. Confirmation prompts are
 configurable in **Settings ▸ General ▸ Confirmations**.
 
-**Settings ▸ Threads ▸ Auto-close** can close a thread when its pull request merges, and
-close threads with no activity after a chosen number of days. A thread with a pull request
-can be exempted from inactivity closing. New activity brings a closed thread back.
+**Settings ▸ Threads ▸ Auto-close** is off by default, so a merged pull request leaves its
+thread open. Turn on **Auto-close merged threads** to close a thread when its pull request
+merges.
+The same page can close threads with no activity after a chosen number of days, and a thread
+with a pull request can be exempted from inactivity closing. New activity brings a closed
+thread back.
 
 ## The composer
 

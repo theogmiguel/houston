@@ -756,3 +756,13 @@ describe("ClientSettingsSchema sidebarShowNeedsYou", () => {
     expect(decodeClientSettings({ sidebarShowNeedsYou: false }).sidebarShowNeedsYou).toBe(false);
   });
 });
+
+describe("auto-close on merge", () => {
+  it("is off unless the user turned it on", () => {
+    expect(DEFAULT_SERVER_SETTINGS.sidebarAutoSettleOnMerge).toBe(false);
+    expect(decodeServerSettings({}).sidebarAutoSettleOnMerge).toBe(false);
+    expect(decodeServerSettings({ sidebarAutoSettleOnMerge: true }).sidebarAutoSettleOnMerge).toBe(
+      true,
+    );
+  });
+});

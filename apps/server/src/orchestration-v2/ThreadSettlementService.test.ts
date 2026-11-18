@@ -806,7 +806,11 @@ describe("ThreadSettlementServiceV2 worker", () => {
         });
         const fixture = yield* makeHarness({
           snapshot: makeSnapshot([thread]),
-          settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleAfterDays: null },
+          settings: {
+            ...DEFAULT_SERVER_SETTINGS,
+            sidebarAutoSettleOnMerge: true,
+            sidebarAutoSettleAfterDays: null,
+          },
         });
 
         yield* Effect.gen(function* () {
@@ -901,6 +905,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
       Effect.gen(function* () {
         yield* TestClock.setTime(Date.parse(NOW));
         const fixture = yield* makeHarness({
+          settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleOnMerge: true },
           snapshot: makeSnapshot([
             makeThread("linked-worktree", {
               branch: "linked",
@@ -941,6 +946,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
       Effect.gen(function* () {
         yield* TestClock.setTime(Date.parse(NOW));
         const fixture = yield* makeHarness({
+          settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleOnMerge: true },
           snapshot: makeSnapshot(
             [
               makeThread("unreadable-worktree", {
@@ -1016,6 +1022,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
         const mergedThreadSettled = yield* Deferred.make<void>();
         const branchLookupCount = yield* Ref.make(0);
         const fixture = yield* makeHarness({
+          settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleOnMerge: true },
           snapshot: makeSnapshot([
             makeThread("merged-in-app", {
               latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
@@ -1095,6 +1102,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
           latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
         });
         const fixture = yield* makeHarness({
+          settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleOnMerge: true },
           snapshot: makeSnapshot([waiting, slow]),
           branchPullRequest: () =>
             Ref.updateAndGet(branchLookupCount, (count) => count + 1).pipe(
@@ -1171,6 +1179,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
           pendingBackgroundTasks: [{ taskId: "child", kind: "subagent", description: "Review" }],
         });
         const fixture = yield* makeHarness({
+          settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleOnMerge: true },
           snapshot: makeSnapshot([slow, merged]),
           branchPullRequest: () =>
             Ref.updateAndGet(branchLookupCount, (count) => count + 1).pipe(
@@ -1233,6 +1242,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
           latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
         });
         const fixture = yield* makeHarness({
+          settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleOnMerge: true },
           snapshot: makeSnapshot([thread]),
           // The host already merged it; only a fresh read sees that past the cached open lookup.
           branchPullRequest: (_input, lookupOptions) =>
@@ -1301,6 +1311,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
           const state = yield* Ref.make<"open" | "merged">("open");
           const mergedThreadSettled = yield* Deferred.make<void>();
           const fixture = yield* makeHarness({
+            settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleOnMerge: true },
             snapshot: makeSnapshot([
               makeThread("branch-thread", {
                 branch: "saved-feature",
@@ -1341,6 +1352,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
         const releaseMergeLookup = yield* Deferred.make<void>();
         const lookupCount = yield* Ref.make(0);
         const fixture = yield* makeHarness({
+          settings: { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleOnMerge: true },
           snapshot: makeSnapshot([
             makeThread("merged-in-app", {
               latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),

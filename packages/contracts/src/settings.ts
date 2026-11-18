@@ -1454,7 +1454,7 @@ export const ServerSettings = Schema.Struct({
   sidebarAutoSettleKeepPullRequests: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
-  sidebarAutoSettleOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  sidebarAutoSettleOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   backgroundActivity: BackgroundActivitySettings,
 
   automaticGitFetchInterval: Schema.DurationFromMillis.pipe(
