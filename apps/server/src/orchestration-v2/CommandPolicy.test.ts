@@ -210,38 +210,41 @@ it("queues an automatic send for a provider that cannot steer either way", () =>
   );
 });
 
-it.each(["/compact", " /LOGOUT "])("queues a steer sent while %s runs", (text) => {
-  const projection = dispatchProjection(baseCapabilities);
-  const maintenance = {
-    ...projection,
-    messages: [{ id: userMessageId, text, attachments: [] }],
-  } as unknown as OrchestrationV2ThreadProjection;
-  for (const deliveryIntent of ["auto", "steer"] as const) {
+it.each(["/compact", "/compact keep the open decisions", " /LOGOUT "])(
+  "queues a steer sent while %s runs",
+  (text) => {
+    const projection = dispatchProjection(baseCapabilities);
+    const maintenance = {
+      ...projection,
+      messages: [{ id: userMessageId, text, attachments: [] }],
+    } as unknown as OrchestrationV2ThreadProjection;
+    for (const deliveryIntent of ["auto", "steer"] as const) {
+      assert.deepEqual(
+        CommandPolicy.resolveMessageDispatchIntent(
+          maintenance,
+          { type: "start_immediately" },
+          deliveryIntent,
+        ),
+        { type: "queue_after_active" },
+      );
+    }
+    assert.deepEqual(
+      CommandPolicy.resolveMessageDispatchIntent(maintenance, {
+        type: "steer_active",
+        targetRunId: activeRunId,
+      }),
+      { type: "queue_after_active" },
+    );
     assert.deepEqual(
       CommandPolicy.resolveMessageDispatchIntent(
         maintenance,
         { type: "start_immediately" },
-        deliveryIntent,
+        "restart",
       ),
-      { type: "queue_after_active" },
+      { type: "restart_active", targetRunId: activeRunId },
     );
-  }
-  assert.deepEqual(
-    CommandPolicy.resolveMessageDispatchIntent(maintenance, {
-      type: "steer_active",
-      targetRunId: activeRunId,
-    }),
-    { type: "queue_after_active" },
-  );
-  assert.deepEqual(
-    CommandPolicy.resolveMessageDispatchIntent(
-      maintenance,
-      { type: "start_immediately" },
-      "restart",
-    ),
-    { type: "restart_active", targetRunId: activeRunId },
-  );
-});
+  },
+);
 
 const layer = it.layer(CommandPolicy.layer);
 

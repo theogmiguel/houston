@@ -23,6 +23,7 @@ import {
   type ChatAttachment,
   CommandId,
   isCompactionCommandMessage,
+  isCompactCommandText,
   isOrchestrationV2WorkActive,
   isProviderNativeSubagentThread,
   MessageId,
@@ -5694,10 +5695,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       return yield* new OrchestratorDispatchError({
         commandId: input.command.commandId,
         commandType: input.command.type,
-        cause:
-          input.text.trim().toLowerCase() === "/compact"
-            ? "Context compaction must run as a separate turn. Queue it or wait for the active turn to finish."
-            : "Signing out must run as a separate turn. Queue it or wait for the active turn to finish.",
+        cause: isCompactCommandText(input.text)
+          ? "Context compaction must run as a separate turn. Queue it or wait for the active turn to finish."
+          : "Signing out must run as a separate turn. Queue it or wait for the active turn to finish.",
       });
     }
     if (parseGoalCommand(input) !== null) {
@@ -5715,10 +5715,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       return yield* new OrchestratorDispatchError({
         commandId: input.command.commandId,
         commandType: input.command.type,
-        cause:
-          targetMessage.text.trim().toLowerCase() === "/compact"
-            ? "Wait for context compaction to finish before steering the thread."
-            : "Wait for sign-out to finish before steering the thread.",
+        cause: isCompactCommandText(targetMessage.text)
+          ? "Wait for context compaction to finish before steering the thread."
+          : "Wait for sign-out to finish before steering the thread.",
       });
     }
     const rootNodeId = targetRun.rootNodeId;

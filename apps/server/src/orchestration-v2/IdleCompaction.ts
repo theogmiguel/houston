@@ -1,4 +1,5 @@
 import {
+  isCompactCommandText,
   isListedThreadLineage,
   type OrchestrationV2ThreadProjection,
 } from "@houston-app/contracts";
@@ -61,7 +62,7 @@ export function idleCompactionWindow(
   if (latestRun?.status !== "completed" || latestRun.completedAt === null) return null;
   const message = messages.find((candidate) => candidate.id === latestRun.userMessageId);
   // Never compact a compaction, so one idle spell compacts at most once.
-  if (message === undefined || message.text.trim().toLowerCase() === "/compact") return null;
+  if (message === undefined || isCompactCommandText(message.text)) return null;
   if (
     runtimeRequests.some((request) => request.status === "pending") ||
     // A pending merge-back belongs to the user's next message.

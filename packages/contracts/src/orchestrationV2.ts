@@ -547,6 +547,19 @@ export function isProviderNativeSubagentThread(
 
 export const IDLE_COMPACTION_TEXT = "/compact";
 
+const COMPACT_COMMAND_PATTERN = /^\/compact(?:\s|$)/iu;
+const COMPACT_COMMAND_ARGUMENTS = /^\/compact\s*([\s\S]*)$/iu;
+
+/** `/compact` on its own or followed by what the summary must keep. */
+export function isCompactCommandText(text: string): boolean {
+  return COMPACT_COMMAND_PATTERN.test(text.trim());
+}
+
+/** The text after `/compact`, or "" for a bare command. */
+export function compactCommandInstructions(text: string): string {
+  return COMPACT_COMMAND_ARGUMENTS.exec(text.trim())?.[1]?.trim() ?? "";
+}
+
 interface CompactionMessageFields {
   readonly role: string;
   readonly text: string;
@@ -560,7 +573,7 @@ interface CompactionMessageFields {
 export function isCompactionCommandMessage(message: CompactionMessageFields): boolean {
   return (
     message.role === "user" &&
-    message.text.trim().toLowerCase() === IDLE_COMPACTION_TEXT &&
+    isCompactCommandText(message.text) &&
     (message.attachments?.length ?? 0) === 0
   );
 }

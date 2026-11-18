@@ -1,4 +1,8 @@
+import { useState } from "react";
+
 import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { InputGroup } from "../ui/input-group";
 import { type ContextWindowSnapshot, formatContextWindowTokens } from "~/lib/contextWindow";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import {
@@ -24,11 +28,12 @@ function formatPercentage(value: number | null): string | null {
 export function ContextWindowMeter(props: {
   usage: ContextWindowSnapshot;
   modelDisplayName?: string | null;
-  onCompact?: (() => void) | undefined;
+  onCompact?: ((instructions: string) => void) | undefined;
   compactDisabled?: boolean | undefined;
   compactDisabledReason?: string | null | undefined;
 }) {
   const { usage, modelDisplayName, onCompact, compactDisabled, compactDisabledReason } = props;
+  const [instructions, setInstructions] = useState("");
   const usedPercentage = formatPercentage(usage.usedPercentage);
   const normalizedPercentage = Math.max(0, Math.min(100, usage.usedPercentage ?? 0));
   // A 16px ring: the track is always whole and the arc over it grows clockwise from 12 o'clock.
@@ -168,12 +173,23 @@ export function ContextWindowMeter(props: {
           ) : null}
           {onCompact ? (
             <>
+              <InputGroup className="mt-1">
+                <Input
+                  nativeInput
+                  size="compact"
+                  aria-label="What to keep"
+                  placeholder="What to keep (optional)"
+                  value={instructions}
+                  disabled={compactDisabled}
+                  onChange={(event) => setInstructions(event.target.value)}
+                />
+              </InputGroup>
               <Button
                 size="xs"
                 variant="outline"
-                className="mt-1 w-full justify-center"
+                className="w-full justify-center"
                 disabled={compactDisabled}
-                onClick={onCompact}
+                onClick={() => onCompact(instructions.trim())}
               >
                 <Minimize2Icon aria-hidden="true" />
                 Compact context

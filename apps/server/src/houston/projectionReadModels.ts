@@ -25,14 +25,15 @@ const idleCompactionSql = (payload: string) => {
   END`;
 };
 
-// The turn-start command filters: a trimmed text of /compact (any case) or one starting with /goal.
+// The turn-start command filters: /compact (any case, optionally with instructions) or /goal.
 // Most texts are rejected on the first character of the left-trimmed first 64. When those still hold
 // 8, they decide the prefix, so a long text is trimmed whole only when it starts with /compact or with
 // 64 whitespace characters.
 const commandKindSql = (payload: string) => {
   const text = `json_extract(${payload}, '$.text')`;
   const head = `ltrim(substr(${text}, 1, 64), ${JAVASCRIPT_TRIM_CHARS})`;
-  const compact = `lower(trim(${text}, ${JAVASCRIPT_TRIM_CHARS})) = '/compact'`;
+  const compactText = `trim(${text}, ${JAVASCRIPT_TRIM_CHARS})`;
+  const compact = `(lower(${compactText}) = '/compact' OR (lower(substr(${compactText}, 1, 8)) = '/compact' AND substr(${compactText}, 9, 1) IN (' ', char(9), char(10), char(13))))`;
   return `CASE
     WHEN json_valid(${payload}) IS NOT 1 THEN NULL
     WHEN substr(${head}, 1, 1) NOT IN ('/', '') THEN NULL

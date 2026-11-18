@@ -119,6 +119,7 @@ import {
   type ProviderThreadId,
   type RunId,
   type ThreadId,
+  compactCommandInstructions,
   isDelegatedAppThread,
   resolveIdleCompaction,
 } from "@houston-app/contracts";
@@ -12160,11 +12161,17 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ),
           ),
           startTurn,
-          compactThread: (turnInput) =>
-            startTurn({
+          compactThread: (turnInput) => {
+            // The Claude CLI reads `/compact <instructions>` and keeps them for the summary.
+            const instructions = compactCommandInstructions(turnInput.message.text);
+            return startTurn({
               ...turnInput,
-              message: { ...turnInput.message, text: "/compact" },
-            }),
+              message: {
+                ...turnInput.message,
+                text: instructions.length === 0 ? "/compact" : `/compact ${instructions}`,
+              },
+            });
+          },
           steerTurn,
           mcpApps: {
             listTools: Effect.fn("ClaudeAdapterV2.listMcpTools")(function* ({

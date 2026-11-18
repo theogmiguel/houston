@@ -1,4 +1,4 @@
-import { expect, it } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
@@ -97,4 +97,33 @@ it("fills the popover bar with a scaleX transform, not a width", async () => {
   expect(fill.style.transform).toBe("scaleX(0.85)");
   expect(fill.style.width).toBe("");
   expect(getComputedStyle(fill).transitionProperty).not.toContain("width");
+});
+
+it("carries what the summary must keep into the compact action", async () => {
+  const onCompact = vi.fn();
+  await using _screen = await render(
+    <TooltipProvider delay={0}>
+      <ContextWindowMeter usage={snapshot(8)} modelDisplayName="Opus" onCompact={onCompact} />
+    </TooltipProvider>,
+    { router: false },
+  );
+  await userEvent.hover(page.getByRole("button", { name: "Context window 8% used" }));
+  const field = page.getByRole("textbox", { name: "What to keep" });
+  await expect.element(field).toBeVisible();
+  await userEvent.type(field, "keep the open decisions");
+  await page.getByRole("button", { name: "Compact context" }).click();
+  expect(onCompact).toHaveBeenCalledExactlyOnceWith("keep the open decisions");
+});
+
+it("asks for a bare compact when the instructions are empty", async () => {
+  const onCompact = vi.fn();
+  await using _screen = await render(
+    <TooltipProvider delay={0}>
+      <ContextWindowMeter usage={snapshot(8)} modelDisplayName="Opus" onCompact={onCompact} />
+    </TooltipProvider>,
+    { router: false },
+  );
+  await userEvent.hover(page.getByRole("button", { name: "Context window 8% used" }));
+  await page.getByRole("button", { name: "Compact context" }).click();
+  expect(onCompact).toHaveBeenCalledExactlyOnceWith("");
 });

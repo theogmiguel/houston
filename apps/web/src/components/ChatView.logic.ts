@@ -30,6 +30,7 @@ import {
   type ChatFileAttachment,
   type CommandId,
   type EnvironmentId,
+  isCompactCommandText,
   isProviderDriverKind,
   ProjectId,
   type MessageId,
@@ -837,10 +838,6 @@ export function shouldShowPlanFollowUpPrompt(input: {
   );
 }
 
-// A typed `/compact`, with or without instructions, is already the compaction. Queueing a
-// bare one ahead of it would run an uninstructed compaction first and charge for two.
-const COMPACT_COMMAND_PATTERN = /^\/compact(?:\s|$)/i;
-
 const sessionDismissedBranchMismatchKeys = new Set<string>();
 
 export function dismissBranchMismatchForSession(key: string): void {
@@ -1431,7 +1428,7 @@ export function planComposerTurn(input: {
     !input.freshContext &&
     input.resumeCompactionTokens !== null &&
     !input.keepFullHistory &&
-    !COMPACT_COMMAND_PATTERN.test(input.messageText);
+    !isCompactCommandText(input.messageText);
   const dispatchMode =
     input.freshContext && (input.dispatchMode === "steer" || input.dispatchMode === "restart")
       ? "queue"

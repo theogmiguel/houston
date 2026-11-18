@@ -3113,9 +3113,13 @@ export default function ChatView(props: ChatViewProps) {
         onRespond={onRespondToApprovalStable}
       />
     );
-  const onCompactContext = () => {
+  const onCompactContext = (instructions?: string) => {
     if (compactDisabled) return;
-    void sendStandaloneCommand("/compact", "Failed to compact context.");
+    const trimmed = instructions?.trim() ?? "";
+    void sendStandaloneCommand(
+      trimmed.length === 0 ? "/compact" : `/compact ${trimmed}`,
+      "Failed to compact context.",
+    );
   };
 
   const {

@@ -550,7 +550,7 @@ export interface ChatComposerProps {
   }> | null;
   onRemoveEditingQueuedAttachment: (attachmentId: string) => void;
 
-  onCompactContext: () => void;
+  onCompactContext: (instructions?: string) => void;
   onSend: (
     e?: { preventDefault: () => void },
     dispatchMode?: ComposerDispatchMode,
@@ -2526,7 +2526,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setPrompt(savedValue);
   };
   const saveCitationDraftToPromptStable = useStableCallback(saveCitationDraftToPrompt);
-  const compactThreadContext = () => {
+  const compactThreadContext = (instructions?: string) => {
     if (
       !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope) ||
       compactDisabled ||
@@ -2539,7 +2539,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ) {
       return;
     }
-    onCompactContext();
+    onCompactContext(instructions);
   };
   const compactThreadContextStable = useStableCallback(compactThreadContext);
   const expandMobileComposer = () => {
@@ -4176,7 +4176,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     <ContextWindowMeter
                       usage={activeContextWindow}
                       modelDisplayName={activeThreadModelDisplayName}
-                      onCompact={compactCommandAvailable ? compactThreadContextStable : undefined}
+                      onCompact={
+                        compactCommandAvailable
+                          ? (instructions) => compactThreadContextStable(instructions)
+                          : undefined
+                      }
                       compactDisabled={compactDisabled || noProviderAvailable || isSendBusy}
                       compactDisabledReason={resolvedCompactDisabledReason}
                     />

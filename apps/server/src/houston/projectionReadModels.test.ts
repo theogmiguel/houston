@@ -520,7 +520,14 @@ describe("the turn-start command flag returns what the payload filter returned",
       const legacy = yield* sql<{ readonly message_id: string }>`
         SELECT message_id FROM orchestration_v2_projection_messages
         WHERE thread_id = 'thread' AND (
-          (role = 'user' AND lower(trim(json_extract(payload_json, '$.text'), ${JAVASCRIPT_TRIM})) = '/compact')
+          (role = 'user' AND (
+            lower(trim(json_extract(payload_json, '$.text'), ${JAVASCRIPT_TRIM})) = '/compact'
+            OR (
+              lower(substr(trim(json_extract(payload_json, '$.text'), ${JAVASCRIPT_TRIM}), 1, 8)) = '/compact'
+              AND substr(trim(json_extract(payload_json, '$.text'), ${JAVASCRIPT_TRIM}), 9, 1)
+                IN (' ', char(9), char(10), char(13))
+            )
+          ))
           OR (role = 'user' AND trim(json_extract(payload_json, '$.text'), ${JAVASCRIPT_TRIM}) GLOB '/goal*')
         ) ORDER BY message_id
       `;
@@ -533,6 +540,7 @@ describe("the turn-start command flag returns what the payload filter returned",
         legacy.map((row) => row.message_id),
         [
           "compact",
+          "compact-args",
           "compact-attachment",
           "compact-deep",
           "compact-padded",
