@@ -271,7 +271,8 @@ export function resolveSnoozePreset(
     whenLabel:
       labelNamesDay || wake.toDateString() === now.toDateString()
         ? time
-        : `${wake.toLocaleDateString(undefined, { weekday: "short" })} ${time}`,
+        : // The day joins English labels ("Next week Mon"); the system locale would mix languages.
+          `${wake.toLocaleDateString("en-US", { weekday: "short" })} ${time}`,
     snoozedUntil: wake.toISOString(),
   };
 }
