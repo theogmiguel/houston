@@ -345,7 +345,7 @@ function CollapsedComment({
   );
 }
 
-function MetaRow({
+export function PullRequestMetaRow({
   icon,
   label,
   children,
@@ -365,7 +365,7 @@ function MetaRow({
   );
 }
 
-function Section({
+export function PullRequestSection({
   title,
   defaultOpen = true,
   keepMounted = false,
@@ -754,7 +754,7 @@ export function PullRequestSummaryTab({
       <section className="px-4 pt-2.5 pb-1">
         <div className="space-y-2">
           {readiness ? null : (
-            <MetaRow icon={<UsersIcon className="size-3.5" />} label="Reviewers">
+            <PullRequestMetaRow icon={<UsersIcon className="size-3.5" />} label="Reviewers">
               <span className="flex min-w-0 flex-wrap items-center gap-1.5">
                 {reviewerEntries.length === 0 ? (
                   <span className="text-muted-foreground">None</span>
@@ -827,10 +827,10 @@ export function PullRequestSummaryTab({
                   />
                 ) : null}
               </span>
-            </MetaRow>
+            </PullRequestMetaRow>
           )}
           {detail.labels.length > 0 || detail.capabilities.labels === true ? (
-            <MetaRow icon={<TagIcon className="size-3.5" />} label="Labels">
+            <PullRequestMetaRow icon={<TagIcon className="size-3.5" />} label="Labels">
               <span className="flex min-w-0 flex-wrap items-center gap-1">
                 {detail.labels.length === 0 ? (
                   <span className="text-muted-foreground">None</span>
@@ -852,12 +852,12 @@ export function PullRequestSummaryTab({
                   />
                 ) : null}
               </span>
-            </MetaRow>
+            </PullRequestMetaRow>
           ) : null}
         </div>
       </section>
 
-      <Section key={`description:${detail.url}`} title="Description" keepMounted>
+      <PullRequestSection key={`description:${detail.url}`} title="Description" keepMounted>
         <div className="group">
           {bodyScope?.url === detail.url ? (
             <PullRequestMarkdownEditor
@@ -892,9 +892,9 @@ export function PullRequestSummaryTab({
             </div>
           )}
         </div>
-      </Section>
+      </PullRequestSection>
 
-      <Section key={`checks:${detail.url}`} title="Checks" defaultOpen={false}>
+      <PullRequestSection key={`checks:${detail.url}`} title="Checks" defaultOpen={false}>
         {checksStale ? (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span>Check details are out of date.</span>
@@ -951,9 +951,9 @@ export function PullRequestSummaryTab({
               } /* oxlint-enable react/no-array-index-key */,
           )
         )}
-      </Section>
+      </PullRequestSection>
 
-      <Section
+      <PullRequestSection
         title={`Comments (${detail.commentCount})`}
         actions={
           <div className="flex shrink-0 items-center gap-1">
@@ -1054,7 +1054,7 @@ export function PullRequestSummaryTab({
             )}
           </>
         )}
-      </Section>
+      </PullRequestSection>
     </div>
   );
 }

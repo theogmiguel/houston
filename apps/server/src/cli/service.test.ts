@@ -6,6 +6,7 @@ import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as TestConsole from "effect/testing/TestConsole";
 import { Command } from "effect/cli";
 import { afterEach, vi } from "vite-plus/test";
@@ -124,6 +125,32 @@ it.layer(Layer.mergeAll(NodeServices.layer, NetService.layer))("service commands
       );
       expect(yield* fs.readFileString(`${baseDir}/service.env`)).toBe(input.expected);
     }),
+  );
+
+  it.effect("install tells a new service how other devices reach it with commands that exist", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-service-cli-test-" });
+      const { service } = makeTestService({ ...status, installed: false, current: false });
+      vi.spyOn(BootService, "layer").mockReturnValue(
+        Layer.succeed(BootService.BootService, service),
+      );
+
+      yield* Command.runWith(serviceCommand, { version: packageJson.version })([
+        "install",
+        "--base-dir",
+        baseDir,
+      ]).pipe(
+        Effect.provideService(HostProcess.Environment, {}),
+        Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }))),
+      );
+      const output = (yield* TestConsole.logLines).join("\n");
+
+      expect(output).not.toContain("houston up");
+      expect(output).toContain("houston pair --tailscale");
+      expect(output).toContain((yield* Path.Path).join(baseDir, "service.env"));
+      expect(output).toContain("houston service restart");
+    }).pipe(Effect.provide(Layer.fresh(TestConsole.layer))),
   );
 
   it.effect("protect refuses root before creating any Houston directories", () =>

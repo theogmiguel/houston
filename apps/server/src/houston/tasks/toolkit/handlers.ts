@@ -9,6 +9,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 
+import * as IssueService from "../../../issue/IssueService.ts";
 import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
 import * as McpToolAccess from "../../../mcp/McpToolAccess.ts";
 import { resolveInteractionMode, resolveRuntimeMode } from "../../../mcp/delegatedTaskModes.ts";
@@ -258,8 +259,47 @@ export const layer = McpToolAccess.toLayer(HoustonTaskToolkit, {
     Effect.gen(function* () {
       const tool = "houston_task_create";
       const agent = yield* agentFor(tool, "write");
-      yield* checkPatch(tool, agent, input);
-      const patch = yield* toPatch({ projectId: agent.projectId, ...input });
+      const { issueUrl, title, ...fields } = input;
+      if (issueUrl !== undefined) {
+        if (title !== undefined || Object.values(fields).some((value) => value !== undefined)) {
+          return yield* refuse(
+            "invalid",
+            tool,
+            "issueUrl creates the task alone, because the issue names it; update the task after creating it",
+          );
+        }
+        const issues = yield* IssueService.IssueService;
+        const resolved = yield* issues
+          .resolveUrl(issueUrl, agent.projectId)
+          .pipe(
+            Effect.mapError((error) =>
+              refuse(
+                error._tag === "IssueUnavailableError" ? "unsupported" : "invalid",
+                tool,
+                `issue URL "${issueUrl}" could not be resolved: ${error.message}`,
+              ),
+            ),
+          );
+        if (resolved.projectId !== agent.projectId) {
+          return yield* otherWorkspace(tool, `issue ${resolved.key}`, resolved.projectId);
+        }
+        const task = yield* (yield* HoustonTaskService).createFromIssue(
+          {
+            projectId: resolved.projectId,
+            tracker: resolved.tracker,
+            host: resolved.host,
+            scope: resolved.scope,
+            key: resolved.key,
+          },
+          agent.actor,
+        );
+        return { untrusted, task: capped(task) };
+      }
+      if (title === undefined) {
+        return yield* refuse("invalid", tool, "a title or an issueUrl is required");
+      }
+      yield* checkPatch(tool, agent, fields);
+      const patch = yield* toPatch({ ...fields, title, projectId: agent.projectId });
       const task = yield* (yield* HoustonTaskService).save({ patch }, agent.actor);
       return { untrusted, task: capped(task) };
     }),

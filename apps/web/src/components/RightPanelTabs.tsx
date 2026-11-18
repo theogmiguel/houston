@@ -44,6 +44,7 @@ import {
   FolderTree,
   GitCompareArrows,
   Globe,
+  CircleDotIcon,
   ListChecks,
   Plus,
   SquareTerminal,
@@ -242,6 +243,7 @@ type TabContextMenuAction =
   | "close-to-right"
   | "close-all";
 
+const NUMERIC_ISSUE_KEY = /^\d+$/;
 const TAB_SCROLL_EDGE_TOLERANCE = 1;
 const TAB_DRAG_MODIFIERS = [restrictToHorizontalAxis, restrictToFirstScrollableAncestor];
 
@@ -627,6 +629,9 @@ function surfaceTitle(
       return `#${surface.number}`;
     case "pull-requests":
       return "Pull requests";
+    case "issue":
+      // A git host numbers its issues; a tracker with keys of its own names them.
+      return NUMERIC_ISSUE_KEY.test(surface.key) ? `#${surface.key}` : surface.key;
     case "task":
       return surface.taskKey;
     case "device":
@@ -721,6 +726,8 @@ function SurfaceIcon({
       );
     case "pull-requests":
       return <PullRequestGlyph.link className="size-3 shrink-0" />;
+    case "issue":
+      return <CircleDotIcon className="size-3 shrink-0" />;
     case "task":
       return <ListChecks className="size-3 shrink-0" />;
     case "side-chat":

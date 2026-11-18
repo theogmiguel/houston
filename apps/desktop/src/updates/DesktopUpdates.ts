@@ -11,6 +11,7 @@ import { errorTag } from "@houston-app/shared/observability";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -24,6 +25,7 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import * as DesktopBackendManager from "../backend/DesktopBackendManager.ts";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
@@ -198,7 +200,13 @@ export class DesktopUpdates extends Context.Service<
     >;
     readonly emitState: Effect.Effect<void>;
     readonly disabledReason: Effect.Effect<Option.Option<string>>;
-    readonly configure: Effect.Effect<void, never, Scope.Scope>;
+    /**
+     * Publishes the update state, then attaches electron-updater once `attachUpdater` completes.
+     * Update actions requested before then wait for it.
+     */
+    readonly configure: (
+      attachUpdater: Effect.Effect<void>,
+    ) => Effect.Effect<void, never, Scope.Scope>;
     /** `minimumVersion` is a track switch's checked release; nothing older is offered after. */
     readonly setChannel: (
       channel: DesktopUpdateChannel,
@@ -361,6 +369,26 @@ function isArm64HostRunningIntelBuild(runtimeInfo: DesktopRuntimeInfo): boolean 
   return runtimeInfo.hostArch === "arm64" && runtimeInfo.appArch === "x64";
 }
 
+// Bounds the wait when no window ever appears, so updates never depend on a renderer painting.
+const UPDATER_ATTACH_FALLBACK = "10 seconds";
+
+/**
+ * Completes once the main window is shown, or as soon as the startup recovery window may need
+ * to offer an update, whichever comes first.
+ */
+export const afterFirstWindow = (
+  state: DesktopState.DesktopState["Service"],
+): Effect.Effect<void> =>
+  Effect.raceAll([
+    Deferred.await(state.mainWindowRevealed),
+    SubscriptionRef.changes(state.primaryBackendStartup).pipe(
+      Stream.filter((startup) => startup._tag === "Failing"),
+      Stream.runHead,
+      Effect.asVoid,
+    ),
+    Effect.sleep(UPDATER_ATTACH_FALLBACK),
+  ]);
+
 /** @public */
 export const make = Effect.gen(function* () {
   const config = yield* DesktopConfig.DesktopConfig;
@@ -382,6 +410,9 @@ export const make = Effect.gen(function* () {
   >([]);
   const finishedUpdateActions = yield* PubSub.unbounded<UpdateAction>();
   const updaterConfiguredRef = yield* Ref.make(false);
+  // Completes once configure has settled whether, and how, electron-updater is attached.
+  const updaterAttached = yield* Deferred.make<void>();
+  const awaitUpdaterAttached = Deferred.await(updaterAttached);
   const lastLoggedDownloadMilestoneRef = yield* Ref.make(-1);
   const notAppliedVersionRef = yield* Ref.make(Option.none<string>());
   // The release a track switch's database check cleared. A build crosses to another track only
@@ -1113,7 +1144,7 @@ export const make = Effect.gen(function* () {
     disabledReason: Ref.get(updateStateRef).pipe(
       Effect.flatMap((state) => resolveStateDisabledReason(state.channel)),
     ),
-    configure: Effect.gen(function* () {
+    configure: Effect.fn("desktop.updates.configure")(function* (attachUpdater) {
       const context = yield* Effect.context<never>();
       const runEffect = (effect: Effect.Effect<void>) => {
         void Effect.runPromiseWith(context)(effect);
@@ -1131,19 +1162,6 @@ export const make = Effect.gen(function* () {
         });
       }
 
-      if (mockUpdates) {
-        yield* electronUpdater.setFeedURL({
-          provider: "generic",
-          url: `http://localhost:${config.mockUpdateServerPort}`,
-        } as ElectronUpdater.ElectronUpdaterFeedUrl);
-      } else if (policy.feedUrl !== undefined) {
-        // The administrator's mirror replaces the GitHub feed baked into app-update.yml.
-        yield* electronUpdater.setFeedURL({
-          provider: "generic",
-          url: policy.feedUrl,
-        } as ElectronUpdater.ElectronUpdaterFeedUrl);
-      }
-
       const settings = yield* desktopSettings.get;
       const disabledReason = yield* resolveDisabledReason;
       yield* setState(
@@ -1153,53 +1171,75 @@ export const make = Effect.gen(function* () {
         ),
       );
       if (Option.isSome(disabledReason)) {
+        yield* Deferred.succeed(updaterAttached, undefined);
         return;
       }
-      yield* Ref.set(updaterConfiguredRef, true);
 
-      yield* electronUpdater.setAutoDownload(false);
-      yield* electronUpdater.setAutoInstallOnAppQuit(false);
-      yield* applyAutoUpdaterChannel(settings.updateChannel);
-      yield* electronUpdater.setDisableDifferentialDownload(
-        isArm64HostRunningIntelBuild(environment.runtimeInfo),
+      const attach = Effect.gen(function* () {
+        if (mockUpdates) {
+          yield* electronUpdater.setFeedURL({
+            provider: "generic",
+            url: `http://localhost:${config.mockUpdateServerPort}`,
+          } as ElectronUpdater.ElectronUpdaterFeedUrl);
+        } else if (policy.feedUrl !== undefined) {
+          // The administrator's mirror replaces the GitHub feed baked into app-update.yml.
+          yield* electronUpdater.setFeedURL({
+            provider: "generic",
+            url: policy.feedUrl,
+          } as ElectronUpdater.ElectronUpdaterFeedUrl);
+        }
+        yield* Ref.set(updaterConfiguredRef, true);
+
+        yield* electronUpdater.setAutoDownload(false);
+        yield* electronUpdater.setAutoInstallOnAppQuit(false);
+        yield* applyAutoUpdaterChannel((yield* desktopSettings.get).updateChannel);
+        yield* electronUpdater.setDisableDifferentialDownload(
+          isArm64HostRunningIntelBuild(environment.runtimeInfo),
+        );
+
+        if (isArm64HostRunningIntelBuild(environment.runtimeInfo)) {
+          yield* logUpdaterInfo(
+            "Apple Silicon host detected while running Intel build; updates will switch to arm64 packages",
+          );
+        }
+
+        yield* electronUpdater.on("checking-for-update", () => {
+          runEffect(
+            logUpdaterInfo("looking for updates").pipe(
+              Effect.withSpan("desktop.updates.handleCheckingForUpdate"),
+            ),
+          );
+        });
+        yield* electronUpdater.on("update-available", (info: unknown) => {
+          runEffect(handleUpdateAvailable(info));
+        });
+        yield* electronUpdater.on("update-not-available", () => {
+          runEffect(handleUpdateNotAvailable);
+        });
+        yield* electronUpdater.on("error", (error: unknown) => {
+          runEffect(handleUpdaterError(error));
+        });
+        yield* electronUpdater.on("download-progress", (progress: unknown) => {
+          runEffect(handleDownloadProgress(progress));
+        });
+        yield* electronUpdater.on("update-downloaded", (info: unknown) => {
+          runEffect(handleUpdateDownloaded(info));
+        });
+
+        yield* startUpdatePollers;
+      }).pipe(Effect.withSpan("desktop.updates.attachUpdater"));
+      yield* attachUpdater.pipe(
+        Effect.andThen(attach),
+        Effect.ensuring(Deferred.succeed(updaterAttached, undefined)),
+        Effect.forkScoped,
       );
-
-      if (isArm64HostRunningIntelBuild(environment.runtimeInfo)) {
-        yield* logUpdaterInfo(
-          "Apple Silicon host detected while running Intel build; updates will switch to arm64 packages",
-        );
-      }
-
-      yield* electronUpdater.on("checking-for-update", () => {
-        runEffect(
-          logUpdaterInfo("looking for updates").pipe(
-            Effect.withSpan("desktop.updates.handleCheckingForUpdate"),
-          ),
-        );
-      });
-      yield* electronUpdater.on("update-available", (info: unknown) => {
-        runEffect(handleUpdateAvailable(info));
-      });
-      yield* electronUpdater.on("update-not-available", () => {
-        runEffect(handleUpdateNotAvailable);
-      });
-      yield* electronUpdater.on("error", (error: unknown) => {
-        runEffect(handleUpdaterError(error));
-      });
-      yield* electronUpdater.on("download-progress", (progress: unknown) => {
-        runEffect(handleDownloadProgress(progress));
-      });
-      yield* electronUpdater.on("update-downloaded", (info: unknown) => {
-        runEffect(handleUpdateDownloaded(info));
-      });
-
-      yield* startUpdatePollers;
-    }).pipe(Effect.withSpan("desktop.updates.configure")),
+    }),
     setChannel: Effect.fn("desktop.updates.setChannel")(function* (
       nextChannel: DesktopUpdateChannel,
       options?: { readonly minimumVersion?: string | undefined },
     ) {
       yield* Effect.annotateCurrentSpan({ channel: nextChannel });
+      yield* awaitUpdaterAttached;
       if (Option.isSome(channelBlockedReason(nextChannel))) {
         return yield* new DesktopUpdateChannelManagedError({
           channel: nextChannel,
@@ -1265,6 +1305,7 @@ export const make = Effect.gen(function* () {
       options?: { readonly allowDowngrade?: boolean },
     ) {
       yield* Effect.annotateCurrentSpan({ reason });
+      yield* awaitUpdaterAttached;
       if (!(yield* Ref.get(updaterConfiguredRef))) {
         return {
           checked: false,
@@ -1278,6 +1319,7 @@ export const make = Effect.gen(function* () {
       };
     }),
     download: Effect.gen(function* () {
+      yield* awaitUpdaterAttached;
       const result = yield* downloadAvailableUpdate;
       return {
         accepted: result.accepted,
@@ -1285,11 +1327,12 @@ export const make = Effect.gen(function* () {
         state: yield* Ref.get(updateStateRef),
       };
     }).pipe(Effect.withSpan("desktop.updates.download")),
-    install: installWithExpectedVersion().pipe(
+    install: awaitUpdaterAttached.pipe(
+      Effect.andThen(installWithExpectedVersion()),
       Effect.map(({ accepted, completed, state }) => ({ accepted, completed, state })),
     ),
     installPrepared: Effect.fn("DesktopUpdates.installPrepared")(function (expectedVersion) {
-      return installWithExpectedVersion(expectedVersion);
+      return awaitUpdaterAttached.pipe(Effect.andThen(installWithExpectedVersion(expectedVersion)));
     }),
   });
 });

@@ -1,9 +1,37 @@
-import type { HoustonTaskSummary } from "@houston-app/contracts/houston/tasks";
+import type {
+  HoustonTaskInitiative,
+  HoustonTaskSummary,
+} from "@houston-app/contracts/houston/tasks";
 import { expect, it, vi } from "vite-plus/test";
 
 import { render } from "../../../test/render";
-import { TaskProjectView } from "./TaskProjectView";
+import { TaskProjectPanel, TaskProjectView } from "./TaskProjectView";
 import { groupTasksByProject } from "./tasks.logic";
+
+const fixture = vi.hoisted(() => ({
+  initiative: null as HoustonTaskInitiative | null,
+  settings: null as Record<string, unknown> | null,
+  calls: [] as unknown[],
+}));
+
+vi.mock("~/state/tasks", async () => {
+  const { AsyncResult } = await import("effect/reactivity");
+  return {
+    tasksEnvironment: { setSettings: {} },
+    useTaskInitiativesResult: () =>
+      AsyncResult.success(fixture.initiative === null ? [] : [fixture.initiative]),
+    useTaskSettings: () => fixture.settings,
+    refreshTaskInitiatives: () => {},
+    refreshTaskDetail: () => {},
+  };
+});
+vi.mock("~/state/use-atom-command", () => ({
+  useAtomCommand: () => async (value: unknown) => {
+    fixture.calls.push(value);
+    return { _tag: "Success" };
+  },
+}));
+vi.mock("~/localApi", () => ({ readLocalApi: () => null }));
 
 function task(
   overrides: Partial<HoustonTaskSummary> &
@@ -15,6 +43,7 @@ function task(
     priority: "none",
     parentId: null,
     refUrl: null,
+    issue: null,
     revision: 1,
     createdBy: "user",
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -64,6 +93,58 @@ it("nests slices under their delivery and shows progress", async () => {
   await expect
     .element(screen.getByRole("progressbar", { name: "Pane chrome slices done" }))
     .toHaveAttribute("aria-valuenow", "1");
+});
+
+it("shows and saves the project's switch that moves linked issues with their tasks", async () => {
+  fixture.initiative = {
+    id: 2,
+    projectId: "p1" as never,
+    name: "Pane chrome",
+    externalUrl: null,
+    trackerDescription: null,
+    localDecisions: [],
+    revision: 1,
+    archivedAt: null,
+  };
+  fixture.settings = {
+    access: "write",
+    startModel: { instanceId: "claudeAgent", model: "claude-opus-5-5" },
+    delivery: "send",
+    reviewer: null,
+    reviewMode: "manual",
+    focus: "bugs",
+    reworkRounds: 0,
+    updateIssueState: false,
+  };
+  fixture.calls = [];
+  const group = groupTasksByProject(tasks, new Map([["p1", "Pane chrome"]])).find(
+    (entry) => entry.projectId === "p1",
+  )!;
+  await using screen = await render(
+    <TaskProjectPanel environmentId={"env" as never} group={group} />,
+  );
+
+  expect(screen.container.textContent).toContain("Update the linked issue's state (Off)");
+  await screen.getByRole("checkbox", { name: "Update the linked issue's state" }).click();
+
+  expect(fixture.calls).toContainEqual({
+    environmentId: "env",
+    input: {
+      projectId: "p1",
+      settings: {
+        access: "write",
+        startModel: { instanceId: "claudeAgent", model: "claude-opus-5-5" },
+        delivery: "send",
+        reviewer: null,
+        reviewMode: "manual",
+        focus: "bugs",
+        reworkRounds: 0,
+        updateIssueState: true,
+      },
+    },
+  });
+  fixture.initiative = null;
+  fixture.settings = null;
 });
 
 it("collapses a project and opens its editor from the title", async () => {

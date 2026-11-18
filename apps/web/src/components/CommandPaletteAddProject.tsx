@@ -4,33 +4,16 @@ import {
 } from "@houston-app/client-runtime/operations/projects";
 import { sourceControlClients } from "@houston-app/client-runtime/source-control-clients";
 import type { SourceControlProviderKind } from "@houston-app/contracts";
-import { FolderGit2Icon, LinkIcon } from "lucide-react";
+import { FolderGit2Icon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
-import { sourceControlIcon } from "~/sourceControlPresentation";
+import { remoteProjectSourceIcon, sourceControlHostIcon } from "~/sourceControlPresentation";
 import { ITEM_ICON_CLASS } from "./CommandPalette.logic";
 import { CommandPaletteTitleIcon } from "./CommandPaletteResults";
 import { Button } from "./ui/button";
 import { Kbd, KbdGroup } from "./ui/kbd";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
-
-export function remoteProjectSourceIcon(
-  source: AddProjectRemoteSource,
-  className: string,
-): ReactNode {
-  if (source === "url") return <LinkIcon className={className} />;
-  const Icon = sourceControlIcon(sourceControlClients.get(source));
-  return <Icon className={className} />;
-}
-
-export function sourceControlHostIcon(
-  definition: NewProjectPublishTarget["definition"],
-  className: string,
-): ReactNode {
-  const Icon = sourceControlIcon(definition);
-  return <Icon className={className} />;
-}
 
 /** The input's trailing submit button for the add-project, clone, and new-project flows. */
 export function CommandPaletteSubmitButton(props: {

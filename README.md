@@ -26,7 +26,7 @@ server's orchestration tools.
 - **Agent orchestration.** An agent can start, message and wait for other threads through
   the server's orchestration tools, and delegate work in managed Git worktrees.
 - **Tasks.** Keep a backlog per project, start tasks in isolated worktrees and review the
-  result before marking work complete. GitHub issues, Notion and Slack requests can feed it.
+  result before marking work complete. Issues, Notion and Slack requests can feed it.
 - **Workspace tools.** Git changes, files, an editor, a browser and pull requests open in the
   right panel next to the thread. Pull requests include a local merge queue.
 - **Session insights.** Thread status, notifications and usage estimates help track work.

@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 
 import { Spinner } from "../components/ui/spinner";
+import { validateIssuesSearch } from "../components/issue/issuesSearch";
 import { validatePullRequestsSearch } from "../components/pullRequest/pullRequestsSearch";
 import { validateTasksSearch } from "../components/tasks/tasksSearch";
 import type { LayoutPageContent } from "./layoutModel";
@@ -10,6 +11,10 @@ const PullRequestsPage = lazy(() =>
   import("../components/pullRequest/PullRequestsPage").then((module) => ({
     default: module.PullRequestsPage,
   })),
+);
+
+const IssuesPage = lazy(() =>
+  import("../components/issue/IssuesPage").then((module) => ({ default: module.IssuesPage })),
 );
 
 const TasksPage = lazy(() =>
@@ -26,9 +31,11 @@ export function LayoutPageTab({ content }: { readonly content: LayoutPageContent
           ...parsed,
           search: validatePullRequestsSearch(parsed.search),
         }
-      : content.kind === "tasks"
-        ? { ...parsed, search: validateTasksSearch(parsed.search) }
-        : parsed;
+      : content.kind === "issues"
+        ? { ...parsed, search: validateIssuesSearch(parsed.search) }
+        : content.kind === "tasks"
+          ? { ...parsed, search: validateTasksSearch(parsed.search) }
+          : parsed;
   return (
     <LayoutPageLocationContext value={location}>
       <div
@@ -42,7 +49,13 @@ export function LayoutPageTab({ content }: { readonly content: LayoutPageContent
             </div>
           }
         >
-          {content.kind === "pull-requests" ? <PullRequestsPage /> : <TasksPage />}
+          {content.kind === "pull-requests" ? (
+            <PullRequestsPage />
+          ) : content.kind === "issues" ? (
+            <IssuesPage />
+          ) : (
+            <TasksPage />
+          )}
         </Suspense>
       </div>
     </LayoutPageLocationContext>

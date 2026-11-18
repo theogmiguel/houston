@@ -1,4 +1,5 @@
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
@@ -18,6 +19,8 @@ export class DesktopState extends Context.Service<
     readonly backendReady: Ref.Ref<boolean>;
     readonly quitting: Ref.Ref<boolean>;
     readonly primaryBackendStartup: SubscriptionRef.SubscriptionRef<PrimaryBackendStartup>;
+    /** Completes when the main window is first shown; launch work that can wait runs after it. */
+    readonly mainWindowRevealed: Deferred.Deferred<void>;
   }
 >()("@houston-app/desktop/app/DesktopState") {}
 
@@ -25,6 +28,7 @@ const make = Effect.all({
   backendReady: Ref.make(false),
   quitting: Ref.make(false),
   primaryBackendStartup: SubscriptionRef.make<PrimaryBackendStartup>({ _tag: "Starting" }),
+  mainWindowRevealed: Deferred.make<void>(),
 });
 
 export const layer = Layer.effect(DesktopState, make);

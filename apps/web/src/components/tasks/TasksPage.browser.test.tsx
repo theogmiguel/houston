@@ -70,6 +70,7 @@ vi.mock("~/state/tasks", async () => {
     refreshTaskDetail: () => {},
     refreshTaskInitiatives: () => {},
     useTaskInitiativesResult: () => AsyncResult.success([]),
+    useTaskSettings: () => null,
   };
 });
 vi.mock("~/state/use-atom-command", () => ({
@@ -126,6 +127,7 @@ function task(
     priority: "none",
     parentId: null,
     refUrl: null,
+    issue: null,
     revision: 1,
     createdBy: "user",
     createdAt: "2026-01-01T00:00:00.000Z",

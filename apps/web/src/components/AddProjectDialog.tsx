@@ -12,7 +12,7 @@ import { openCommandPalette } from "../commandPaletteBus";
 import { useEnvironmentQuery } from "../state/query";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
-import { remoteProjectSourceIcon } from "./CommandPaletteAddProject";
+import { remoteProjectSourceIcon } from "../sourceControlPresentation";
 import {
   AddProjectDialogView,
   type AddProjectDialogAction,

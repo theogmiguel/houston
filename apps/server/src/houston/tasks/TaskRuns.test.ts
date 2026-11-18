@@ -15,9 +15,11 @@ import {
 } from "@houston-app/contracts/houston/tasks";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "../../config.ts";
+import * as IssueService from "../../issue/IssueService.ts";
 import { briefMessageId } from "./TaskRuns.ts";
 import {
   ANTIGRAVITY,
@@ -32,6 +34,7 @@ import {
   withThreadsOnly,
   type RunsContext,
 } from "./taskRuns.testkit.ts";
+import { issueDetailFor } from "./tasks.testkit.ts";
 
 const TIMEOUT = 120_000;
 
@@ -1680,6 +1683,165 @@ describe("small diffs skip and each head has an attempt cap", () => {
           }),
         );
       }),
+    TIMEOUT,
+  );
+});
+
+describe("an issue-backed task starts and plans with its issue", () => {
+  const issueRef = (projectId: RunsContext["projectId"]) => ({
+    projectId,
+    tracker: "github" as never,
+    host: "github.com",
+    scope: "acme/houston",
+    key: "12",
+  });
+
+  it.effect(
+    "Start links the issue to the run's thread and the brief names its key and URL",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeRunsHarness("issue-start");
+        yield* runWith(harness, (context) =>
+          Effect.gen(function* () {
+            const task = yield* context.tasks.createFromIssue(issueRef(context.projectId));
+            const started = yield* context.runs.start({ id: task.key, overrideReadiness: true });
+            const threadId = started.run.threadId as ThreadId;
+            yield* context.until(
+              "the issue on the run's thread",
+              context.orchestrator
+                .getThreadShell(threadId)
+                .pipe(
+                  Effect.map((shell) => (shell?.issues ?? []).some((issue) => issue.key === "12")),
+                ),
+            );
+            const brief = userMessages(yield* projectionOf(context, threadId)).find((text) =>
+              text.includes(task.key),
+            );
+            assert.isDefined(brief, "the run's brief was sent");
+            assert.include(brief ?? "", "## Linked issue #12");
+            assert.include(brief ?? "", "https://github.com/acme/houston/issues/12");
+            assert.include(brief ?? "", "read_issue");
+            // The issue's own words stay on the tracker; Start only points at them.
+            assert.notInclude(brief ?? "", "Body of github");
+          }),
+        );
+      }),
+    TIMEOUT,
+  );
+
+  it.effect(
+    "Claim links the issue-backed task's issue to the claiming thread",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeRunsHarness("issue-claim");
+        yield* runWith(harness, (context) =>
+          Effect.gen(function* () {
+            const first = yield* context.tasks.createFromIssue(issueRef(context.projectId));
+            const started = yield* context.runs.start({ id: first.key, overrideReadiness: true });
+            const threadId = started.run.threadId as ThreadId;
+            const claimed = yield* context.tasks.createFromIssue({
+              ...issueRef(context.projectId),
+              key: "13",
+            });
+            yield* context.tasks.save({
+              id: claimed.key,
+              expectedRevision: claimed.revision,
+              patch: { status: "todo", acceptance: ["it works"] },
+            });
+            yield* context.runs.claim(
+              {
+                threadId,
+                projectId: context.projectId,
+                actor: `agent:${threadId} (claimant)`,
+                provider: CLAUDE.driver,
+              },
+              { id: claimed.key },
+            );
+            yield* context.until(
+              "the claimed task's issue on the thread",
+              context.orchestrator
+                .getThreadShell(threadId)
+                .pipe(
+                  Effect.map((shell) => (shell?.issues ?? []).some((issue) => issue.key === "13")),
+                ),
+            );
+          }),
+        );
+      }),
+    TIMEOUT,
+  );
+
+  it.effect(
+    "Plan links the planning thread and quotes the live issue body as untrusted context",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeRunsHarness("issue-plan");
+        yield* runWith(harness, (context) =>
+          Effect.gen(function* () {
+            const created = yield* context.tasks.createFromIssue(issueRef(context.projectId));
+            yield* context.tasks.saveDomain({
+              id: created.key,
+              expectedRevision: created.revision,
+              kind: "delivery",
+            });
+            const task = (yield* detailOf(context, created)).task;
+            const planned = yield* context.runs.planStart({
+              id: task.key,
+              expectedRevision: task.revision,
+              modelSelection: selection("codex"),
+            });
+            const threadId = planned.planning?.threadId as ThreadId;
+            yield* context.until(
+              "the issue on the planning thread",
+              context.orchestrator
+                .getThreadShell(threadId)
+                .pipe(
+                  Effect.map((shell) => (shell?.issues ?? []).some((issue) => issue.key === "12")),
+                ),
+            );
+            const prompt = userMessages(yield* projectionOf(context, threadId)).find((text) =>
+              text.includes(task.key),
+            );
+            assert.isDefined(prompt, "the planner's prompt was sent");
+            assert.include(prompt ?? "", "## Linked issue #12");
+            assert.include(prompt ?? "", "Body of github acme/houston#12");
+            assert.include(prompt ?? "", "untrusted");
+            assert.include(prompt ?? "", "<<<HOUSTON-ISSUE-DATA");
+            assert.include(prompt ?? "", "HOUSTON-ISSUE-DATA>>>");
+          }),
+        );
+      }),
+    TIMEOUT,
+  );
+
+  it.effect(
+    "with the switch on, Start and handback move the linked issue to its matching states",
+    () => {
+      const moves: Array<{ readonly key: string; readonly state: string }> = [];
+      const tracker = Layer.mock(IssueService.IssueService)({
+        detail: (ref) => Effect.succeed(issueDetailFor(ref)),
+        setState: (input) => {
+          moves.push({ key: input.key, state: input.state });
+          return Effect.void;
+        },
+      });
+      return Effect.gen(function* () {
+        const harness = yield* makeRunsHarness("issue-state");
+        yield* runWith(
+          harness,
+          (context) =>
+            Effect.gen(function* () {
+              yield* context.setSettings({ updateIssueState: true });
+              const task = yield* context.tasks.createFromIssue(issueRef(context.projectId));
+              yield* context.runs.start({ id: task.key, overrideReadiness: true });
+              assert.deepEqual(moves, [{ key: "12", state: "In Progress" }]);
+              yield* context.runs.handback({ id: task.key, summary: "done" });
+              assert.deepEqual(moves.at(-1), { key: "12", state: "In Review" });
+            }),
+          { issueService: tracker },
+        );
+      });
+    },
     TIMEOUT,
   );
 });

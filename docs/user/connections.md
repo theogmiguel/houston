@@ -86,10 +86,12 @@ machine.
   set the owner whose white-check reaction starts a request, map up to 16 channels to
   projects, and choose the language for Houston's Slack text. A mapped channel turns a bot
   mention into a pending task. See [Tasks](tasks.md#sources).
-- **Project sources** — for one project, connect GitHub issues (repository, label,
-  assigned user, token) or Notion (integration token, tasks data source, assignee, active
-  statuses and property mapping). Tokens are stored as secrets.
-- **Houston 1 data** — import task-source settings and links from Houston 1.
+- **Issue trackers** - Linear and Notion are connected under **Settings ▸ Source control**,
+  where each project is bound to a team or data source and a Notion binding maps its
+  properties. Tokens are stored as secrets. Every issue tracker is read on the **Issues**
+  page, and a task is created from an issue.
+- **Houston 1 data** - import Slack intake and Houston 1 Notion page links as issue-backed
+  tasks.
 
 ## Secrets
 

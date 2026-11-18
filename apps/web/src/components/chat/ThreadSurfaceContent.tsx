@@ -155,6 +155,7 @@ export function ThreadSurfaceContent(props: {
             ? openPullRequestsSurface
             : undefined,
       }}
+      issuesSupported={serverConfig?.environment?.capabilities?.issues === true}
       files={{
         projectId: project?.id,
         projectName: project?.title ?? null,

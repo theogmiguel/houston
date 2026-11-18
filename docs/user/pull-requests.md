@@ -4,6 +4,49 @@ Open **Pull requests** from the command palette (**Open pull requests**) or a ne
 **Open a page** list. In a thread, `Ctrl+Shift+K` copies the current request number. The page has
 two views: **Requests** and **Merge queue**.
 
+## Issues
+
+Open **Issues** from the command palette (**Open issues**) or a new tab's **Open a page** list.
+The page lists the issues of every project whose remote is on GitHub, GitLab, Azure DevOps or
+Forgejo, grouped by tracker account. Search by title or key. **Filters** narrows by state, by
+involvement (everything, issues assigned to you, issues you opened, or issues that mention you),
+by label (every chosen label) and by assignee; **Sort** orders them by recent update or newest
+first. The labels and people a filter offers are read from the tracker when the menu opens.
+**Views** saves the current search, filters and sort under a name on this device; choosing a view
+restores it, and it can be updated, renamed or deleted. **Load more** continues the list from
+where each tracker stopped.
+
+A row shows the issue's state, key, title, assignees, comment count, author and labels. Select a
+row to read it beside the list. The panel shows the description and timeline, with comments,
+labels, assignments and state changes. Where the tracker and your account allow it, you can edit
+the title and description, comment, react, and change labels, assignees and state. The state menu
+offers the issue's own workflow: GitHub's Open, Completed, Not planned and Duplicate; GitLab's and
+Forgejo's Open and Closed; an Azure DevOps work item's own type's states; a Linear team's columns.
+Moving an issue names one of those states. An issue outside the projects you have open is
+read-only.
+
+Linked pull requests appear in the issue panel and open beside it. Closing the panel or switching
+issues keeps the list where it was.
+
+An issue can back a task. The issue panel shows the task backed by it, with its key and status,
+and opens it on the Tasks page. An issue with no task offers **Create task**, **Start** and
+**Plan**; Start and Plan create the task from the issue and then start it or plan it.
+
+An issue can be kept with a thread the way a pull request can: open it beside the thread (issue
+links in the conversation open there) and use **Link to this thread** in its header; **Unlink**
+undoes it. Linked issues are listed in the thread's details beside its pull requests. Agents link
+the issues they work on with the `link_issue` tool, and can list, read, file and comment on issues
+and change their state through the other issue tools.
+
+To list a Linear team's or a Notion data source's issues beside a project's, connect the
+tracker under **Settings ? Source control**, then choose the team or data source for that
+project there. A Notion binding also maps the data source's title, status and optional
+description, assignee, labels and pull request URL properties; its status options are the
+issue states, in the data source's own order, and a status group named Complete closes one.
+Notion cannot filter a listing by involvement or by an assignee's login; the page names that
+when those filters are chosen. Removing the tracker's credential disconnects it and removes
+those project bindings.
+
 ## Requests
 
 Requests lists the pull requests of the projects in scope. Search by title, branch, author,

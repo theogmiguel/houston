@@ -36,6 +36,12 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [19, "LayoutWorkspaces"],
   [20, "RemoveGrids"],
   [21, "LayoutThreadMembership"],
+  [22, "IssueTrackerBindings"],
+  [23, "TaskIssues"],
+  [24, "TaskIssueStateSetting"],
+  [25, "GitHubIssuesAsTaskIssues"],
+  [26, "IssueTrackerBindingProperties"],
+  [27, "NotionPagesAsTaskIssues"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -46,6 +52,7 @@ const TASK_TABLES = [
   "houston_task_history",
   "houston_task_import",
   "houston_task_initiatives",
+  "houston_task_issues",
   "houston_task_planning",
   "houston_task_runs",
   "houston_task_runs_cursor",
@@ -237,72 +244,6 @@ describe("the tasks migration runs on the Houston track", () => {
           assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
           assert.deepEqual(yield* upstreamHistory, upstream);
           assert.strictEqual(Math.max(...upstream.map((row) => row.migration_id)), UPSTREAM_HEAD);
-        }).pipe(Effect.provide(openThroughSqlite(file)));
-      }),
-    ),
-  );
-});
-
-describe("the task sources migration runs on the Houston track", () => {
-  const SOURCE_TABLES = [
-    "houston_task_source_credentials",
-    "houston_task_source_identity",
-    "houston_task_source_import",
-    "houston_task_source_links",
-    "houston_task_source_outbox",
-    "houston_task_source_poll",
-    "houston_task_source_settings",
-  ];
-
-  it.effect("the task sources migration runs on the Houston track", () =>
-    withDatabaseFile((file) =>
-      Effect.gen(function* () {
-        const upstream = yield* Effect.gen(function* () {
-          const sql = yield* SqlClient.SqlClient;
-          const history = yield* houstonHistory;
-          assert.deepEqual(history.slice(1, 3), [
-            [2, "TasksBacklog"],
-            [3, "TaskSources"],
-          ]);
-          const tables = (yield* sql<{ readonly name: string }>`
-            SELECT name FROM sqlite_master
-            WHERE type = 'table' AND name LIKE 'houston_task_source_%' ORDER BY name
-          `).map((row) => row.name);
-          assert.deepEqual(tables, SOURCE_TABLES);
-          // One source link per project, provider and item; pull request links may repeat it.
-          const link = (taskId: number, source: string) => sql`
-            INSERT INTO houston_task_source_links (
-              task_id, project_id, provider, external_id, source, url, snapshot_json,
-              sync_state_json
-            ) VALUES (${taskId}, 'p', 'github_issues', 'o/r#1', ${source}, 'u', '{}', '{}')
-          `;
-          yield* link(1, "source");
-          yield* link(1, "pull_request");
-          assert.isTrue((yield* Effect.exit(link(2, "source")))._tag === "Failure");
-          const refused = yield* Effect.exit(sql`
-            INSERT INTO houston_task_source_settings (
-              project_id, provider, enabled, settings_json, updated_at
-            ) VALUES ('p', 'slack', 0, '{}', 'now')
-          `);
-          assert.isTrue(refused._tag === "Failure");
-          for (const table of SOURCE_TABLES) {
-            const columns = yield* sql<{ readonly name: string }>`
-              SELECT name FROM pragma_table_info(${table})
-            `;
-            assert.isNotEmpty(columns, table);
-            for (const column of columns) {
-              assert.notMatch(column.name, /token|secret/i, `${table}.${column.name}`);
-            }
-          }
-          assert.isFalse(
-            (yield* upstreamHistory).some((row) => row.name.toLowerCase().includes("tasksource")),
-          );
-          return yield* upstreamHistory;
-        }).pipe(Effect.provide(openThroughSqlite(file)));
-
-        yield* Effect.gen(function* () {
-          assert.deepEqual(yield* runHoustonMigrations(), []);
-          assert.deepEqual(yield* upstreamHistory, upstream);
         }).pipe(Effect.provide(openThroughSqlite(file)));
       }),
     ),
@@ -1126,22 +1067,30 @@ describe("the grids removal migration", () => {
     }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
   );
 
-  it.effect("a file database at upstream's head applies 18 to 21 and ends without the table", () =>
-    withDatabaseFile((file) =>
-      Effect.gen(function* () {
-        yield* runMigrations();
-        assert.deepEqual(
-          (yield* runHoustonMigrations()).filter(([id]) => id >= 18),
-          [
-            [18, "Grids"],
-            [19, "LayoutWorkspaces"],
-            [20, "RemoveGrids"],
-            [21, "LayoutThreadMembership"],
-          ],
-        );
-        assert.deepEqual(yield* gridObjects, []);
-      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: file }))),
-    ),
+  it.effect(
+    "a file database at the main track's head applies 18 to 27 and ends without the table",
+    () =>
+      withDatabaseFile((file) =>
+        Effect.gen(function* () {
+          yield* runMigrations();
+          assert.deepEqual(
+            (yield* runHoustonMigrations()).filter(([id]) => id >= 18),
+            [
+              [18, "Grids"],
+              [19, "LayoutWorkspaces"],
+              [20, "RemoveGrids"],
+              [21, "LayoutThreadMembership"],
+              [22, "IssueTrackerBindings"],
+              [23, "TaskIssues"],
+              [24, "TaskIssueStateSetting"],
+              [25, "GitHubIssuesAsTaskIssues"],
+              [26, "IssueTrackerBindingProperties"],
+              [27, "NotionPagesAsTaskIssues"],
+            ],
+          );
+          assert.deepEqual(yield* gridObjects, []);
+        }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: file }))),
+      ),
   );
 });
 
@@ -1204,6 +1153,687 @@ describe("the thread membership migration", () => {
           ["one", "a"],
           ["two", "b"],
         ],
+      );
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+});
+
+describe("the task issues migration", () => {
+  it.effect("keys one issue link per task and indexes its identity", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
+      assert.deepEqual(
+        (yield* sql<{ readonly name: string }>`
+          SELECT name FROM pragma_table_info('houston_task_issues') ORDER BY cid
+        `).map((column) => column.name),
+        [
+          "task_id",
+          "project_id",
+          "tracker",
+          "host",
+          "scope",
+          "key",
+          "display_key",
+          "url",
+          "title",
+          "linked_at",
+        ],
+      );
+      assert.deepEqual(
+        (yield* sql<{ readonly name: string }>`
+          SELECT name FROM pragma_index_list('houston_task_issues') WHERE origin = 'c'
+        `).map((index) => index.name),
+        ["idx_houston_task_issues_identity"],
+      );
+      const link = (taskId: number) => sql`
+        INSERT INTO houston_task_issues (
+          task_id, project_id, tracker, host, scope, key, display_key, url, title, linked_at
+        ) VALUES (
+          ${taskId}, 'p1', 'github', 'github.com', 'acme/houston', '12', '#12',
+          'https://github.com/acme/houston/issues/12', 'An issue', '2026-01-01T00:00:00.000Z'
+        )
+      `;
+      yield* link(1);
+      assert.isTrue((yield* Effect.exit(link(1)))._tag === "Failure");
+      // The identity index is not unique: an archived task keeps its link and a new task may
+      // link the same issue, which the service decides against the tasks table.
+      yield* link(2);
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+});
+
+describe("the task issue state setting migration", () => {
+  it.effect("adds the state switch to task settings, off for every existing row", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
+      const columns = yield* sql<{ readonly name: string; readonly dflt_value: string | null }>`
+        SELECT name, dflt_value FROM pragma_table_info('houston_task_settings')
+      `;
+      assert.deepInclude(columns, { name: "update_issue_state", dflt_value: "0" });
+      const [row] = yield* sql<{ readonly update_issue_state: number }>`
+        INSERT INTO houston_task_settings (
+          project_id, access, start_model, delivery, focus, rework_rounds, updated_at
+        ) VALUES ('p1', 'write', '{}', 'send', 'bugs', 0, 'now')
+        RETURNING update_issue_state
+      `;
+      assert.strictEqual(row?.update_issue_state, 0);
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+});
+
+describe("the issue tracker bindings migration", () => {
+  const bindingsTable = Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const columns = yield* sql<{ readonly name: string; readonly pk: number }>`
+      SELECT name, pk FROM pragma_table_info('issue_tracker_bindings') ORDER BY cid
+    `;
+    return {
+      columns: columns.map((column) => [column.name, column.pk] as const),
+      rows: yield* sql`SELECT * FROM issue_tracker_bindings`,
+    };
+  });
+
+  it.effect("keys one binding per project and keeps the credential out of the table", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
+      const { columns, rows } = yield* bindingsTable;
+      assert.deepEqual(columns, [
+        ["project_id", 1],
+        ["tracker", 0],
+        ["scope", 0],
+        ["updated_at", 0],
+        ["properties_json", 0],
+      ]);
+      assert.deepEqual(rows, []);
+      for (const [name] of columns) assert.notMatch(name, /token|secret/i);
+      const bind = (scope: string) => sql`
+        INSERT INTO issue_tracker_bindings (project_id, tracker, scope, updated_at)
+        VALUES ('p', 'linear', ${scope}, 'now')
+      `;
+      yield* bind("ENG");
+      assert.isTrue((yield* Effect.exit(bind("OPS")))._tag === "Failure");
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+});
+
+describe("the GitHub task source migration makes issue links", () => {
+  // The rows current code writes: a task source link per imported issue, with the snapshot the
+  // poll stored, and the settings, cursor and pending write-back rows of the source.
+  const snapshot = (title: string) =>
+    JSON.stringify({
+      base: { title, description: "Body", status: "todo" },
+      local: { title, description: "Body", status: "todo" },
+      remote: { title, description: "Body", status: "todo" },
+      conflicts: [],
+      revision: 1,
+      projectExternalId: null,
+      project: null,
+    });
+  const githubSettings = JSON.stringify({
+    githubRepository: "acme/houston",
+    githubLabel: "houston-ready",
+    githubAssignedUser: null,
+    notionDataSourceId: null,
+    notionTitlePropertyId: null,
+    notionDescriptionPropertyId: null,
+    notionStatusPropertyId: null,
+    notionAssigneePropertyId: null,
+    notionProjectRelationPropertyId: null,
+    notionAssigneeUserId: null,
+    notionActiveStatusValues: [],
+    notionProjectsDataSourceId: null,
+    notionProjectTitlePropertyId: null,
+    notionProjectDescriptionPropertyId: null,
+    notionPrUrlPropertyId: null,
+    notionStatusMapping: {
+      todo: null,
+      inProgress: null,
+      inReview: null,
+      done: null,
+      canceled: null,
+    },
+  });
+
+  it.effect("converts each source link and drops the GitHub rows, keeping every task", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      // Migration 27 dropped the retired Notion task-source tables; this fixture rebuilds the
+      // state migration 25 reads, then runs that migration alone.
+      for (const table of [
+        `CREATE TABLE IF NOT EXISTS houston_task_source_links (
+          task_id INTEGER NOT NULL, project_id TEXT NOT NULL, provider TEXT NOT NULL,
+          external_id TEXT NOT NULL, source TEXT NOT NULL, url TEXT NOT NULL,
+          remote_rev TEXT, body_hash TEXT, fetched_at TEXT, synced_at TEXT,
+          snapshot_json TEXT NOT NULL, sync_state_json TEXT NOT NULL
+        )`,
+        `CREATE TABLE IF NOT EXISTS houston_task_source_settings (
+          project_id TEXT NOT NULL, provider TEXT NOT NULL, enabled INTEGER NOT NULL,
+          settings_json TEXT NOT NULL, revision INTEGER NOT NULL, updated_at TEXT NOT NULL
+        )`,
+        `CREATE TABLE IF NOT EXISTS houston_task_source_poll (
+          project_id TEXT NOT NULL, provider TEXT NOT NULL, cursor_json TEXT NOT NULL,
+          last_sync_at TEXT, last_error TEXT, refresh_after TEXT
+        )`,
+        `CREATE TABLE IF NOT EXISTS houston_task_source_outbox (
+          id INTEGER PRIMARY KEY, project_id TEXT NOT NULL, task_id INTEGER NOT NULL,
+          provider TEXT NOT NULL, action TEXT NOT NULL, revision INTEGER NOT NULL,
+          payload_json TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+          next_attempt_at TEXT NOT NULL, last_error TEXT, receipt_json TEXT
+        )`,
+        `CREATE TABLE IF NOT EXISTS houston_task_source_credentials (
+          project_id TEXT NOT NULL, provider TEXT NOT NULL
+        )`,
+      ]) {
+        yield* sql.unsafe(table);
+      }
+      const task = (
+        id: number,
+        title: string,
+        patch: {
+          readonly archived?: string;
+          readonly status?: string;
+          readonly revision?: number;
+          readonly project?: string;
+        } = {},
+      ) => sql`
+        INSERT INTO houston_tasks (
+          id, number, project_id, title, description, status, priority, revision, created_by,
+          created_at, updated_at, archived_at
+        ) VALUES (
+          ${id}, ${id}, ${patch.project ?? "p1"}, ${title}, 'Local text',
+          ${patch.status ?? "todo"}, 0, ${patch.revision ?? 1}, 'tracker:github_issues',
+          '2026-01-01', '2026-01-01', ${patch.archived ?? null}
+        )
+      `;
+      yield* task(1, "Twelve");
+      yield* task(2, "Duplicate", { project: "p2" });
+      yield* task(3, "Malformed");
+      yield* task(4, "Thirteen", { archived: "2026-02-01", status: "done" });
+      yield* task(5, "Pull request only");
+      yield* task(6, "Already linked");
+      yield* sql`
+        INSERT INTO houston_task_issues (
+          task_id, project_id, tracker, host, scope, key, display_key, url, title, linked_at
+        ) VALUES (
+          6, 'p1', 'github', 'github.com', 'acme/houston', '15', '#15',
+          'https://github.com/acme/houston/issues/15', 'Fifteen', '2026-01-01T00:00:00.000Z'
+        )
+      `;
+      yield* sql`
+        INSERT INTO houston_task_comments (task_id, body, author, created_at)
+        VALUES (1, 'kept', 'user', '2026-01-02')
+      `;
+      const link = (input: {
+        readonly taskId: number;
+        readonly project?: string;
+        readonly provider?: string;
+        readonly externalId: string;
+        readonly source?: string;
+        readonly url: string;
+        readonly title?: string;
+      }) => sql`
+        INSERT INTO houston_task_source_links (
+          task_id, project_id, provider, external_id, source, url, snapshot_json, sync_state_json
+        ) VALUES (
+          ${input.taskId}, ${input.project ?? "p1"}, ${input.provider ?? "github_issues"},
+          ${input.externalId}, ${input.source ?? "source"}, ${input.url},
+          ${snapshot(input.title ?? "Remote title")}, '{"state":"current"}'
+        )
+      `;
+      yield* link({
+        taskId: 1,
+        externalId: "acme/houston#12",
+        url: "https://github.com/acme/houston/issues/12",
+        title: "Issue twelve",
+      });
+      yield* link({
+        taskId: 2,
+        project: "p2",
+        externalId: "acme/houston#12",
+        url: "https://github.com/acme/houston/issues/12",
+      });
+      yield* link({
+        taskId: 3,
+        externalId: "not-a-repository",
+        url: "https://github.com/acme/houston/issues/4",
+      });
+      yield* link({
+        taskId: 4,
+        externalId: "acme/houston#13",
+        url: "https://github.com/acme/houston/issues/13",
+        title: "Issue thirteen",
+      });
+      yield* link({
+        taskId: 5,
+        externalId: "https://github.com/acme/houston/pull/9",
+        source: "pull_request",
+        url: "https://github.com/acme/houston/pull/9",
+      });
+      yield* link({
+        taskId: 6,
+        externalId: "acme/houston#15",
+        url: "https://github.com/acme/houston/issues/15",
+      });
+      // Notion rows must survive the GitHub source's removal.
+      yield* link({
+        taskId: 1,
+        provider: "notion",
+        externalId: "0123456789abcdef0123456789abcdef",
+        url: "https://www.notion.so/page-1",
+      });
+      yield* sql`
+        INSERT INTO houston_task_source_settings (
+          project_id, provider, enabled, settings_json, revision, updated_at
+        ) VALUES
+          ('p1', 'github_issues', 1, ${githubSettings}, 2, '2026-01-01'),
+          ('p1', 'notion', 1, ${githubSettings}, 3, '2026-01-01')
+      `;
+      yield* sql`
+        INSERT INTO houston_task_source_poll (project_id, provider, cursor_json, last_sync_at)
+        VALUES
+          ('p1', 'github_issues', '{"pages":{}}', '2026-01-01'),
+          ('p1', 'notion', '{"lastEditedTime":null}', '2026-01-01')
+      `;
+      yield* sql`
+        INSERT INTO houston_task_source_outbox (
+          project_id, task_id, provider, action, revision, payload_json, next_attempt_at
+        ) VALUES
+          ('p1', 1, 'github_issues', 'status', 2, '{}', '2026-01-01'),
+          ('p1', 1, 'notion', 'status', 2, '{}', '2026-01-01')
+      `;
+      yield* sql`
+        INSERT INTO houston_task_source_credentials (project_id, provider)
+        VALUES ('p1', 'github_issues'), ('p1', 'notion')
+      `;
+
+      yield* sql`DELETE FROM houston_sql_migrations WHERE migration_id = 25`;
+      assert.deepEqual(yield* runHoustonMigrations(), [[25, "GitHubIssuesAsTaskIssues"]]);
+
+      const issues = yield* sql<{
+        readonly task_id: number;
+        readonly tracker: string;
+        readonly host: string;
+        readonly scope: string;
+        readonly key: string;
+        readonly display_key: string;
+        readonly url: string;
+        readonly title: string;
+      }>`SELECT * FROM houston_task_issues ORDER BY task_id`;
+      assert.deepEqual(
+        issues.map((issue) => [
+          issue.task_id,
+          issue.tracker,
+          issue.host,
+          issue.scope,
+          issue.key,
+          issue.display_key,
+          issue.url,
+          issue.title,
+        ]),
+        [
+          [
+            1,
+            "github",
+            "github.com",
+            "acme/houston",
+            "12",
+            "#12",
+            "https://github.com/acme/houston/issues/12",
+            "Issue twelve",
+          ],
+          [
+            4,
+            "github",
+            "github.com",
+            "acme/houston",
+            "13",
+            "#13",
+            "https://github.com/acme/houston/issues/13",
+            "Issue thirteen",
+          ],
+          [
+            6,
+            "github",
+            "github.com",
+            "acme/houston",
+            "15",
+            "#15",
+            "https://github.com/acme/houston/issues/15",
+            "Fifteen",
+          ],
+        ],
+      );
+
+      // Every task survives with its local text, the archived one included.
+      const tasks = yield* sql<{ readonly id: number; readonly title: string }>`
+        SELECT id, title FROM houston_tasks ORDER BY id
+      `;
+      assert.deepEqual(tasks, [
+        { id: 1, title: "Twelve" },
+        { id: 2, title: "Duplicate" },
+        { id: 3, title: "Malformed" },
+        { id: 4, title: "Thirteen" },
+        { id: 5, title: "Pull request only" },
+        { id: 6, title: "Already linked" },
+      ]);
+      assert.deepEqual(yield* sql`SELECT body FROM houston_task_comments WHERE task_id = 1`, [
+        { body: "kept" },
+      ]);
+
+      // A link that cannot become an issue link leaves a note on the task.
+      const skipped = yield* sql<{
+        readonly task_id: number;
+        readonly changes: string;
+      }>`SELECT task_id, changes FROM houston_task_history
+          WHERE action = 'houston:issue-import-skipped' ORDER BY task_id`;
+      assert.deepEqual(
+        skipped.map((row) => row.task_id),
+        [2, 3, 6],
+      );
+      for (const row of skipped) assert.include(row.changes, "reason");
+
+      // The GitHub source's rows are gone; the Notion source's remain.
+      assert.deepEqual(
+        (yield* sql<{ readonly provider: string }>`
+          SELECT provider FROM houston_task_source_links ORDER BY provider
+        `).map((row) => row.provider),
+        ["notion"],
+      );
+      assert.deepEqual(
+        (yield* sql<{ readonly provider: string }>`
+          SELECT provider FROM houston_task_source_settings ORDER BY provider
+        `).map((row) => row.provider),
+        ["notion"],
+      );
+      assert.deepEqual(
+        (yield* sql<{ readonly provider: string }>`
+          SELECT provider FROM houston_task_source_poll ORDER BY provider
+        `).map((row) => row.provider),
+        ["notion"],
+      );
+      assert.deepEqual(
+        (yield* sql<{ readonly provider: string }>`
+          SELECT provider FROM houston_task_source_outbox ORDER BY provider
+        `).map((row) => row.provider),
+        ["notion"],
+      );
+      assert.deepEqual(
+        (yield* sql<{ readonly provider: string }>`
+          SELECT provider FROM houston_task_source_credentials ORDER BY provider
+        `).map((row) => row.provider),
+        ["notion"],
+      );
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+});
+
+describe("the Notion task source migration makes issue links", () => {
+  const source = "0123456789abcdef0123456789abcdef";
+  const other = "fedcba9876543210fedcba9876543210";
+  const page = (n: number) => {
+    const hex = n.toString(16).padStart(32, "0");
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  };
+  const settings = (dataSourceId: string) =>
+    JSON.stringify({
+      enabled: true,
+      notionDataSourceId: dataSourceId,
+      notionTitlePropertyId: "title",
+      notionDescriptionPropertyId: "desc",
+      notionStatusPropertyId: "status",
+      notionAssigneePropertyId: "assignee",
+      notionAssigneeUserId: null,
+      notionActiveStatusValues: ["To do"],
+      notionProjectsDataSourceId: null,
+      notionProjectTitlePropertyId: null,
+      notionProjectDescriptionPropertyId: null,
+      notionPrUrlPropertyId: "pr",
+      notionStatusMapping: {
+        todo: "To do",
+        inProgress: null,
+        inReview: null,
+        done: "Done",
+        canceled: null,
+      },
+    });
+  const snapshot = (title: string) =>
+    JSON.stringify({
+      base: { title, description: "Body", status: "todo" },
+      local: { title, description: "Body", status: "todo" },
+      remote: { title, description: "Body", status: "todo" },
+      conflicts: [],
+      revision: 1,
+      projectExternalId: null,
+      project: null,
+    });
+
+  it.effect("converts page links, migrates settings and retires the source tables", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      for (const table of [
+        `CREATE TABLE IF NOT EXISTS houston_task_source_links (
+          task_id INTEGER NOT NULL, project_id TEXT NOT NULL, provider TEXT NOT NULL,
+          external_id TEXT NOT NULL, source TEXT NOT NULL, url TEXT NOT NULL,
+          remote_rev TEXT, body_hash TEXT, fetched_at TEXT, synced_at TEXT,
+          snapshot_json TEXT NOT NULL, sync_state_json TEXT NOT NULL
+        )`,
+        `CREATE TABLE IF NOT EXISTS houston_task_source_settings (
+          project_id TEXT NOT NULL, provider TEXT NOT NULL, enabled INTEGER NOT NULL,
+          settings_json TEXT NOT NULL, revision INTEGER NOT NULL, updated_at TEXT NOT NULL
+        )`,
+        `CREATE TABLE IF NOT EXISTS houston_task_source_poll (
+          project_id TEXT NOT NULL, provider TEXT NOT NULL, cursor_json TEXT NOT NULL,
+          last_sync_at TEXT, last_error TEXT, refresh_after TEXT
+        )`,
+        `CREATE TABLE IF NOT EXISTS houston_task_source_outbox (
+          id INTEGER PRIMARY KEY, project_id TEXT NOT NULL, task_id INTEGER NOT NULL,
+          provider TEXT NOT NULL, action TEXT NOT NULL, revision INTEGER NOT NULL,
+          payload_json TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+          next_attempt_at TEXT NOT NULL, last_error TEXT, receipt_json TEXT
+        )`,
+        `CREATE TABLE IF NOT EXISTS houston_task_source_identity (
+          id INTEGER PRIMARY KEY, namespace TEXT NOT NULL, marker_key TEXT
+        )`,
+        `CREATE TABLE IF NOT EXISTS houston_task_source_import (
+          id INTEGER PRIMARY KEY, imported_at TEXT NOT NULL, counts_json TEXT NOT NULL
+        )`,
+        `CREATE TABLE IF NOT EXISTS houston_task_source_credentials (
+          project_id TEXT NOT NULL, provider TEXT NOT NULL
+        )`,
+      ]) {
+        yield* sql.unsafe(table);
+      }
+      const task = (id: number, project: string, title: string) => sql`
+        INSERT INTO houston_tasks (
+          id, number, project_id, title, description, status, priority, revision, created_by,
+          created_at, updated_at
+        ) VALUES (
+          ${id}, ${id}, ${project}, ${title}, 'Local text', 'todo', 0, 1, 'tracker:notion',
+          '2026-01-01', '2026-01-01'
+        )
+      `;
+      yield* task(1, "p1", "First");
+      yield* task(2, "p1", "Duplicate");
+      yield* task(3, "p1", "Already linked");
+      yield* task(4, "p1", "Malformed");
+      yield* task(5, "p3", "No settings");
+      yield* task(6, "p2", "Second project");
+      yield* sql`
+        INSERT INTO houston_task_issues (
+          task_id, project_id, tracker, host, scope, key, display_key, url, title, linked_at
+        ) VALUES (
+          3, 'p1', 'github', 'github.com', 'acme/houston', '3', '#3',
+          'https://github.com/acme/houston/issues/3', 'Three', '2026-01-01T00:00:00.000Z'
+        )
+      `;
+      yield* sql`
+        INSERT INTO issue_tracker_bindings (project_id, tracker, scope, updated_at)
+        VALUES ('p3', 'linear', 'ENG', '2026-01-01')
+      `;
+      yield* sql`
+        INSERT INTO houston_task_source_settings (
+          project_id, provider, enabled, settings_json, revision, updated_at
+        ) VALUES
+          ('p1', 'notion', 1, ${settings(source)}, 2, '2026-01-01'),
+          ('p2', 'notion', 1, ${settings(other)}, 2, '2026-01-02')
+      `;
+      const link = (input: {
+        readonly taskId: number;
+        readonly project: string;
+        readonly externalId: string;
+        readonly url: string;
+        readonly title?: string;
+      }) => sql`
+        INSERT INTO houston_task_source_links (
+          task_id, project_id, provider, external_id, source, url, synced_at,
+          snapshot_json, sync_state_json
+        ) VALUES (
+          ${input.taskId}, ${input.project}, 'notion', ${input.externalId}, 'source',
+          ${input.url}, '2026-01-03T00:00:00.000Z',
+          ${snapshot(input.title ?? "Remote title")}, '{"state":"current"}'
+        )
+      `;
+      yield* link({
+        taskId: 1,
+        project: "p1",
+        externalId: page(1),
+        url: `https://www.notion.so/Page-1-${page(1).replaceAll("-", "")}`,
+        title: "Page one",
+      });
+      yield* link({
+        taskId: 2,
+        project: "p1",
+        externalId: page(1),
+        url: `https://www.notion.so/Page-1-${page(1).replaceAll("-", "")}`,
+      });
+      yield* link({
+        taskId: 3,
+        project: "p1",
+        externalId: page(3),
+        url: `https://www.notion.so/${page(3).replaceAll("-", "")}`,
+      });
+      yield* link({
+        taskId: 4,
+        project: "p1",
+        externalId: "not-a-page",
+        url: "https://www.notion.so/not-a-page",
+      });
+      yield* link({
+        taskId: 5,
+        project: "p3",
+        externalId: page(5),
+        url: `https://www.notion.so/${page(5).replaceAll("-", "")}`,
+      });
+      yield* link({
+        taskId: 6,
+        project: "p2",
+        externalId: page(6),
+        url: `https://www.notion.so/${page(6).replaceAll("-", "")}`,
+        title: "Page six",
+      });
+      yield* sql`
+        INSERT INTO houston_task_source_credentials (project_id, provider)
+        VALUES ('p1', 'notion')
+      `;
+      yield* sql`DELETE FROM houston_sql_migrations WHERE migration_id = 27`;
+      assert.deepEqual(yield* runHoustonMigrations(), [[27, "NotionPagesAsTaskIssues"]]);
+
+      const issues = yield* sql<{
+        readonly task_id: number;
+        readonly tracker: string;
+        readonly host: string;
+        readonly scope: string;
+        readonly key: string;
+        readonly display_key: string;
+        readonly title: string;
+      }>`SELECT * FROM houston_task_issues ORDER BY task_id`;
+      assert.deepEqual(
+        issues.map((issue) => [
+          issue.task_id,
+          issue.tracker,
+          issue.host,
+          issue.scope,
+          issue.key,
+          issue.display_key,
+          issue.title,
+        ]),
+        [
+          [
+            1,
+            "notion",
+            "notion.so",
+            source,
+            page(1).replaceAll("-", ""),
+            page(1).replaceAll("-", "").slice(0, 8),
+            "Page one",
+          ],
+          [3, "github", "github.com", "acme/houston", "3", "#3", "Three"],
+          [
+            6,
+            "notion",
+            "notion.so",
+            other,
+            page(6).replaceAll("-", ""),
+            page(6).replaceAll("-", "").slice(0, 8),
+            "Page six",
+          ],
+        ],
+      );
+      const skipped = yield* sql<{ readonly task_id: number }>`
+        SELECT task_id FROM houston_task_history
+        WHERE action = 'houston:issue-import-skipped' ORDER BY task_id
+      `;
+      assert.deepEqual(
+        skipped.map((row) => row.task_id),
+        [2, 3, 4, 5],
+      );
+
+      const bindings = yield* sql<{
+        readonly project_id: string;
+        readonly tracker: string;
+        readonly scope: string;
+        readonly properties_json: string;
+      }>`SELECT * FROM issue_tracker_bindings ORDER BY project_id`;
+      assert.deepEqual(
+        bindings.map((row) => [row.project_id, row.tracker, row.scope]),
+        [
+          ["p1", "notion", source],
+          ["p2", "notion", other],
+          ["p3", "linear", "ENG"],
+        ],
+      );
+      assert.deepEqual(JSON.parse(bindings[0]?.properties_json ?? "{}"), {
+        title: "title",
+        status: "status",
+        body: "desc",
+        assignee: "assignee",
+        prUrl: "pr",
+      });
+      assert.strictEqual(bindings[2]?.properties_json, "{}");
+      assert.deepEqual(yield* sql`SELECT * FROM houston_issue_tracker_token_adoption`, [
+        { tracker: "notion", project_id: "p1" },
+      ]);
+      for (const table of [
+        "houston_task_source_links",
+        "houston_task_source_settings",
+        "houston_task_source_poll",
+        "houston_task_source_outbox",
+        "houston_task_source_identity",
+        "houston_task_source_import",
+        "houston_task_source_credentials",
+      ]) {
+        const [found] = yield* sql<{ readonly name: string }>`
+          SELECT name FROM sqlite_master WHERE type = 'table' AND name = ${table}
+        `;
+        assert.isUndefined(found, table);
+      }
+      assert.isDefined(
+        (yield* sql<{ readonly name: string }>`
+            SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'houston_issue_import'
+          `)[0],
       );
     }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
   );

@@ -1,6 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off -- The tray lives in the Electron main process and reads the desktop environment directly.
 
-import { sessionBus, Message } from "dbus-next";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -150,6 +149,8 @@ function payloadsEqual(left: DesktopTrayPayload, right: DesktopTrayPayload): boo
 }
 
 async function linuxTrayAvailability(): Promise<{ available: boolean; reason: string | null }> {
+  // Loaded here so that Windows and macOS never evaluate the D-Bus client.
+  const { sessionBus, Message } = await import("dbus-next");
   const bus = sessionBus();
   try {
     const reply = await bus.call(

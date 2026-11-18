@@ -1,7 +1,7 @@
 18 apps/web/src/browser/BrowserDeviceToolbar.tsx
 17 apps/web/src/browser/BrowserViewportResizeHandles.tsx
 39 apps/web/src/browser/ServerBrowserSurface.tsx
-38 apps/web/src/components/AddProjectToMachineDialog.tsx
+38 apps/web/src/components/AddProjectToMachineDialogForm.tsx
 3 apps/web/src/components/AnimatedHeight.tsx
 4 apps/web/src/components/AnimatedWidth.tsx
 8 apps/web/src/components/AppRouteModal.tsx
@@ -132,10 +132,11 @@
 33 apps/web/src/components/ChatMarkdown.tsx
 11 apps/web/src/components/ChatView.tsx
 8 apps/web/src/components/CommandBlock.tsx
-12 apps/web/src/components/CommandPalette.tsx
+11 apps/web/src/components/CommandPalette.tsx
 15 apps/web/src/components/CommandPaletteAddProject.tsx
 4 apps/web/src/components/CommandPaletteContent.tsx
 28 apps/web/src/components/CommandPaletteResults.tsx
+1 apps/web/src/components/CommandPaletteShell.tsx
 5 apps/web/src/components/CommandPaletteThemeItems.tsx
 6 apps/web/src/components/ComposerContextLabel.tsx
 29 apps/web/src/components/composerContextPresentation.tsx
@@ -144,7 +145,7 @@
 6 apps/web/src/components/ConnectionStatusDot.tsx
 7 apps/web/src/components/ContextChip.tsx
 17 apps/web/src/components/contextChipParts.tsx
-2 apps/web/src/components/CustomSnoozeDialog.tsx
+2 apps/web/src/components/CustomSnoozeDialogForm.tsx
 12 apps/web/src/components/desktop/SshPasswordPromptDialog.tsx
 7 apps/web/src/components/desktopUpdate.toast.tsx
 2 apps/web/src/components/DesktopWindowControls.tsx
@@ -202,6 +203,12 @@
 13 apps/web/src/components/HostedEmptyState.tsx
 2 apps/web/src/components/HoustonWordmark.tsx
 4 apps/web/src/components/Icons.tsx
+10 apps/web/src/components/issue/IssueCommentComposer.tsx
+27 apps/web/src/components/issue/IssueDetailGhost.tsx
+32 apps/web/src/components/issue/IssueDetailPanel.tsx
+12 apps/web/src/components/issue/IssueListFilterPickers.tsx
+8 apps/web/src/components/issue/IssueRow.tsx
+24 apps/web/src/components/issue/IssuesPage.tsx
 9 apps/web/src/components/ManagedPolicy.tsx
 18 apps/web/src/components/media/MediaVideoPlayer.tsx
 3 apps/web/src/components/NoActiveThreadState.tsx
@@ -294,6 +301,7 @@
 1 apps/web/src/components/RightPanelSheet.tsx
 44 apps/web/src/components/RightPanelTabs.tsx
 1 apps/web/src/components/RouteErrorActions.tsx
+2 apps/web/src/components/SavedViewsMenu.tsx
 3 apps/web/src/components/search/HighlightedSearchLine.tsx
 38 apps/web/src/components/search/ProjectContentSearchDialog.tsx
 15 apps/web/src/components/ServerUpdateAction.tsx
@@ -328,6 +336,7 @@
 24 apps/web/src/components/settings/FoldedSettingsSection.tsx
 3 apps/web/src/components/settings/FontFamilyPicker.tsx
 20 apps/web/src/components/settings/IntegrationsSettings.tsx
+17 apps/web/src/components/settings/IssueTrackerSettings.tsx
 91 apps/web/src/components/settings/KeybindingsSettings.tsx
 8 apps/web/src/components/settings/LabsSettingsPanel.tsx
 10 apps/web/src/components/settings/LinkAccessPicker.tsx

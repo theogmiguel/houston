@@ -24,6 +24,7 @@ import { useState, type ReactNode } from "react";
 
 import { RelativeTime } from "~/components/RelativeTime";
 import { requestConfirmDialog } from "~/confirmDialog";
+import { useRightPanelStore } from "~/rightPanelStore";
 import { useOpenThread } from "~/threads/useOpenThread";
 import { useEnvironmentProviders } from "~/state/environments";
 import { refreshTaskDetail, useTaskDetail, useTaskSettings } from "~/state/tasks";
@@ -40,7 +41,7 @@ import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { TaskEditorDialog, type TaskDeliveryOption } from "./TaskEditorDialog";
-import { TaskSourceLinks } from "./TaskSourceLinks";
+import { TASKS_PANEL_REF } from "./taskPanel";
 import { useTaskCommands } from "./useTaskCommands";
 import {
   TASK_KIND_LABELS,
@@ -426,6 +427,7 @@ export function TaskDetailPanel({
   const [busy, setBusy] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [issueUrl, setIssueUrl] = useState("");
 
   if (detail === null) {
     return (
@@ -556,6 +558,48 @@ export function TaskDetailPanel({
       return;
     }
     refreshTaskDetail(environmentId, taskKey);
+  };
+
+  const openLinkedIssue = () => {
+    if (task.issue === null) return;
+    useRightPanelStore.getState().openIssue(TASKS_PANEL_REF, {
+      environmentId,
+      projectId: task.issue.projectId,
+      tracker: task.issue.tracker,
+      host: task.issue.host,
+      scope: task.issue.scope,
+      key: task.issue.key,
+      url: task.issue.url,
+    });
+  };
+
+  const runLinkIssue = async () => {
+    const url = issueUrl.trim();
+    if (url.length === 0) return;
+    setBusy("issue");
+    const outcome = await commands.linkIssue({
+      id: task.key,
+      expectedRevision: task.revision,
+      url,
+    });
+    setBusy(null);
+    if (outcome._tag === "Failure") {
+      handleFailure("Issue not linked", squashAtomCommandFailure(outcome));
+      return;
+    }
+    setIssueUrl("");
+  };
+
+  const runUnlinkIssue = async () => {
+    setBusy("issue");
+    const outcome = await commands.unlinkIssue({
+      id: task.key,
+      expectedRevision: task.revision,
+    });
+    setBusy(null);
+    if (outcome._tag === "Failure") {
+      handleFailure("Issue not unlinked", squashAtomCommandFailure(outcome));
+    }
   };
 
   const openRunThread = (threadId: string) => {
@@ -854,13 +898,60 @@ export function TaskDetailPanel({
         </div>
         {tab === "overview" ? (
           <div className="flex min-w-0 flex-col gap-4">
-            <TaskSourceLinks
-              environmentId={environmentId}
-              taskKey={taskKey}
-              taskId={task.id}
-              taskRevision={task.revision}
-              refUrl={task.refUrl}
-            />
+            <section className="flex min-w-0 flex-col gap-1.5">
+              <Text variant="caption" tone="muted" weight="medium">
+                Issue
+              </Text>
+              {task.issue === null ? (
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <Input
+                    value={issueUrl}
+                    placeholder="Issue URL"
+                    aria-label="Issue URL"
+                    disabled={disabled}
+                    onChange={(event) => setIssueUrl(event.currentTarget.value)}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={disabled || issueUrl.trim().length === 0}
+                    onClick={() => void runLinkIssue()}
+                  >
+                    Link
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex min-w-0 items-center gap-2">
+                  <InlineButton
+                    tone="muted"
+                    className="min-w-0 flex-1"
+                    aria-label={`Open issue ${task.issue.displayKey}`}
+                    onClick={openLinkedIssue}
+                  >
+                    <Text as="span" variant="callout" weight="medium" truncate>
+                      {task.issue.displayKey}
+                    </Text>
+                    <Text as="span" variant="callout" tone="muted" truncate>
+                      {task.issue.title}
+                    </Text>
+                  </InlineButton>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={disabled}
+                    onClick={() => void runUnlinkIssue()}
+                  >
+                    Unlink
+                  </Button>
+                </div>
+              )}
+              {task.issue === null || settings === null ? null : (
+                <Text variant="caption" tone="muted">
+                  Issue state follows this task: {settings.updateIssueState ? "On" : "Off"}. Change
+                  it in project settings.
+                </Text>
+              )}
+            </section>
             <section className="flex min-w-0 flex-col gap-1">
               <Text variant="caption" tone="muted" weight="medium">
                 Description

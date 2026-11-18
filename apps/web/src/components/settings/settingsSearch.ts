@@ -129,7 +129,7 @@ export const SETTINGS_SECTION_DESCRIPTIONS: Readonly<Record<SettingsPath, string
   "/settings/source-control": "Pull, merge and writing defaults for source control.",
   "/settings/worktrees": "Where worktrees live and when they are cleaned up.",
   "/settings/connections": "Linked environments and how work is balanced across them.",
-  "/settings/task-sources": "Slack and tracker sources that feed tasks.",
+  "/settings/task-sources": "Slack intake that files tasks.",
   "/settings/access": "Network access and who can reach this server.",
   "/settings/secrets": "Providers that supply secrets to agents.",
   "/settings/maintenance": "Storage cleanup, update checks and background activity.",
@@ -1099,6 +1099,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["pull request merge squash rebase last selected"],
   },
   {
+    id: "issue-trackers",
+    title: "Issue trackers",
+    to: "/settings/source-control",
+    scope: "environment-defaults",
+    searchTerms: ["linear issues tracker team api key connect bind project"],
+  },
+  {
     id: "source-control",
     title: "Source control",
     to: "/settings/source-control",
@@ -1266,15 +1273,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "task-sources-slack",
     searchTerms: [
       "slack app mention channel owner reaction request intake bot token app token socket mode",
-    ],
-  },
-  {
-    id: "task-sources-tracker",
-    title: "Tracker sources",
-    to: "/settings/task-sources",
-    targetId: "task-sources-project",
-    searchTerms: [
-      "github issues notion tracker repository label assignee status mapping sync token data source",
     ],
   },
   {

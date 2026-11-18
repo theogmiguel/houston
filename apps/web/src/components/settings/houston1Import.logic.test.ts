@@ -18,10 +18,10 @@ describe("Houston 1 import", () => {
     expect(
       houston1ImportSteps({
         tasks: tasksAvailable,
-        taskSources: {
+        issues: {
           state: "imported",
           at: "2026-01-01T00:00:00.000Z",
-          counts: { settings: 1, links: 2 },
+          counts: { links: 2, skipped: 0 },
         },
         slack: { state: "unavailable" },
       }),
@@ -32,17 +32,17 @@ describe("Houston 1 import", () => {
     expect(
       houston1ImportDescription({
         tasks: tasksAvailable,
-        taskSources: { state: "available", source: "/db", settings: 1, links: 2 },
+        issues: { state: "available", source: "/db", links: 2 },
         slack: { state: "available", source: "/db", channels: 1, requests: 4 },
       }),
     ).toBe(
-      "Houston can copy 2 projects and 3 tasks from Houston 1; 1 tracker setting and 2 linked tasks; 1 Slack channel and 4 requests.",
+      "Houston can copy 2 projects and 3 tasks from Houston 1; 2 Notion page links; 1 Slack channel and 4 requests.",
     );
   });
 
   it("stays hidden when there is no Houston 1 data", () => {
     expect(
-      houston1ImportVisible({ tasks: { state: "unavailable" }, taskSources: null, slack: null }),
+      houston1ImportVisible({ tasks: { state: "unavailable" }, issues: null, slack: null }),
     ).toBe(false);
   });
 
@@ -50,14 +50,14 @@ describe("Houston 1 import", () => {
     expect(
       houston1ImportSteps({
         tasks: { state: "blocked", taskCount: 2 },
-        taskSources: null,
+        issues: null,
         slack: null,
       }),
     ).toEqual([]);
     expect(
       houston1ImportDescription({
         tasks: { state: "blocked", taskCount: 2 },
-        taskSources: null,
+        issues: null,
         slack: null,
       }),
     ).toContain("already has tasks");

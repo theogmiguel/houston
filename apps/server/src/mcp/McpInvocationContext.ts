@@ -20,6 +20,7 @@ const ALL_MCP_CAPABILITIES = [
   "worktree",
   "device",
   "pull-requests",
+  "issues",
   // Houston: a task's planner or reviewer, which may call only its submit tool.
   "houston-task-submit",
 ] as const;

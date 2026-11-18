@@ -530,7 +530,7 @@ export const pairCommand = Command.make("pair", {
         pairingBaseUrl = resolveDirectPairingBaseUrl(target.state);
         if (isLoopbackHost(new URL(pairingBaseUrl).hostname)) {
           notes.push(
-            "This URL is only reachable from this machine. To reach it from your other devices, run `houston up`, or re-run with --tailscale.",
+            "This URL is only reachable from this machine. To reach it from your other devices, re-run with --tailscale, or start the server with --lan (a background service: HOUSTON_LAN=true in its service.env, then `houston service restart`).",
           );
         } else if (target.state.privateNetworkOnly) {
           notes.push(

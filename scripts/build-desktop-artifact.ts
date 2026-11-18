@@ -17,6 +17,7 @@ import serverPackageJson from "../apps/server/package.json" with { type: "json" 
 import gnomeCaptureBundle from "../apps/desktop/gnome-extension/bundle.json" with { type: "json" };
 import { selectCliRuntimeExternalDependencies } from "./lib/cli-external-packages.ts";
 import { selectDesktopRuntimeExternalDependencies } from "./lib/desktop-external-packages.ts";
+import { splitArchivePackages } from "./lib/staged-package-closure.ts";
 
 const REPO_ROOT = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 
@@ -83,14 +84,27 @@ const DEFAULT_TARGETS: Record<BuildPlatform, string> = {
   win: "nsis",
 };
 
+/** Files no runtime path loads, on every platform and in both Windows archives. */
+export const UNLOADED_FILE_GLOBS = [
+  "**/*.map",
+  "**/*.d.cts",
+  "**/node_modules/.bin",
+  "**/node_modules/.bin/**",
+  "**/node_modules/**/{test,tests,__tests__,example,examples}/**",
+  "**/node_modules/@cursor/sdk-*/**/*",
+  "**/node_modules/@anthropic-ai/claude-agent-sdk-*/**/*",
+  // The server loads the SDK with `require`, which resolves dist/cjs; esm and bundled serve
+  // `import` and Bun only.
+  "**/node_modules/@cursor/sdk/dist/{esm,bundled}/**/*",
+  // Only zod's own `@zod/source` export condition resolves into src.
+  "**/node_modules/zod/src/**/*",
+  // koffi's runtime entry lives in src/koffi; vendor holds headers for a source build.
+  "**/node_modules/koffi/{vendor,doc}/**/*",
+  "**/node_modules/undici/docs/**/*",
+] as const;
+
 const EXTERNAL_FILE_PATTERNS = [
-  "!**/*.map",
-  "!**/*.d.cts",
-  "!**/node_modules/.bin",
-  "!**/node_modules/.bin/**",
-  "!**/node_modules/**/{test,tests,__tests__,example,examples}/**",
-  "!**/node_modules/@cursor/sdk-*/**/*",
-  "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**/*",
+  ...UNLOADED_FILE_GLOBS.map((glob) => `!${glob}`),
   "!apps/desktop/resources/browser-secret/**",
   "!apps/desktop/prod-resources/browser-secret/**",
   "!apps/desktop/prod-resources/windows-server/**",
@@ -100,13 +114,47 @@ const LINUX_FILE_EXCLUSIONS = [
   "!**/node_modules/node-pty/prebuilds/win32-*/**/*",
   "!**/node_modules/node-pty/prebuilds/darwin-*/**/*",
   "!**/node_modules/node-pty/third_party/conpty/**/*",
+  // Electron links glibc; this package declares glibc in its manifest, so the installer keeps it.
+  "!**/node_modules/@yuuang/ffi-rs-linux-*-musl/**/*",
 ] as const;
 
 // Native packages (node-pty, objc-js) ship prebuilds for both Darwin architectures; only a
 // universal app needs both. macOS 27 warns when an arm64 app holds x64-only code.
 export function resolveMacFileExclusions(arch: BuildArch): ReadonlyArray<string> {
   const unusedArch = arch === "arm64" ? "x64" : "arm64";
-  return [`!**/node_modules/**/prebuilds/darwin-${unusedArch}/**/*`];
+  return [
+    `!**/node_modules/**/prebuilds/darwin-${unusedArch}/**/*`,
+    "!**/node_modules/node-pty/prebuilds/{win32,linux}-*/**/*",
+    "!**/node_modules/node-pty/third_party/conpty/**/*",
+  ];
+}
+
+/** Windows runs the server from server.asar, so app.asar drops the server and its packages. */
+export function resolveWindowsAppExclusions(serverOnlyPackages: Iterable<string>): string[] {
+  return [
+    "!apps/server/dist/**/*",
+    ...[...serverOnlyPackages].map((name) => `!node_modules/${name}/**/*`),
+  ];
+}
+
+// electron-builder's `files` never reach server.asar. The WSL server loads or builds Linux
+// node-pty from it, so Linux prebuilds, node-pty's sources and node-addon-api stay.
+export function resolveWindowsServerExclusions(input: {
+  readonly arch: BuildArch;
+  readonly desktopOnlyPackages: Iterable<string>;
+}): string[] {
+  const unusedArch = input.arch === "arm64" ? "x64" : "arm64";
+  return [
+    ...UNLOADED_FILE_GLOBS,
+    "**/*.pdb",
+    "**/node_modules/**/prebuilds/darwin-*/**",
+    `**/node_modules/**/prebuilds/win32-${unusedArch}/**`,
+    ...[...input.desktopOnlyPackages].map((name) => `node_modules/${name}/**`),
+  ];
+}
+
+export function isExcludedPath(path: string, globs: ReadonlyArray<string>): boolean {
+  return globs.some((glob) => NodePath.posix.matchesGlob(path, glob));
 }
 
 const WINDOWS_NATIVE_ASAR_UNPACK_GLOB =
@@ -117,8 +165,8 @@ export interface PackagedResourceRequirement {
   readonly lookup: string;
   /** Location inside the staged app or its `resources` directory. */
   readonly source: string;
-  /** `resources` entries are emitted as extraResources; `app` entries live in the app archive. */
-  readonly area: "resources" | "app";
+  /** `resources` entries are emitted as extraResources; `app` and `server` name the archive. */
+  readonly area: "resources" | "app" | "server";
   readonly platforms?: readonly BuildPlatform[];
   readonly optional?: boolean;
   /** A native executable: Windows packages it with the `.exe` suffix. */
@@ -211,11 +259,31 @@ export const PACKAGED_RESOURCE_REQUIREMENTS: readonly PackagedResourceRequiremen
     lookup: "apps/server/dist/bin.mjs",
     source: "apps/server/dist/bin.mjs",
     area: "app",
+    platforms: ["linux", "mac"],
   },
   {
     lookup: "apps/server/dist/client/index.html",
     source: "apps/server/dist/client/index.html",
     area: "app",
+    platforms: ["linux", "mac"],
+  },
+  {
+    lookup: "server.asar/apps/server/dist/bin.mjs",
+    source: "apps/server/dist/bin.mjs",
+    area: "server",
+    platforms: ["win"],
+  },
+  {
+    lookup: "server.asar/apps/server/dist/client/index.html",
+    source: "apps/server/dist/client/index.html",
+    area: "server",
+    platforms: ["win"],
+  },
+  {
+    lookup: "server.asar/node_modules/node-pty/package.json",
+    source: "node_modules/node-pty/package.json",
+    area: "server",
+    platforms: ["win"],
   },
   {
     lookup: "apps/desktop/dist-electron/main.cjs",
@@ -261,24 +329,38 @@ export function resolveDesktopTargets(platform: BuildPlatform, target: string): 
   return [target];
 }
 
-export function resolveStageDependencies(input: {
+export interface StageDependencyInput {
   readonly platform: BuildPlatform;
   readonly arch: BuildArch;
   readonly serverDependencies: Readonly<Record<string, string>>;
   readonly desktopDependencies: Readonly<Record<string, string>>;
   readonly fffVersion: string;
-}): Record<string, string> {
+}
+
+/** The packages each bundle loads from disk; Windows splits the archives along these roots. */
+export function resolveStageDependencyRoots(input: StageDependencyInput): {
+  readonly server: Record<string, string>;
+  readonly desktop: Record<string, string>;
+} {
+  // Electron's Linux build links glibc, so the server never runs on a musl libc.
   const fffNative =
     input.platform === "win"
-      ? [`@ff-labs/fff-bin-win32-${input.arch}`]
+      ? `@ff-labs/fff-bin-win32-${input.arch}`
       : input.platform === "mac"
-        ? [`@ff-labs/fff-bin-darwin-${input.arch}`]
-        : [`@ff-labs/fff-bin-linux-${input.arch}-gnu`, `@ff-labs/fff-bin-linux-${input.arch}-musl`];
+        ? `@ff-labs/fff-bin-darwin-${input.arch}`
+        : `@ff-labs/fff-bin-linux-${input.arch}-gnu`;
   return {
-    ...selectCliRuntimeExternalDependencies(input.serverDependencies),
-    ...selectDesktopRuntimeExternalDependencies(input.desktopDependencies),
-    ...Object.fromEntries(fffNative.map((name) => [name, input.fffVersion])),
+    server: {
+      ...selectCliRuntimeExternalDependencies(input.serverDependencies),
+      [fffNative]: input.fffVersion,
+    },
+    desktop: selectDesktopRuntimeExternalDependencies(input.desktopDependencies),
   };
+}
+
+export function resolveStageDependencies(input: StageDependencyInput): Record<string, string> {
+  const roots = resolveStageDependencyRoots(input);
+  return { ...roots.server, ...roots.desktop };
 }
 
 export function createStageWorkspaceConfig(input: {
@@ -306,6 +388,8 @@ export function createBuildConfig(input: {
   readonly outputDir: string;
   readonly repoRoot: string;
   readonly stageAppDir: string;
+  /** Packages only the server reaches; known once the stage is installed. */
+  readonly serverOnlyPackages?: ReadonlyArray<string>;
 }): Record<string, unknown> {
   const buildConfig: Record<string, unknown> = {
     appId: DESKTOP_APP_ID,
@@ -323,6 +407,9 @@ export function createBuildConfig(input: {
       ...EXTERNAL_FILE_PATTERNS,
       ...(input.platform === "linux" ? LINUX_FILE_EXCLUSIONS : []),
       ...(input.platform === "mac" ? resolveMacFileExclusions(input.arch) : []),
+      ...(input.platform === "win"
+        ? resolveWindowsAppExclusions(input.serverOnlyPackages ?? [])
+        : []),
     ],
     extraResources: resolveExtraResources(input.platform, (path) =>
       NodeFS.existsSync(NodePath.join(input.stageAppDir, path)),
@@ -433,7 +520,7 @@ export function resolveExtraResources(
 /** Lists required resources missing from the staged app; optional helpers report separately. */
 export function missingPackagedResources(input: {
   readonly platform: BuildPlatform;
-  readonly exists: (path: string) => boolean;
+  readonly exists: (path: string, area: PackagedResourceRequirement["area"]) => boolean;
 }): { readonly missing: string[]; readonly skippedOptional: string[] } {
   const missing: string[] = [];
   const skippedOptional: string[] = [];
@@ -445,7 +532,7 @@ export function missingPackagedResources(input: {
       requirement.executable === true
         ? executableName(input.platform, requirement.source)
         : requirement.source;
-    if (input.exists(source)) continue;
+    if (input.exists(source, requirement.area)) continue;
     if (requirement.optional === true) {
       skippedOptional.push(requirement.lookup);
     } else {
@@ -457,7 +544,7 @@ export function missingPackagedResources(input: {
 
 export function assertPackagedResources(input: {
   readonly platform: BuildPlatform;
-  readonly exists: (path: string) => boolean;
+  readonly exists: (path: string, area: PackagedResourceRequirement["area"]) => boolean;
 }): void {
   const { missing, skippedOptional } = missingPackagedResources(input);
   if (missing.length > 0) {
@@ -572,9 +659,17 @@ function writeJson(path: string, value: unknown): void {
   NodeFS.writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function copyDirectory(source: string, destination: string): void {
+function copyDirectory(
+  source: string,
+  destination: string,
+  filter?: (source: string) => boolean,
+): void {
   NodeFS.rmSync(destination, { recursive: true, force: true });
-  NodeFS.cpSync(source, destination, { recursive: true, verbatimSymlinks: true });
+  NodeFS.cpSync(source, destination, {
+    recursive: true,
+    verbatimSymlinks: true,
+    ...(filter === undefined ? {} : { filter }),
+  });
 }
 
 function copyFile(source: string, destination: string, mode?: number): void {
@@ -663,7 +758,11 @@ function stageResources(input: {
 }
 
 /** Packs the staged server into the archive the Windows host starts it from. */
-export async function stageWindowsServerSidecar(stageAppDir: string): Promise<void> {
+export async function stageWindowsServerSidecar(
+  stageAppDir: string,
+  arch: BuildArch,
+  desktopOnlyPackages: ReadonlyArray<string>,
+): Promise<void> {
   const require = NodeModule.createRequire(import.meta.url);
   const asar = require("@electron/asar") as {
     createPackageWithOptions(
@@ -678,14 +777,22 @@ export async function stageWindowsServerSidecar(stageAppDir: string): Promise<vo
     "apps/desktop/prod-resources/windows-server",
     WINDOWS_SERVER_ASAR,
   );
+  const exclusions = resolveWindowsServerExclusions({ arch, desktopOnlyPackages });
+  const keep = (source: string): boolean => {
+    const path = NodePath.relative(stageAppDir, source).split(NodePath.sep).join("/");
+    // A trailing slash lets `dir/**` prune the directory instead of leaving it empty.
+    const directory = NodeFS.lstatSync(source).isDirectory();
+    return !isExcludedPath(directory ? `${path}/` : path, exclusions);
+  };
   NodeFS.mkdirSync(sourceDir, { recursive: true });
   copyDirectory(
     NodePath.join(stageAppDir, "apps/server/dist"),
     NodePath.join(sourceDir, "apps/server/dist"),
+    keep,
   );
   const nodeModules = NodePath.join(stageAppDir, "node_modules");
   if (NodeFS.existsSync(nodeModules)) {
-    copyDirectory(nodeModules, NodePath.join(sourceDir, "node_modules"));
+    copyDirectory(nodeModules, NodePath.join(sourceDir, "node_modules"), keep);
   }
   NodeFS.mkdirSync(NodePath.dirname(asarPath), { recursive: true });
   NodeFS.rmSync(asarPath, { force: true });
@@ -696,7 +803,22 @@ export async function stageWindowsServerSidecar(stageAppDir: string): Promise<vo
   NodeFS.rmSync(sourceDir, { recursive: true, force: true });
 }
 
-function stageApp(input: { readonly options: BuildOptions; readonly stageAppDir: string }): void {
+function buildConfigInput(options: BuildOptions, stageAppDir: string) {
+  return {
+    platform: options.platform,
+    target: options.target,
+    arch: options.arch,
+    version: options.version,
+    outputDir: options.outputDir,
+    repoRoot: REPO_ROOT,
+    stageAppDir,
+  };
+}
+
+function stageApp(input: { readonly options: BuildOptions; readonly stageAppDir: string }): {
+  readonly serverRoots: string[];
+  readonly desktopRoots: string[];
+} {
   const { options, stageAppDir } = input;
   for (const directory of ["apps/desktop", "apps/server"]) {
     NodeFS.mkdirSync(NodePath.join(stageAppDir, directory), { recursive: true });
@@ -713,13 +835,14 @@ function stageApp(input: { readonly options: BuildOptions; readonly stageAppDir:
 
   const serverDependencies = listResolvedDependencies("@houston-app/cli");
   const desktopDependencies = listResolvedDependencies("@houston-app/desktop");
-  const stageDependencies = resolveStageDependencies({
+  const stageDependencyRoots = resolveStageDependencyRoots({
     platform: options.platform,
     arch: options.arch,
     serverDependencies,
     desktopDependencies,
     fffVersion: serverPackageJson.dependencies["@ff-labs/fff-node"],
   });
+  const stageDependencies = { ...stageDependencyRoots.server, ...stageDependencyRoots.desktop };
   const stagePackageJson = {
     name: "houston",
     version: options.version,
@@ -732,15 +855,7 @@ function stageApp(input: { readonly options: BuildOptions; readonly stageAppDir:
     main: "apps/desktop/dist-electron/boot.cjs",
     dependencies: stageDependencies,
     devDependencies: { electron: desktopPackageJson.dependencies.electron },
-    build: createBuildConfig({
-      platform: options.platform,
-      target: options.target,
-      arch: options.arch,
-      version: options.version,
-      outputDir: options.outputDir,
-      repoRoot: REPO_ROOT,
-      stageAppDir,
-    }),
+    build: createBuildConfig(buildConfigInput(options, stageAppDir)),
   };
   writeJson(NodePath.join(stageAppDir, "package.json"), stagePackageJson);
 
@@ -758,6 +873,10 @@ function stageApp(input: { readonly options: BuildOptions; readonly stageAppDir:
   for (const patch of STAGE_PATCHES) {
     copyFile(NodePath.join(REPO_ROOT, "patches", patch), NodePath.join(patchesDir, patch));
   }
+  return {
+    serverRoots: Object.keys(stageDependencyRoots.server),
+    desktopRoots: Object.keys(stageDependencyRoots.desktop),
+  };
 }
 
 function serializeWorkspaceConfig(config: Record<string, unknown>): string {
@@ -816,6 +935,26 @@ function verifyStagedResources(stageAppDir: string, platform: BuildPlatform): vo
   });
 }
 
+/** Rewrites the staged build config once the installed tree shows which packages only the server reaches. */
+async function splitWindowsArchives(
+  options: BuildOptions,
+  stageAppDir: string,
+  roots: { readonly serverRoots: string[]; readonly desktopRoots: string[] },
+): Promise<void> {
+  const split = splitArchivePackages({ stageDir: stageAppDir, ...roots });
+  await stageWindowsServerSidecar(stageAppDir, options.arch, split.desktopOnly);
+  const manifestPath = NodePath.join(stageAppDir, "package.json");
+  const manifest = JSON.parse(NodeFS.readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
+  manifest.build = createBuildConfig({
+    ...buildConfigInput(options, stageAppDir),
+    serverOnlyPackages: split.serverOnly,
+  });
+  writeJson(manifestPath, manifest);
+  console.log(
+    `[desktop-artifact] app.asar leaves out ${split.serverOnly.length} server-only packages; server.asar leaves out ${split.desktopOnly.length} desktop-only packages.`,
+  );
+}
+
 function runElectronBuilder(options: BuildOptions, stageAppDir: string): void {
   const args = [
     "exec",
@@ -869,23 +1008,27 @@ function verifyPackagedOutput(options: BuildOptions): void {
       : NodePath.join(unpackedDir, "resources");
   const appDir = NodePath.join(resourcesDir, "app");
   const appAsar = NodePath.join(resourcesDir, "app.asar");
-  const existsInApp = (path: string): boolean => {
-    if (NodeFS.existsSync(NodePath.join(appDir, path))) return true;
-    if (!NodeFS.existsSync(appAsar)) return false;
+  const existsInArchive = (archive: string, path: string): boolean => {
+    if (!NodeFS.existsSync(archive)) return false;
     const asar = NodeModule.createRequire(import.meta.url)("@electron/asar") as {
       statFile(archive: string, path: string): unknown;
     };
     try {
-      asar.statFile(appAsar, asarEntryPath(path));
+      asar.statFile(archive, asarEntryPath(path));
       return true;
     } catch {
       return false;
     }
   };
+  const existsInApp = (path: string): boolean =>
+    NodeFS.existsSync(NodePath.join(appDir, path)) || existsInArchive(appAsar, path);
 
   assertPackagedResources({
     platform: options.platform,
-    exists: (path) => existsInApp(path) || NodeFS.existsSync(NodePath.join(resourcesDir, path)),
+    exists: (path, area) =>
+      area === "server"
+        ? existsInArchive(NodePath.join(resourcesDir, WINDOWS_SERVER_ASAR), path)
+        : existsInApp(path) || NodeFS.existsSync(NodePath.join(resourcesDir, path)),
   });
 
   const generated = [
@@ -939,11 +1082,11 @@ export async function main(): Promise<void> {
     if (!options.skipBuild) {
       buildDesktopBundles(options.verbose);
     }
-    stageApp({ options, stageAppDir });
+    const roots = stageApp({ options, stageAppDir });
     installStageDependencies(stageAppDir, options.verbose);
     stageResourceMonitor(stageAppDir);
     if (options.platform === "win") {
-      await stageWindowsServerSidecar(stageAppDir);
+      await splitWindowsArchives(options, stageAppDir, roots);
     }
     verifyStagedResources(stageAppDir, options.platform);
     runElectronBuilder(options, stageAppDir);

@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import {
+  CircleDotIcon,
   ListChecksIcon,
   FileIcon,
   FolderTreeIcon,
@@ -34,12 +35,14 @@ const NEW_THREAD_TITLE = "New thread";
 
 const PAGE_TITLES = {
   "pull-requests": "Pull requests",
+  issues: "Issues",
   tasks: "Tasks",
 } as const;
 
-/** Each page tab carries its own icon, the one its sidebar footer and launcher row show. */
+/** Each page tab carries its own icon, the one its launcher row shows. */
 const PAGE_ICONS: Record<keyof typeof PAGE_TITLES, LucideIcon> = {
   "pull-requests": PullRequestGlyph.pullRequest,
+  issues: CircleDotIcon,
   tasks: ListChecksIcon,
 };
 
@@ -61,6 +64,10 @@ function surfaceIcon(kind: string): LucideIcon {
       return SmartphoneIcon;
     case "terminal":
       return SquareTerminalIcon;
+    case "issue":
+      return CircleDotIcon;
+    case "task":
+      return ListChecksIcon;
     default:
       return SquareDashedIcon;
   }
@@ -149,6 +156,7 @@ export function useLayoutTabLabel(): (tab: LayoutTab) => LayoutTabLabel {
       case "launcher":
         return { icon: iconOf(SquareDashedIcon), title: "New tab" };
       case "pull-requests":
+      case "issues":
       case "tasks":
         return {
           icon: iconOf(PAGE_ICONS[content.kind]),

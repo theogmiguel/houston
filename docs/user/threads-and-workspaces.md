@@ -217,7 +217,9 @@ A thread's menu offers:
 - **Project settings**, **Auto-close behavior**
 - **Archive thread**, **Delete**
 
-Closing a thread leaves its history intact and moves it to **Closed**. **Archive** removes
+Closing a thread leaves its history intact, moves it to **Closed** and closes its chat tab,
+whether you closed it or its pull request merged. A thread opened from **Closed** keeps its tab
+until it is closed again. **Archive** removes
 it from the rail into **Settings ▸ Archive**, and is refused while a run is active.
 **Delete** removes the thread and its history after confirmation. Confirmation prompts are
 configurable in **Settings ▸ General ▸ Confirmations**.
@@ -293,11 +295,12 @@ their work is merged or closed, depending on those settings.
 ## Agent-to-agent work
 
 An agent can delegate work to other threads through the server's orchestration tools. The
-parent thread shows its children in the timeline and in the thread relationships card;
-**Open parent thread** returns from a child; a subagent's **Open parent** strip stays pinned under
+parent thread shows its children in the timeline and in the thread relationships card.
+Opening a child shows it in the tab that showed its parent, and **Open parent thread**
+returns to the parent in that same tab. A subagent's **Open parent** strip stays pinned under
 the thread header however far the timeline is scrolled. A child's question or approval request appears
 in the parent's pending approvals and needs your answer there. Agents reach threads,
-tasks and pulls through the server's MCP toolkits, not through the terminal.
+tasks, issues and pulls through the server's MCP toolkits, not through the terminal.
 
 Agents also manage workspaces through the `houston_workspace_*` tools, with the app closed: list,
 create, rename, hide, pin, reorder and delete a workspace, and add a thread's chat to one or take

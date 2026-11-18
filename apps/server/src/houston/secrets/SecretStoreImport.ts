@@ -2,7 +2,6 @@
 // copied only when the store lacks it; the keychain is only read, so its entries stay. The import
 // is recorded once no token is left unread, so a locked or absent keychain is retried next start.
 import { HOUSTON_SLACK_LIMITS } from "@houston-app/contracts/houston/slack";
-import { HOUSTON_TASK_SOURCE_LIMITS } from "@houston-app/contracts/houston/taskSources";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
@@ -11,12 +10,13 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "../../config.ts";
 import { APP_TOKEN_ACCOUNT, BOT_TOKEN_ACCOUNT, slackSecretName } from "../slack/rules.ts";
-import { trackerSecretName } from "../taskSources/rules.ts";
 import { nowIso } from "../tasks/TaskStore.ts";
 import { HoustonSecrets } from "./HoustonSecrets.ts";
 import { LegacyKeychain, legacyKeychainService } from "./LegacyKeychain.ts";
 
 const LEGACY_TRACKER_ACCOUNT = "integration-token";
+/** The bound the tracker connection applies to a token before it stores one. */
+const TRACKER_TOKEN_BYTES = 4_096;
 const encodeCounts = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 export interface ImportCounts {
@@ -42,16 +42,19 @@ interface Token {
 
 const WARNING = "Secret store import";
 
-/** The tokens the database says earlier builds stored: a connected Slack, a tracker per project. */
+/** The tokens the database says earlier builds stored: a connected Slack, a Notion tracker. */
 const recordedTokens = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const config = yield* ServerConfig.ServerConfig;
   const slack = yield* sql<{ readonly credential_set_at: string | null }>`
     SELECT credential_set_at FROM houston_slack_settings WHERE id = 1
   `;
-  const trackers = yield* sql<{ readonly project_id: string; readonly provider: string }>`
-    SELECT project_id, provider FROM houston_task_source_credentials ORDER BY project_id, provider
-  `;
+  const rows = (yield* sql<{ readonly project_id: string }>`
+    SELECT project_id FROM houston_issue_tracker_token_adoption WHERE tracker = 'notion'
+  `.pipe(Effect.orElseSucceed((): ReadonlyArray<unknown> => []))) as ReadonlyArray<{
+    readonly project_id: string;
+  }>;
+  const [adoption] = rows;
   const slackService = legacyKeychainService({
     baseDir: config.baseDir,
     purpose: "slack",
@@ -70,19 +73,19 @@ const recordedTokens = Effect.gen(function* () {
       });
     }
   }
-  for (const { project_id: projectId, provider } of trackers) {
-    if (provider !== "notion") continue;
+  if (adoption !== undefined) {
+    const projectId = adoption.project_id;
     tokens.push({
-      label: `${provider} token of project ${projectId}`,
-      name: trackerSecretName(projectId, provider),
+      label: `Notion token of project ${projectId}`,
+      name: "issue-tracker-notion-token",
       service: legacyKeychainService({
         baseDir: config.baseDir,
         purpose: "tracker",
         projectId,
-        provider,
+        provider: "notion",
       }),
       account: LEGACY_TRACKER_ACCOUNT,
-      limitBytes: HOUSTON_TASK_SOURCE_LIMITS.tokenBytes,
+      limitBytes: TRACKER_TOKEN_BYTES,
     });
   }
   return tokens;

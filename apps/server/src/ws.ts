@@ -222,11 +222,9 @@ import * as HoustonRpcSerialization from "./houston/rpcSerialization.ts";
 import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
 import * as HoustonTaskRuns from "./houston/tasks/TaskRuns.ts";
 import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
-import * as HoustonTaskSourceService from "./houston/taskSources/SourceService.ts";
 import * as HoustonLayoutWorkspaces from "./houston/layoutWorkspaces.ts";
 import * as HoustonSlackService from "./houston/slack/Service.ts";
 import * as HoustonSlackV1Import from "./houston/slack/V1Import.ts";
-import * as HoustonTaskSourceV1Import from "./houston/taskSources/V1Import.ts";
 import * as HoustonMergeQueueService from "./houston/mergeQueue/Service.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
@@ -261,6 +259,9 @@ import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as TriageService from "./triage/TriageService.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
+import * as IssueService from "./issue/IssueService.ts";
+import * as IssueTrackerConnections from "./issue/IssueTrackerConnections.ts";
+import * as HoustonIssueV1Import from "./issue/V1Import.ts";
 import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewGuideService.ts";
 import {
   listLinkedPullRequestThreads,
@@ -716,7 +717,14 @@ const ServerWsRpcGroup = WsRpcGroup.middleware(RpcInstrumentation);
 // crosses TypeScript's instantiation limit and the layer's requirements degrade to
 // `any`, so the handlers are registered as two disjoint, smaller groups.
 type ServerWsRpc = RpcGroup.Rpcs<typeof ServerWsRpcGroup>;
-const SPLIT_WS_RPC_PREFIXES = ["server", "pullRequests", "provider", "orchestration"] as const;
+const SPLIT_WS_RPC_PREFIXES = [
+  "server",
+  "pullRequests",
+  "issues",
+  "issueTrackers",
+  "provider",
+  "orchestration",
+] as const;
 type SplitWsRpc = Extract<
   ServerWsRpc,
   { readonly _tag: `${(typeof SPLIT_WS_RPC_PREFIXES)[number]}.${string}` }
@@ -1518,6 +1526,9 @@ export const layerWsRpc = (
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
       const secretRequests = yield* SecretRequests.SecretRequests;
       const pullRequests = yield* PullRequestService.PullRequestService;
+      const issues = yield* IssueService.IssueService;
+      const issueTrackers = yield* IssueTrackerConnections.IssueTrackerConnections;
+      const issueImport = yield* HoustonIssueV1Import.HoustonIssueV1Import;
       const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
       const deviceService = yield* DeviceService.DeviceService;
@@ -1565,8 +1576,6 @@ export const layerWsRpc = (
       const houstonTasks = yield* HoustonTaskService.HoustonTaskService;
       const houstonTaskImport = yield* HoustonTaskV1Import.HoustonTaskV1Import;
       const houstonTaskRuns = yield* HoustonTaskRuns.HoustonTaskRuns;
-      const houstonTaskSources = yield* HoustonTaskSourceService.HoustonTaskSourceService;
-      const houstonTaskSourceImport = yield* HoustonTaskSourceV1Import.HoustonTaskSourceV1Import;
       const houstonLayoutWorkspaces = yield* HoustonLayoutWorkspaces.HoustonLayoutWorkspaceService;
       const houstonSlack = yield* HoustonSlackService.HoustonSlackService;
       const houstonSlackImport = yield* HoustonSlackV1Import.HoustonSlackV1Import;
@@ -2128,6 +2137,22 @@ export const layerWsRpc = (
       });
 
       const handlers = ServerWsRpcGroup.of({
+        [WS_METHODS.issuesList]: (input) => issues.list(input),
+        [WS_METHODS.issuesDetail]: (input) => issues.detail(input),
+        [WS_METHODS.issuesComments]: (input) => issues.comments(input),
+        [WS_METHODS.issuesTemplates]: (input) => issues.templates(input),
+        [WS_METHODS.issuesCandidates]: (input) => issues.candidates(input),
+        [WS_METHODS.issuesCreate]: (input) => issues.create(input),
+        [WS_METHODS.issuesComment]: (input) => issues.comment(input),
+        [WS_METHODS.issuesUpdate]: (input) => issues.update(input),
+        [WS_METHODS.issuesSetState]: (input) => issues.setState(input),
+        [WS_METHODS.issuesReact]: (input) => issues.react(input),
+        [WS_METHODS.issueTrackersList]: () => issueTrackers.list,
+        [WS_METHODS.issueTrackersConnect]: (input) => issueTrackers.connect(input),
+        [WS_METHODS.issueTrackersBindProject]: (input) => issueTrackers.bindProject(input),
+        [WS_METHODS.issueTrackersProperties]: (input) => issueTrackers.properties(input),
+        [WS_METHODS.issueTrackersImportV1Status]: () => issueImport.status,
+        [WS_METHODS.issueTrackersImportV1Run]: () => issueImport.run,
         [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
           Effect.annotateCurrentSpan({
             "orchestration_v2.command_id": command.commandId,
@@ -3365,23 +3390,10 @@ export const layerWsRpc = (
         [WS_METHODS.houstonTasksPlanAnswer]: (input) => houstonTaskRuns.planAnswer(input),
         [WS_METHODS.houstonTasksPlanApprove]: (input) => houstonTaskRuns.planApprove(input),
         [WS_METHODS.houstonTasksReviewStart]: (input) => houstonTaskRuns.reviewStart(input),
-        [WS_METHODS.houstonTaskSourcesSettingsGet]: (input) =>
-          houstonTaskSources.getSettings(input),
-        [WS_METHODS.houstonTaskSourcesSettingsSet]: (input) =>
-          houstonTaskSources.setSettings(input),
-        [WS_METHODS.houstonTaskSourcesCredentialSet]: (input) =>
-          houstonTaskSources.setCredential(input),
-        [WS_METHODS.houstonTaskSourcesCredentialClear]: (input) =>
-          houstonTaskSources.clearCredential(input),
-        [WS_METHODS.houstonTaskSourcesSyncNow]: (input) => houstonTaskSources.syncNow(input),
-        [WS_METHODS.houstonTaskSourcesLinksGet]: (input) => houstonTaskSources.links(input),
-        [WS_METHODS.houstonTaskSourcesConflictsList]: (input) =>
-          houstonTaskSources.conflicts(input),
-        [WS_METHODS.houstonTaskSourcesConflictResolve]: (input) =>
-          houstonTaskSources.resolve(input),
-        [WS_METHODS.houstonTaskSourcesSubscribe]: (input) => houstonTaskSources.subscribe(input),
-        [WS_METHODS.houstonTaskSourcesImportV1Status]: () => houstonTaskSourceImport.status,
-        [WS_METHODS.houstonTaskSourcesImportV1Run]: () => houstonTaskSourceImport.run,
+        [WS_METHODS.houstonTasksIssueCreate]: (input) => houstonTasks.createFromIssue(input),
+        [WS_METHODS.houstonTasksIssueLink]: (input) => houstonTasks.linkIssue(input),
+        [WS_METHODS.houstonTasksIssueUnlink]: (input) => houstonTasks.unlinkIssue(input),
+        [WS_METHODS.houstonTasksIssueTask]: (input) => houstonTasks.taskForIssue(input),
         [WS_METHODS.houstonLayoutWorkspacesList]: () => houstonLayoutWorkspaces.list,
         [WS_METHODS.houstonLayoutWorkspacesPut]: (input) => houstonLayoutWorkspaces.put(input),
         [WS_METHODS.houstonLayoutWorkspacesReorder]: (input) =>
@@ -3731,6 +3743,8 @@ export const layer = Layer.unwrap(
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const npmRelease = yield* NpmRelease.NpmRelease;
     const pullRequests = yield* PullRequestService.PullRequestService;
+    const issues = yield* IssueService.IssueService;
+    const issueTrackers = yield* IssueTrackerConnections.IssueTrackerConnections;
     const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
     const peerLinks = yield* PeerLinks.PeerLinks;
     const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
@@ -3794,6 +3808,10 @@ export const layer = Layer.unwrap(
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
               // Share server-lifetime PR caches so WS mutations invalidate every client's HTTP diffs.
               Layer.provide(Layer.succeed(PullRequestService.PullRequestService, pullRequests)),
+              Layer.provide(Layer.succeed(IssueService.IssueService, issues)),
+              Layer.provide(
+                Layer.succeed(IssueTrackerConnections.IssueTrackerConnections, issueTrackers),
+              ),
               Layer.provide(OtlpEndpointCheck.layer),
               Layer.provide(
                 Layer.succeed(

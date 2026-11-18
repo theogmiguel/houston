@@ -175,6 +175,8 @@ export interface TraceSink {
 export interface LocalFileTracerOptions extends TraceSinkOptions {
   readonly delegate?: Tracer.Tracer;
   readonly sink?: TraceSink;
+  /** Whether an ended span is written to the file. The delegate (export) gets every span. */
+  readonly record?: (record: EffectTraceRecord) => boolean;
 }
 
 type OtlpSpan = OtlpTracer.ScopeSpan["spans"][number];
@@ -672,9 +674,16 @@ export const makeLocalFileTracer = Effect.fn("makeLocalFileTracer")(function* (
       span: (spanOptions) => new Tracer.NativeSpan(spanOptions),
     });
 
+  const keep = options.record;
+  const push =
+    keep === undefined
+      ? sink.push
+      : (record: EffectTraceRecord) => {
+          if (keep(record)) sink.push(record);
+        };
   return Tracer.make({
     span(spanOptions) {
-      return new LocalFileSpan(spanOptions, delegate.span(spanOptions), sink.push);
+      return new LocalFileSpan(spanOptions, delegate.span(spanOptions), push);
     },
     ...(delegate.context ? { context: delegate.context } : {}),
   });

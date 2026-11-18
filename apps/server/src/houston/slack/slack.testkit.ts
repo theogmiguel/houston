@@ -36,6 +36,7 @@ import {
   CONFIGURED_INSTANCES,
   createProject,
   layerInstances,
+  layerIssueService,
   layerProjectMetadata,
   layerWorkspacePaths,
 } from "../tasks/tasks.testkit.ts";
@@ -266,6 +267,7 @@ export const layerSlackTest = (options: SlackTestOptions) =>
   ).pipe(
     Layer.provideMerge(layerFakeRuns(options.runs ?? makeFakeRuns())),
     Layer.provideMerge(Layer.mergeAll(HoustonTaskService.layer, HoustonTaskV1Import.layer)),
+    Layer.provideMerge(layerIssueService()),
     Layer.provideMerge(RuntimeLayer.layerProjectService),
     Layer.provideMerge(ProjectStore.layer),
     // Below the project service, so a project deletion reaches it, as in server.ts.

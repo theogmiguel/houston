@@ -206,6 +206,51 @@ describe("truncateTraceAttributes", () => {
 });
 
 describe("observability", () => {
+  it.effect("leaves a span the record filter declines out of the file but still exports it", () =>
+    Effect.gen(function* () {
+      const exported: Array<string> = [];
+      const records: Array<string> = [];
+      const tracer = yield* makeLocalFileTracer({
+        filePath: "unused",
+        maxBytes: 1024,
+        maxFiles: 1,
+        batchWindowMs: 10_000,
+        sink: {
+          filePath: "unused",
+          push: (record) => {
+            if (record.type === "effect-span") records.push(record.name);
+          },
+          flush: Effect.void,
+          close: () => Effect.void,
+        },
+        delegate: Tracer.make({
+          span: (options) => {
+            const span = new Tracer.NativeSpan(options);
+            const end = span.end.bind(span);
+            span.end = (endTime, exit) => {
+              exported.push(options.name);
+              end(endTime, exit);
+            };
+            return span;
+          },
+        }),
+        record: (record) => record.name !== "quiet",
+      });
+
+      yield* Effect.void.pipe(
+        Effect.withSpan("quiet"),
+        Effect.provideService(Tracer.Tracer, tracer),
+      );
+      yield* Effect.void.pipe(
+        Effect.withSpan("kept"),
+        Effect.provideService(Tracer.Tracer, tracer),
+      );
+
+      assert.deepStrictEqual(records, ["kept"]);
+      assert.deepStrictEqual(exported, ["quiet", "kept"]);
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
   it.effect(
     "preserves successful results without retaining them in sampled or unsampled spans",
     () =>

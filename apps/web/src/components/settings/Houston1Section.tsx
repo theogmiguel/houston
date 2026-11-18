@@ -6,8 +6,8 @@ import {
   v1SlackImportStatus,
   v1TaskImportRun,
   v1TaskImportStatus,
-  v1TaskSourceImportRun,
-  v1TaskSourceImportStatus,
+  v1IssueImportRun,
+  v1IssueImportStatus,
 } from "~/state/v1Import";
 import type { DesktopV1CleanupReport } from "@houston-app/contracts";
 import { useEffect, useState } from "react";
@@ -31,10 +31,10 @@ export function Houston1ImportSection() {
       ? null
       : v1TaskImportStatus({ environmentId, input: V1_IMPORT_EMPTY_INPUT }),
   );
-  const taskSources = useEnvironmentQuery(
+  const issues = useEnvironmentQuery(
     environmentId === null
       ? null
-      : v1TaskSourceImportStatus({ environmentId, input: V1_IMPORT_EMPTY_INPUT }),
+      : v1IssueImportStatus({ environmentId, input: V1_IMPORT_EMPTY_INPUT }),
   );
   const slack = useEnvironmentQuery(
     environmentId === null
@@ -42,14 +42,14 @@ export function Houston1ImportSection() {
       : v1SlackImportStatus({ environmentId, input: V1_IMPORT_EMPTY_INPUT }),
   );
   const runTasks = useAtomCommand(v1TaskImportRun, { reportFailure: false });
-  const runTaskSources = useAtomCommand(v1TaskSourceImportRun, { reportFailure: false });
+  const runIssues = useAtomCommand(v1IssueImportRun, { reportFailure: false });
   const runSlack = useAtomCommand(v1SlackImportRun, { reportFailure: false });
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
   const statuses: Houston1ImportStatuses = {
     tasks: tasks.data,
-    taskSources: taskSources.data,
+    issues: issues.data,
     slack: slack.data,
   };
   const steps = houston1ImportSteps(statuses);
@@ -65,8 +65,8 @@ export function Houston1ImportSection() {
       const result = await runTasks({ environmentId, input: V1_IMPORT_EMPTY_INPUT });
       if (result._tag === "Failure") failed = { cause: result.cause };
     }
-    if (failed === null && steps.includes("taskSources")) {
-      const result = await runTaskSources({ environmentId, input: V1_IMPORT_EMPTY_INPUT });
+    if (failed === null && steps.includes("issues")) {
+      const result = await runIssues({ environmentId, input: V1_IMPORT_EMPTY_INPUT });
       if (result._tag === "Failure") failed = { cause: result.cause };
     }
     if (failed === null && steps.includes("slack")) {
@@ -75,7 +75,7 @@ export function Houston1ImportSection() {
     }
     if (failed !== null) setFailure(houston1ImportFailure(failed.cause));
     tasks.refresh();
-    taskSources.refresh();
+    issues.refresh();
     slack.refresh();
     setBusy(false);
   };

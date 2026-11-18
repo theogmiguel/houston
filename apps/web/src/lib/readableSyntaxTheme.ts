@@ -1,7 +1,6 @@
 import { getResolvedOrResolveTheme, registerCustomTheme, type DiffsTheme } from "@pierre/diffs";
 
-/** pierre-light with every syntax color darkened until it reads on every light code surface. */
-export const READABLE_LIGHT_THEME_NAME = "houston-light";
+import { READABLE_LIGHT_THEME_NAME } from "./diffThemeNames";
 
 const MIN_CONTRAST = 4.5;
 // The darkest light code surface is a changed word on a deleted line (#f8d3d4, luminance

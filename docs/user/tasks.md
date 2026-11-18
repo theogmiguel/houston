@@ -12,8 +12,9 @@ The Tasks page has three views:
   list under **Done and archived**.
 - **By project** lists each project's deliveries, their slices, then ungrouped tasks. It
   shows delivery count and slice progress and opens the project editor.
-- **Sources** shows where work comes from: Slack requests, per-project GitHub issues and
-  Notion, unresolved tracker conflicts and each source's state.
+- **Sources** shows where work comes from: Slack requests and each source's state. Notion
+  pages and GitHub, GitLab, Azure DevOps, Forgejo and Linear issues are on the Issues page,
+  and a task can be created from an issue.
 
 Search by title or key, and scope the list to one project or **All workspaces**. Select a
 task to open its detail in the right panel; the task's URL carries its key.
@@ -39,6 +40,27 @@ one activity feed.
 The editor saves with **Save task**. The status, priority, kind and project pills in the
 detail save as you choose them. If the task changed elsewhere first, a **This task changed
 elsewhere** banner appears with **Reload** before you overwrite anything.
+
+## Issue-backed tasks
+
+A task can be backed by one issue. The issue's title names the task, and its description
+points at the issue instead of copying its text: the issue's own words stay on the tracker. The
+detail shows the issue; select it to read it in the right panel. **Unlink** removes the link
+without touching the task, and **Link** backs a task with the issue a URL names. An issue has
+at most one unarchived task.
+
+The issue panel offers **Create task**, **Start** and **Plan**. **Start** and **Plan** create the
+task from the issue first, then run the flow below; **Create task** only creates it. Starting,
+planning or reviewing an issue-backed task links the issue to the thread it launches, and the
+run brief names the issue's key and URL and asks the agent to read it with the issue tools.
+Planning reads the live issue body as untrusted context.
+
+**Update the linked issue's state** in the **By project** project editor is off by default. When
+it is on, **In progress**, **In review**, **Done** and **Canceled** move the issue to its tracker's
+state: Done closes it with the tracker's first closed state, and the others use a state of that
+name when the tracker has one, leaving the issue alone otherwise. A tracker refusal appears in the
+task's activity and never holds the task back. A task's issue section shows whether the setting is
+on and points to the project editor; the switch is project-wide, not per task.
 
 ## Creating and editing
 
@@ -78,21 +100,17 @@ merges, the task moves to **Done**. A stopped, failed or interrupted attempt can
 
 ## Sources
 
-Slack, GitHub issues and Notion are configured in **Settings ▸ Task sources**; project
-sources can also be opened from the **Sources** view.
+Slack is configured in **Settings ▸ Task sources**; it can also be opened from the **Sources**
+view. Every issue tracker is on the **Issues** page, and a task is created from an issue rather
+than imported by a source.
 
 - **Slack** turns a bot mention in a mapped channel into a pending task. The configured
   owner starts it with Slack's white-check reaction; another member's reaction does not
   approve it. Tokens live in the server's secret store.
-- **GitHub issues** reads matching issues with your `gh` sign-in and can write delivery
-  status and links back.
-- **Notion** reads a configured tasks data source and writes status, pull request links and
-  handback summaries.
 
-Imported remote text is a labelled snapshot; local decisions and corrections are kept
-separately. If the same field changed on both sides, Houston keeps both values until you
-resolve the conflict. The **Sources** view lists unresolved conflicts and opens the task
-that holds the resolver.
+A task's hand-back is posted as a comment on its linked issue. When the project's issue-tracker
+binding maps a pull request URL property, the task's pull request URL is written there as well.
+A tracker refusal appears in the task's activity and never holds the task back.
 
 ## Agent access
 
