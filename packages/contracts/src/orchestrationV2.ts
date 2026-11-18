@@ -45,6 +45,7 @@ import {
   MessageDeliveryJson,
   MessageDeliveryQueueHoldReason,
 } from "./houston/messageDelivery.ts";
+import { HoustonBlockingBackgroundWork } from "./houston/backgroundWork.ts";
 import { HoustonSideThread, makeHoustonSideThreadCommands } from "./houston/sideThreads.ts";
 import { HoustonMergeQueueNotifyCommand } from "./houston/mergeQueue.ts";
 import { HoustonSlackAnswerCommand } from "./houston/slack.ts";
@@ -3217,6 +3218,12 @@ export const OrchestrationV2Command = Schema.Union([
     manualContinuationOfRunId: Schema.optional(RunId),
     usageLimitRecoveryRequestId: Schema.optional(CommandId),
     deliveryIntent: Schema.optional(Schema.Literals(["auto", "steer", "restart"])),
+    /**
+     * How a direct send handles a provider switch the previous session's background work would
+     * end. Absent refuses the switch; `wait` queues the message until that work ends; `end`
+     * stops the pending work and switches.
+     */
+    backgroundWorkPolicy: Schema.optional(Schema.Literals(["wait", "end"])),
     delegatedCompletion: Schema.optional(
       Schema.Struct({
         parentRunId: RunId,
@@ -3976,6 +3983,8 @@ export class OrchestrationV2DispatchCommandError extends Schema.TaggedError<Orch
      * client can treat a stale settle as already closed instead of reporting a failure.
      */
     reason: Schema.optional(Schema.Literal("thread_not_found")),
+    /** Set when a provider switch was refused because the session still runs this work. */
+    blockingBackgroundWork: Schema.optional(Schema.Array(HoustonBlockingBackgroundWork)),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {}

@@ -167,6 +167,7 @@ import * as RunExecutionService from "./RunExecutionService.ts";
 import { ProviderSessionManagerV2 } from "./ProviderSessionManager.ts";
 import { ProviderSwitchServiceV2 } from "./ProviderSwitchService.ts";
 import { isAutomaticCompletionRun, queuedRunsInDeliveryOrder } from "./QueuedRunOrder.ts";
+import { BackgroundWorkBlocksProviderSwitchError } from "./BackgroundWorkBlockError.ts";
 import { isRuntimePolicyAboveCeilingError, RuntimePolicyV2 } from "./RuntimePolicy.ts";
 import {
   endOrphanedNativeSubagent,
@@ -1425,31 +1426,120 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   // Detaching kills background work running inside the provider process.
   // Probe even with an empty roster: Claude's native subagents never reach
   // pendingBackgroundTasks. Sessions shared across threads probe per thread.
-  const sessionHasBackgroundWork = Effect.fn("Orchestrator.sessionHasBackgroundWork")(function* (
+  const sessionBackgroundWorkStatus = Effect.fn("Orchestrator.sessionBackgroundWorkStatus")(
+    function* (
+      detaching: OrchestrationV2ThreadProjection["providerSessions"][number],
+      providerThreads: OrchestrationV2ThreadProjection["providerThreads"],
+    ) {
+      const session = yield* providerSessions
+        .get(detaching.id)
+        .pipe(Effect.orElseSucceed(() => Option.none()));
+      if (Option.isNone(session)) return { busy: false, probeFailed: false };
+      const runtime = session.value;
+      const probes =
+        !detaching.capabilities.sessions.supportsMultipleProviderThreadsPerSession &&
+        runtime.hasPendingBackgroundWork !== undefined
+          ? [runtime.hasPendingBackgroundWork]
+          : providerThreads.flatMap((providerThread) =>
+              providerThread.providerSessionId === detaching.id &&
+              runtime.hasPendingBackgroundWorkForThread !== undefined
+                ? [runtime.hasPendingBackgroundWorkForThread(providerThread)]
+                : [],
+            );
+      let probeFailed = false;
+      for (const probe of probes) {
+        const result = yield* probe.pipe(Effect.exit);
+        if (Exit.isSuccess(result)) {
+          if (result.value) return { busy: true, probeFailed };
+          continue;
+        }
+        // A failed probe cannot confirm that the work ended, and a silent one would keep the
+        // session busy forever, so it is logged and reported with the refusal.
+        const failure = Cause.squash(result.cause);
+        yield* Effect.logWarning("Background-work probe failed", {
+          providerInstanceId: detaching.providerInstanceId,
+          providerSessionId: detaching.id,
+          cause: failure,
+        });
+        probeFailed = true;
+      }
+      return { busy: probeFailed, probeFailed };
+    },
+  );
+
+  const sessionHasBackgroundWork = (
     detaching: OrchestrationV2ThreadProjection["providerSessions"][number],
     providerThreads: OrchestrationV2ThreadProjection["providerThreads"],
-  ) {
-    const session = yield* providerSessions
-      .get(detaching.id)
-      .pipe(Effect.orElseSucceed(() => Option.none()));
-    if (Option.isNone(session)) return false;
-    const runtime = session.value;
-    const probes =
-      !detaching.capabilities.sessions.supportsMultipleProviderThreadsPerSession &&
-      runtime.hasPendingBackgroundWork !== undefined
-        ? [runtime.hasPendingBackgroundWork]
-        : providerThreads.flatMap((providerThread) =>
-            providerThread.providerSessionId === detaching.id &&
-            runtime.hasPendingBackgroundWorkForThread !== undefined
-              ? [runtime.hasPendingBackgroundWorkForThread(providerThread)]
-              : [],
-          );
-    for (const probe of probes) {
-      // A failed probe cannot confirm that the work ended.
-      if (yield* probe.pipe(Effect.catchCause(() => Effect.succeed(true)))) return true;
+  ) => sessionBackgroundWorkStatus(detaching, providerThreads).pipe(Effect.map((s) => s.busy));
+
+  /** The work that makes `sessionHasBackgroundWork` true, named for the user and for Stop. */
+  const sessionPendingBackgroundWork = (
+    sessionId: OrchestrationV2ThreadProjection["providerSessions"][number]["id"],
+    projection: Pick<
+      OrchestrationV2ThreadProjection,
+      "runs" | "providerThreads" | "turnItems" | "subagents"
+    >,
+  ) => {
+    const startedAtByTaskId = new Map<string, DateTime.Utc | null>();
+    for (const subagent of projection.subagents) {
+      startedAtByTaskId.set(String(subagent.id), subagent.startedAt);
+      const nativeId = subagent.nativeTaskRef?.nativeId;
+      if (nativeId !== null && nativeId !== undefined) {
+        startedAtByTaskId.set(nativeId, subagent.startedAt);
+      }
     }
-    return false;
-  });
+    for (const item of projection.turnItems) {
+      const nativeId = item.nativeItemRef?.nativeId;
+      if (nativeId !== null && nativeId !== undefined) {
+        startedAtByTaskId.set(nativeId, item.startedAt);
+      }
+      startedAtByTaskId.set(String(item.id), item.startedAt);
+    }
+    return derivePendingBackgroundWork({
+      latestRun: latestExecutedRun(projection.runs),
+      providerThreads: projection.providerThreads.filter(
+        (providerThread) => providerThread.providerSessionId === sessionId,
+      ),
+      turnItems: projection.turnItems,
+      hasActiveRun: false,
+      runs: projection.runs,
+    }).map((task) => ({
+      taskId: task.taskId,
+      kind:
+        task.kind === "subagent" || task.kind === "background_task"
+          ? ("subagent" as const)
+          : ("command" as const),
+      ...(task.description === undefined ? {} : { description: task.description }),
+      startedAt: startedAtByTaskId.get(task.taskId) ?? null,
+    }));
+  };
+
+  const blockingBackgroundWork = (
+    sessions: ReadonlyArray<OrchestrationV2ThreadProjection["providerSessions"][number]>,
+    projection: Pick<
+      OrchestrationV2ThreadProjection,
+      "runs" | "providerThreads" | "turnItems" | "subagents"
+    >,
+  ) => {
+    const items = sessions.flatMap((session) =>
+      sessionPendingBackgroundWork(session.id, projection),
+    );
+    // A provider can report work it does not name, such as a native subagent outside the
+    // projection; the refusal still says what it is instead of listing nothing.
+    return items.length > 0
+      ? items.map(({ kind, description, startedAt }) => ({
+          kind,
+          ...(description === undefined ? {} : { description }),
+          startedAt,
+        }))
+      : [
+          {
+            kind: "subagent" as const,
+            description: "Background work the provider has not named",
+            startedAt: null,
+          },
+        ];
+  };
 
   // Runs in every command transaction; avoid reading thousands of finished leaf nodes.
   const readCommandProjection = (threadId: ThreadId) =>
@@ -6866,6 +6956,35 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         queueBehindRun = oldestQueued;
       }
     }
+    // A direct send that would switch provider and end background work waits instead when
+    // the sender asked it to, using the queue's hold.
+    const switchesProvider =
+      activeProviderThread !== undefined &&
+      (!modelSelectionsEqual(projection.thread.modelSelection, modelSelection) ||
+        activeProviderThread.providerInstanceId !== modelSelection.instanceId);
+    const activeProviderSession =
+      activeProviderThread?.providerSessionId == null
+        ? undefined
+        : projection.providerSessions.find(
+            (session) => session.id === activeProviderThread.providerSessionId,
+          );
+    const waitForBackgroundWork =
+      command.backgroundWorkPolicy === "wait" &&
+      activeRun === undefined &&
+      switchesProvider &&
+      activeProviderSession !== undefined &&
+      (yield* sessionHasBackgroundWork(activeProviderSession, projection.providerThreads));
+    const backgroundWaitReason: QueueHoldReason | undefined =
+      waitForBackgroundWork && latestRun !== undefined
+        ? {
+            kind: "background_work",
+            message: `This message waits for ${activeProviderThread?.providerInstanceId ?? "the previous provider"}'s background work to finish before switching.`,
+            providerInstanceId: modelSelection.instanceId,
+          }
+        : undefined;
+    if (backgroundWaitReason !== undefined && latestRun != null) {
+      queueBehindRun = latestRun;
+    }
     const queueTarget = queueBehindRun;
     const shouldQueue = queueTarget !== undefined && startsOrQueuesRun;
     const heldRunsToRelease =
@@ -7003,10 +7122,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         rootNodeId,
         activeAttemptId: attemptId,
         status: "queued",
-        ...(worktreeMissingRun !== undefined ||
-        (heldRunsToRelease.length === 0 && queueIsHeld && !wakeSkipsHold)
-          ? { queueHeld: true }
-          : {}),
+        ...(backgroundWaitReason !== undefined
+          ? { queueHeld: true, queueHeldReason: backgroundWaitReason }
+          : worktreeMissingRun !== undefined ||
+              (heldRunsToRelease.length === 0 && queueIsHeld && !wakeSkipsHold)
+            ? { queueHeld: true }
+            : {}),
         queuePosition:
           goalStopRunId !== undefined
             ? 1
@@ -7085,6 +7206,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...queuedMessageDelivery(projection, command, delegatedCompletion, {
           requestedIntent,
           steerRerouted,
+          ...(backgroundWaitReason === undefined ? {} : { queueHeldReason: backgroundWaitReason }),
           now,
         }),
       };
@@ -7279,14 +7401,44 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ),
       ...(freshContext ? sessionsReleasedByFreshContext(projection, activeProviderThread) : []),
     ]);
+    const sessionsWithBackgroundWork: Array<
+      OrchestrationV2ThreadProjection["providerSessions"][number]
+    > = [];
+    const probeFailedInstances: Array<
+      OrchestrationV2ThreadProjection["providerSessions"][number]["providerInstanceId"]
+    > = [];
     for (const detaching of sessionsToDetach) {
-      if (yield* sessionHasBackgroundWork(detaching, projection.providerThreads)) {
+      const status = yield* sessionBackgroundWorkStatus(detaching, projection.providerThreads);
+      if (status.busy) sessionsWithBackgroundWork.push(detaching);
+      if (status.probeFailed) probeFailedInstances.push(detaching.providerInstanceId);
+    }
+    if (sessionsWithBackgroundWork.length > 0) {
+      if (command.backgroundWorkPolicy === "end") {
+        // Releasing these sessions for the switch ends the work they still run.
+        yield* Effect.logInfo("Ending background work to switch provider on request", {
+          threadId: command.threadId,
+          providerInstanceIds: sessionsWithBackgroundWork.map(
+            (session) => session.providerInstanceId,
+          ),
+        });
+      } else {
+        const items = blockingBackgroundWork(sessionsWithBackgroundWork, projection);
+        if (probeFailedInstances.length > 0) {
+          items.push({
+            kind: "subagent",
+            description: `Provider instance ${probeFailedInstances.join(", ")} did not answer the background-work check`,
+            startedAt: null,
+          });
+        }
         return yield* new OrchestratorDispatchError({
           commandId: command.commandId,
           commandType: command.type,
-          cause: freshContext
-            ? "The current session is still running background agents or commands, and a fresh session would end them. Wait for them to finish, or press Stop, then send the message again."
-            : "The previous provider is still running background agents or commands, and switching would end them. Wait for them to finish, or press Stop, then send the message again.",
+          cause: new BackgroundWorkBlocksProviderSwitchError({
+            message: freshContext
+              ? "The current session is still running background agents or commands, and a fresh session would end them. Wait for them to finish, press Stop, or choose to end them, then send the message again."
+              : "The previous provider is still running background agents or commands, and switching would end them. Wait for them to finish, press Stop, or choose to end them, then send the message again.",
+            items,
+          }),
         });
       }
     }

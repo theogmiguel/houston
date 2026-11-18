@@ -168,6 +168,8 @@ import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
 import * as OrchestrationEventStore from "./persistence/OrchestrationEventStore.ts";
 import { userFacingDispatchErrorMessage } from "./orchestration-v2/UserFacingErrors.ts";
+import { BackgroundWorkBlocksProviderSwitchError } from "./orchestration-v2/BackgroundWorkBlockError.ts";
+import type { HoustonBlockingBackgroundWork } from "@houston-app/contracts/houston/backgroundWork";
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
 import * as AcpRegistrySupport from "@houston-app/provider-acp-registry/server/AcpRegistrySupport";
@@ -943,6 +945,23 @@ const enrichProjectShells = Effect.fn("ws.orchestrationV2.enrichProjectShells")(
       ),
     ),
 );
+
+const isBackgroundWorkBlocksProviderSwitchError = Schema.is(
+  BackgroundWorkBlocksProviderSwitchError,
+);
+
+function dispatchBlockingBackgroundWork(
+  error: unknown,
+): ReadonlyArray<HoustonBlockingBackgroundWork> | undefined {
+  const seen = new Set<unknown>();
+  let value = error;
+  while (typeof value === "object" && value !== null && !seen.has(value)) {
+    seen.add(value);
+    if (isBackgroundWorkBlocksProviderSwitchError(value)) return value.items;
+    value = "cause" in value ? value.cause : undefined;
+  }
+  return undefined;
+}
 
 function isProjectionThreadNotFound(error: unknown): boolean {
   const seen = new Set<unknown>();
@@ -2183,6 +2202,7 @@ export const layerWsRpc = (
                   Effect.map((result) => ({ sequence: result.sequence })),
                   Effect.mapError((cause) => {
                     const detail = userFacingDispatchErrorMessage(cause);
+                    const blockingBackgroundWork = dispatchBlockingBackgroundWork(cause);
                     return new OrchestrationV2DispatchCommandError({
                       commandId: command.commandId,
                       commandType: command.type,
@@ -2191,6 +2211,7 @@ export const layerWsRpc = (
                       ...(isProjectionThreadNotFound(cause)
                         ? { reason: "thread_not_found" as const }
                         : {}),
+                      ...(blockingBackgroundWork === undefined ? {} : { blockingBackgroundWork }),
                       cause,
                     });
                   }),

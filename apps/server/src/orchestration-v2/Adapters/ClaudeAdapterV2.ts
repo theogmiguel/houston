@@ -12028,6 +12028,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           events: Stream.fromEffectRepeat(Queue.take(events)),
           backgroundTasksEndWithProcess: true,
           hasPendingBackgroundWork: Effect.gen(function* () {
+            const live = yield* Ref.get(queryContext);
+            // A closed or closing process runs nothing, so its leftover task and subagent rows
+            // must not keep the session busy: Stop really clears the list.
+            if (live === null || live.stopping) {
+              return false;
+            }
             for (const roster of (yield* Ref.get(pendingBackgroundTasksByNativeThread)).values()) {
               if (roster.size > 0) {
                 return true;
@@ -12057,6 +12063,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           hasPendingBackgroundWorkForThread: Effect.fnUntraced(function* (providerThread, options) {
             const nativeThreadId = providerThread.nativeThreadRef?.nativeId;
             if (nativeThreadId === undefined || nativeThreadId === null) {
+              return false;
+            }
+            const current = yield* Ref.get(queryContext);
+            // The process that held this thread's work is gone; its roster is stale.
+            if (current === null || current.stopping) {
               return false;
             }
             if (options?.includeSubagents) {
