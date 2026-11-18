@@ -1,6 +1,28 @@
 import * as Schema from "effect/Schema";
 
 import { ProviderTurnId, TrimmedNonEmptyString } from "../baseSchemas.ts";
+import { ProviderInstanceId } from "../providerInstance.ts";
+import { RuntimeMode } from "../providerPolicy.ts";
+
+/** Why a queued message cannot start; the queue holds it until the reason is cleared. */
+export const MessageDeliveryQueueHoldReasonKind = Schema.Literals([
+  "disabled_instance",
+  "usage_limit",
+  "runtime_mode_ceiling",
+  "provider_switch_failed",
+  "workspace_preparation",
+  "background_work",
+]);
+export type MessageDeliveryQueueHoldReasonKind = typeof MessageDeliveryQueueHoldReasonKind.Type;
+
+export const MessageDeliveryQueueHoldReason = Schema.Struct({
+  kind: MessageDeliveryQueueHoldReasonKind,
+  /** What blocks the start, naming the value, and what the user can do about it. */
+  message: TrimmedNonEmptyString,
+  providerInstanceId: Schema.optionalKey(ProviderInstanceId),
+  maxRuntimeMode: Schema.optionalKey(RuntimeMode),
+});
+export type MessageDeliveryQueueHoldReason = typeof MessageDeliveryQueueHoldReason.Type;
 
 /** What the provider reported as reading the message; `turnStarted` is the message's own turn. */
 export const MessageDeliveryEvidence = Schema.Literals([
@@ -36,6 +58,8 @@ const deliveryFields = {
   reason: Schema.optionalKey(Schema.Literals(["cancelled", "providerCancelled", "failed"])),
   // The same limit as a turn's provider failure, whose text a failed delivery carries.
   message: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(4_096))),
+  /** Why the queue holds this message instead of starting it; absent when it can start. */
+  queueHeldReason: Schema.optionalKey(Schema.NullOr(MessageDeliveryQueueHoldReason)),
   providerTurnId: Schema.NullOr(ProviderTurnId),
 } as const;
 

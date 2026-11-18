@@ -62,12 +62,14 @@ export const acceptedDelivery = (input: {
   readonly route: MessageDelivery["route"];
   readonly rerouted?: "turnEnded" | "turnBusy";
   readonly promotedFrom?: "queue";
+  readonly queueHeldReason?: MessageDelivery["queueHeldReason"];
   readonly at: DateTime.Utc;
 }): MessageDelivery => ({
   intent: input.intent,
   route: input.route,
   ...(input.rerouted === undefined ? {} : { rerouted: input.rerouted }),
   ...(input.promotedFrom === undefined ? {} : { promotedFrom: input.promotedFrom }),
+  ...(input.queueHeldReason === undefined ? {} : { queueHeldReason: input.queueHeldReason }),
   state: "accepted",
   adoption: null,
   evidence: null,

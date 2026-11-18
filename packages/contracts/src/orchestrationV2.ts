@@ -40,7 +40,11 @@ import {
   TurnItemId,
 } from "./baseSchemas.ts";
 import { AuthMcpClientAccess } from "./auth.ts";
-import { MessageDelivery, MessageDeliveryJson } from "./houston/messageDelivery.ts";
+import {
+  MessageDelivery,
+  MessageDeliveryJson,
+  MessageDeliveryQueueHoldReason,
+} from "./houston/messageDelivery.ts";
 import { HoustonSideThread, makeHoustonSideThreadCommands } from "./houston/sideThreads.ts";
 import { HoustonMergeQueueNotifyCommand } from "./houston/mergeQueue.ts";
 import { HoustonSlackAnswerCommand } from "./houston/slack.ts";
@@ -704,6 +708,8 @@ export const OrchestrationV2Run = Schema.Struct({
   status: OrchestrationV2RunStatus,
   queuePosition: Schema.optional(Schema.NullOr(PositiveInt)),
   queueHeld: Schema.optional(Schema.Boolean),
+  /** Why this queued run cannot start; cleared when it starts or its hold is released. */
+  queueHeldReason: Schema.optional(Schema.NullOr(MessageDeliveryQueueHoldReason)),
   requestedAt: Schema.DateTimeUtc,
   startedAt: Schema.NullOr(Schema.DateTimeUtc),
   completedAt: Schema.NullOr(Schema.DateTimeUtc),
@@ -3293,6 +3299,12 @@ export const OrchestrationV2Command = Schema.Union([
     commandId: CommandId,
     threadId: ThreadId,
     runId: RunId,
+    /**
+     * Sends the queued message on this selection instead of the one it was queued with, so a
+     * run the thread cannot start as queued (for example, on a disabled instance) still sends.
+     * Absent keeps the selection it was queued with.
+     */
+    modelSelection: Schema.optional(ModelSelection),
   }),
   Schema.Struct({
     type: Schema.Literal("queued-run.reorder"),
