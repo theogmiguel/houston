@@ -537,12 +537,26 @@ export function threadIssueKeysEqual(left: ThreadIssueKey, right: ThreadIssueKey
  * checkout's, and a project opts into it by binding one of the tracker's scopes. Everything a
  * client needs to draw the connect flow for any such tracker without knowing which one it is.
  */
+/** One property of a tracker's container that a project binding can map to a meaning. */
+export const IssueTrackerBindingProperty = Schema.Struct({
+  /** What the binding's `properties` record keys this meaning by: "title", "status". */
+  key: TrimmedNonEmptyString,
+  label: TrimmedNonEmptyString,
+  /** Absent from a binding that has one meaning only, such as Linear's team. */
+  description: Schema.optional(TrimmedNonEmptyString),
+  /** False for a meaning the tracker can work out itself when the binding leaves it out. */
+  required: Schema.Boolean,
+  /** The property types the tracker accepts for this meaning. */
+  types: Schema.Array(TrimmedNonEmptyString),
+});
+export type IssueTrackerBindingProperty = typeof IssueTrackerBindingProperty.Type;
+
 export const StandaloneIssueTrackerDescriptor = Schema.Struct({
   tracker: IssueTrackerKind,
   displayName: TrimmedNonEmptyString,
   /** Where the tracker is served from; what `IssueRef.host` carries for its issues. */
   host: TrimmedNonEmptyString,
-  /** What the tracker calls its container, in the singular: "team" on Linear, "project" on Jira. */
+  /** What the tracker calls its container, in the singular: "team" on Linear, "data source" on Notion. */
   scopeNoun: TrimmedNonEmptyString,
   credential: Schema.Struct({
     /** What the tracker calls the credential: "Personal API key", "API token". */
@@ -550,13 +564,25 @@ export const StandaloneIssueTrackerDescriptor = Schema.Struct({
     /** Where to mint one, or null when the tracker has no stable page for it. */
     helpUrl: Schema.NullOr(TrimmedNonEmptyString),
   }),
+  /** Absent for a tracker whose container needs no property mapping. */
+  bindingProperties: Schema.optional(Schema.Array(IssueTrackerBindingProperty)),
 });
 export type StandaloneIssueTrackerDescriptor = typeof StandaloneIssueTrackerDescriptor.Type;
 
-/** Which standalone tracker scope a project's issues come from, beside its git host's own. */
+/**
+ * Which standalone tracker scope a project's issues come from, beside its git host's own.
+ * `properties` maps tracker-specific meanings the descriptor lists ("title", "status") to the
+ * ids of the container's own properties; a tracker that needs none leaves it out.
+ */
 export const IssueTrackerProjectBinding = Schema.Struct({
   tracker: IssueTrackerKind,
   scope: TrimmedNonEmptyString,
+  properties: Schema.optional(
+    Schema.Record(
+      TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
+      TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
+    ),
+  ),
 });
 export type IssueTrackerProjectBinding = typeof IssueTrackerProjectBinding.Type;
 
@@ -603,6 +629,60 @@ export const IssueTrackerBindProjectInput = Schema.Struct({
   binding: Schema.NullOr(IssueTrackerProjectBinding),
 });
 export type IssueTrackerBindProjectInput = typeof IssueTrackerBindProjectInput.Type;
+
+/** One property a tracker container offers for a binding's `properties` mapping. */
+export const IssueTrackerProperty = Schema.Struct({
+  /** The id a binding stores; Notion accepts its own property ids and names. */
+  id: TrimmedNonEmptyString,
+  name: TrimmedNonEmptyString,
+  type: TrimmedNonEmptyString,
+  /** A select or status property's options, in the tracker's own order. */
+  options: Schema.Array(TrimmedNonEmptyString),
+});
+export type IssueTrackerProperty = typeof IssueTrackerProperty.Type;
+
+export const IssueTrackerPropertiesInput = Schema.Struct({
+  tracker: IssueTrackerKind,
+  scope: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
+});
+export type IssueTrackerPropertiesInput = typeof IssueTrackerPropertiesInput.Type;
+
+export const IssueTrackerPropertyList = Schema.Struct({
+  properties: Schema.Array(IssueTrackerProperty),
+});
+export type IssueTrackerPropertyList = typeof IssueTrackerPropertyList.Type;
+
+/** Counts behind a Houston 1 issue-link import; `skipped` names what could not be converted. */
+export const IssueImportCounts = Schema.Struct({
+  links: NonNegativeInt,
+  skipped: NonNegativeInt,
+});
+export type IssueImportCounts = typeof IssueImportCounts.Type;
+
+export const IssueImportStatus = Schema.Union([
+  Schema.Struct({
+    state: Schema.Literal("available"),
+    source: Schema.String,
+    links: NonNegativeInt,
+  }),
+  Schema.Struct({
+    state: Schema.Literal("imported"),
+    at: IsoDateTime,
+    counts: IssueImportCounts,
+  }),
+  Schema.Struct({ state: Schema.Literal("blocked"), reason: Schema.String }),
+  Schema.Struct({ state: Schema.Literal("unavailable") }),
+]);
+export type IssueImportStatus = typeof IssueImportStatus.Type;
+
+export const IssueImportResult = Schema.Struct({
+  imported: IssueImportCounts,
+  notes: Schema.Array(Schema.String),
+});
+export type IssueImportResult = typeof IssueImportResult.Type;
+
+export const IssueImportInput = Schema.Struct({});
+export type IssueImportInput = typeof IssueImportInput.Type;
 
 /**
  * A standalone tracker the connect flow could not reach or that refused the credential, or a

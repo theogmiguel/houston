@@ -47,6 +47,7 @@ vi.mock("~/state/issueTrackers", () => {
       connections: () => ({ __value: null }),
       connect: { permissionAtom: permission, __label: "connect" },
       bindProject: { permissionAtom: permission, __label: "bind" },
+      properties: () => ({ __value: null }),
     },
   };
 });
@@ -96,6 +97,33 @@ const connected = (): IssueTrackerConnectionList => ({
   bindings: {},
 });
 
+const notion = (): IssueTrackerConnectionList => ({
+  trackers: [
+    {
+      tracker: "notion" as never,
+      displayName: "Notion",
+      host: "notion.so",
+      scopeNoun: "data source",
+      credential: { label: "Integration token", helpUrl: null },
+      bindingProperties: [
+        { key: "title", label: "Title property", required: true, types: ["title"] },
+        { key: "status", label: "Status property", required: true, types: ["status"] },
+      ],
+      connected: true,
+      account: "Houston",
+      detail: null,
+      scopes: [{ key: "0123456789abcdef0123456789abcdef", name: "Tasks" }],
+    },
+  ],
+  bindings: {
+    ["p1" as never]: {
+      tracker: "notion" as never,
+      scope: "0123456789abcdef0123456789abcdef",
+      properties: { title: "title" },
+    },
+  },
+});
+
 describe("IssueTrackerSettings", () => {
   it("shows a connected tracker, lists its project bindings and disconnects it", async () => {
     fixture.data = connected();
@@ -123,6 +151,21 @@ describe("IssueTrackerSettings", () => {
         value: { environmentId: "env", input: { tracker: "linear", token: null } },
       },
     ]);
+  });
+
+  it("shows a bound Notion data source with its property pickers", async () => {
+    fixture.data = notion();
+    fixture.calls = [];
+    await using _screen = await render(
+      <IssueTrackerSettings environmentId={"env" as EnvironmentId} />,
+    );
+    await userEvent.click(page.getByRole("button", { name: "Toggle Notion details" }));
+    await expect
+      .element(page.getByRole("combobox", { name: "Title property for Web" }))
+      .toBeVisible();
+    await expect
+      .element(page.getByRole("combobox", { name: "Status property for Web" }))
+      .toBeVisible();
   });
 
   it("renders nothing until the server reports a standalone tracker", async () => {

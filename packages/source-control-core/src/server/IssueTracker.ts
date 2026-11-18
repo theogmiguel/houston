@@ -21,6 +21,7 @@ import type {
   IssueSummary,
   IssueTemplateList,
   IssueTrackerKind,
+  IssueTrackerProperty,
   IssueTrackerScope,
   IssueViewerPermissions,
   StandaloneIssueTrackerDescriptor,
@@ -64,6 +65,12 @@ export interface IssueScopeTarget {
   readonly cwd: string;
   readonly host: string;
   readonly scope: string;
+  /**
+   * The project binding's property mapping, when its tracker needs one: the meanings the
+   * descriptor lists ("title", "status") to the container's own property ids. Ignored by a
+   * tracker whose scope needs none.
+   */
+  readonly properties?: Readonly<Record<string, string>>;
 }
 
 export interface IssueTarget extends IssueScopeTarget {
@@ -167,6 +174,14 @@ export interface IssueTrackerApi {
   ) => Effect.Effect<void, IssueTrackerError>;
 
   /**
+   * Records a change request on the issue where the tracker's binding maps such a property.
+   * Only called when a task's pull request is reported; a tracker without the mapping fails.
+   */
+  readonly setPullRequestUrl?: (
+    input: IssueTarget & { readonly url: string },
+  ) => Effect.Effect<void, IssueTrackerError>;
+
+  /**
    * Adds a reaction or takes it back. `subjectId` is a comment id as the detail carried it;
    * absent means the issue itself. Only called when `capabilities.reactions` is true.
    */
@@ -187,6 +202,14 @@ export interface IssueTrackerApi {
   readonly listCandidates?: (
     input: IssueScopeTarget,
   ) => Effect.Effect<IssueCandidates, IssueTrackerError>;
+
+  /**
+   * Only called for a tracker whose descriptor lists `bindingProperties`: the container's
+   * properties, read with the stored credential so a binding can map them.
+   */
+  readonly listProperties?: (
+    scope: string,
+  ) => Effect.Effect<ReadonlyArray<IssueTrackerProperty>, IssueTrackerError>;
 }
 
 /**
@@ -199,6 +222,11 @@ export interface StandaloneIssueTrackerApi extends IssueTrackerApi {
   readonly standalone: StandaloneIssueTrackerDescriptor;
   /** Retains the workspace identity so canonical URLs can disambiguate repeated scope keys. */
   readonly parseIssueUrl: (url: URL) => (IssueLink & { readonly workspace: string }) | null;
+  /**
+   * Whether two spellings of a scope name the same container. Absent means lower-case equality;
+   * a tracker whose ids accept several spellings (a UUID with or without dashes) says so here.
+   */
+  readonly sameScope?: (left: string, right: string) => boolean;
   /**
    * Who a credential signs in as and which scopes it reaches, asked of the tracker itself. Run on
    * a credential before it is stored, and on the stored one to report connection status.

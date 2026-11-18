@@ -116,7 +116,7 @@ function fakeTracker(overrides: Partial<IssueTrackerApi> = {}): IssueTrackerApi 
 
 /** A standalone tracker shaped like Linear: its own host, team keys for scopes, `ENG-1` keys. */
 function fakeStandaloneTracker(
-  overrides: Partial<IssueTrackerApi> = {},
+  overrides: Partial<StandaloneIssueTrackerApi> = {},
 ): StandaloneIssueTrackerApi {
   return {
     ...fakeTracker({
@@ -138,18 +138,20 @@ function fakeStandaloneTracker(
       scopeNoun: "team",
       credential: { label: "Personal API key", helpUrl: null },
     },
-    parseIssueUrl: (url) => {
-      const links = new Map([
-        ["https://linear.app/acme/issue/ENG-1/old-title", "acme"],
-        ["https://linear.app/acme/issue/ENG-1/issue-title", "acme"],
-        ["https://linear.app/acme/issue/ENG-1/canonical-title", "acme"],
-        ["https://linear.app/other-workspace/issue/ENG-1/old-title", "other-workspace"],
-      ]);
-      const workspace = links.get(url.href);
-      return workspace === undefined
-        ? null
-        : { host: "linear.app", workspace, scope: "ENG", key: "ENG-1" };
-    },
+    parseIssueUrl:
+      overrides.parseIssueUrl ??
+      ((url) => {
+        const links = new Map([
+          ["https://linear.app/acme/issue/ENG-1/old-title", "acme"],
+          ["https://linear.app/acme/issue/ENG-1/issue-title", "acme"],
+          ["https://linear.app/acme/issue/ENG-1/canonical-title", "acme"],
+          ["https://linear.app/other-workspace/issue/ENG-1/old-title", "other-workspace"],
+        ]);
+        const workspace = links.get(url.href);
+        return workspace === undefined
+          ? null
+          : { host: "linear.app", workspace, scope: "ENG", key: "ENG-1" };
+      }),
     probeCredential: () => Effect.succeed({ account: "ada", scopes: [] }),
   };
 }
@@ -440,6 +442,49 @@ describe("IssueService with a standalone tracker", () => {
           reason: "not-found",
           detail: "This issue URL does not belong to the connected workspace.",
         },
+      });
+    }),
+  );
+
+  it.effect("finds the binding that reads a URL naming no scope", () =>
+    Effect.gen(function* () {
+      const tracker = fakeStandaloneTracker({
+        parseIssueUrl: (url) =>
+          url.hostname === "www.notion.so"
+            ? { host: "linear.app", workspace: "", scope: "", key: "abc" }
+            : null,
+        getIssue: (input) =>
+          input.scope === "NOTES"
+            ? Effect.succeed({
+                ...issue(input.key),
+                url: "https://www.notion.so/abc",
+                displayKey: input.key,
+              })
+            : Effect.fail(
+                new IssueTrackerError({
+                  tracker: LINEAR,
+                  operation: "getIssue",
+                  reason: "not-found",
+                  detail: "Not in this data source.",
+                }),
+              ),
+      });
+      const service = yield* makeService({
+        projects: [project({ id: "web" }), project({ id: "notes" })],
+        trackers: [tracker],
+        bindings: {
+          web: { tracker: LINEAR, scope: "WEB" },
+          notes: { tracker: LINEAR, scope: "NOTES" },
+        },
+      });
+      expect(
+        yield* service.resolveUrl("https://www.notion.so/abc", "web" as ProjectId),
+      ).toMatchObject({
+        projectId: "notes",
+        tracker: LINEAR,
+        scope: "NOTES",
+        key: "abc",
+        writable: true,
       });
     }),
   );

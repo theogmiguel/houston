@@ -26,6 +26,11 @@ export function createIssueTrackerEnvironmentAtoms<R, E>(
     label: "environment-data:issue-trackers:connections",
     tag: WS_METHODS.issueTrackersList,
   });
+  /** The properties a tracker's scope offers, read when a binding's mapping is edited. */
+  const properties = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:issue-trackers:properties",
+    tag: WS_METHODS.issueTrackersProperties,
+  });
   const refresh = (environmentId: Parameters<typeof connections>[0]["environmentId"]) =>
     connections({ environmentId, input: {} });
   // Connect, disconnect and bind all edit one environment's tracker state; serialized so a
@@ -36,6 +41,7 @@ export function createIssueTrackerEnvironmentAtoms<R, E>(
   };
   return {
     connections,
+    properties,
     /** Saves a credential the tracker accepted, or removes the stored one with a null token. */
     connect: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:issue-trackers:connect",

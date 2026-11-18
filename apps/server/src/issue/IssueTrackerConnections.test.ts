@@ -72,6 +72,20 @@ function tracker(): StandaloneIssueTrackerApi {
       credential: { label: "Personal API key", helpUrl: null },
     },
     parseIssueUrl: () => null,
+    listProperties: (scope) =>
+      scope === "ENG"
+        ? Effect.succeed([
+            { id: "title", name: "Name", type: "title", options: [] },
+            { id: "status", name: "Status", type: "status", options: ["Todo", "Done"] },
+          ])
+        : Effect.fail(
+            new IssueTrackerError({
+              tracker: LINEAR,
+              operation: "listProperties",
+              reason: "not-found",
+              detail: "No such team.",
+            }),
+          ),
     probeCredential: (token) =>
       token === GOOD
         ? Effect.succeed({ account: "ada", scopes: [{ key: "ENG", name: "Engineering" }] })
@@ -119,6 +133,7 @@ function makeConnections(input: {
               Effect.sync(() => {
                 removedTrackers.push(trackerKind);
               }),
+            removeProject: () => Effect.void,
           }),
         ),
       ),
@@ -192,6 +207,24 @@ describe("IssueTrackerConnections", () => {
       expect(disconnected).toMatchObject({ connected: false, account: null, scopes: [] });
       expect(secrets.entries.has(SECRET_NAME)).toBe(false);
       expect(removedTrackers).toEqual([LINEAR]);
+    }),
+  );
+
+  it.effect("lists a scope's properties for the binding pickers", () =>
+    Effect.gen(function* () {
+      const secrets = HoustonSecrets.makeMemory();
+      const { service } = makeConnections({ secrets });
+      const connections = yield* service;
+      const listed = yield* connections.properties({ tracker: LINEAR, scope: "ENG" });
+      expect(
+        listed.properties.map((property) => [property.id, property.type, property.options]),
+      ).toEqual([
+        ["title", "title", []],
+        ["status", "status", ["Todo", "Done"]],
+      ]);
+      const refused = yield* Effect.flip(connections.properties({ tracker: LINEAR, scope: "OPS" }));
+      expect(refused.reason).toBe("failed");
+      expect(refused.detail).toContain("No such team");
     }),
   );
 

@@ -16,6 +16,8 @@ import {
   type IssueTrackerConnectInput,
   type IssueTrackerConnection,
   type IssueTrackerConnectionList,
+  type IssueTrackerPropertiesInput,
+  type IssueTrackerPropertyList,
 } from "@houston-app/contracts";
 import type { StandaloneIssueTrackerApi } from "@houston-app/source-control-core/server/IssueTracker";
 
@@ -27,6 +29,8 @@ import * as IssueTrackerRegistry from "./IssueTrackerRegistry.ts";
 
 /** The contract's own bound, checked again where the value reaches the secret store. */
 const MAX_TOKEN_CHARS = 4_096;
+/** The most meanings a binding may map; the descriptor lists a handful at most. */
+const MAX_BINDING_PROPERTIES = 32;
 
 export class IssueTrackerConnections extends Context.Service<
   IssueTrackerConnections,
@@ -44,6 +48,10 @@ export class IssueTrackerConnections extends Context.Service<
     readonly bindProject: (
       input: IssueTrackerBindProjectInput,
     ) => Effect.Effect<void, IssueTrackerConnectionError>;
+    /** The properties a tracker's scope offers, for the binding's pickers. */
+    readonly properties: (
+      input: IssueTrackerPropertiesInput,
+    ) => Effect.Effect<IssueTrackerPropertyList, IssueTrackerConnectionError>;
   }
 >()("@houston-app/cli/issue/IssueTrackerConnections") {}
 
@@ -175,13 +183,48 @@ const make = Effect.gen(function* () {
     // Unbinding names no tracker; the first registered one carries any report.
     const tracker =
       input.binding === null ? anyTracker : (yield* requireTracker(input.binding.tracker)).kind;
+    if (
+      input.binding !== null &&
+      Object.keys(input.binding.properties ?? {}).length > MAX_BINDING_PROPERTIES
+    ) {
+      return yield* new IssueTrackerConnectionError({
+        tracker,
+        reason: "rejected",
+        detail: `The binding maps more than ${MAX_BINDING_PROPERTIES} properties.`,
+      });
+    }
     const updatedAt = DateTime.formatIso(yield* DateTime.now);
     yield* bindings
       .set({ projectId: input.projectId, binding: input.binding, updatedAt })
       .pipe(Effect.mapError(secretFailure(tracker, "The project binding could not be saved.")));
   });
 
-  return IssueTrackerConnections.of({ list, connect, bindProject });
+  const properties: IssueTrackerConnections["Service"]["properties"] = Effect.fn(
+    "IssueTrackerConnections.properties",
+  )(function* (input) {
+    const api = yield* requireTracker(input.tracker);
+    if (api.listProperties === undefined) {
+      return yield* new IssueTrackerConnectionError({
+        tracker: input.tracker,
+        reason: "failed",
+        detail: `${api.standalone.displayName} offers no properties to map.`,
+      });
+    }
+    const listed = yield* api.listProperties(input.scope).pipe(
+      Effect.mapError(
+        (error) =>
+          new IssueTrackerConnectionError({
+            tracker: input.tracker,
+            reason: error.reason === "unauthenticated" ? "rejected" : "failed",
+            detail: IssueService.trackerDetail(error),
+            cause: error,
+          }),
+      ),
+    );
+    return { properties: listed };
+  });
+
+  return IssueTrackerConnections.of({ list, connect, bindProject, properties });
 });
 
 export const layer = Layer.effect(IssueTrackerConnections, make);

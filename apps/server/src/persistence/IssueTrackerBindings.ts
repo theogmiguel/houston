@@ -1,6 +1,7 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
@@ -16,7 +17,23 @@ const BindingRow = Schema.Struct({
   projectId: ProjectId,
   tracker: IssueTrackerKind,
   scope: Schema.String,
+  propertiesJson: Schema.String,
 });
+
+const JsonText = Schema.fromJsonString(Schema.Unknown);
+const decodeJson = Schema.decodeUnknownOption(JsonText);
+const encodeJson = Schema.encodeSync(JsonText);
+
+/** The stored property mapping, ignoring anything that is not a non-empty string entry. */
+const decodeProperties = (json: string): Readonly<Record<string, string>> => {
+  const parsed = Option.getOrNull(decodeJson(json));
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+  return Object.fromEntries(
+    Object.entries(parsed).flatMap(([key, value]) =>
+      typeof value === "string" && value.length > 0 ? [[key, value] as const] : [],
+    ),
+  );
+};
 
 /**
  * Which standalone issue tracker scope each project reads beside its git host's own issues. A
@@ -40,6 +57,10 @@ export class IssueTrackerBindingsRepository extends Context.Service<
     readonly removeTracker: (
       tracker: IssueTrackerKind,
     ) => Effect.Effect<void, IssueTrackerBindingsRepositoryError>;
+    /** Unbinds one project, when it is deleted; absent rows succeed. */
+    readonly removeProject: (
+      projectId: ProjectId,
+    ) => Effect.Effect<void, IssueTrackerBindingsRepositoryError>;
   }
 >()("@houston-app/cli/persistence/IssueTrackerBindings/IssueTrackerBindingsRepository") {}
 
@@ -58,7 +79,8 @@ const make = Effect.gen(function* () {
     Result: BindingRow,
     execute: () =>
       sql`
-        SELECT project_id AS "projectId", tracker AS "tracker", scope AS "scope"
+        SELECT project_id AS "projectId", tracker AS "tracker", scope AS "scope",
+          properties_json AS "propertiesJson"
         FROM issue_tracker_bindings
       `,
   });
@@ -68,7 +90,17 @@ const make = Effect.gen(function* () {
       Effect.map(
         (rows) =>
           new Map(
-            rows.map((row) => [row.projectId, { tracker: row.tracker, scope: row.scope }] as const),
+            rows.map((row) => {
+              const properties = decodeProperties(row.propertiesJson);
+              return [
+                row.projectId,
+                {
+                  tracker: row.tracker,
+                  scope: row.scope,
+                  ...(Object.keys(properties).length === 0 ? {} : { properties }),
+                },
+              ] as const;
+            }),
           ),
       ),
       Effect.mapError(toSqlOrDecodeError("listIssueTrackerBindings", "IssueTrackerBinding")),
@@ -78,10 +110,12 @@ const make = Effect.gen(function* () {
         yield* input.binding === null
           ? sql`DELETE FROM issue_tracker_bindings WHERE project_id = ${input.projectId}`
           : sql`
-              INSERT INTO issue_tracker_bindings (project_id, tracker, scope, updated_at)
-              VALUES (${input.projectId}, ${input.binding.tracker}, ${input.binding.scope}, ${input.updatedAt})
+              INSERT INTO issue_tracker_bindings (project_id, tracker, scope, properties_json, updated_at)
+              VALUES (${input.projectId}, ${input.binding.tracker}, ${input.binding.scope},
+                ${encodeJson(input.binding.properties ?? {})}, ${input.updatedAt})
               ON CONFLICT (project_id)
-              DO UPDATE SET tracker = excluded.tracker, scope = excluded.scope, updated_at = excluded.updated_at
+              DO UPDATE SET tracker = excluded.tracker, scope = excluded.scope,
+                properties_json = excluded.properties_json, updated_at = excluded.updated_at
             `;
       },
       Effect.mapError(
@@ -94,6 +128,14 @@ const make = Effect.gen(function* () {
       },
       Effect.mapError(
         (cause) => new PersistenceSqlError({ operation: "removeIssueTrackerBindings", cause }),
+      ),
+    ),
+    removeProject: Effect.fn("IssueTrackerBindingsRepository.removeProject")(
+      function* (projectId) {
+        yield* sql`DELETE FROM issue_tracker_bindings WHERE project_id = ${projectId}`;
+      },
+      Effect.mapError(
+        (cause) => new PersistenceSqlError({ operation: "removeIssueTrackerBinding", cause }),
       ),
     ),
   });

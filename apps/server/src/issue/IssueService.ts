@@ -68,12 +68,24 @@ interface ProjectTrackerBinding {
   readonly tracker: IssueTrackerKind;
   readonly host: string;
   readonly scope: string;
+  /** The project binding's property mapping, for a tracker whose container needs one. */
+  readonly properties?: Readonly<Record<string, string>>;
 }
 
 /** A project the registry has a tracker for, ready to serve reads and writes. */
 interface SupportedProject extends ProjectTrackerBinding {
   readonly project: OrchestrationProjectShell;
   readonly api: IssueTrackerApi;
+}
+
+/** Where a tracker call is addressed from, with the project's property mapping when it has one. */
+function targetOf(project: SupportedProject) {
+  return {
+    cwd: project.project.workspaceRoot,
+    host: project.host,
+    scope: project.scope,
+    ...(project.properties === undefined ? {} : { properties: project.properties }),
+  };
 }
 
 /**
@@ -116,6 +128,13 @@ function findStandaloneIssueUrl(trackers: ReadonlyArray<StandaloneIssueTrackerAp
 
 function isTrackerUnusable(error: IssueTrackerError): boolean {
   return error.reason === "missing-tool" || error.reason === "unauthenticated";
+}
+
+/** Whether two scope spellings name the same container, as the tracker reads its own ids. */
+function sameScope(api: IssueTrackerApi, left: string, right: string): boolean {
+  return isStandaloneIssueTracker(api)
+    ? (api.sameScope?.(left, right) ?? left.toLowerCase() === right.toLowerCase())
+    : left.toLowerCase() === right.toLowerCase();
 }
 
 function toIssueError(operation: string): (error: IssueTrackerError) => IssueError {
@@ -163,6 +182,10 @@ export class IssueService extends Context.Service<
     readonly update: (input: IssueUpdateInput) => Effect.Effect<void, IssueError>;
     readonly setState: (input: IssueSetStateInput) => Effect.Effect<void, IssueError>;
     readonly react: (input: IssueReactionInput) => Effect.Effect<void, IssueError>;
+    /** Records a task's pull request on the issue where the binding maps such a property. */
+    readonly setPullRequestUrl: (
+      input: IssueRef & { readonly url: string },
+    ) => Effect.Effect<void, IssueError>;
     /** The tracker and container a project's own issues live in. */
     readonly projectScope: (
       projectId: ProjectId,
@@ -202,6 +225,7 @@ const make = Effect.gen(function* () {
           tracker: binding.tracker,
           host: api.standalone.host,
           scope: binding.scope,
+          ...(binding.properties === undefined ? {} : { properties: binding.properties }),
         };
       }),
       Effect.orElseSucceed(() => null),
@@ -295,7 +319,7 @@ const make = Effect.gen(function* () {
           return Effect.fail(new IssueUnavailableError({ reason: "tracker-unsupported" }));
         }
         const scope = ref.scope.trim();
-        const writable = scope.toLowerCase() === own.scope.toLowerCase();
+        const writable = sameScope(own.api, scope, own.scope);
         return Effect.succeed({ ...own, scope, writable });
       }),
     );
@@ -374,9 +398,7 @@ const make = Effect.gen(function* () {
           const page = yield* viewerRequests.get(project.host)!.pipe(
             Effect.flatMap((viewer) =>
               project.api.listIssues({
-                cwd: project.project.workspaceRoot,
-                host: project.host,
-                scope: project.scope,
+                ...targetOf(project),
                 state: input.state,
                 involvement: input.involvement ?? "all",
                 viewer,
@@ -440,9 +462,7 @@ const make = Effect.gen(function* () {
       Effect.flatMap((project) =>
         project.api
           .getIssue({
-            cwd: project.project.workspaceRoot,
-            host: project.host,
-            scope: project.scope,
+            ...targetOf(project),
             key: input.key,
           })
           .pipe(
@@ -466,9 +486,7 @@ const make = Effect.gen(function* () {
       Effect.flatMap((project) =>
         project.api
           .getComments({
-            cwd: project.project.workspaceRoot,
-            host: project.host,
-            scope: project.scope,
+            ...targetOf(project),
             key: input.key,
             cursor: input.cursor,
           })
@@ -483,9 +501,7 @@ const make = Effect.gen(function* () {
           ? Effect.fail(unsupported("templates", "issue templates"))
           : project.api
               .listTemplates({
-                cwd: project.project.workspaceRoot,
-                host: project.host,
-                scope: project.scope,
+                ...targetOf(project),
               })
               .pipe(Effect.mapError(toIssueError("templates"))),
       ),
@@ -499,9 +515,7 @@ const make = Effect.gen(function* () {
           ? Effect.fail(unsupported("candidates", "labels or assignees"))
           : project.api
               .listCandidates({
-                cwd: project.project.workspaceRoot,
-                host: project.host,
-                scope: project.scope,
+                ...targetOf(project),
               })
               .pipe(Effect.mapError(toIssueError("candidates"))),
       ),
@@ -514,9 +528,7 @@ const make = Effect.gen(function* () {
           ? Effect.fail(unsupported("create", "filing issues"))
           : project.api
               .create({
-                cwd: project.project.workspaceRoot,
-                host: project.host,
-                scope: project.scope,
+                ...targetOf(project),
                 title: input.title,
                 body: input.body,
                 labels: input.labels,
@@ -538,9 +550,7 @@ const make = Effect.gen(function* () {
           ? Effect.fail(unsupported("comment", "comments"))
           : project.api
               .comment({
-                cwd: project.project.workspaceRoot,
-                host: project.host,
-                scope: project.scope,
+                ...targetOf(project),
                 key: input.key,
                 body: input.body,
               })
@@ -567,9 +577,7 @@ const make = Effect.gen(function* () {
           return Effect.fail(unsupported("update", "assignees"));
         return project.api
           .update({
-            cwd: project.project.workspaceRoot,
-            host: project.host,
-            scope: project.scope,
+            ...targetOf(project),
             key: input.key,
             title: input.title,
             body: input.body,
@@ -587,9 +595,7 @@ const make = Effect.gen(function* () {
           return Effect.fail(unsupported("setState", "changing an issue's state"));
         return project.api
           .setState({
-            cwd: project.project.workspaceRoot,
-            host: project.host,
-            scope: project.scope,
+            ...targetOf(project),
             key: input.key,
             state: input.state,
           })
@@ -604,15 +610,29 @@ const make = Effect.gen(function* () {
           ? Effect.fail(unsupported("react", "reactions"))
           : project.api
               .setReaction({
-                cwd: project.project.workspaceRoot,
-                host: project.host,
-                scope: project.scope,
+                ...targetOf(project),
                 key: input.key,
                 subjectId: input.subjectId,
                 content: input.content,
                 reacted: input.reacted,
               })
               .pipe(Effect.mapError(toIssueError("react"))),
+      ),
+    );
+
+  const setPullRequestUrl: IssueService["Service"]["setPullRequestUrl"] = (input) =>
+    requireWritable(input, "setPullRequestUrl").pipe(
+      Effect.flatMap((project) =>
+        project.api.setPullRequestUrl === undefined
+          ? Effect.fail(unsupported("setPullRequestUrl", "recording a pull request on an issue"))
+          : project.api
+              .setPullRequestUrl({
+                ...targetOf(project),
+                scope: input.scope,
+                key: input.key,
+                url: input.url,
+              })
+              .pipe(Effect.mapError(toIssueError("setPullRequestUrl"))),
       ),
     );
 
@@ -647,8 +667,47 @@ const make = Effect.gen(function* () {
       const onTracker = supported.filter((project) => project.tracker === tracker);
       const preferFirst = (projects: ReadonlyArray<SupportedProject>) =>
         projects.find((project) => project.project.id === preferredProjectId) ?? projects[0];
+      const preferredOrder = [...onTracker].sort((left, right) =>
+        left.project.id === preferredProjectId
+          ? -1
+          : right.project.id === preferredProjectId
+            ? 1
+            : 0,
+      );
+
+      // A tracker whose links name no scope (Notion's page URLs) is read through each binding
+      // until one holds the page; the binding that does is the writable one.
+      if (standalone !== null && link.scope.length === 0) {
+        for (const candidate of preferredOrder) {
+          const read = yield* candidate.api
+            .getIssue({ ...targetOf(candidate), key: link.key })
+            .pipe(Effect.result);
+          if (read._tag === "Failure") continue;
+          const canonicalUrl = parseUrl(read.success.url);
+          const canonical =
+            canonicalUrl === null ? null : standalone.api.parseIssueUrl(canonicalUrl);
+          if (canonical === null || canonical.workspace !== standalone.link.workspace) continue;
+          return {
+            projectId: candidate.project.id,
+            tracker: candidate.tracker,
+            host: candidate.host,
+            scope: candidate.scope,
+            key: link.key,
+            writable: true,
+          };
+        }
+        if (onTracker.length === 0) {
+          return yield* new IssueUnavailableError({ reason: "tracker-unsupported" });
+        }
+        return yield* new IssueOperationError({
+          operation: "resolveUrl",
+          reason: "not-found",
+          detail: "No project bound to this tracker reads that page.",
+        });
+      }
+
       const own = preferFirst(
-        onTracker.filter((project) => project.scope.toLowerCase() === link.scope.toLowerCase()),
+        onTracker.filter((project) => sameScope(project.api, project.scope, link.scope)),
       );
       const lender = own ?? preferFirst(onTracker);
       if (lender === undefined) {
@@ -657,12 +716,7 @@ const make = Effect.gen(function* () {
       if (standalone !== null) {
         // Team keys repeat across workspaces; only the credential's canonical issue URL identifies one.
         const issue = yield* lender.api
-          .getIssue({
-            cwd: lender.project.workspaceRoot,
-            host: lender.host,
-            scope: link.scope,
-            key: link.key,
-          })
+          .getIssue({ ...targetOf(lender), scope: link.scope, key: link.key })
           .pipe(Effect.mapError(toIssueError("resolveUrl")));
         const canonicalUrl = parseUrl(issue.url);
         const canonical = canonicalUrl === null ? null : standalone.api.parseIssueUrl(canonicalUrl);
@@ -696,6 +750,7 @@ const make = Effect.gen(function* () {
     update: interactive(traced("update", update)),
     setState: interactive(traced("setState", setState)),
     react: interactive(traced("react", react)),
+    setPullRequestUrl: interactive(traced("setPullRequestUrl", setPullRequestUrl)),
     projectScope,
     resolveUrl,
   });

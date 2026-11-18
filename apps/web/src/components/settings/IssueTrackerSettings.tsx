@@ -1,12 +1,13 @@
 import { useAtomValue } from "@effect/atom-react";
 import { issueTrackerSummary } from "@houston-app/client-runtime/state/issue-trackers";
 import { squashAtomCommandFailure } from "@houston-app/client-runtime/state/runtime";
-import { ChevronDownIcon, ExternalLinkIcon, XIcon } from "lucide-react";
+import { ChevronDownIcon, ExternalLinkIcon, FileTextIcon, XIcon } from "lucide-react";
 import { useState, type ElementType } from "react";
 import type {
   EnvironmentId,
   IssueTrackerConnection,
   IssueTrackerConnectionList,
+  IssueTrackerProjectBinding,
   ProjectId,
 } from "@houston-app/contracts";
 
@@ -31,6 +32,7 @@ type TrackerIcon = ElementType<{ className?: string }>;
 /** Web art per tracker kind; the server supplies everything else about a tracker. */
 const TRACKER_ICONS: Partial<Record<string, TrackerIcon>> = {
   linear: LinearIcon,
+  notion: FileTextIcon,
 };
 
 const UNBOUND = "";
@@ -258,33 +260,138 @@ function ProjectBindings({
         // A project bound to another tracker keeps that binding; this picker shows it unbound.
         const value = bound?.tracker === tracker.tracker ? bound.scope : UNBOUND;
         return (
+          <div key={project.id} className="contents">
+            <SettingsRow
+              title={project.title}
+              control={
+                <Select
+                  value={value}
+                  disabled={pending === project.id}
+                  onValueChange={(next) => {
+                    if (next !== null) void change(project.id, next);
+                  }}
+                >
+                  <SelectTrigger
+                    aria-label={`${tracker.displayName} ${tracker.scopeNoun} for ${project.title}`}
+                    className="w-full @min-[32rem]/settings-row:w-56"
+                    size="sm"
+                  >
+                    <SelectValue>
+                      {value === UNBOUND
+                        ? "Not bound"
+                        : (tracker.scopes.find((scope) => scope.key === value)?.name ?? value)}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup>
+                    <SelectItem value={UNBOUND}>Not bound</SelectItem>
+                    {tracker.scopes.map((scope) => (
+                      <SelectItem key={scope.key} value={scope.key}>
+                        {scope.name} ({scope.key})
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              }
+            />
+            {value !== UNBOUND && bound?.tracker === tracker.tracker ? (
+              <ProjectPropertyMapping
+                environmentId={environmentId}
+                tracker={tracker}
+                projectId={project.id}
+                projectTitle={project.title}
+                binding={bound}
+              />
+            ) : null}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+/** The data source's properties, one picker per meaning the tracker's descriptor lists. */
+function ProjectPropertyMapping({
+  environmentId,
+  tracker,
+  projectId,
+  projectTitle,
+  binding,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly tracker: IssueTrackerConnection;
+  readonly projectId: ProjectId;
+  readonly projectTitle: string;
+  readonly binding: IssueTrackerProjectBinding;
+}) {
+  const definitions = tracker.bindingProperties ?? [];
+  const query = useEnvironmentQuery(
+    issueTrackerEnvironment.properties({
+      environmentId,
+      input: { tracker: tracker.tracker, scope: binding.scope },
+    }),
+  );
+  const bind = useAtomCommand(issueTrackerEnvironment.bindProject, {
+    label: `map ${tracker.displayName} properties`,
+  });
+  const [pending, setPending] = useState<string | null>(null);
+  if (definitions.length === 0) return null;
+  const properties = query.data?.properties ?? [];
+  const change = async (key: string, value: string) => {
+    setPending(key);
+    const propertiesNext = { ...binding.properties };
+    if (value === UNBOUND) delete propertiesNext[key];
+    else propertiesNext[key] = value;
+    await bind({
+      environmentId,
+      input: {
+        projectId,
+        binding: {
+          tracker: tracker.tracker,
+          scope: binding.scope,
+          ...(Object.keys(propertiesNext).length === 0 ? {} : { properties: propertiesNext }),
+        },
+      },
+    });
+    setPending(null);
+  };
+  return (
+    <>
+      <SettingsRow
+        title="Properties"
+        description={`Which ${tracker.scopeNoun} properties ${projectTitle}'s issues use. A meaning left out uses the tracker's default.`}
+      />
+      {definitions.map((definition) => {
+        const options = properties.filter((property) => definition.types.includes(property.type));
+        const selected = binding.properties?.[definition.key] ?? UNBOUND;
+        return (
           <SettingsRow
-            key={project.id}
-            title={project.title}
+            key={definition.key}
+            title={definition.label}
+            description={definition.description ?? null}
             control={
               <Select
-                value={value}
-                disabled={pending === project.id}
+                value={selected}
+                disabled={pending === definition.key || query.isPending}
                 onValueChange={(next) => {
-                  if (next !== null) void change(project.id, next);
+                  if (next !== null) void change(definition.key, next);
                 }}
               >
                 <SelectTrigger
-                  aria-label={`${tracker.displayName} ${tracker.scopeNoun} for ${project.title}`}
+                  aria-label={`${definition.label} for ${projectTitle}`}
                   className="w-full @min-[32rem]/settings-row:w-56"
                   size="sm"
                 >
                   <SelectValue>
-                    {value === UNBOUND
-                      ? "Not bound"
-                      : (tracker.scopes.find((scope) => scope.key === value)?.name ?? value)}
+                    {selected === UNBOUND
+                      ? "Automatic"
+                      : (properties.find((property) => property.id === selected)?.name ?? selected)}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectPopup>
-                  <SelectItem value={UNBOUND}>Not bound</SelectItem>
-                  {tracker.scopes.map((scope) => (
-                    <SelectItem key={scope.key} value={scope.key}>
-                      {scope.name} ({scope.key})
+                  <SelectItem value={UNBOUND}>Automatic</SelectItem>
+                  {options.map((property) => (
+                    <SelectItem key={property.id} value={property.id}>
+                      {property.name}
                     </SelectItem>
                   ))}
                 </SelectPopup>

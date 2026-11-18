@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type { IssueTrackerKind } from "@houston-app/contracts";
 import * as LinearDriver from "@houston-app/issue-tracker-linear/server/driver";
+import * as NotionDriver from "@houston-app/issue-tracker-notion/server/driver";
 import {
   isStandaloneIssueTracker,
   type IssueTrackerApi,
@@ -36,7 +37,7 @@ export function fromTrackers(
 }
 
 /** Trackers that are not a git host's own. Each signs requests with a credential from Settings. */
-const STANDALONE_TRACKERS = [LinearDriver.make];
+const STANDALONE_TRACKERS = [LinearDriver.make, NotionDriver.make];
 
 const make = Effect.gen(function* () {
   const drivers = yield* BuiltInDrivers.SourceControlDrivers;
