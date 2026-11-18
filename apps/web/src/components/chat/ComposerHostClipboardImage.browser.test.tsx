@@ -100,6 +100,23 @@ function pasteWithHostBridge(
 }
 
 const tiles = () => document.querySelectorAll("[data-attachment-tile]");
+const attachButton = () => document.querySelector('button[aria-label="Attach files"]');
+
+it(
+  "uploads advertised after the composer subscribed still reach it",
+  async () => {
+    // A subscription made while uploads are off (between two tests, on a slow runner) gets a
+    // config without them; the attach control must follow when they are advertised.
+    using _environment = installFakeEnvironment([]);
+    await using _app = await bootDraftComposer();
+    await vi.waitFor(() => expect(attachButton()).toBeNull(), { timeout: 10_000 });
+
+    using _uploads = advertiseFileUploads();
+
+    await vi.waitFor(() => expect(attachButton()).not.toBeNull());
+  },
+  APP_BOOT_TEST_TIMEOUT_MS,
+);
 
 it(
   "an empty paste reads the clipboard image from the host and adds one image tile",
@@ -232,22 +249,9 @@ it(
     // button shows once the composer knows it can stage files. On a loaded CI runner the
     // descriptor round trip has taken longer than 5 s, so the wait takes most of what the
     // boot leaves of the test's own budget.
-    await vi.waitFor(
-      () =>
-        expect(
-          document.querySelector('button[aria-label="Attach files"]'),
-          // DIAG: CI-only failure; remove before merge.
-          JSON.stringify({
-            width: window.innerWidth,
-            phone: window.matchMedia("(width < 40rem)").matches,
-            buttons: [...document.querySelectorAll("button[aria-label]")].map((b) =>
-              b.getAttribute("aria-label"),
-            ),
-            tiles: tiles().length,
-          }),
-        ).not.toBeNull(),
-      { timeout: ATTACH_BUTTON_TIMEOUT_MS },
-    );
+    await vi.waitFor(() => expect(attachButton()).not.toBeNull(), {
+      timeout: ATTACH_BUTTON_TIMEOUT_MS,
+    });
     const readDroppedPath = vi.fn(() =>
       Promise.resolve({ name: "id_ed25519", directory: false, base64: btoa("key") }),
     );
