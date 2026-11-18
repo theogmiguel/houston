@@ -18,6 +18,9 @@ import {
   TriangleAlertIcon,
 } from "lucide-react";
 import { AsyncResult } from "effect/reactivity";
+import * as Cause from "effect/Cause";
+import * as Option from "effect/Option";
+import { Link } from "@tanstack/react-router";
 import { useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
@@ -44,6 +47,7 @@ import {
 } from "../pullRequest/pullRequestDetail.logic";
 import { PullRequestChecksPopover } from "../pullRequest/PullRequestChecksPopover";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
+import { READINESS_MUTED, READINESS_UNREADABLE_LINK } from "../ui/pull-request-readiness-recipes";
 import { THREAD_DETAILS_PANEL_ICON_CLASS } from "./threadDetailsPanelStyles";
 import {
   pullRequestChecksState,
@@ -68,6 +72,25 @@ import {
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+
+/**
+ * The host's own words for what it needs, when the detail read failed because the host cannot
+ * be read without it. Null for any other outcome, including a stale-but-readable PR.
+ */
+const selectUnreadablePullRequestRequirement = (
+  result: AsyncResult.AsyncResult<unknown, unknown>,
+): string | null => {
+  if (result._tag !== "Failure") return null;
+  const error = Option.getOrNull(Cause.findErrorOption(result.cause));
+  if (typeof error !== "object" || error === null || !("_tag" in error)) return null;
+  if (error._tag !== "PullRequestUnavailableError") return null;
+  const requirement = "requirement" in error ? error.requirement : null;
+  if (typeof requirement === "string" && requirement.trim().length > 0) return requirement;
+  const message = "message" in error ? error.message : null;
+  return typeof message === "string" && message.trim().length > 0
+    ? message
+    : "Houston cannot read this pull request.";
+};
 
 // A null checks response is settled; polling cannot find checks.
 const isSettledWithoutChecks = (result: AsyncResult.AsyncResult<unknown, unknown>) =>
@@ -118,6 +141,10 @@ export function ThreadDetailsPrRow({
         });
   // Select query parts because polling rebuilds unchanged results.
   const detailData = useEnvironmentQuerySelector(detailAtom, selectEnvironmentQueryData);
+  const unreadableRequirement = useEnvironmentQuerySelector(
+    detailAtom,
+    selectUnreadablePullRequestRequirement,
+  );
   const detailQuery = useEnvironmentQueryRefresh(detailAtom);
   const supportsChecks =
     serverConfigs.get(environmentId)?.environment.capabilities.pullRequestChecks === true;
@@ -437,6 +464,18 @@ export function ThreadDetailsPrRow({
           ) : null}
         </span>
       </ThreadDetailsRow>
+      {unreadableRequirement === null ? null : (
+        <p
+          data-thread-details-pr-unreadable=""
+          className={`flex min-w-0 items-start gap-1.5 px-2 pb-0.5 ${READINESS_MUTED}`}
+        >
+          <TriangleAlertIcon aria-hidden className="mt-0.5 size-3 shrink-0" />
+          <span className="min-w-0 flex-1">{unreadableRequirement}</span>
+          <Link to="/settings/source-control" className={`shrink-0 ${READINESS_UNREADABLE_LINK}`}>
+            Settings
+          </Link>
+        </p>
+      )}
       {rowAction === "merge" ? (
         <AlertDialog open={confirmingMerge} onOpenChange={(open) => setConfirmingMerge(open)}>
           <AlertDialogPopup>
