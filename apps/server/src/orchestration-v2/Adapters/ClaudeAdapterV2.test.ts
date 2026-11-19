@@ -69,6 +69,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
+import * as Ref from "effect/Ref";
 import * as References from "effect/References";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
@@ -101,7 +102,14 @@ import { ClaudeExecutableFileCheck } from "../../provider/Drivers/ClaudeExecutab
 import {
   BUNDLED_CLAUDE_MODEL_CATALOG,
   type ClaudeModelCatalog,
+  resolveClaudeModelCatalog,
+  withClaudeCodeModelRoutes,
 } from "../../provider/ClaudeModelCatalog.ts";
+import {
+  makeClaudeCodeModelRoutes,
+  resolveClaudeModelSettingsKey,
+} from "../../provider/ClaudeCodeModelRoutes.ts";
+import { resolveProviderCatalog } from "../../provider/ModelManifest.ts";
 import * as ProviderEventLoggers from "@houston-app/provider-core/server/ProviderEventLoggers";
 import * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 import type * as ProviderContinuationRequests from "@houston-app/provider-core/server/ProviderContinuationRequests";
@@ -161,6 +169,9 @@ const CUSTOM_MODEL_CLAUDE_SETTINGS = Schema.decodeSync(ClaudeSettings)({
       },
     },
   ],
+});
+const ALIAS_CUSTOM_MODEL_CLAUDE_SETTINGS = Schema.decodeSync(ClaudeSettings)({
+  customModels: ["haiku", "sonnet"],
 });
 const ULTRACODE_CUSTOM_MODEL_CLAUDE_SETTINGS = Schema.decodeSync(ClaudeSettings)({
   customModels: [
@@ -3444,6 +3455,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly forkSession?: ClaudeAdapterV2.ClaudeAgentSdkQueryRunnerShape["forkSession"];
     readonly allocateSessionId?: Effect.Effect<string>;
     readonly promptSuggestions?: boolean;
+    readonly routeModelCatalog?: ClaudeAdapterV2.ClaudeAdapterV2Options["routeModelCatalog"];
     /** Runs in the session's query-stream fiber as each message is read. */
     readonly onMessage?: (message: SDKMessage) => Effect.Effect<void>;
   }) =>
@@ -3509,6 +3521,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         path: yield* Path.Path,
         random: yield* SecureRandom.SecureRandom,
         idAllocator,
+        ...(options?.routeModelCatalog ? { routeModelCatalog: options.routeModelCatalog } : {}),
         continuationRequests: {
           offer: (request) =>
             Effect.sync(() => {
@@ -5856,6 +5869,106 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
+  it.effect("sends the model id Claude Code reported for the selected catalog model", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const modelCatalog = yield* Ref.make(BUNDLED_CLAUDE_MODEL_CATALOG);
+        const harness = yield* makeWakeHarnessWithOptions({
+          modelCatalog: Ref.get(modelCatalog),
+          settings: ALIAS_CUSTOM_MODEL_CLAUDE_SETTINGS,
+          close: Queue.shutdown,
+          freshQueueOnReopen: true,
+          // Bedrock with ANTHROPIC_DEFAULT_*_MODEL set, as the probe reports it.
+          routeModelCatalog: (catalog) =>
+            Effect.succeed(
+              withClaudeCodeModelRoutes(catalog, [
+                { value: "default", resolvedModel: "global.anthropic.claude-sonnet-6" },
+                { value: "sonnet", resolvedModel: "global.anthropic.claude-sonnet-6" },
+                { value: "haiku", resolvedModel: "global.anthropic.claude-haiku-6" },
+              ]),
+            ),
+        });
+        const now = yield* DateTime.now;
+        const turn = (ordinal: number, model: string) =>
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make(`attempt-reported-model:${ordinal}`),
+            text: `Request ${ordinal}`,
+            attachments: [],
+            providerTurnOrdinal: ordinal,
+            modelSelection: { instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID, model },
+          });
+        // Models the live manifest delivers after a release, so the bundled catalog lacks them.
+        const manifestCatalog = resolveClaudeModelCatalog(
+          resolveProviderCatalog(
+            {
+              version: 1,
+              currentModels: {},
+              providers: {
+                claudeAgent: {
+                  profiles: {},
+                  models: [
+                    { slug: "claude-haiku-6", name: "Claude Haiku 6", status: "current" },
+                    { slug: "claude-sonnet-6", name: "Claude Sonnet 6", status: "current" },
+                  ],
+                },
+              },
+            },
+            ProviderDriverKind.make("claudeAgent"),
+          ) ?? undefined,
+        );
+        yield* Ref.set(modelCatalog, manifestCatalog);
+
+        const openedPins = () => {
+          const env = (
+            harness.getOpenedOptions()?.settings as { env?: Record<string, string> } | undefined
+          )?.env;
+          return [env?.ANTHROPIC_DEFAULT_HAIKU_MODEL, env?.ANTHROPIC_DEFAULT_SONNET_MODEL];
+        };
+        yield* harness.runtime.startTurn(turn(1, "claude-haiku-6"));
+        assert.equal(harness.getOpenedOptions()?.model, "haiku");
+        // The user's ANTHROPIC_DEFAULT_HAIKU_MODEL maps the routed alias to the Bedrock id.
+        assert.deepEqual(openedPins(), [undefined, undefined]);
+        yield* harness.offerAndWait(turnOneResult);
+        yield* Queue.take(harness.terminalReceipts);
+
+        yield* harness.runtime.startTurn(turn(2, "claude-sonnet-6"));
+        assert.deepEqual(harness.liveSelectionChanges[0], { model: "sonnet" });
+        yield* harness.offerAndWait(
+          makeResultFrame({ uuid: "00000000-0000-4000-8000-000000000b02", result: "Two." }),
+        );
+        yield* Queue.take(harness.terminalReceipts);
+
+        // Custom models named like an alias pin it, so a change of pin reopens Claude Code.
+        yield* harness.runtime.startTurn(turn(3, "haiku"));
+        assert.deepEqual(openedPins(), ["haiku", undefined]);
+        yield* harness.offerAndWait(
+          makeResultFrame({ uuid: "00000000-0000-4000-8000-000000000b03", result: "Three." }),
+        );
+        yield* Queue.take(harness.terminalReceipts);
+        yield* harness.runtime.startTurn(turn(4, "sonnet"));
+        assert.deepEqual(openedPins(), [undefined, "sonnet"]);
+        yield* harness.offerAndWait(
+          makeResultFrame({ uuid: "00000000-0000-4000-8000-000000000b04", result: "Four." }),
+        );
+        yield* Queue.take(harness.terminalReceipts);
+        yield* harness.runtime.startTurn(turn(5, "claude-haiku-6"));
+        assert.deepEqual(openedPins(), [undefined, undefined]);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+    ),
+  );
+
   it.effect.each([
     {
       content: { type: "advisor_tool_result_error", error_code: "overloaded" },
@@ -5919,6 +6032,130 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         ),
       ),
     ),
+  );
+
+  it.effect(
+    "sends Claude Code's reported model id only where the cwd resolves it as the probe did",
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const sdk = yield* Effect.promise(() =>
+          vi.importActual<typeof ClaudeSdk>("@anthropic-ai/claude-agent-sdk"),
+        );
+        vi.mocked(ClaudeSdk.resolveSettings).mockImplementation(sdk.resolveSettings);
+        const probeCwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-claude-probe-" });
+        const project = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-claude-project-" });
+        const overridden = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-claude-local-",
+        });
+        yield* fileSystem.makeDirectory(path.join(overridden, ".claude"));
+        yield* fileSystem.writeFileString(
+          path.join(overridden, ".claude", "settings.local.json"),
+          JSON.stringify({
+            env: { ANTHROPIC_DEFAULT_HAIKU_MODEL: "global.anthropic.claude-sonnet-4-6" },
+          }),
+        );
+        const routes = yield* makeClaudeCodeModelRoutes(
+          (cwd) =>
+            resolveClaudeModelSettingsKey(["project", "local"], cwd).pipe(
+              Effect.provideService(FileSystem.FileSystem, fileSystem),
+              Effect.provideService(Path.Path, path),
+            ),
+          probeCwd,
+        );
+        yield* routes.record([
+          { value: "haiku", resolvedModel: "us.anthropic.claude-haiku-4-5-20251001-v1:0" },
+        ]);
+        yield* routes.settle;
+        const openedModel = (cwd: string, launchSettings?: Record<string, unknown>) =>
+          Effect.scoped(
+            Effect.gen(function* () {
+              const harness = yield* makeWakeHarnessWithOptions({
+                routeModelCatalog: routes.route,
+                settings: {
+                  ...DEFAULT_CLAUDE_SETTINGS,
+                  launchArgs:
+                    launchSettings === undefined
+                      ? ""
+                      : `--settings '${JSON.stringify(launchSettings)}'`,
+                },
+              });
+              yield* harness.runtime.startTurn(
+                makeClaudeTestTurnInput({
+                  threadId: harness.threadId,
+                  providerThread: harness.providerThread,
+                  now: yield* DateTime.now,
+                  attemptId: RunAttemptId.make("attempt-reported-model-cwd"),
+                  text: "Request",
+                  attachments: [],
+                  modelSelection: {
+                    instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
+                    model: "claude-haiku-4-5",
+                  },
+                  runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+                    runtimeMode: "full-access",
+                    interactionMode: "default",
+                    cwd,
+                  }),
+                }),
+              );
+              return harness.getOpenedOptions()?.model;
+            }),
+          );
+
+        assert.equal(yield* openedModel(project), "haiku");
+        assert.equal(
+          yield* openedModel(project, {
+            env: { ANTHROPIC_DEFAULT_HAIKU_MODEL: "global.anthropic.claude-sonnet-4-6" },
+          }),
+          "claude-haiku-4-5",
+        );
+        assert.equal(yield* openedModel(project, { env: { FOO: "1" } }), "haiku");
+        // Claude Code resolves `haiku` to Sonnet there, so the slug is the only safe id.
+        assert.equal(yield* openedModel(overridden), "claude-haiku-4-5");
+
+        // A linked worktree and a repository subdirectory read the main checkout's local file.
+        const repo = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-claude-repo-" });
+        const worktree = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-claude-wt-" });
+        const worktreeGitDir = path.join(repo, ".git", "worktrees", "wt");
+        yield* fileSystem.makeDirectory(worktreeGitDir, { recursive: true });
+        yield* fileSystem.writeFileString(path.join(worktreeGitDir, "commondir"), "../..\n");
+        yield* fileSystem.writeFileString(
+          path.join(worktree, ".git"),
+          `gitdir: ${worktreeGitDir}\n`,
+        );
+        yield* fileSystem.makeDirectory(path.join(repo, ".claude"));
+        yield* fileSystem.makeDirectory(path.join(repo, "packages", "app"), { recursive: true });
+        const rootLocal = (settings: object) =>
+          fileSystem.writeFileString(
+            path.join(repo, ".claude", "settings.local.json"),
+            JSON.stringify(settings),
+          );
+        yield* rootLocal({
+          env: { ANTHROPIC_DEFAULT_HAIKU_MODEL: "global.anthropic.claude-sonnet-4-6" },
+        });
+        assert.equal(
+          yield* openedModel(worktree),
+          (yield* HostProcess.Platform) === "win32" ? "haiku" : "claude-haiku-4-5",
+        );
+        assert.equal(
+          yield* openedModel(path.join(repo, "packages", "app")),
+          (yield* HostProcess.Platform) === "win32" ? "haiku" : "claude-haiku-4-5",
+        );
+        yield* rootLocal({ env: { FOO: "1" } });
+        assert.equal(yield* openedModel(worktree), "haiku");
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
   );
 
   describe("MCP elicitations", () => {
@@ -13432,7 +13669,13 @@ describe("ClaudeAdapterV2 background wake turns", () => {
   it.effect("leaves buffered wake messages for the continuation queued behind a user turn", () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const harness = yield* makeWakeHarness;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const directory = yield* fileSystem.makeTempDirectoryScoped();
+        const settingsPath = NodePath.join(directory, "settings.json");
+        yield* fileSystem.writeFileString(settingsPath, "{}");
+        const harness = yield* makeWakeHarnessWithOptions({
+          settings: { ...DEFAULT_CLAUDE_SETTINGS, launchArgs: `--settings "${settingsPath}"` },
+        });
         const now = yield* DateTime.now;
 
         yield* harness.runtime.startTurn(
@@ -13452,6 +13695,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         yield* Queue.offer(harness.sdkMessages, wakeResult);
         yield* harness.awaitContinuation(1);
 
+        yield* fileSystem.remove(settingsPath);
         yield* harness.runtime.startTurn(
           makeClaudeTestTurnInput({
             threadId: harness.threadId,
