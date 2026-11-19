@@ -21,6 +21,7 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { openThreadInLayout } from "../../threads/openThreadInLayout";
+import { useComposerDraftStore } from "../../composerDraftStore";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import { requestConfirmDialog } from "../../confirmDialog";
 import { openAddProjectDialog } from "../AddProjectDialog";
@@ -129,6 +130,7 @@ import {
   type NewThreadHandler,
 } from "../../hooks/useHandleNewThread";
 import { useScratchProject } from "../../hooks/useScratchProject";
+import { resolveThreadActionProjectRef } from "../../lib/chatThreadActions";
 import {
   resolveShortcutCommand,
   shouldShowThreadJumpHintsForModifiers,
@@ -285,21 +287,6 @@ export function ThreadSidebar({
   const actions = useThreadActions();
   const handleNewThread = useNewThreadHandler();
   const scratch = useScratchProject();
-  const openNewThreadInWorkspace = (workspaceId: string) => {
-    const target = resolveWorkspaceNewThreadTarget({
-      projects: allProjects,
-      projectOrder,
-      scratchEnvironmentId: scratch.scratchEnvironmentId(null),
-    });
-    if (target === null) return;
-    void runInNewLayoutTab(
-      async () => {
-        if (target.kind === "project") await handleNewThread(target.projectRef);
-        else await scratch.startScratchThread(target.environmentId);
-      },
-      { workspaceId },
-    );
-  };
   // Each foreign thread is asked for once; a refused ask is retried on the next load, not in a loop.
   const askedForeignThreads = useRef(new Set<string>());
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- threads of other environments are hosted outside the layout server, so the window reports their workspace to it
@@ -427,6 +414,32 @@ export function ThreadSidebar({
     focusedShell ??
     (routeShell?.environmentId === routeRef?.environmentId ? routeShell : undefined);
   useRevealOpenThread(railRef, revealShell === undefined ? null : threadKeyOf(revealShell));
+
+  const openNewThreadInWorkspace = (workspaceId: string) => {
+    const focusedDraftThread =
+      focusedContent?.kind === "chat" && focusedContent.target.kind === "draft"
+        ? useComposerDraftStore.getState().getDraftSession(focusedContent.target.draftId)
+        : null;
+    const target = resolveWorkspaceNewThreadTarget({
+      projects: allProjects,
+      projectOrder,
+      scratchEnvironmentId: scratch.scratchEnvironmentId(null),
+      focusedProjectRef: resolveThreadActionProjectRef({
+        activeThread: focusedShell,
+        activeDraftThread: focusedDraftThread,
+        defaultProjectRef: null,
+        handleNewThread,
+      }),
+    });
+    if (target === null) return;
+    void runInNewLayoutTab(
+      async () => {
+        if (target.kind === "project") await handleNewThread(target.projectRef);
+        else await scratch.startScratchThread(target.environmentId);
+      },
+      { workspaceId },
+    );
+  };
 
   // Opening a thread the filter hides (history, a link, the palette) widens the filter once, so
   // the row the user navigated to is on the rail.

@@ -468,15 +468,32 @@ type WorkspaceNewThreadTarget =
   | { readonly kind: "project"; readonly projectRef: ScopedProjectRef }
   | { readonly kind: "scratch"; readonly environmentId: EnvironmentId };
 
+function isRealProject(project: EnvironmentProject): boolean {
+  return project.archivedAt == null && project.isScratch !== true;
+}
+
 /**
- * The project a workspace's New thread starts in: the most recently active real project, the same
- * one `chat.new` uses for a fresh start, or the scratch project when there is no real project.
+ * The project a workspace's New thread starts in: the project of the focused thread or draft when
+ * it is real, else the most recently active real project, the same one `chat.new` uses for a fresh
+ * start, or the scratch project when there is no real project.
  */
 export function resolveWorkspaceNewThreadTarget(input: {
   readonly projects: ReadonlyArray<EnvironmentProject>;
   readonly projectOrder: readonly string[];
+  readonly focusedProjectRef?: ScopedProjectRef | null;
   readonly scratchEnvironmentId: EnvironmentId | null;
 }): WorkspaceNewThreadTarget | null {
+  const focused = input.focusedProjectRef
+    ? input.projects.find(
+        (project) =>
+          project.id === input.focusedProjectRef?.projectId &&
+          project.environmentId === input.focusedProjectRef.environmentId &&
+          isRealProject(project),
+      )
+    : undefined;
+  if (focused !== undefined) {
+    return { kind: "project", projectRef: scopeProjectRef(focused.environmentId, focused.id) };
+  }
   const projectRef = resolveDefaultProjectRef(input.projects, input.projectOrder);
   if (projectRef !== null) return { kind: "project", projectRef };
   if (input.scratchEnvironmentId !== null) {

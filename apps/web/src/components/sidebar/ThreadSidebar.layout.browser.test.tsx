@@ -339,6 +339,16 @@ describe("ThreadSidebar workspaces", () => {
     }
   });
 
+  it("starts the workspace's thread in the focused thread's project", async () => {
+    using _seed = seed([{ name: "Notes", chats: ["t2"] }], [liveThread("t2", "project-2")]);
+    await using screen = await render(<RailHarness />);
+    await vi.waitFor(() => expect(groupNames(screen.container)).toEqual(["Notes"]));
+
+    await userEvent.click(screen.getByRole("button", { name: "New thread in Notes" }).element());
+
+    expect(openedThreads.refs).toEqual([{ environmentId: "env-1", projectId: "project-2" }]);
+  });
+
   it("holds the threads of two projects in one workspace, each row naming its project", async () => {
     using _seed = seed(
       [{ name: "Mixed", chats: ["t1", "t2"] }],
