@@ -19,7 +19,7 @@ import * as DesktopBootstrapSecret from "./DesktopBootstrapSecret.ts";
 const READINESS_PATH = "/.well-known/houston/environment";
 const HEALTH_TIMEOUT = Duration.seconds(2);
 
-const PersistedServerRuntimeState = Schema.Struct({
+export const PersistedServerRuntimeState = Schema.Struct({
   version: Schema.optional(Schema.Int),
   pid: Schema.Int,
   host: Schema.optional(Schema.String),
@@ -31,7 +31,7 @@ const PersistedServerRuntimeState = Schema.Struct({
 });
 export type PersistedServerRuntimeState = typeof PersistedServerRuntimeState.Type;
 
-const decodeRuntimeState = Schema.decodeUnknownEffect(
+export const decodePersistedServerRuntimeState = Schema.decodeUnknownEffect(
   Schema.fromJsonString(PersistedServerRuntimeState),
 );
 
@@ -130,10 +130,12 @@ const readRuntimeRecord = Effect.fn("desktop.serverAttachment.readRuntimeRecord"
   if (trimmed.length === 0) {
     return null;
   }
-  return yield* decodeRuntimeState(trimmed).pipe(Effect.orElseSucceed(() => null));
+  return yield* decodePersistedServerRuntimeState(trimmed).pipe(Effect.orElseSucceed(() => null));
 });
 
-const probeHealth = Effect.fn("desktop.serverAttachment.probeHealth")(function* (origin: string) {
+export const probeHealth = Effect.fn("desktop.serverAttachment.probeHealth")(function* (
+  origin: string,
+) {
   const client = yield* HttpClient.HttpClient;
   const url = new URL(READINESS_PATH, origin).toString();
   return yield* client.execute(HttpClientRequest.get(url)).pipe(

@@ -22,6 +22,7 @@ import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublish
 import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
 import {
   BACKEND_QUIT_STOP_TIMEOUT,
+  BackendInstanceId,
   type BackendStartupFailure,
   type DesktopBackendAttachment,
   type DesktopBackendStartConfig,
@@ -216,7 +217,10 @@ const launchWithRunningServer = (foundBeforeSpawn: boolean) =>
       configResolve: Effect.succeed(startConfig(3774)),
       onStarting: () => record("starting"),
       onReady: (httpBaseUrl, pid) => record(`ready ${httpBaseUrl.origin} pid=${pid}`),
-      onStateDirOwned: () => record("stateDirOwned").pipe(Effect.as(Option.some(runningServer))),
+      onStateDirOwned: () =>
+        record("stateDirOwned").pipe(
+          Effect.as({ _tag: "Attached", attachment: runningServer } as const),
+        ),
       attachBeforeSpawn: () =>
         record("attachBeforeSpawn").pipe(
           Effect.as(foundBeforeSpawn ? Option.some(runningServer) : Option.none()),
@@ -313,6 +317,35 @@ describe("makeBackendInstance when the server refuses the launch", () => {
       const snapshot = yield* instance.snapshot;
       assert.isFalse(snapshot.desiredRunning);
       assert.isFalse(snapshot.restartScheduled);
+    }).pipe(Effect.scoped),
+  );
+});
+
+describe("makeBackendInstance when a WSL server already owns the state directory", () => {
+  it.effect("stops instead of restarting and reports the distro and PID", () =>
+    Effect.gen(function* () {
+      const spawned = yield* Ref.make(0);
+      const failed = yield* Deferred.make<BackendStartupFailure>();
+      const reason =
+        "The Houston state directory in WSL distro Ubuntu is owned by PID 4242, but it does not answer its health endpoint. Houston will not start another server there.";
+      const instance = yield* makeBackendInstance({
+        id: BackendInstanceId("wsl:Ubuntu"),
+        label: Effect.succeed("WSL (Ubuntu)"),
+        configResolve: Effect.succeed(startConfig(3774)),
+        onStateDirOwned: () => Effect.succeed({ _tag: "Unavailable", reason } as const),
+        onStartupFailure: (failure) => Deferred.succeed(failed, failure).pipe(Effect.asVoid),
+      }).pipe(Effect.provide(hostServices(spawned, SERVER_EXIT_CODE_STATE_DIR_OWNED)));
+
+      yield* instance.start;
+      const failure = yield* Deferred.await(failed);
+
+      assert.include(failure.reason, "WSL distro Ubuntu");
+      assert.include(failure.reason, "PID 4242");
+      assert.equal(yield* Ref.get(spawned), 1);
+      const snapshot = yield* instance.snapshot;
+      assert.isFalse(snapshot.desiredRunning);
+      assert.isFalse(snapshot.restartScheduled);
+      assert.isFalse(snapshot.ready);
     }).pipe(Effect.scoped),
   );
 });

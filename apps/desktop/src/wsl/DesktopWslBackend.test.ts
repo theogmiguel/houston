@@ -16,6 +16,7 @@ import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopWslEnvironment from "./DesktopWslEnvironment.ts";
 import * as DesktopWslBackend from "./DesktopWslBackend.ts";
+import * as DesktopWslServerAttachment from "./DesktopWslServerAttachment.ts";
 
 function makeStubInstance(input: {
   readonly id: DesktopBackendPool.BackendInstanceId;
@@ -68,6 +69,17 @@ const layerBackendConfiguration = Layer.succeed(
     resolveWsl: () => Effect.die("unexpected resolveWsl"),
     currentBootstrapToken: Effect.die("unexpected currentBootstrapToken"),
   } satisfies DesktopBackendConfiguration.DesktopBackendConfiguration["Service"],
+);
+
+const layerWslServerAttachment = Layer.succeed(
+  DesktopWslServerAttachment.DesktopWslServerAttachment,
+  DesktopWslServerAttachment.DesktopWslServerAttachment.of({
+    resolve: () =>
+      Effect.succeed({
+        _tag: "NoRecord",
+        recordPath: "/home/ubuntu/.houston/v2/userdata/server-runtime.json",
+      }),
+  }),
 );
 
 const layerNet = Layer.succeed(NetService.NetService, {
@@ -126,6 +138,7 @@ describe("DesktopWslBackend", () => {
             }),
           ),
           Layer.provideMerge(DesktopWslEnvironment.layerTest({ isAvailable: true })),
+          Layer.provideMerge(layerWslServerAttachment),
         ),
       ),
     );

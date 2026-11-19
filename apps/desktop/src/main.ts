@@ -85,6 +85,7 @@ import * as DesktopTray from "./tray/DesktopTray.ts";
 import * as TrayHost from "./tray/TrayHost.ts";
 import * as DesktopWslBackend from "./wsl/DesktopWslBackend.ts";
 import * as DesktopWslEnvironment from "./wsl/DesktopWslEnvironment.ts";
+import * as DesktopWslServerAttachment from "./wsl/DesktopWslServerAttachment.ts";
 import * as DesktopWslServerTree from "./wsl/DesktopWslServerTree.ts";
 
 if (process.argv.includes("--version")) {
@@ -209,6 +210,7 @@ const layerDesktopAppActivation = DesktopAppActivation.layer.pipe(
 
 const layerDesktopBackend = DesktopBackendPool.layer.pipe(
   Layer.provideMerge(DesktopAppIdentity.layer),
+  Layer.provideMerge(DesktopWslServerAttachment.layer),
   Layer.provideMerge(DesktopBackendConfiguration.layer),
   Layer.provideMerge(DesktopServerAttachment.layer),
   Layer.provideMerge(DesktopServerStatus.layer),

@@ -28,6 +28,10 @@ const RUNTIME_INSTALL_TIMEOUT = Duration.minutes(2);
 const RUNTIME_PRUNE_TIMEOUT = Duration.seconds(30);
 const RUNTIME_INVALIDATE_TIMEOUT = Duration.seconds(15);
 const USER_HOME_TIMEOUT = Duration.seconds(5);
+const RUNTIME_RECORD_TIMEOUT = Duration.seconds(5);
+const PROCESS_PROBE_TIMEOUT = Duration.seconds(5);
+// A runtime record is a few hundred bytes; this bound rejects a runaway file without reading it.
+const MAX_SERVER_RUNTIME_RECORD_BYTES = 64 * 1024;
 const TOOLCHAIN_TRANSPORT_RETRY_LIMIT = 12;
 const BUILD_TRANSPORT_RETRY_LIMIT = 2;
 
@@ -87,6 +91,14 @@ export type WslUserHomeResult =
       readonly transient: boolean;
     };
 
+export type WslRuntimeRecordReadResult =
+  | {
+      readonly _tag: "Record";
+      readonly contents: string;
+    }
+  | { readonly _tag: "Missing" }
+  | { readonly _tag: "Unreadable"; readonly reason: string };
+
 export class DesktopWslDistroListError extends Schema.TaggedError<DesktopWslDistroListError>()(
   "DesktopWslDistroListError",
   { reason: Schema.String },
@@ -111,6 +123,12 @@ export class DesktopWslEnvironment extends Context.Service<
       windowsPath: string,
     ) => Effect.Effect<Option.Option<string>>;
     readonly getUserHome: (distro: string | null) => Effect.Effect<WslUserHomeResult>;
+    // The server runtime record lives in the distro, so a desktop process probe cannot see its PID.
+    readonly readServerRuntimeRecord: (
+      distro: string | null,
+      recordPath: string,
+    ) => Effect.Effect<WslRuntimeRecordReadResult>;
+    readonly isProcessAlive: (distro: string | null, pid: number) => Effect.Effect<boolean>;
     // Use the distro IP to avoid unreliable wslhost localhost forwarding.
     readonly getDistroIp: (distro: string | null) => Effect.Effect<Option.Option<string>>;
     readonly prepareRuntime: (
@@ -449,6 +467,88 @@ export const parseWslUserHome = (raw: string): WslUserHomeResult => {
     };
   }
   return { ok: true, home: raw };
+};
+
+const WSL_RUNTIME_RECORD_MARKER = "houstonRecord:";
+
+export const buildWslReadServerRuntimeRecordScript = (recordPath: string): string =>
+  [
+    `record=${shellQuote(recordPath)}`,
+    'if [ ! -e "$record" ]; then printf "houstonRecord:missing\\n"; exit 0; fi',
+    'if [ ! -f "$record" ] || [ ! -r "$record" ]; then printf "houstonRecord:unreadable\\n"; exit 0; fi',
+    'size=$(wc -c < "$record" 2>/dev/null | tr -d "[:space:]") || size=""',
+    'case "$size" in ""|*[!0-9]*) printf "houstonRecord:unreadable\\n"; exit 0 ;; esac',
+    `if [ "$size" -gt ${MAX_SERVER_RUNTIME_RECORD_BYTES} ]; then printf "houstonRecord:too-large:%s\\n" "$size"; exit 0; fi`,
+    'printf "houstonRecord:contents\\n"',
+    'cat "$record"',
+  ].join("\n");
+
+export const parseWslServerRuntimeRecordRead = (stdout: string): WslRuntimeRecordReadResult => {
+  const newline = stdout.indexOf("\n");
+  const header = (newline === -1 ? stdout : stdout.slice(0, newline)).replace(/\r$/, "");
+  if (header === `${WSL_RUNTIME_RECORD_MARKER}missing`) {
+    return { _tag: "Missing" };
+  }
+  if (header === `${WSL_RUNTIME_RECORD_MARKER}contents`) {
+    return { _tag: "Record", contents: newline === -1 ? "" : stdout.slice(newline + 1) };
+  }
+  if (header.startsWith(`${WSL_RUNTIME_RECORD_MARKER}too-large:`)) {
+    return {
+      _tag: "Unreadable",
+      reason: `the runtime record is larger than ${String(MAX_SERVER_RUNTIME_RECORD_BYTES)} bytes (${header.slice(`${WSL_RUNTIME_RECORD_MARKER}too-large:`.length)})`,
+    };
+  }
+  if (header === `${WSL_RUNTIME_RECORD_MARKER}unreadable`) {
+    return { _tag: "Unreadable", reason: "the runtime record could not be read" };
+  }
+  return { _tag: "Unreadable", reason: "reading the runtime record returned an unexpected result" };
+};
+
+export const buildWslProcessProbeScript = (pid: number): string =>
+  [
+    `if kill -0 ${String(pid)} 2>/dev/null; then printf "houstonProcess:alive\\n"; else printf "houstonProcess:dead\\n"; fi`,
+  ].join("\n");
+
+const readServerRuntimeRecordImpl = (
+  distro: string | null,
+  recordPath: string,
+): Effect.Effect<WslRuntimeRecordReadResult, never, ChildProcessSpawner.ChildProcessSpawner> =>
+  runWslShell(distro, buildWslReadServerRuntimeRecordScript(recordPath), RUNTIME_RECORD_TIMEOUT, {
+    resolveNode: false,
+  }).pipe(
+    Effect.map((result) => {
+      const transportFailure = formatWslShellTransportFailureReason(
+        result.transportFailure,
+        "the server runtime record",
+      );
+      if (transportFailure !== null) {
+        return { _tag: "Unreadable", reason: transportFailure } as const;
+      }
+      if (result.exitCode !== 0) {
+        return {
+          _tag: "Unreadable",
+          reason: `reading the runtime record exited with code ${result.exitCode}`,
+        } as const;
+      }
+      return parseWslServerRuntimeRecordRead(result.stdout);
+    }),
+  );
+
+const isProcessAliveImpl = (
+  distro: string | null,
+  pid: number,
+): Effect.Effect<boolean, never, ChildProcessSpawner.ChildProcessSpawner> => {
+  if (!Number.isInteger(pid) || pid <= 0) return Effect.succeed(false);
+  return runWslShell(distro, buildWslProcessProbeScript(pid), PROCESS_PROBE_TIMEOUT, {
+    resolveNode: false,
+  }).pipe(
+    Effect.map(
+      (result) =>
+        result.transportFailure === null &&
+        result.exitCode === 0 &&
+        result.stdout.includes("houstonProcess:alive"),
+    ),
+  );
 };
 
 const NODE_PTY_BINARY_MISSING_EXIT_CODE = 4;
@@ -1084,6 +1184,11 @@ export interface DesktopWslEnvironmentTestStub {
   readonly distroListError?: DesktopWslDistroListError;
   readonly windowsToWslPath?: (distro: string | null, windowsPath: string) => Option.Option<string>;
   readonly getUserHome?: (distro: string | null) => WslUserHomeResult;
+  readonly readServerRuntimeRecord?: (
+    distro: string | null,
+    recordPath: string,
+  ) => WslRuntimeRecordReadResult;
+  readonly isProcessAlive?: (distro: string | null, pid: number) => boolean;
   readonly getDistroIp?: (distro: string | null) => Option.Option<string>;
   readonly prepareRuntime?: (
     distro: string | null,
@@ -1124,6 +1229,16 @@ export const layerTest = (stub: DesktopWslEnvironmentTestStub = {}) => {
             transient: false,
           },
         );
+      }),
+      readServerRuntimeRecord: Effect.fn("DesktopWslEnvironment.readServerRuntimeRecord")(
+        function (distro, recordPath) {
+          return Effect.succeed(
+            stub.readServerRuntimeRecord?.(distro, recordPath) ?? { _tag: "Missing" },
+          );
+        },
+      ),
+      isProcessAlive: Effect.fn("DesktopWslEnvironment.isProcessAlive")(function (distro, pid) {
+        return Effect.succeed(stub.isProcessAlive?.(distro, pid) ?? false);
       }),
       getDistroIp: Effect.fn("DesktopWslEnvironment.getDistroIp")(function (distro) {
         return Effect.succeed(stub.getDistroIp?.(distro) ?? Option.none<string>());
@@ -1212,6 +1327,16 @@ export const layer = Layer.effect(
     const getDistroIp = (distro: string | null) =>
       provideSpawner(getDistroIpImpl(distro)).pipe(Effect.withSpan("desktop.wsl.getDistroIp"));
 
+    const readServerRuntimeRecord = (distro: string | null, recordPath: string) =>
+      provideSpawner(readServerRuntimeRecordImpl(distro, recordPath)).pipe(
+        Effect.withSpan("desktop.wsl.readServerRuntimeRecord"),
+      );
+
+    const isProcessAlive = (distro: string | null, pid: number) =>
+      provideSpawner(isProcessAliveImpl(distro, pid)).pipe(
+        Effect.withSpan("desktop.wsl.isProcessAlive"),
+      );
+
     const probeDistros = provideSpawner(probeWslDistros).pipe(
       Effect.withSpan("desktop.wsl.probeDistros"),
     );
@@ -1228,6 +1353,8 @@ export const layer = Layer.effect(
       }),
       windowsToWslPath,
       getUserHome,
+      readServerRuntimeRecord,
+      isProcessAlive,
       getDistroIp,
       prepareRuntime: Effect.fn("desktop.wsl.prepareRuntime")(function (distro, archive) {
         return provideSpawner(prepareWslRuntimeImpl(distro, archive, windowsToWslPath));

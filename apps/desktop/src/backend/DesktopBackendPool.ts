@@ -245,14 +245,14 @@ export const layer = Layer.effect(
       onStateDirOwned: Effect.fn("desktop.backendPool.onStateDirOwned")(function* () {
         const result = yield* serverAttachment.resolve;
         if (result._tag === "Attached") {
-          return Option.some(yield* attachmentOf(result));
+          return { _tag: "Attached", attachment: yield* attachmentOf(result) } as const;
         }
         yield* electronDialog.showErrorBox(
           "This Houston home is unavailable",
           serverAttachmentFailureMessage(result),
         );
         yield* electronApp.quit;
-        return Option.none<DesktopBackendManager.DesktopBackendAttachment>();
+        return { _tag: "None" } as const;
       }),
       // Any other outcome spawns, and a server still starting then wins the ownership lock.
       attachBeforeSpawn: Effect.fn("desktop.backendPool.attachBeforeSpawn")(function* (config) {

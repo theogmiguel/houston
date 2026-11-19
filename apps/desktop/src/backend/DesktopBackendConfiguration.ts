@@ -1,5 +1,4 @@
 // @effect-diagnostics nodeBuiltinImport:off -- WSL paths are Linux paths, so they join with POSIX rules rather than the host's.
-import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import { parsePersistedServerObservabilitySettings } from "@houston-app/shared/serverSettings";
@@ -27,6 +26,7 @@ import * as DesktopShellEnvironment from "../shell/DesktopShellEnvironment.ts";
 import * as WindowsServerPath from "../shell/WindowsServerPath.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
+import * as DesktopWslServerAttachment from "../wsl/DesktopWslServerAttachment.ts";
 import * as DesktopWslServerTree from "../wsl/DesktopWslServerTree.ts";
 import { WSL_SERVER_START_ENABLED } from "../wsl/wslServerSupport.ts";
 
@@ -470,19 +470,6 @@ const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(f
   } as const;
 });
 
-// In WSL2 mirrored mode, eth0 matches a host IP; use loopback for the renderer.
-const isLocalHostIpv4 = (ip: string): boolean => {
-  const interfaces = NodeOS.networkInterfaces();
-  for (const list of Object.values(interfaces)) {
-    if (!list) continue;
-    for (const entry of list) {
-      const family = String(entry.family);
-      if ((family === "IPv4" || family === "4") && entry.address === ip) return true;
-    }
-  }
-  return false;
-};
-
 /** @public */
 export const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolvePrimary")(
   function* (
@@ -657,13 +644,7 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
   };
 
   const distroIp = yield* wslEnvironment.getDistroIp(distroForConfig);
-  const usesSharedNetworkStack = Option.match(distroIp, {
-    onNone: () => false,
-    onSome: (ip) => isLocalHostIpv4(ip),
-  });
-  const rendererHost = usesSharedNetworkStack
-    ? "127.0.0.1"
-    : Option.getOrElse(distroIp, () => "127.0.0.1");
+  const rendererHost = DesktopWslServerAttachment.resolveWslReachableHost(distroIp);
   const httpBaseUrl = new URL(`http://${rendererHost}:${input.port}`);
 
   const distroArgs = distroForConfig ? ["-d", distroForConfig] : [];

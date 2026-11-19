@@ -260,6 +260,12 @@ export interface DesktopBackendAttachment {
   readonly warning: Option.Option<string>;
 }
 
+/** What the ownership-lock exit path found for the state directory. */
+export type StateDirOwnedOutcome =
+  | { readonly _tag: "Attached"; readonly attachment: DesktopBackendAttachment }
+  | { readonly _tag: "Unavailable"; readonly reason: string }
+  | { readonly _tag: "None" };
+
 export type BackendInstanceId = string & Brand.Brand<"BackendInstanceId">;
 export const BackendInstanceId = Brand.nominal<BackendInstanceId>();
 
@@ -300,8 +306,8 @@ export interface BackendInstanceSpec {
   readonly onStarting?: () => Effect.Effect<void>;
   readonly onShutdown?: () => Effect.Effect<void>;
   readonly onPreflightFailed?: (failure: PreflightFailure) => Effect.Effect<boolean>;
-  /** Resolve the live server owning the state directory, or fail so the pool can report it. */
-  readonly onStateDirOwned?: () => Effect.Effect<Option.Option<DesktopBackendAttachment>>;
+  /** Resolve the live server owning the state directory, or explain why it cannot attach. */
+  readonly onStateDirOwned?: () => Effect.Effect<StateDirOwnedOutcome>;
   /**
    * A healthy server already serving this config's state, found before spawning.
    * None spawns as usual; the spawned server's ownership lock still decides.
@@ -847,6 +853,14 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
         }));
         yield* spec.onStarting?.() ?? Effect.void;
 
+        // A healthy server that already owns this state wins over a preflight failure:
+        // attaching never starts or stops anything, so it is always safe to prefer it.
+        const running = yield* spec.attachBeforeSpawn?.(config.value) ?? Effect.succeedNone;
+        if (Option.isSome(running)) {
+          yield* attach(running.value);
+          return;
+        }
+
         const preflightFailure = config.value.preflightFailure;
         if (Option.isSome(preflightFailure)) {
           const { reason, fatal, retryLimit } = preflightFailure.value;
@@ -904,12 +918,6 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
 
         if (!entryExists) {
           yield* scheduleRestart(`missing server entry at ${config.value.entryPath}`);
-          return;
-        }
-
-        const running = yield* spec.attachBeforeSpawn?.(config.value) ?? Effect.succeedNone;
-        if (Option.isSome(running)) {
-          yield* attach(running.value);
           return;
         }
 
@@ -1006,12 +1014,18 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
 
               if (isCurrentRun && nextState.desiredRunning) {
                 if (stateDirOwned && !stopRequested) {
-                  const attachment = yield* spec.onStateDirOwned?.() ?? Effect.succeedNone;
-                  if (Option.isSome(attachment)) {
-                    yield* attach(attachment.value);
+                  const outcome: StateDirOwnedOutcome = yield* (
+                    spec.onStateDirOwned?.() ??
+                      Effect.succeed<StateDirOwnedOutcome>({ _tag: "None" })
+                  );
+                  if (outcome._tag === "Attached") {
+                    yield* attach(outcome.attachment);
                     return;
                   }
                   yield* Ref.update(state, (latest) => ({ ...latest, desiredRunning: false }));
+                  if (outcome._tag === "Unavailable") {
+                    yield* reportStartupFailure(outcome.reason);
+                  }
                   return;
                 }
                 // A refused launch stays refused until something changes, so retrying is pointless.

@@ -14,6 +14,7 @@ import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopWslEnvironment from "./DesktopWslEnvironment.ts";
+import * as DesktopWslServerAttachment from "./DesktopWslServerAttachment.ts";
 import { WSL_SERVER_START_ENABLED } from "./wslServerSupport.ts";
 
 export const WSL_INSTANCE_ID_PREFIX = "wsl:";
@@ -64,6 +65,7 @@ export const layer = Layer.effect(
     const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
     const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
     const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
+    const wslServerAttachment = yield* DesktopWslServerAttachment.DesktopWslServerAttachment;
     const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
     const net = yield* NetService.NetService;
     // Serialize bootstrap and IPC reconciles so concurrent reads cannot register competing WSL instances.
@@ -123,18 +125,36 @@ export const layer = Layer.effect(
           configResolve: configuration.resolveWsl({ port: allocatedPort, distro: input.distro }),
           onPreflightFailed: (failure) =>
             Ref.set(preflightErrorRef, Option.some(failure.reason)).pipe(Effect.as(false)),
-          onStateDirOwned: () =>
-            Ref.set(ownershipRefusedRef, Option.some(targetId)).pipe(
-              Effect.andThen(
-                Ref.set(
-                  preflightErrorRef,
-                  Option.some(
-                    "Another Houston server is using this distro's Houston home, or an older background service is set up for it. Stop that server or pair with it, or try `houston update` in the distro. If the older launcher cannot update, run `houston service uninstall` and optionally reinstall with `houston service install` from a current CLI in the distro. Use `npx houston-app@latest` if `houston` is missing or outdated, and pass `--base-dir` with the service's Houston home to each command.",
-                  ),
+          // A server that outlived the desktop still owns this distro's state. Attaching keeps
+          // it running; refusing reports the reason instead of looping against its lock.
+          attachBeforeSpawn: () =>
+            wslServerAttachment
+              .resolve({ distro: input.distro })
+              .pipe(
+                Effect.map((result) =>
+                  result._tag === "Attached" ? Option.some(result.attachment) : Option.none(),
                 ),
               ),
-              Effect.as(Option.none()),
-            ),
+          onStateDirOwned: Effect.fn("desktop.wslBackend.onStateDirOwned")(function* () {
+            const result = yield* wslServerAttachment.resolve({ distro: input.distro });
+            if (result._tag === "Attached") {
+              return { _tag: "Attached", attachment: result.attachment } as const;
+            }
+            yield* Ref.set(ownershipRefusedRef, Option.some(targetId));
+            const reason =
+              result._tag === "NoRecord"
+                ? `The Houston state directory in ${DesktopWslServerAttachment.describeWslDistro(input.distro)} is owned by another process, but no server runtime record was found at ${result.recordPath}. Houston will not start another server there. Stop that server or pair with it, then reopen Houston.`
+                : result.reason;
+            return { _tag: "Unavailable", reason } as const;
+          }),
+          onAttached: (attachment) =>
+            logWslBackendInfo("attached to a running WSL server", {
+              pid: attachment.pid,
+              origin: attachment.httpBaseUrl.origin,
+              distro: input.distro ?? null,
+            }),
+          onStartupFailure: (failure) =>
+            Ref.set(preflightErrorRef, Option.some(failure.reason)).pipe(Effect.asVoid),
           onReady: () =>
             Ref.set(ownershipRefusedRef, Option.none()).pipe(
               Effect.andThen(Ref.set(preflightErrorRef, Option.none())),
