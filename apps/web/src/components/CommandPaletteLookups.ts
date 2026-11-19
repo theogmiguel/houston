@@ -4,7 +4,10 @@ import {
   resolveEnvironmentMachineKind,
 } from "@houston-app/contracts";
 
-import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
+import {
+  createWslEnvironmentPredicate,
+  isDesktopLocalConnectionTarget,
+} from "../connection/desktopLocal";
 import { useClientSettings } from "../hooks/useSettings";
 import { getProjectOrderKey } from "@houston-app/client-runtime/state/project-grouping";
 import { useProjects, useVisibleThreadShells } from "../state/entities";
@@ -35,7 +38,11 @@ export function useEnvironmentLookups() {
       ] as const;
     }),
   );
-  return { environmentLabelById, projectEnvironmentLocationById };
+  return {
+    environmentLabelById,
+    projectEnvironmentLocationById,
+    isWslEnvironment: createWslEnvironmentPredicate(environments),
+  };
 }
 
 export function useProjectLookups() {
@@ -53,7 +60,10 @@ export const selectCommandPaletteClientSettings = (settings: ClientSettings) => 
   sidebarThreadSortOrder: settings.sidebarThreadSortOrder,
 });
 
-export function useSortedProjectGroups(environmentLabelById: ReadonlyMap<EnvironmentId, string>) {
+export function useSortedProjectGroups(
+  environmentLabelById: ReadonlyMap<EnvironmentId, string>,
+  isWslEnvironment: (environmentId: EnvironmentId) => boolean,
+) {
   const projects = useProjects();
   const threads = useVisibleThreadShells();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
@@ -77,6 +87,7 @@ export function useSortedProjectGroups(environmentLabelById: ReadonlyMap<Environ
     settings: projectGroupingSettings,
     primaryEnvironmentId,
     resolveEnvironmentLabel: (environmentId) => environmentLabelById.get(environmentId) ?? null,
+    isWslEnvironment,
   });
   return sortLogicalProjectsForSidebar(
     unsortedProjectGroups,

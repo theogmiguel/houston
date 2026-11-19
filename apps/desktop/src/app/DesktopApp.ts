@@ -38,7 +38,6 @@ import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
 import * as DesktopSnapShot from "../snapShot/DesktopSnapShot.ts";
 import * as DesktopTray from "../tray/DesktopTray.ts";
 import * as DesktopWslBackend from "../wsl/DesktopWslBackend.ts";
-import { WSL_SERVER_START_ENABLED } from "../wsl/wslServerSupport.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 
@@ -243,11 +242,7 @@ const bootstrap = Effect.gen(function* () {
   }
 
   if (!(yield* Ref.get(state.quitting))) {
-    if (
-      WSL_SERVER_START_ENABLED &&
-      settings.wslOnly === true &&
-      settings.wslBackendEnabled === true
-    ) {
+    if (settings.wslOnly === true && settings.wslBackendEnabled === true) {
       yield* desktopWindow.showConnectingSplash;
     }
     // The renderer reads the status from its first call: a cold launch must not

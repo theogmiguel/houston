@@ -318,13 +318,14 @@ export const pickFolder = DesktopIpc.makeIpcMethod({
       targetId.startsWith(DesktopWslBackend.WSL_INSTANCE_ID_PREFIX);
     // Match the orchestrator's persisted distro fallback for wsl:default.
     const wslDistro = useWsl ? (wslDistroFromTarget ?? settings.wslDistro) : null;
+    const wslUserHome = useWsl ? yield* wslEnvironment.getUserHome(wslDistro) : null;
     const defaultPath = useWsl
       ? Option.fromNullishOr(
           resolveWslPickFolderDefaultPath(
             options,
             { distro: wslDistro },
             yield* wslEnvironment.listDistros,
-            Option.getOrNull(yield* wslEnvironment.getUserHome(wslDistro)),
+            wslUserHome?.ok ? wslUserHome.home : null,
           ),
         )
       : environment.resolvePickFolderDefaultPath(options);

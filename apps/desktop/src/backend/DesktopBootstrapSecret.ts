@@ -18,6 +18,7 @@ const MIN_SECRET_LENGTH = 32;
 export interface DesktopKeychainEntry {
   getPassword(): Promise<string | null | undefined>;
   setPassword(password: string): Promise<void>;
+  deletePassword?(): Promise<unknown>;
 }
 
 export interface DesktopKeychain {

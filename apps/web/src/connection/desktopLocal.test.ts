@@ -1,10 +1,21 @@
 import {
+  BearerConnectionTarget,
+  PrimaryConnectionTarget,
+} from "@houston-app/client-runtime/connection";
+import {
   type DesktopEnvironmentBootstrap,
+  EnvironmentId,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
+  WSL_BACKEND_ID_PREFIX,
 } from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { createDesktopSecondaryBootstrapsReader } from "./desktopLocal";
+import {
+  createDesktopSecondaryBootstrapsReader,
+  createWslEnvironmentPredicate,
+  desktopLocalConnectionId,
+  isWslBackendId,
+} from "./desktopLocal";
 
 describe("desktop local topology reads", () => {
   it("reuses snapshots when polling returns fresh objects for the same topology", () => {
@@ -109,5 +120,51 @@ describe("desktop local topology reads", () => {
       throw new Error("IPC unavailable again");
     };
     expect(reader.readSnapshot()).toBe(removedSnapshot);
+  });
+});
+
+describe("WSL environment recognition", () => {
+  const wslEnvironmentId = EnvironmentId.make("env-wsl");
+  const primaryEnvironmentId = EnvironmentId.make("env-primary");
+  const remoteEnvironmentId = EnvironmentId.make("env-remote");
+
+  const environment = (
+    environmentId: EnvironmentId,
+    target: BearerConnectionTarget | PrimaryConnectionTarget,
+  ) => ({ environmentId, entry: { target } });
+
+  const wslTarget = new BearerConnectionTarget({
+    environmentId: wslEnvironmentId,
+    connectionId: desktopLocalConnectionId(`${WSL_BACKEND_ID_PREFIX}Ubuntu`),
+    label: "WSL (Ubuntu)",
+  });
+  const primaryTarget = new PrimaryConnectionTarget({
+    environmentId: primaryEnvironmentId,
+    label: "Windows",
+    httpBaseUrl: "http://127.0.0.1:4000",
+    wsBaseUrl: "ws://127.0.0.1:4000",
+  });
+  const remoteTarget = new BearerConnectionTarget({
+    environmentId: remoteEnvironmentId,
+    connectionId: "remote-1",
+    label: "Remote",
+  });
+
+  it("matches backend ids that name the WSL backend", () => {
+    expect(isWslBackendId(`${WSL_BACKEND_ID_PREFIX}Ubuntu`)).toBe(true);
+    expect(isWslBackendId(PRIMARY_LOCAL_ENVIRONMENT_ID)).toBe(false);
+    expect(isWslBackendId(null)).toBe(false);
+  });
+
+  it("recognises only the environment served by the desktop WSL backend", () => {
+    const isWslEnvironment = createWslEnvironmentPredicate([
+      environment(wslEnvironmentId, wslTarget),
+      environment(primaryEnvironmentId, primaryTarget),
+      environment(remoteEnvironmentId, remoteTarget),
+    ]);
+
+    expect(isWslEnvironment(wslEnvironmentId)).toBe(true);
+    expect(isWslEnvironment(primaryEnvironmentId)).toBe(false);
+    expect(isWslEnvironment(remoteEnvironmentId)).toBe(false);
   });
 });

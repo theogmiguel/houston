@@ -11,7 +11,7 @@ import type { WslDistro } from "../../wsl/wslPathParsing.ts";
 import * as IpcChannels from "../channels.ts";
 import { makeIpcMethod } from "../DesktopIpc.ts";
 
-// Houston refuses to run its server in a distro, so a non-Windows host has no WSL state to show.
+// Only a Windows host runs WSL, so any other platform has no WSL state to show.
 const UNSUPPORTED_WSL_STATE: DesktopWslState = {
   enabled: false,
   distro: null,
@@ -19,6 +19,7 @@ const UNSUPPORTED_WSL_STATE: DesktopWslState = {
   wslOnly: false,
   distros: [],
   preflightError: null,
+  backendStatus: { phase: "stopped", reason: null },
 };
 
 export class DesktopWslRequestError extends Schema.TaggedError<DesktopWslRequestError>()(
@@ -41,11 +42,13 @@ const readWslState: Effect.Effect<
   | DesktopEnvironment.DesktopEnvironment
   | DesktopAppSettings.DesktopAppSettings
   | DesktopWslEnvironment.DesktopWslEnvironment
+  | DesktopWslBackend.DesktopWslBackend
 > = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   if (environment.platform !== "win32") return UNSUPPORTED_WSL_STATE;
   const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
   const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
+  const wslBackend = yield* DesktopWslBackend.DesktopWslBackend;
   const settings = yield* appSettings.get;
   const available = settings.localEnvironmentEnabled && (yield* wslEnvironment.isAvailable);
   // Listing distros on non-WSL hosts spawns wsl.exe only to time out.
@@ -62,6 +65,7 @@ const readWslState: Effect.Effect<
       distro: settings.wslDistro,
       distros,
     }),
+    backendStatus: yield* wslBackend.backendStatus,
   };
 });
 
@@ -84,8 +88,7 @@ export const setWslBackendEnabled = makeIpcMethod({
     const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
     const wslBackend = yield* DesktopWslBackend.DesktopWslBackend;
     if (!enabled) {
-      yield* appSettings.setWslBackendEnabled(false);
-      yield* wslBackend.reconcile;
+      yield* wslBackend.applyWslBackendEnabled(false);
       return yield* readWslState;
     }
 
@@ -96,8 +99,7 @@ export const setWslBackendEnabled = makeIpcMethod({
     if (!decision.ok) {
       return yield* new DesktopWslRequestError({ reason: decision.reason });
     }
-    yield* appSettings.setWslBackendEnabled(true);
-    yield* wslBackend.reconcile;
+    yield* wslBackend.applyWslBackendEnabled(true);
     return yield* readWslState;
   }),
 });
@@ -109,7 +111,7 @@ export const setWslDistro = makeIpcMethod({
   handler: Effect.fn("desktop.ipc.wsl.setDistro")(function* (distro) {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     if (environment.platform !== "win32") return UNSUPPORTED_WSL_STATE;
-    const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
+    const wslBackend = yield* DesktopWslBackend.DesktopWslBackend;
     if (distro !== null) {
       const trimmed = distro.trim();
       if (trimmed.length === 0) {
@@ -124,10 +126,10 @@ export const setWslDistro = makeIpcMethod({
           reason: `no WSL distro named "${trimmed}"; wsl.exe -l -v lists: ${listDistroNames(distros)}`,
         });
       }
-      yield* appSettings.setWslDistro(trimmed);
+      yield* wslBackend.applyWslDistro(trimmed);
       return yield* readWslState;
     }
-    yield* appSettings.setWslDistro(null);
+    yield* wslBackend.applyWslDistro(null);
     return yield* readWslState;
   }),
 });
@@ -139,8 +141,8 @@ export const setWslOnly = makeIpcMethod({
   handler: Effect.fn("desktop.ipc.wsl.setOnly")(function* (enabled) {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     if (environment.platform !== "win32") return UNSUPPORTED_WSL_STATE;
-    const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
-    yield* appSettings.setWslOnly(enabled);
+    const wslBackend = yield* DesktopWslBackend.DesktopWslBackend;
+    yield* wslBackend.applyWslOnly(enabled);
     return yield* readWslState;
   }),
 });

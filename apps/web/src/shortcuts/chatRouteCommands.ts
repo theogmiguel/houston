@@ -6,6 +6,7 @@ import { isPreviewAvailableFor } from "../browser/previewRuntime";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { dispatchPreviewAction, type PreviewAction } from "../components/preview/previewActionBus";
+import { createWslEnvironmentPredicate } from "../connection/desktopLocal";
 import { isAppModalPage } from "../components/sidebar/mainAppLocation";
 import { shouldCreateNewThreadInCurrentProject } from "../components/Sidebar.logic";
 import { createNewThreadHandler, resolveDefaultProjectRef } from "../hooks/useHandleNewThread";
@@ -79,6 +80,12 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
     };
   };
   // Grouped like the sidebar, so the shortcut and the New thread button agree.
+  const readWslEnvironmentPredicate = () =>
+    createWslEnvironmentPredicate(
+      [...appAtomRegistry.get(environmentPresentations.presentationsAtom)].map(
+        ([environmentId, presentation]) => ({ environmentId, ...presentation }),
+      ),
+    );
   const readProjectGroups = () =>
     buildSidebarProjectSnapshots({
       projects: readProjects(),
@@ -86,6 +93,7 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
       settings: selectProjectGroupingSettings(getClientSettings()),
       primaryEnvironmentId: appAtomRegistry.get(primaryEnvironmentIdAtom),
       resolveEnvironmentLabel: () => null,
+      isWslEnvironment: readWslEnvironmentPredicate(),
     });
   const canOperatePreview = (environmentId: EnvironmentId) =>
     readEnvironmentScope(environmentId, AuthPreviewOperateScope);
