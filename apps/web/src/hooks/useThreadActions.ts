@@ -27,6 +27,7 @@ import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/reactivity";
 import { useRouter } from "@tanstack/react-router";
 
+import { forgetLocallySettled, noteLocallySettled } from "../autoCloseOnMerge";
 import { getFallbackThreadIdAfterDelete, pinOrderKeyBetween } from "../components/Sidebar.logic";
 import { resolveSnoozePresets as resolveThreadSnoozePresets } from "../components/Sidebar.snooze";
 import { openThreadFind } from "../components/chat/threadFindStore";
@@ -47,6 +48,7 @@ import { threadEnvironment } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { refreshArchivedThreadsForEnvironment } from "../lib/archivedThreadsState";
+import { isThreadNotFoundDispatchFailure, unsentDraftIdForThread } from "../threads/threadClose";
 import { releaseComposerDraftUploads } from "../lib/composerDraftUploads";
 import { readLocalApi } from "../localApi";
 import {
@@ -351,6 +353,7 @@ export function useThreadActions() {
   const confirmThreadDelete = useClientSettings((settings) => settings.confirmThreadDelete);
   const confirmThreadUnpin = useClientSettings((settings) => settings.confirmThreadUnpin);
   const clearComposerDraftForThread = useComposerDraftStore((store) => store.clearDraftThread);
+  const draftIdForThread = useComposerDraftStore((store) => store.getDraftIdByRef);
   const clearProjectDraftThreadById = useComposerDraftStore(
     (store) => store.clearProjectDraftThreadById,
   );
@@ -769,6 +772,15 @@ export function useThreadActions() {
   };
 
   const settleThread = async (target: ScopedThreadRef) => {
+    // A thread the composer still owns and the server has never seen has nothing to settle.
+    const unsentDraftId = unsentDraftIdForThread({
+      draftId: draftIdForThread(target),
+      hasServerShell: readThreadShell(target) !== null,
+    });
+    if (unsentDraftId !== null) {
+      clearComposerDraftForThread(unsentDraftId);
+      return AsyncResult.success(undefined);
+    }
     if (!readEnvironmentServerConfigLoaded(target.environmentId)) {
       return AsyncResult.failure(
         Cause.fail(
@@ -789,13 +801,16 @@ export function useThreadActions() {
     ThreadUndo.invalidate("pin", scopedThreadKey(target));
     ThreadUndo.invalidate("snooze", scopedThreadKey(target));
     const action = ThreadUndo.begin("settle", scopedThreadKey(target));
+    const locallySettledKey = noteLocallySettled(target);
     const result = await settleThreadMutation({
       environmentId: target.environmentId,
       input: { threadId: target.threadId },
     });
     if (result._tag !== "Success") {
+      forgetLocallySettled(locallySettledKey);
       action.finish();
-      return result;
+      // A stale leaf points at a thread the server never created; closing it is done.
+      return isThreadNotFoundDispatchFailure(result) ? AsyncResult.success(undefined) : result;
     }
     if (wokeAt !== null) {
       markThreadVisited(scopedThreadKey(target), wokeAt);

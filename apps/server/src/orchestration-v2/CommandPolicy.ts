@@ -3,6 +3,7 @@ import {
   CommandId,
   type OrchestrationV2Command,
   OrchestrationV2ProviderCapabilities,
+  isCompactCommandText,
   type OrchestrationV2GoalCommand,
   type OrchestrationV2ProviderGoalStatus,
   type OrchestrationV2Run,
@@ -67,7 +68,7 @@ export function isNativeMaintenanceCommand(message: {
 }): boolean {
   return (
     message.attachments.length === 0 &&
-    ["/compact", "/logout"].includes(message.text.trim().toLowerCase())
+    (isCompactCommandText(message.text) || message.text.trim().toLowerCase() === "/logout")
   );
 }
 

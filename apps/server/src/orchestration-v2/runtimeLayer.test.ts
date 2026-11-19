@@ -5020,6 +5020,12 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       });
       yield* queueMessage("settle-automatic-user-queued", false);
       yield* holdQueueAfterRestart("settle-automatic-restart-2");
+      const blockingQueuedRun = (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+        (run) =>
+          run.status === "queued" &&
+          run.userMessageId === MessageId.make("settle-automatic-user-queued"),
+      );
+      assert.isDefined(blockingQueuedRun);
       const error = yield* orchestrator
         .dispatch({
           type: "thread.settle",
@@ -5030,7 +5036,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       assert.equal(error._tag, "OrchestratorDispatchError");
       assert.equal(
         error.cause,
-        `Thread ${threadId} has a queued message. Send it or remove it from the queue before settling.`,
+        `Thread ${threadId} has queued run ${blockingQueuedRun!.id}. Send it now or discard it from the queue before settling.`,
       );
     }),
   );
@@ -9020,6 +9026,156 @@ it.layer(layerQueueResumeDisabledInstanceTest)(
             resumedQueuedRun?.queueHeld,
             "a refused resume re-holds the queue instead of leaving it looking resumable",
           );
+          assert.equal(resumedQueuedRun?.queueHeldReason?.kind, "disabled_instance");
+          assert.include(
+            resumedQueuedRun?.queueHeldReason?.message ?? "",
+            `Provider instance ${alternateInstanceId} is disabled for this project`,
+          );
+        }),
+    );
+
+    it.effect(
+      "keeps a later send behind a run the disabled instance cannot start, then sends it on the thread's model",
+      () =>
+        Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          const events = yield* EventSink.EventSinkV2;
+          const threadId = ThreadId.make("queue-order-disabled-instance-thread");
+          const disabledSelection = {
+            instanceId: alternateInstanceId,
+            model: "gpt-5.5",
+          } satisfies ModelSelection;
+          const send = (
+            ordinal: number,
+            selection: ModelSelection,
+            dispatchMode: "defer_start" | "queue_after_active" | "start_immediately",
+          ) =>
+            orchestrator.dispatch({
+              type: "message.dispatch",
+              createdBy: "user",
+              creationSource: "web",
+              commandId: CommandId.make(`${threadId}:message:${ordinal}`),
+              threadId,
+              messageId: MessageId.make(`${threadId}:message:${ordinal}`),
+              text: `Message ${ordinal}`,
+              attachments: [],
+              modelSelection: selection,
+              dispatchMode: { type: dispatchMode },
+            });
+
+          yield* orchestrator.dispatch({
+            type: "thread.create",
+            createdBy: "user",
+            creationSource: "web",
+            commandId: CommandId.make(`${threadId}:create`),
+            threadId,
+            projectId: queueResumeDisabledInstanceProjectId,
+            title: "Queue order disabled instance",
+            modelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: "/tmp/queue-order-disabled-instance",
+          });
+          yield* send(1, modelSelection, "defer_start");
+          yield* send(2, disabledSelection, "queue_after_active");
+
+          const before = yield* orchestrator.getThreadProjection(threadId);
+          const activeRun = before.runs.find((run) => run.status !== "queued")!;
+          const disabledRun = before.runs.find(
+            (run) =>
+              run.status === "queued" &&
+              run.userMessageId === MessageId.make(`${threadId}:message:2`),
+          )!;
+          const now = yield* DateTime.now;
+          yield* events.write({
+            events: [
+              {
+                id: EventId.make(`${threadId}:active-completed`),
+                type: "run.updated",
+                threadId,
+                runId: activeRun.id,
+                occurredAt: now,
+                payload: { ...activeRun, status: "completed", completedAt: now },
+              },
+            ],
+          });
+          // Composed fixture from the issue's projection table: the drain never held the older
+          // run, so it is still queued and looks resumable (queueHeld false).
+          const heldByDrain = (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+            (run) => run.id === disabledRun.id,
+          )!;
+          assert.isTrue(heldByDrain.queueHeld);
+          assert.equal(heldByDrain.queueHeldReason?.kind, "disabled_instance");
+          yield* events.write({
+            events: [
+              {
+                id: EventId.make(`${threadId}:compose-unheld`),
+                type: "run.updated",
+                threadId,
+                runId: disabledRun.id,
+                occurredAt: now,
+                payload: { ...heldByDrain, queueHeld: false, queueHeldReason: null },
+              },
+            ],
+          });
+          const beforeLaterSend = yield* orchestrator.getThreadProjection(threadId);
+          assert.equal(
+            beforeLaterSend.runs.find((run) => run.id === disabledRun.id)?.queueHeld ?? false,
+            false,
+          );
+
+          // A send on the same instance as the run that never started must line up behind it.
+          yield* send(3, disabledSelection, "start_immediately");
+          const afterLaterSend = yield* orchestrator.getThreadProjection(threadId);
+          const laterRun = afterLaterSend.runs.find(
+            (run) => run.userMessageId === MessageId.make(`${threadId}:message:3`),
+          )!;
+          assert.isTrue(
+            afterLaterSend.runs.every(
+              (run) => !["preparing", "starting", "running", "waiting"].includes(run.status),
+            ),
+            "a later send must not start ahead of the earlier queued run",
+          );
+          assert.equal(laterRun.status, "queued");
+          assert.isTrue(laterRun.ordinal > disabledRun.ordinal);
+          const heldRun = afterLaterSend.runs.find((run) => run.id === disabledRun.id)!;
+          assert.isTrue(heldRun.queueHeld, "the older run is held instead of waiting silently");
+          assert.equal(heldRun.queueHeldReason?.kind, "disabled_instance");
+          assert.equal(heldRun.queueHeldReason?.providerInstanceId, alternateInstanceId);
+          const heldMessage = afterLaterSend.messages.find(
+            (message) => message.id === disabledRun.userMessageId,
+          );
+          assert.equal(heldMessage?.delivery?.queueHeldReason?.kind, "disabled_instance");
+
+          // Send the held run on the thread's current model instead of the disabled instance.
+          yield* orchestrator.dispatch({
+            type: "queued-run.start",
+            commandId: CommandId.make(`${threadId}:start-on-current-model`),
+            threadId,
+            runId: heldRun.id,
+            modelSelection,
+          });
+          const sent = yield* orchestrator.getThreadProjection(threadId);
+          const sentRun = sent.runs.find((run) => run.id === heldRun.id)!;
+          assert.notEqual(sentRun.status, "queued");
+          assert.equal(sentRun.modelSelection.instanceId, modelSelection.instanceId);
+          assert.isNull(sentRun.queueHeldReason ?? null);
+          assert.equal(
+            sent.runs.find((run) => run.id === laterRun.id)?.status,
+            "queued",
+            "the later send stays queued behind the message sent now",
+          );
+
+          // Discarding the later message leaves nothing for the settle guard to refuse.
+          yield* orchestrator.dispatch({
+            type: "queued-run.cancel",
+            commandId: CommandId.make(`${threadId}:discard-later`),
+            threadId,
+            runId: laterRun.id,
+          });
+          const discarded = yield* orchestrator.getThreadProjection(threadId);
+          assert.equal(discarded.runs.find((run) => run.id === laterRun.id)?.status, "cancelled");
         }),
     );
   },

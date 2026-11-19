@@ -40,7 +40,12 @@ import {
   TurnItemId,
 } from "./baseSchemas.ts";
 import { AuthMcpClientAccess } from "./auth.ts";
-import { MessageDelivery, MessageDeliveryJson } from "./houston/messageDelivery.ts";
+import {
+  MessageDelivery,
+  MessageDeliveryJson,
+  MessageDeliveryQueueHoldReason,
+} from "./houston/messageDelivery.ts";
+import { HoustonBlockingBackgroundWork } from "./houston/backgroundWork.ts";
 import { HoustonSideThread, makeHoustonSideThreadCommands } from "./houston/sideThreads.ts";
 import { HoustonMergeQueueNotifyCommand } from "./houston/mergeQueue.ts";
 import { HoustonSlackAnswerCommand } from "./houston/slack.ts";
@@ -542,6 +547,19 @@ export function isProviderNativeSubagentThread(
 
 export const IDLE_COMPACTION_TEXT = "/compact";
 
+const COMPACT_COMMAND_PATTERN = /^\/compact(?:\s|$)/iu;
+const COMPACT_COMMAND_ARGUMENTS = /^\/compact\s*([\s\S]*)$/iu;
+
+/** `/compact` on its own or followed by what the summary must keep. */
+export function isCompactCommandText(text: string): boolean {
+  return COMPACT_COMMAND_PATTERN.test(text.trim());
+}
+
+/** The text after `/compact`, or "" for a bare command. */
+export function compactCommandInstructions(text: string): string {
+  return COMPACT_COMMAND_ARGUMENTS.exec(text.trim())?.[1]?.trim() ?? "";
+}
+
 interface CompactionMessageFields {
   readonly role: string;
   readonly text: string;
@@ -555,7 +573,7 @@ interface CompactionMessageFields {
 export function isCompactionCommandMessage(message: CompactionMessageFields): boolean {
   return (
     message.role === "user" &&
-    message.text.trim().toLowerCase() === IDLE_COMPACTION_TEXT &&
+    isCompactCommandText(message.text) &&
     (message.attachments?.length ?? 0) === 0
   );
 }
@@ -704,6 +722,8 @@ export const OrchestrationV2Run = Schema.Struct({
   status: OrchestrationV2RunStatus,
   queuePosition: Schema.optional(Schema.NullOr(PositiveInt)),
   queueHeld: Schema.optional(Schema.Boolean),
+  /** Why this queued run cannot start; cleared when it starts or its hold is released. */
+  queueHeldReason: Schema.optional(Schema.NullOr(MessageDeliveryQueueHoldReason)),
   requestedAt: Schema.DateTimeUtc,
   startedAt: Schema.NullOr(Schema.DateTimeUtc),
   completedAt: Schema.NullOr(Schema.DateTimeUtc),
@@ -3211,6 +3231,12 @@ export const OrchestrationV2Command = Schema.Union([
     manualContinuationOfRunId: Schema.optional(RunId),
     usageLimitRecoveryRequestId: Schema.optional(CommandId),
     deliveryIntent: Schema.optional(Schema.Literals(["auto", "steer", "restart"])),
+    /**
+     * How a direct send handles a provider switch the previous session's background work would
+     * end. Absent refuses the switch; `wait` queues the message until that work ends; `end`
+     * stops the pending work and switches.
+     */
+    backgroundWorkPolicy: Schema.optional(Schema.Literals(["wait", "end"])),
     delegatedCompletion: Schema.optional(
       Schema.Struct({
         parentRunId: RunId,
@@ -3293,6 +3319,12 @@ export const OrchestrationV2Command = Schema.Union([
     commandId: CommandId,
     threadId: ThreadId,
     runId: RunId,
+    /**
+     * Sends the queued message on this selection instead of the one it was queued with, so a
+     * run the thread cannot start as queued (for example, on a disabled instance) still sends.
+     * Absent keeps the selection it was queued with.
+     */
+    modelSelection: Schema.optional(ModelSelection),
   }),
   Schema.Struct({
     type: Schema.Literal("queued-run.reorder"),
@@ -3959,6 +3991,13 @@ export class OrchestrationV2DispatchCommandError extends Schema.TaggedError<Orch
     commandType: Schema.String,
     message: Schema.String,
     detail: Schema.optional(Schema.String),
+    /**
+     * Set when the server refused the command because the thread has no projection, so a
+     * client can treat a stale settle as already closed instead of reporting a failure.
+     */
+    reason: Schema.optional(Schema.Literal("thread_not_found")),
+    /** Set when a provider switch was refused because the session still runs this work. */
+    blockingBackgroundWork: Schema.optional(Schema.Array(HoustonBlockingBackgroundWork)),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {}

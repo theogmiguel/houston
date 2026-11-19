@@ -4,6 +4,9 @@ import * as Schema from "effect/Schema";
 
 import { NodeId, RunAttemptId, TrimmedNonEmptyString } from "./index.ts";
 import {
+  compactCommandInstructions,
+  isCompactCommandText,
+  isCompactionCommandMessage,
   isDelegatedAppThread,
   latestProviderTurnForAttempt,
   OrchestrationV2ProviderCapabilities,
@@ -659,5 +662,36 @@ describe("isDelegatedAppThread", () => {
         delegatedFrom: { environmentId: "e", threadId: "t", title: "Parent" } as never,
       }),
     ).toBe(true);
+  });
+});
+
+describe("compaction command text", () => {
+  it("recognizes /compact alone or with what the summary must keep", () => {
+    for (const text of ["/compact", "/COMPACT", " /compact ", "/compact keep the decisions"]) {
+      expect(isCompactCommandText(text)).toBe(true);
+    }
+    for (const text of ["/compactx", "run /compact", "/compacted"]) {
+      expect(isCompactCommandText(text)).toBe(false);
+    }
+  });
+
+  it("reads the instructions after the command", () => {
+    expect(compactCommandInstructions("/compact")).toBe("");
+    expect(compactCommandInstructions("/compact  keep  the file paths ")).toBe(
+      "keep  the file paths",
+    );
+  });
+
+  it("treats an instructed prompt as the compaction turn, but not with attachments", () => {
+    expect(isCompactionCommandMessage({ role: "user", text: "/compact keep the risks" })).toBe(
+      true,
+    );
+    expect(
+      isCompactionCommandMessage({
+        role: "user",
+        text: "/compact keep the risks",
+        attachments: [{}],
+      }),
+    ).toBe(false);
   });
 });

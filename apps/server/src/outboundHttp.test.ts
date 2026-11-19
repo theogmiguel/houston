@@ -135,8 +135,9 @@ describe("ignoreMacosTypeOfServiceEinval", () => {
     expect(() => prototype.setTypeOfService.call(socket, 0)).toThrow();
   });
 
-  // Bundled undici 7 calls this API from a socket callback. Keep the real fetch
-  // in a child so an escaped EINVAL exits that process instead of breaking Vitest.
+  // Bundled undici calls this API when a request asks for a type of service. Keep
+  // the real fetch in a child so an escaped EINVAL exits that process instead of
+  // breaking Vitest.
   it.effect.runIf(
     typeof (NodeNet.Socket.prototype as { setTypeOfService?: unknown }).setTypeOfService ===
       "function" && process.versions.undici?.startsWith("7.") === true,
@@ -157,7 +158,20 @@ NodeNet.Socket.prototype.setTypeOfService = () => {
   throw Object.assign(new Error("setTypeOfService EINVAL"), { code: "EINVAL" });
 };
 ignoreMacosTypeOfServiceEinval("darwin");
-console.log(await (await fetch(${JSON.stringify(origin)})).text());
+// undici 7.30.1 marked every HTTP/1.1 socket with TOS 0; 7.30.2 skips the call
+// unless the request sets one. Initialize the built-in dispatcher, then request
+// TOS explicitly so both patch versions reach the workaround.
+await (await fetch("data:text/plain,init")).text();
+const dispatcher = globalThis[Symbol.for("undici.globalDispatcher.1")];
+const withTypeOfService = {
+  dispatch(options, handler) {
+    options.typeOfService = 0;
+    return dispatcher.dispatch(options, handler);
+  },
+  close: (...args) => dispatcher.close(...args),
+  destroy: (...args) => dispatcher.destroy(...args),
+};
+console.log(await (await fetch(${JSON.stringify(origin)}, { dispatcher: withTypeOfService })).text());
 if (calls === 0) throw new Error("fetch did not call setTypeOfService");
 `,
       ]);

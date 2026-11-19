@@ -44,7 +44,7 @@ import {
   scopeThreadRef,
 } from "@houston-app/client-runtime/environment";
 import { createModelSelection } from "@houston-app/shared/model";
-import { type SetStateAction, useLayoutEffect, useRef } from "react";
+import { type SetStateAction, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -64,6 +64,8 @@ import {
 import { resolvePlanFollowUpSubmission } from "../../proposedPlan";
 import { type ChatMessage } from "../../types";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { blockingBackgroundWorkOf } from "./backgroundWorkBlocksSwitch";
+import type { HoustonBlockingBackgroundWork } from "@houston-app/contracts/houston/backgroundWork";
 import { newMessageId, newThreadId } from "~/lib/utils";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { buildThreadRouteParams } from "../../threadRoutes";
@@ -351,6 +353,18 @@ export function useComposerSend(input: ComposerSendInput) {
   const startThreadTurn = useOrchestrationCommand(threadEnvironment.startTurn, {
     reportFailure: false,
   });
+  // A blocked switch belongs to the thread that refused the send, never to the next one.
+  const [blockedProviderSwitchState, setBlockedProviderSwitchState] = useState<{
+    readonly threadId: string | undefined;
+    readonly items: ReadonlyArray<HoustonBlockingBackgroundWork>;
+  } | null>(null);
+  const blockedProviderSwitch =
+    blockedProviderSwitchState !== null && blockedProviderSwitchState.threadId === activeThread?.id
+      ? blockedProviderSwitchState.items
+      : null;
+  const setBlockedProviderSwitch = (items: ReadonlyArray<HoustonBlockingBackgroundWork> | null) =>
+    setBlockedProviderSwitchState(items === null ? null : { threadId: activeThread?.id, items });
+  const nextBackgroundWorkPolicyRef = useRef<"wait" | "end" | undefined>(undefined);
   const uploadThreadFeedback = useOrchestrationCommand(threadEnvironment.uploadFeedback, {
     reportFailure: false,
   });
@@ -420,6 +434,9 @@ export function useComposerSend(input: ComposerSendInput) {
     },
   ) => {
     e?.preventDefault();
+    // The card's retry names the policy once; a normal send never carries it.
+    const backgroundWorkPolicy = nextBackgroundWorkPolicyRef.current;
+    nextBackgroundWorkPolicyRef.current = undefined;
     // What the user pressed send on; uploads below can take a while, and a redirect must not
     // decline approvals for a draft that changed meanwhile.
     const promptAtSend = promptRef.current;
@@ -1418,6 +1435,7 @@ export function useComposerSend(input: ComposerSendInput) {
           dispatchMode: turnDispatchMode,
           ...(freshArm === undefined ? {} : { freshContext: true }),
           ...(bootstrap ? { bootstrap } : {}),
+          ...(backgroundWorkPolicy === undefined ? {} : { backgroundWorkPolicy }),
           createdAt: messageCreatedAt,
         },
       });
@@ -1449,6 +1467,7 @@ export function useComposerSend(input: ComposerSendInput) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        setBlockedProviderSwitch(null);
         setKeepFullHistory(routeThreadKey, false);
         if (freshArm !== undefined) disarmFreshSession(routeThreadKey, freshArm);
         clearUsageLimitsFor(routeThreadKey);
@@ -1527,7 +1546,13 @@ export function useComposerSend(input: ComposerSendInput) {
           });
         }
       }
-      if (!isAtomCommandInterrupted(failure)) {
+      const blockingBackgroundWork = isAtomCommandInterrupted(failure)
+        ? null
+        : blockingBackgroundWorkOf(failure);
+      if (blockingBackgroundWork !== null) {
+        // The draft is back in the composer; the card waits for the user's decision.
+        setBlockedProviderSwitch(blockingBackgroundWork);
+      } else if (!isAtomCommandInterrupted(failure)) {
         const error = squashAtomCommandFailure(failure);
         setThreadError(
           threadIdForSend,
@@ -1566,5 +1591,18 @@ export function useComposerSend(input: ComposerSendInput) {
     }
   };
 
-  return { onSend };
+  const resolveBlockedProviderSwitch = (policy: "wait" | "end") => {
+    if (sendInFlightRef.current) return;
+    nextBackgroundWorkPolicyRef.current = policy;
+    setBlockedProviderSwitch(null);
+    void onSend();
+  };
+  const dismissBlockedProviderSwitch = () => setBlockedProviderSwitch(null);
+
+  return {
+    onSend,
+    blockedProviderSwitch,
+    resolveBlockedProviderSwitch,
+    dismissBlockedProviderSwitch,
+  };
 }

@@ -300,6 +300,44 @@ describe("buildSidebarWorkspaceSections", () => {
     expect(ids(sections[0]!.threads)).toEqual(["a"]);
   });
 
+  it("keeps a closed thread in its workspace while its chat tab stays open", () => {
+    const open = build({
+      ...base,
+      layout: layoutOf([["W", ["a", "closed"]]]),
+      threads: [thread("a"), thread("closed", "p1", { settledOverride: "settled" })],
+    });
+    expect(ids(open.sections[0]!.threads)).toEqual(["a", "closed"]);
+
+    const withoutTab = build({
+      ...base,
+      layout: layoutOf([["W", ["a"]]]),
+      extra: { closed: "W" },
+      threads: [thread("a"), thread("closed", "p1", { settledOverride: "settled" })],
+    });
+    expect(ids(withoutTab.sections[0]!.threads)).toEqual(["a"]);
+  });
+
+  it("still leaves out archived, deleted and subagent threads that have a chat tab", () => {
+    const hidden = [
+      thread("archived", "p1", { archivedAt: NOW }),
+      thread("deleted", "p1", { deletedAt: NOW }),
+      thread("child", "p1", {
+        lineage: {
+          relationshipToParent: "subagent",
+          parentThreadId: ThreadId.make("a"),
+          rootThreadId: ThreadId.make("a"),
+          sideChat: false,
+        },
+      } as Partial<EnvironmentThreadShell>),
+    ];
+    const { sections } = build({
+      ...base,
+      layout: layoutOf([["W", ["a", "archived", "deleted", "child"]]]),
+      threads: [thread("a"), ...hidden],
+    });
+    expect(ids(sections[0]!.threads)).toEqual(["a"]);
+  });
+
   it("leaves out threads of projects outside the filter", () => {
     const { sections } = build({
       ...base,

@@ -10,6 +10,9 @@ export const READINESS_ROW_META = "text-muted-foreground";
 export const READINESS_CHEVRON = "text-muted-foreground transition-transform";
 export const READINESS_CHEVRON_OPEN = "rotate-90";
 export const READINESS_MUTED = "text-xs text-muted-foreground";
+/** The settings link on the unreadable-pull-request line, set apart by its underline. */
+export const READINESS_UNREADABLE_LINK =
+  "underline underline-offset-2 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
 export const READINESS_CHECK_ROW = "group rounded-md hover:bg-hover/60";
 export const READINESS_CHECK_BUTTON = "text-left text-xs leading-5";
 export const READINESS_CHECK_NAME = "wrap-anywhere";

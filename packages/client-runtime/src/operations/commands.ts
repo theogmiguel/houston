@@ -191,6 +191,8 @@ export interface StartThreadTurnInput extends ThreadCommandInput {
   readonly dispatchMode?: "auto" | "queue" | "steer" | "restart" | "start";
   /** Start a new provider session; needs the server's `freshContext` capability. */
   readonly freshContext?: boolean;
+  /** How a direct send handles background work a provider switch would end. */
+  readonly backgroundWorkPolicy?: "wait" | "end";
 }
 
 export interface InterruptThreadTurnInput extends ThreadCommandInput {
@@ -265,6 +267,8 @@ export interface MergeThreadBackInput extends CommandMetadata {
 
 export interface ResumeThreadQueueInput extends ThreadCommandInput {
   readonly runId?: RunId;
+  /** Starts the queued run on this selection instead of the one it was queued with. */
+  readonly modelSelection?: ModelSelection;
 }
 
 export interface PromoteQueuedRunInput extends ThreadCommandInput {
@@ -748,6 +752,9 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
         ? {}
         : { sourcePlanRef: input.sourceProposedPlan }),
       ...(input.freshContext ? { freshContext: true } : {}),
+      ...(input.backgroundWorkPolicy === undefined
+        ? {}
+        : { backgroundWorkPolicy: input.backgroundWorkPolicy }),
       dispatchMode: { type: "start_immediately" },
     });
   }
@@ -773,6 +780,9 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
     ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
     ...(input.sourceProposedPlan === undefined ? {} : { sourcePlanRef: input.sourceProposedPlan }),
     ...(input.freshContext ? { freshContext: true } : {}),
+    ...(input.backgroundWorkPolicy === undefined
+      ? {}
+      : { backgroundWorkPolicy: input.backgroundWorkPolicy }),
     ...(requestedMode !== "queue" ? { deliveryIntent: requestedMode } : {}),
     dispatchMode,
   });
@@ -1070,7 +1080,11 @@ export const resumeThreadQueue = Effect.fn("EnvironmentCommands.resumeThreadQueu
   return yield* dispatch({
     ...(input.runId === undefined
       ? { type: "queue.resume" as const }
-      : { type: "queued-run.start" as const, runId: input.runId }),
+      : {
+          type: "queued-run.start" as const,
+          runId: input.runId,
+          ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
+        }),
     commandId: yield* allocateCommandId(input),
     threadId: input.threadId,
   });

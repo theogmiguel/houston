@@ -2642,6 +2642,45 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     ),
   );
 
+  it.effect("refuses compaction instructions it cannot keep", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const nativeThreadId = "compact-instructions-thread";
+        const nativeTurnId = "compact-instructions-turn";
+        const transcript = makeCodexReplayTranscript({
+          scenario: "compact-instructions",
+          entries: codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "Continue." }),
+        });
+        const harness = yield* makeCodexReplayHarness(transcript);
+        const refused = yield* harness.runtime.compactThread!(
+          makeCodexTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("compact-instructions-attempt"),
+            text: "/compact keep the open decisions",
+          }),
+        ).pipe(Effect.flip);
+        assert.equal(refused._tag, "ProviderAdapterTurnStartError");
+        const cause = refused.cause as {
+          readonly _tag: string;
+          readonly message: string;
+        };
+        assert.equal(cause._tag, "ProviderAdapterCompactionInstructionsUnsupportedError");
+        assert.include(cause.message, "codex cannot keep compaction instructions");
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+    ),
+  );
+
   it.effect.each(["failed", "interrupted", "Stop"] as const)(
     "settles unfinished compaction on %s without changing completed compaction",
     (outcome) =>

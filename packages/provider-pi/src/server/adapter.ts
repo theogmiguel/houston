@@ -5,6 +5,7 @@ import { getModelSelectionStringOptionValue } from "@houston-app/shared/model";
 import { readToolOutputImage } from "@houston-app/shared/toolOutput";
 import * as Predicate from "effect/Predicate";
 import {
+  compactCommandInstructions,
   ProviderDriverKind,
   type ChatAttachment,
   type ModelSelection,
@@ -2685,11 +2686,17 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
                 }),
             ),
           ),
-        compactThread: (turnInput) =>
-          runtime.startTurn({
+        compactThread: (turnInput) => {
+          // Pi reads `/compact <instructions>` and keeps them for the summary.
+          const instructions = compactCommandInstructions(turnInput.message.text);
+          return runtime.startTurn({
             ...turnInput,
-            message: { ...turnInput.message, text: "/compact" },
-          }),
+            message: {
+              ...turnInput.message,
+              text: instructions.length === 0 ? "/compact" : `/compact ${instructions}`,
+            },
+          });
+        },
         startTurn: Effect.fn("PiAdapter.startTurn")(
           function* (turnInput) {
             if (rollbackBarrier !== null)

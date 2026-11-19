@@ -45,6 +45,7 @@ import * as CheckpointService from "./CheckpointService.ts";
 import * as EventSink from "./EventSink.ts";
 import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
+import { isCompactionCommandMessage } from "@houston-app/contracts";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import type { ProjectionStoreV2Error } from "./ProjectionStore.ts";
 import {
@@ -1699,9 +1700,7 @@ export const layer: Layer.Layer<
           return;
         }
 
-        const compact =
-          input.message.attachments.length === 0 &&
-          input.message.text.trim().toLowerCase() === "/compact";
+        const compact = isCompactionCommandMessage({ role: "user", ...input.message });
         const startTurn = compact
           ? (input.session.compactThread?.(turnInput) ??
             Effect.fail(

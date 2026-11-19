@@ -1,4 +1,12 @@
-import { EnvironmentId, ProjectId, ThreadId, type PullRequestCheck } from "@houston-app/contracts";
+import {
+  EnvironmentId,
+  ProjectId,
+  PullRequestUnavailableError,
+  SourceControlProviderKind,
+  ThreadId,
+  type PullRequestCheck,
+} from "@houston-app/contracts";
+import * as Cause from "effect/Cause";
 import { DraftId } from "~/composerDraftStore";
 import { AsyncResult } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
@@ -13,6 +21,7 @@ const state = vi.hoisted(() => ({
   checkoutError: null as Error | null,
   addToast: vi.fn(),
   updateToast: vi.fn(),
+  queryResult: null as AsyncResult.AsyncResult<unknown, unknown> | null,
 }));
 
 vi.mock(import("~/state/entities"), async (importOriginal) => ({
@@ -57,7 +66,7 @@ const queryData = () => ({
 vi.mock(import("~/state/query"), async (importOriginal) => ({
   ...(await importOriginal()),
   useEnvironmentQuerySelector: ((_atom: unknown, select: (result: unknown) => unknown) =>
-    select(AsyncResult.success(queryData()))) as never,
+    select(state.queryResult ?? AsyncResult.success(queryData()))) as never,
   useEnvironmentQueryIsNewer: () => true,
   useEnvironmentQueryRefresh: () => ({ refresh: vi.fn(), isPending: () => false }),
   useEnvironmentQuery: (() => ({
@@ -175,6 +184,39 @@ it("requires a new merge click after passing checks become pending and pass agai
   await clickMerge();
   expect(dialogs()).toHaveLength(1);
   expect(state.perform).not.toHaveBeenCalled();
+});
+
+it("names the host requirement when the pull request cannot be read", async () => {
+  await using screen = await setup();
+  state.queryResult = AsyncResult.failure(
+    Cause.fail(
+      new PullRequestUnavailableError({
+        reason: "cli-missing",
+        provider: SourceControlProviderKind.make("bitbucket"),
+        requirement: "Bitbucket needs an API token for this repository.",
+      }),
+    ),
+  );
+  await act(async () => {
+    await screen.rerender(
+      <ThreadDetailsPrRow
+        environmentId={EnvironmentId.make("environment")}
+        pr={null}
+        number={1}
+        reference={{ host: "bitbucket.org", repository: "workspace/repo", number: 1 }}
+        status={null}
+        project={{ id: ProjectId.make("project") } as never}
+        label="Test PR"
+        openAriaLabel="Open PR"
+        onOpen={vi.fn()}
+      />,
+    );
+  });
+  const line = screen.container.querySelector<HTMLElement>("[data-thread-details-pr-unreadable]");
+  expect(line).not.toBeNull();
+  expect(line!.textContent).toContain("Bitbucket needs an API token for this repository.");
+  expect(line!.querySelector("a")?.textContent).toBe("Settings");
+  state.queryResult = null;
 });
 
 async function setup() {

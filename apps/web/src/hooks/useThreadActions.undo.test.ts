@@ -40,7 +40,21 @@ vi.mock("./useHandleNewThread", () => ({
     router.state.location.href = "/draft/project";
   },
 }));
-vi.mock("../composerDraftStore", () => ({ useComposerDraftStore: () => vi.fn() }));
+vi.mock("../composerDraftStore", () => {
+  const store = {
+    clearDraftThread: vi.fn(),
+    clearProjectDraftThreadById: vi.fn(),
+    getDraftIdByRef: vi.fn(() => null),
+  };
+  return {
+    useComposerDraftStore: Object.assign(
+      (select: (value: typeof store) => unknown) => select(store),
+      {
+        getState: () => store,
+      },
+    ),
+  };
+});
 vi.mock("../lib/composerDraftUploads", () => ({ releaseComposerDraftUploads: vi.fn() }));
 vi.mock("../terminalUiStateStore", () => ({ useTerminalUiStateStore: () => vi.fn() }));
 vi.mock("../uiStateStore", () => ({ useUiStateStore: () => vi.fn() }));

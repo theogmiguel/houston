@@ -11,6 +11,7 @@ import {
   type OrchestrationV2RunAttempt,
   type OrchestrationV2TurnItem,
   isCompactionCommandMessage,
+  isCompactCommandText,
   parseGoalCommand,
   RunId,
   ThreadId,
@@ -540,8 +541,7 @@ export const layer: Layer.Layer<
         },
       );
       if (message.attachments.length === 0 && message.text.trimStart().startsWith("/")) {
-        const isEmptyCompaction =
-          message.text.trim().toLowerCase() === "/compact" && !projection.hasConversation;
+        const isEmptyCompaction = isCompactCommandText(message.text) && !projection.hasConversation;
         // Preparation may select a new provider; account commands still target the last native session.
         const nativeThreads = new Map(
           projection.providerThreads

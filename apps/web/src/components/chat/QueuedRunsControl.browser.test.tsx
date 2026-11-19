@@ -8,6 +8,7 @@ import { page } from "vite-plus/test/browser";
 const state = vi.hoisted(() => ({
   projection: null as unknown,
   workflow: null as unknown,
+  commands: [] as { action: unknown; request: unknown }[],
 }));
 
 vi.mock(import("@houston-app/client-runtime/state/thread-workflows"), async (importOriginal) => ({
@@ -31,7 +32,29 @@ vi.mock(import("../../state/query"), async (importOriginal) => ({
 
 vi.mock(import("../../state/use-atom-command"), async (importOriginal) => ({
   ...(await importOriginal()),
-  useAtomCommand: (() => async () => undefined) as never,
+  useAtomCommand: ((action: unknown) => async (request: unknown) => {
+    state.commands.push({ action, request });
+    return undefined;
+  }) as never,
+}));
+
+vi.mock(import("../../state/environments"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  useEnvironmentProviders: (() =>
+    new Map([
+      [
+        "environment:test",
+        [
+          {
+            instanceId: "claude_2",
+            driver: "claudeAgent",
+            displayName: "Claude 2",
+            enabled: true,
+            models: [{ slug: "opus", name: "Opus" }],
+          },
+        ],
+      ],
+    ])) as never,
 }));
 
 vi.mock(import("../../assets/assetUrls"), async (importOriginal) => ({
@@ -47,6 +70,7 @@ import { QueuedRunsControl } from "./QueuedRunsControl";
 function setup() {
   state.projection = null;
   state.workflow = null;
+  state.commands = [];
 }
 
 const baseProps = {
@@ -230,4 +254,116 @@ it("draws each queued message as one ellipsized line with its actions at the row
   expect(remove.getBoundingClientRect().right).toBeLessThanOrEqual(
     row.getBoundingClientRect().right,
   );
+});
+
+it("shows why a held queued message cannot start and sends it on the thread's model", async () => {
+  setup();
+  const heldReason = {
+    kind: "disabled_instance",
+    message:
+      "Provider instance claude_2 is disabled for this project, so queued run run:held cannot start.",
+    providerInstanceId: "claude_2",
+  };
+  state.projection = {
+    projection: {
+      messages: [],
+      thread: { modelSelection: { instanceId: "claude_2", model: "opus" } },
+    },
+  };
+  state.workflow = {
+    activeRun: null,
+    canSendNow: false,
+    canPromoteToSteer: false,
+    queuedRuns: [
+      {
+        run: {
+          id: "run:held",
+          userMessageId: "message:held",
+          queueHeld: true,
+          queueHeldReason: heldReason,
+        },
+        text: "Later",
+        attachments: [],
+        message: {
+          id: "message:held",
+          role: "user",
+          createdAt: DateTime.makeUnsafe("2026-10-27T12:00:00.000Z"),
+          text: "Later",
+          delivery: {
+            intent: "queue",
+            route: "ownTurn",
+            state: "accepted",
+            adoption: null,
+            evidence: null,
+            providerTurnId: null,
+            queueHeldReason: heldReason,
+          },
+        },
+      },
+    ],
+  };
+  await using _screen = await renderQueue();
+
+  await expect.element(page.getByText("Held: Claude 2 is disabled")).toBeVisible();
+  await expect.element(page.getByText("Accepted")).not.toBeInTheDocument();
+  await expect.element(page.getByRole("button", { name: "Remove queued message" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Send on Opus" }).click();
+
+  expect(state.commands.at(-1)?.request).toMatchObject({
+    input: {
+      threadId: "thread:test",
+      runId: "run:held",
+      modelSelection: { instanceId: "claude_2", model: "opus" },
+    },
+  });
+});
+
+it("keeps a held row's message and remove button inside a narrow pane", async () => {
+  setup();
+  const heldReason = {
+    kind: "runtime_mode_ceiling",
+    message: "The thread runs in full access, above the server's auto runtime mode limit.",
+  };
+  const long = "then run the whole suite and report back with a long line ".repeat(3);
+  state.projection = {
+    projection: {
+      messages: [],
+      thread: { modelSelection: { instanceId: "claude_2", model: "opus" } },
+    },
+  };
+  state.workflow = {
+    activeRun: null,
+    canSendNow: false,
+    canPromoteToSteer: false,
+    queuedRuns: [
+      {
+        run: {
+          id: "run:held",
+          userMessageId: "message:held",
+          queueHeld: true,
+          queueHeldReason: heldReason,
+        },
+        text: long,
+        attachments: [],
+      },
+    ],
+  };
+  await using screen = await renderUi(
+    <div style={{ width: 360 }}>
+      <QueuedRunsControl {...baseProps} />
+    </div>,
+  );
+  await expect.element(page.getByRole("button", { name: "Send on Opus" })).toBeVisible();
+  const row = screen.getByRole("listitem").element();
+  const text = [...row.querySelectorAll<HTMLElement>("span")].find((node) =>
+    node.textContent?.startsWith("then run the whole suite"),
+  )!;
+  const remove = screen.getByRole("button", { name: "Remove queued message" }).element();
+  expect(remove.getBoundingClientRect().right).toBeLessThanOrEqual(
+    row.getBoundingClientRect().right,
+  );
+  expect(text.getBoundingClientRect().width).toBeGreaterThanOrEqual(48);
+  const held = row.querySelector<HTMLElement>("[data-queued-run-held-reason]")!;
+  expect(getComputedStyle(held).textOverflow).toBe("ellipsis");
 });

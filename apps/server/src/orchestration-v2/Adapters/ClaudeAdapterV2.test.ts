@@ -11466,6 +11466,245 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
+  describe("background-work probes for finished work", () => {
+    const taskStarted = (input: {
+      readonly taskId: string;
+      readonly toolUseId: string;
+      readonly taskType: "local_bash" | "local_agent";
+      readonly description: string;
+      readonly uuid: string;
+      readonly prompt?: string;
+    }) =>
+      claudeSdkFrame({
+        type: "system",
+        subtype: "task_started",
+        task_id: input.taskId,
+        tool_use_id: input.toolUseId,
+        description: input.description,
+        is_backgrounded: true,
+        task_type: input.taskType,
+        ...(input.prompt === undefined
+          ? {}
+          : { subagent_type: "general-purpose", prompt: input.prompt }),
+        uuid: input.uuid,
+        session_id: WAKE_NATIVE_SESSION,
+      });
+    const taskCompleted = (input: {
+      readonly taskId: string;
+      readonly toolUseId: string;
+      readonly summary: string;
+      readonly uuid: string;
+    }) =>
+      claudeSdkFrame({
+        type: "system",
+        subtype: "task_notification",
+        task_id: input.taskId,
+        tool_use_id: input.toolUseId,
+        status: "completed",
+        output_file: `/tmp/${input.taskId}.output`,
+        summary: input.summary,
+        uuid: input.uuid,
+        session_id: WAKE_NATIVE_SESSION,
+      });
+    const latestSubagent = (harness: Effect.Success<typeof makeWakeHarness>, taskId: string) =>
+      harness.events.findLast(
+        (event) =>
+          event.type === "subagent.updated" && event.subagent.nativeTaskRef?.nativeId === taskId,
+      );
+    const startBackgroundTask = Effect.fnUntraced(function* (
+      harness: Effect.Success<typeof makeWakeHarness>,
+      attempt: string,
+    ) {
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make(attempt),
+          text: "Run the build in the background.",
+          attachments: [],
+        }),
+      );
+      yield* harness.offerAndWait(wakeTaskStarted);
+      yield* harness.offerAndWait(turnOneResult);
+      yield* harness.awaitTerminal(1);
+    });
+
+    it.effect("counts a running background task while its process is live", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const harness = yield* makeWakeHarness;
+          yield* startBackgroundTask(harness, "attempt-probe-live-task");
+          assert.isTrue(yield* harness.hasPendingBackgroundWork);
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              IdAllocator.layer,
+              McpProviderSessions.layer,
+              NodeServices.layer,
+              NodeCrypto.layer,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    it.effect("does not count a subagent that reported completion and stays in the registry", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const harness = yield* makeWakeHarness;
+          const taskId = "task-probe-finished-subagent";
+          yield* harness.runtime.startTurn(
+            makeClaudeTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now: yield* DateTime.now,
+              attemptId: RunAttemptId.make("attempt-probe-finished-subagent"),
+              text: "Audit the recent commits.",
+              attachments: [],
+            }),
+          );
+          yield* harness.offerAndWait(
+            taskStarted({
+              taskId,
+              toolUseId: "toolu-probe-finished-subagent",
+              taskType: "local_agent",
+              description: "Audit recent commits",
+              prompt: "Audit the last five commits.",
+              uuid: "00000000-0000-4000-8000-000000009101",
+            }),
+          );
+          assert.isTrue(yield* harness.hasPendingBackgroundWork);
+          yield* harness.offerAndWait(
+            taskCompleted({
+              taskId,
+              toolUseId: "toolu-probe-finished-subagent",
+              summary: "Audit finished.",
+              uuid: "00000000-0000-4000-8000-000000009102",
+            }),
+          );
+          yield* harness.offerAndWait(
+            makeResultFrame({
+              uuid: "00000000-0000-4000-8000-000000009103",
+              result: "Audit done.",
+            }),
+          );
+          yield* harness.awaitTerminal(1);
+          const finished = latestSubagent(harness, taskId);
+          assert.equal(finished?.type, "subagent.updated");
+          if (finished?.type !== "subagent.updated")
+            return yield* Effect.die("Missing finished subagent row");
+          assert.equal(finished.subagent.status, "completed");
+          assert.isNotNull(finished.subagent.completedAt);
+          assert.isFalse(yield* harness.hasPendingBackgroundWork);
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              IdAllocator.layer,
+              McpProviderSessions.layer,
+              NodeServices.layer,
+              NodeCrypto.layer,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    it.effect("does not count a settled task once Stop begins closing its process", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const closeStarted = yield* Deferred.make<void>();
+          const releaseClose = yield* Deferred.make<void>();
+          const harness = yield* makeWakeHarnessWithOptions({
+            close: (sdkMessages) =>
+              Deferred.succeed(closeStarted, undefined).pipe(
+                Effect.andThen(Deferred.await(releaseClose)),
+                Effect.andThen(Queue.shutdown(sdkMessages)),
+              ),
+          });
+          yield* Effect.addFinalizer(() => Deferred.succeed(releaseClose, undefined));
+          yield* startBackgroundTask(harness, "attempt-probe-stopping-process");
+          assert.isTrue(yield* harness.hasPendingBackgroundWork);
+          const terminal = harness.terminalEvents()[0]!;
+          const stop = yield* harness.runtime
+            .interruptTurn({
+              providerThread: harness.providerThread,
+              providerTurnId: terminal.providerTurnId,
+              requestRuntimeRestart: true,
+            })
+            .pipe(Effect.forkScoped);
+          yield* Deferred.await(closeStarted);
+          assert.isFalse(yield* harness.hasPendingBackgroundWork);
+          yield* Deferred.succeed(releaseClose, undefined);
+          yield* Fiber.join(stop);
+          assert.isFalse(yield* harness.hasPendingBackgroundWork);
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              IdAllocator.layer,
+              McpProviderSessions.layer,
+              NodeServices.layer,
+              NodeCrypto.layer,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    it.effect.each([false, true])(
+      "does not count per-thread work once Stop begins closing its process (includeSubagents: %s)",
+      (includeSubagents) =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const closeStarted = yield* Deferred.make<void>();
+            const releaseClose = yield* Deferred.make<void>();
+            const harness = yield* makeWakeHarnessWithOptions({
+              close: (sdkMessages) =>
+                Deferred.succeed(closeStarted, undefined).pipe(
+                  Effect.andThen(Deferred.await(releaseClose)),
+                  Effect.andThen(Queue.shutdown(sdkMessages)),
+                ),
+            });
+            yield* Effect.addFinalizer(() => Deferred.succeed(releaseClose, undefined));
+            if (harness.runtime.hasPendingBackgroundWorkForThread === undefined) {
+              return yield* Effect.die(
+                "Claude adapter runtime must expose hasPendingBackgroundWorkForThread.",
+              );
+            }
+            const forThread = harness.runtime.hasPendingBackgroundWorkForThread;
+            yield* startBackgroundTask(
+              harness,
+              `attempt-probe-thread-stopping-${includeSubagents}`,
+            );
+            const options = includeSubagents ? { includeSubagents: true } : undefined;
+            assert.isTrue(yield* forThread(harness.providerThread, options));
+            const terminal = harness.terminalEvents()[0]!;
+            const stop = yield* harness.runtime
+              .interruptTurn({
+                providerThread: harness.providerThread,
+                providerTurnId: terminal.providerTurnId,
+                requestRuntimeRestart: true,
+              })
+              .pipe(Effect.forkScoped);
+            yield* Deferred.await(closeStarted);
+            assert.isFalse(yield* forThread(harness.providerThread, options));
+            yield* Deferred.succeed(releaseClose, undefined);
+            yield* Fiber.join(stop);
+            assert.isFalse(yield* forThread(harness.providerThread, options));
+          }).pipe(
+            Effect.provide(
+              Layer.mergeAll(
+                IdAllocator.layer,
+                McpProviderSessions.layer,
+                NodeServices.layer,
+                NodeCrypto.layer,
+              ),
+            ),
+          ),
+        ),
+    );
+  });
+
   it.effect("a settled Stop leaves a turn that replaced the closing process alone", () =>
     Effect.scoped(
       Effect.gen(function* () {

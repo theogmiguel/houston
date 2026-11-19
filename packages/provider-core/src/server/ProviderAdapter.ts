@@ -344,6 +344,19 @@ export class ProviderAdapterTurnStartError extends Schema.TaggedError<ProviderAd
   }
 }
 
+/** A provider compacts natively but cannot carry the user's "what to keep" text. */
+export class ProviderAdapterCompactionInstructionsUnsupportedError extends Schema.TaggedError<ProviderAdapterCompactionInstructionsUnsupportedError>()(
+  "ProviderAdapterCompactionInstructionsUnsupportedError",
+  {
+    driver: ProviderDriverKind,
+    capability: Schema.Literal("compaction_instructions"),
+  },
+) {
+  override get message(): string {
+    return `${this.driver} cannot keep compaction instructions. Send /compact without instructions.`;
+  }
+}
+
 export class ProviderAdapterSteerRunUnsupportedError extends Schema.TaggedError<ProviderAdapterSteerRunUnsupportedError>()(
   "ProviderAdapterSteerRunUnsupportedError",
   {

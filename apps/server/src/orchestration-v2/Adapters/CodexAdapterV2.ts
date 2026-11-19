@@ -31,7 +31,9 @@ import {
 } from "../../provider/codexUsageLimits.ts";
 import {
   CodexSettings,
+  compactCommandInstructions,
   defaultInstanceIdForDriver,
+  isCompactCommandText,
   isOrchestrationV2WorkActive,
   type OrchestrationV2GoalCommand,
   OrchestrationV2ProviderGoal,
@@ -6555,7 +6557,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             code !== "serverOverloaded" ||
             context.subagent !== null ||
             (context.input.message.attachments.length === 0 &&
-              context.input.message.text.trim().toLowerCase() === "/compact")
+              isCompactCommandText(context.input.message.text))
           )
             return false;
 
@@ -7293,6 +7295,15 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           ),
           compactThread: Effect.fn("CodexAdapterV2.compactThread")(
             function* (turnInput) {
+              // thread/compact/start takes no prompt, so it cannot keep what the user asked for.
+              if (compactCommandInstructions(turnInput.message.text) !== "") {
+                return yield* new ProviderAdapter.ProviderAdapterCompactionInstructionsUnsupportedError(
+                  {
+                    driver: CODEX_PROVIDER,
+                    capability: "compaction_instructions",
+                  },
+                );
+              }
               const threadId = yield* getNativeThreadId(turnInput.providerThread);
               yield* Ref.update(pendingRootTurns, (current) =>
                 new Map(current).set(threadId, turnInput),

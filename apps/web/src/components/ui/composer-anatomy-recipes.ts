@@ -1,4 +1,4 @@
-/** Visual recipes for the composer toolbar's collapsed workspace chip. */
+/** Visual recipes for the composer's chrome: trays, the context tab and status cards. */
 
 /** The single workspace chip that replaces the checkout, branch and access controls. */
 /**
@@ -72,3 +72,22 @@ export const CONTEXT_TAB_CLS =
   "[&_[data-composer-context-control]]:max-w-none! [&_[data-composer-context-control]]:h-5.5! [&_[data-composer-context-control]]:rounded-(--r-ctl)! [&_[data-composer-context-control]]:border-0! [&_[data-composer-context-control]]:px-1.5! [&_[data-composer-context-control]]:font-normal [&_[data-composer-context-control]]:text-secondary-label! [&_[data-composer-context-control]]:text-xs! " +
   "[&_[data-composer-label]]:font-normal [&_[data-composer-label]]:text-secondary-label " +
   "[&_[data-composer-label]_*]:font-sans";
+
+/**
+ * The shell of the composer's status cards: the approval request and the blocked send. Each card
+ * adds its own layout and padding; the shell carries the edge, fill and radius they share.
+ */
+export const COMPOSER_STATUS_CARD_CLS = "rounded-xl border border-(--card-edge) bg-(--composer)";
+/** The warning glyph that opens a status card. */
+export const COMPOSER_STATUS_CARD_ICON_CLS = "size-3.5 shrink-0 text-warning";
+/** The one-line warning title of a status card. */
+export const COMPOSER_STATUS_CARD_TITLE_CLS = "min-w-0 text-sm font-medium text-foreground";
+/** A count at a status card's edge. */
+export const COMPOSER_STATUS_CARD_META_CLS = "shrink-0 text-2xs tabular-nums text-muted-foreground";
+/** One running item listed by the blocked-send card. */
+export const COMPOSER_BACKGROUND_WORK_ROW_CLS =
+  "flex min-w-0 items-center gap-2 text-xs text-muted-foreground";
+/** The kind of work, set apart from its description. */
+export const COMPOSER_BACKGROUND_WORK_KIND_CLS = "shrink-0 font-mono text-2xs uppercase";
+/** The elapsed time at the row's edge. */
+export const COMPOSER_BACKGROUND_WORK_ELAPSED_CLS = "shrink-0 tabular-nums";

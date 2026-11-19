@@ -148,10 +148,23 @@ describe("V2 environment commands", () => {
         commandId: CommandId.make("resume-queue"),
         threadId,
       }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+      yield* resumeThreadQueue({
+        commandId: CommandId.make("send-held-on-current-model"),
+        threadId,
+        runId: RunId.make("held"),
+        modelSelection: { instanceId: ProviderInstanceId.make("claude"), model: "opus" },
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
 
       expect(commands).toEqual([
         { type: "queued-run.start", commandId: "send-selected", threadId, runId: "selected" },
         { type: "queue.resume", commandId: "resume-queue", threadId },
+        {
+          type: "queued-run.start",
+          commandId: "send-held-on-current-model",
+          threadId,
+          runId: "held",
+          modelSelection: { instanceId: "claude", model: "opus" },
+        },
       ]);
     }).pipe(Effect.provide(layerTestRandom)),
   );
@@ -359,6 +372,31 @@ describe("V2 environment commands", () => {
         });
       }
       expect(projectionRequests).toEqual([]);
+    }).pipe(Effect.provide(layerTestRandom)),
+  );
+
+  it.effect("carries a background-work policy on a direct send", () =>
+    Effect.gen(function* () {
+      const commands: OrchestrationV2Command[] = [];
+      const supervisor = yield* makeSupervisor({ commands, projects: [] });
+      yield* startThreadTurn({
+        commandId: CommandId.make("send-wait-for-switch"),
+        threadId: v2ThreadId,
+        message: {
+          messageId: MessageId.make("message-wait-for-switch"),
+          role: "user",
+          text: "Take over",
+          attachments: [],
+        },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        dispatchMode: "auto",
+        backgroundWorkPolicy: "wait",
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+      expect(commands.at(-1)).toMatchObject({
+        type: "message.dispatch",
+        backgroundWorkPolicy: "wait",
+      });
     }).pipe(Effect.provide(layerTestRandom)),
   );
 

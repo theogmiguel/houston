@@ -64,6 +64,7 @@ import {
 import * as ProviderReplayHarness from "./ProviderReplayHarness.ts";
 import { checkpointWorkspace } from "@houston-app/provider-testing/replayWorkspace";
 import * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
+import { BackgroundWorkBlocksProviderSwitchError } from "../BackgroundWorkBlockError.ts";
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
@@ -120,6 +121,8 @@ function makeTestAdapter(input: {
   readonly holdFirstTurn?: Deferred.Deferred<void>;
   readonly releaseFirstTurn?: Deferred.Deferred<void>;
   readonly backgroundWork?: Ref.Ref<boolean>;
+  /** Makes the session-wide background-work probe fail while this is true. */
+  readonly backgroundWorkProbeFails?: Ref.Ref<boolean>;
   readonly closedSessions?: Ref.Ref<ReadonlyArray<string>>;
 }): ProviderAdapter.ProviderAdapterV2["Service"] {
   return {
@@ -175,7 +178,15 @@ function makeTestAdapter(input: {
             : {
                 // Like Claude: native subagents are visible only to the session-wide
                 // probe, never to the per-thread roster probe.
-                hasPendingBackgroundWork: Ref.get(input.backgroundWork),
+                hasPendingBackgroundWork: Effect.gen(function* () {
+                  if (
+                    input.backgroundWorkProbeFails !== undefined &&
+                    (yield* Ref.get(input.backgroundWorkProbeFails))
+                  ) {
+                    return yield* Effect.die("Background-work probe failed");
+                  }
+                  return yield* Ref.get(input.backgroundWork!);
+                }),
                 hasPendingBackgroundWorkForThread: () => Effect.succeed(false),
               }),
           ensureThread: (threadInput) =>
@@ -2749,6 +2760,181 @@ describe("orchestration v2 provider switching", () => {
             ProviderReplayHarness.layerWithRegistry(
               {
                 name: "handoff-releases-session",
+                runtimePolicyOverride: {
+                  cwd,
+                  approvalPolicy: "never",
+                  sandboxPolicy: {
+                    type: "readOnly",
+                    access: { type: "fullAccess" },
+                    networkAccess: false,
+                  },
+                },
+              },
+              layerRegistry,
+            ),
+          ),
+        );
+      }),
+    ),
+  );
+
+  it.live("names the background work that blocks a switch and lets the sender wait or end it", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const cwd = yield* checkpointWorkspace("background-work-switch-policy");
+        const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+        const closedSessions = yield* Ref.make<ReadonlyArray<string>>([]);
+        const backgroundWork = yield* Ref.make(true);
+        const backgroundWorkProbeFails = yield* Ref.make(false);
+        const threadId = ThreadId.make("thread:background-work-switch-policy");
+        const secondSelection: ModelSelection = {
+          ...CLAUDE_MODEL_SELECTION,
+          instanceId: ProviderInstanceId.make("claude-second-account"),
+        };
+        const adapters = [
+          makeTestAdapter({
+            instanceId: CLAUDE_MODEL_SELECTION.instanceId,
+            driver: CLAUDE_DRIVER,
+            capabilities: ClaudeProviderCapabilitiesV2,
+            modelSelection: CLAUDE_MODEL_SELECTION,
+            responseByRunOrdinal: { 1: "First account complete" },
+            capturedTurns,
+            backgroundWork,
+            backgroundWorkProbeFails,
+            closedSessions,
+          }),
+          makeTestAdapter({
+            instanceId: secondSelection.instanceId,
+            driver: CLAUDE_DRIVER,
+            capabilities: ClaudeProviderCapabilitiesV2,
+            modelSelection: secondSelection,
+            responseByRunOrdinal: { 5: "Second account complete" },
+            capturedTurns,
+          }),
+        ];
+        const layerRegistry = ProviderAdapterRegistry.layerFromAdapters(adapters);
+        yield* Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+          const send = (
+            ordinal: number,
+            options: {
+              readonly modelSelection?: ModelSelection;
+              readonly backgroundWorkPolicy?: "wait" | "end";
+            } = {},
+          ) =>
+            orchestrator.dispatch({
+              type: "message.dispatch",
+              createdBy: "user",
+              creationSource: "web",
+              commandId: CommandId.make(`command:background-work-switch:${ordinal}`),
+              threadId,
+              messageId: MessageId.make(`message:background-work-switch:${ordinal}`),
+              text: `Prompt ${ordinal}`,
+              attachments: [],
+              ...(options.modelSelection === undefined
+                ? {}
+                : { modelSelection: options.modelSelection }),
+              ...(options.backgroundWorkPolicy === undefined
+                ? {}
+                : { backgroundWorkPolicy: options.backgroundWorkPolicy }),
+              dispatchMode: { type: "start_immediately" },
+            });
+          yield* orchestrator.dispatch({
+            type: "thread.create",
+            createdBy: "user",
+            creationSource: "web",
+            commandId: CommandId.make("command:background-work-switch:create"),
+            threadId,
+            projectId: ProjectId.make("project:background-work-switch"),
+            title: "Background work switch",
+            modelSelection: CLAUDE_MODEL_SELECTION,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: cwd,
+          });
+          yield* send(1);
+          yield* worker.drain();
+          const first = yield* waitForIdle(threadId);
+          const firstSession = first.providerSessions.find(
+            (session) => session.providerInstanceId === CLAUDE_MODEL_SELECTION.instanceId,
+          );
+          assert.isDefined(firstSession);
+          assert.isTrue(yield* Ref.get(backgroundWork));
+
+          // The default refusal says what blocks it and how to move on.
+          const refused = yield* send(2, { modelSelection: secondSelection }).pipe(Effect.flip);
+          assert.equal(refused._tag, "OrchestratorDispatchError");
+          assert.instanceOf(refused.cause, BackgroundWorkBlocksProviderSwitchError);
+          const blockingItems = (refused.cause as BackgroundWorkBlocksProviderSwitchError).items;
+          assert.lengthOf(blockingItems, 1);
+          assert.isTrue(
+            blockingItems[0]!.kind === "command" || blockingItems[0]!.kind === "subagent",
+            "the refusal names the kind of work that blocks the switch",
+          );
+          assert.isNull(blockingItems[0]!.startedAt);
+
+          // A probe that fails is reported instead of looking busy without a reason.
+          yield* Ref.set(backgroundWorkProbeFails, true);
+          const probeRefused = yield* send(3, { modelSelection: secondSelection }).pipe(
+            Effect.flip,
+          );
+          assert.instanceOf(probeRefused.cause, BackgroundWorkBlocksProviderSwitchError);
+          assert.include(
+            (probeRefused.cause as BackgroundWorkBlocksProviderSwitchError).items
+              .map((item) => item.description ?? "")
+              .join(" "),
+            "did not answer the background-work check",
+          );
+          yield* Ref.set(backgroundWorkProbeFails, false);
+          assert.deepEqual(yield* Ref.get(closedSessions), []);
+          const unchanged = yield* orchestrator.getThreadProjection(threadId);
+          assert.lengthOf(unchanged.runs, 1);
+
+          // Wait and switch: the message lines up in the queue, held for the work to end.
+          yield* send(4, {
+            modelSelection: secondSelection,
+            backgroundWorkPolicy: "wait",
+          });
+          const waiting = yield* orchestrator.getThreadProjection(threadId);
+          const waitingRun = waiting.runs.find((run) => run.status === "queued");
+          assert.isDefined(waitingRun);
+          assert.isTrue(waitingRun!.queueHeld);
+          assert.equal(waitingRun!.queueHeldReason?.kind, "background_work");
+          assert.equal(waitingRun!.providerInstanceId, secondSelection.instanceId);
+          const waitingMessage = waiting.messages.find(
+            (message) => message.id === waitingRun!.userMessageId,
+          );
+          assert.equal(waitingMessage?.delivery?.queueHeldReason?.kind, "background_work");
+
+          // End them and switch: the sender chooses to stop the work and switch now.
+          yield* orchestrator.dispatch({
+            type: "queued-run.cancel",
+            commandId: CommandId.make("command:background-work-switch:cancel-waiting"),
+            threadId,
+            runId: waitingRun!.id,
+          });
+          yield* send(5, { modelSelection: secondSelection, backgroundWorkPolicy: "end" });
+          yield* worker.drain();
+          const ended = yield* waitForIdle(threadId);
+          const sent = ended.runs.find(
+            (run) =>
+              run.modelSelection.instanceId === secondSelection.instanceId &&
+              run.status !== "cancelled",
+          );
+          assert.isDefined(sent);
+          assert.equal(sent!.status, "completed");
+          assert.deepEqual(
+            yield* Ref.get(closedSessions),
+            [firstSession!.id],
+            "ending the work closes the session that ran it",
+          );
+        }).pipe(
+          Effect.provide(
+            ProviderReplayHarness.layerWithRegistry(
+              {
+                name: "background-work-switch-policy",
                 runtimePolicyOverride: {
                   cwd,
                   approvalPolicy: "never",

@@ -119,6 +119,7 @@ import {
   type ProviderThreadId,
   type RunId,
   type ThreadId,
+  compactCommandInstructions,
   isDelegatedAppThread,
   resolveIdleCompaction,
 } from "@houston-app/contracts";
@@ -12028,6 +12029,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           events: Stream.fromEffectRepeat(Queue.take(events)),
           backgroundTasksEndWithProcess: true,
           hasPendingBackgroundWork: Effect.gen(function* () {
+            const live = yield* Ref.get(queryContext);
+            // A closed or closing process runs nothing, so its leftover task and subagent rows
+            // must not keep the session busy: Stop really clears the list.
+            if (live === null || live.stopping) {
+              return false;
+            }
             for (const roster of (yield* Ref.get(pendingBackgroundTasksByNativeThread)).values()) {
               if (roster.size > 0) {
                 return true;
@@ -12057,6 +12064,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           hasPendingBackgroundWorkForThread: Effect.fnUntraced(function* (providerThread, options) {
             const nativeThreadId = providerThread.nativeThreadRef?.nativeId;
             if (nativeThreadId === undefined || nativeThreadId === null) {
+              return false;
+            }
+            const current = yield* Ref.get(queryContext);
+            // The process that held this thread's work is gone; its roster is stale.
+            if (current === null || current.stopping) {
               return false;
             }
             if (options?.includeSubagents) {
@@ -12149,11 +12161,17 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ),
           ),
           startTurn,
-          compactThread: (turnInput) =>
-            startTurn({
+          compactThread: (turnInput) => {
+            // The Claude CLI reads `/compact <instructions>` and keeps them for the summary.
+            const instructions = compactCommandInstructions(turnInput.message.text);
+            return startTurn({
               ...turnInput,
-              message: { ...turnInput.message, text: "/compact" },
-            }),
+              message: {
+                ...turnInput.message,
+                text: instructions.length === 0 ? "/compact" : `/compact ${instructions}`,
+              },
+            });
+          },
           steerTurn,
           mcpApps: {
             listTools: Effect.fn("ClaudeAdapterV2.listMcpTools")(function* ({

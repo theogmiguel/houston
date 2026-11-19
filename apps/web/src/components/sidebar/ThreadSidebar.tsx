@@ -1983,6 +1983,11 @@ export function SidebarWorkspaceGroup({
                   dragging={dragging?.threadId === thread.id}
                   runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
                   projectTitle={projectTitleOf(thread)}
+                  timeLabel={
+                    thread.settledOverride === "settled"
+                      ? closedAgeLabel(thread, Date.parse(nowIso))
+                      : null
+                  }
                   treeParent={workspaceRowId(workspaceId)}
                   onOpen={() => onOpenThread(thread)}
                   onSelect={(input) => onSelectThread(thread, input)}
