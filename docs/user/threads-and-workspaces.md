@@ -14,7 +14,9 @@ an agent makes to a workspace appears in the open window.
 ## Adding a project
 
 Houston starts with **Add a project to start**. Choose **Add folder** for an existing
-folder, or **Clone a repository** to clone a Git URL to a chosen machine and location.
+folder, or **Clone a repository** to clone a Git URL to a chosen machine and location. When
+Houston 1 has projects to bring, the first screen also offers **Import N projects from Houston
+1**, which runs the import described in [Updating Houston](updating.md#coming-from-houston-1).
 `Start without a project` opens a thread with no project; a thread without a folder can be
 turned into a project from its thread actions later.
 
