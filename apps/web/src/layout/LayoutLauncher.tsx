@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { scopeProjectRef } from "@houston-app/client-runtime/environment";
+import { pickableProjectGroups } from "@houston-app/client-runtime/state/project-grouping";
 import { isScratchProject } from "@houston-app/client-runtime/state/projects";
 import type { ScopedThreadRef } from "@houston-app/contracts";
 import {
@@ -19,17 +20,19 @@ import {
 
 import { useBrowserDefaults } from "../browser/browserDefaults";
 import { openAddProjectDialog } from "../components/AddProjectDialog";
-import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
+import { useEnvironmentLookups, useSortedProjectGroups } from "../components/CommandPaletteLookups";
 import {
   LayoutLauncherGroup,
   LayoutLauncherList,
   LayoutLauncherRow,
   LayoutLauncherFrame,
 } from "../components/ui/layout-launcher";
+import { useComposerDraftStore } from "../composerDraftStore";
 import { shortcutLabelForCommand } from "../keybindings";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useScratchProject } from "../hooks/useScratchProject";
-import { useProjects, useVisibleThreadShells } from "../state/entities";
+import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
+import { useQuietThreadShell } from "../state/entities";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import type { ThreadRouteTarget } from "../threadRoutes";
 import {
@@ -90,21 +93,29 @@ export function LayoutLauncher({
   readonly context: ThreadRouteTarget | null;
 }) {
   const { paneId } = useLayoutPane();
-  const projects = useProjects();
-  const threads = useVisibleThreadShells();
   const handleNewThread = useNewThreadHandler();
   const { scratchEnvironmentId, scratchWorkspaceRootFor, startScratchThread } = useScratchProject();
   const openPage = useOpenLayoutPage();
   const focusedWorkspaceId = useLayoutStore((state) => state.layout.focusedWorkspaceId);
   const contextRef = context === null ? null : chatTargetThreadRef(context);
-  const ranked = sortScopedProjectsForSidebar(
-    projects.filter(
-      (project) =>
-        project.archivedAt == null &&
-        !isScratchProject(project, scratchWorkspaceRootFor(project.environmentId)),
-    ),
-    threads,
-    "updated_at",
+  const { environmentLabelById, isWslEnvironment } = useEnvironmentLookups();
+  const projectGroups = useSortedProjectGroups(environmentLabelById, isWslEnvironment);
+  const contextShell = useQuietThreadShell(contextRef);
+  const contextDraft = useComposerDraftStore((store) =>
+    contextRef === null ? null : store.getDraftThreadByRef(contextRef),
+  );
+  const preferredProjectRef =
+    contextShell !== null
+      ? scopeProjectRef(contextShell.environmentId, contextShell.projectId)
+      : contextDraft !== null
+        ? scopeProjectRef(contextDraft.environmentId, contextDraft.projectId)
+        : null;
+  const ranked = buildSidebarProjectPickerEntries({
+    groups: pickableProjectGroups(projectGroups),
+    preferredProjectRef,
+  }).filter(
+    ({ targetProject }) =>
+      !isScratchProject(targetProject, scratchWorkspaceRootFor(targetProject.environmentId)),
   );
   const scratchEnvironment = scratchEnvironmentId(contextRef?.environmentId ?? null);
 
@@ -123,13 +134,15 @@ export function LayoutLauncher({
     <LayoutLauncherFrame data-new-tab-launcher="">
       <LayoutLauncherList aria-label="New tab">
         <LayoutLauncherGroup>Start a thread in</LayoutLauncherGroup>
-        {ranked.map((project) => (
+        {ranked.map(({ group, targetProject }) => (
           <LayoutLauncherRow
-            key={`${project.environmentId}:${project.id}`}
+            key={`${targetProject.environmentId}:${targetProject.id}`}
             icon={<PlusIcon aria-hidden className="size-4" />}
-            label={project.title}
+            label={group.displayName}
             onSelect={() =>
-              start(() => handleNewThread(scopeProjectRef(project.environmentId, project.id)))
+              start(() =>
+                handleNewThread(scopeProjectRef(targetProject.environmentId, targetProject.id)),
+              )
             }
           />
         ))}

@@ -16,14 +16,44 @@ vi.mock(import("../state/entities"), async (original) => ({
   ...(await original()),
   useProjects: () =>
     [
-      { environmentId: "local", id: "p1", title: "Alpha", archivedAt: null },
-      { environmentId: "local", id: "p2", title: "Beta", archivedAt: null },
+      {
+        environmentId: "local",
+        id: "p1",
+        title: "Alpha",
+        workspaceRoot: "/work/alpha",
+        repositoryIdentity: null,
+        defaultModelSelection: null,
+        scripts: [],
+        archivedAt: null,
+        pinnedAt: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-02-01T00:00:00.000Z",
+      },
+      {
+        environmentId: "local",
+        id: "p2",
+        title: "Beta",
+        workspaceRoot: "/work/beta",
+        repositoryIdentity: null,
+        defaultModelSelection: null,
+        scripts: [],
+        archivedAt: null,
+        pinnedAt: "2026-01-02T00:00:00.000Z",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-15T00:00:00.000Z",
+      },
       {
         environmentId: "local",
         id: "scratch",
         title: "No project",
         workspaceRoot: "/scratch",
+        repositoryIdentity: null,
+        defaultModelSelection: null,
+        scripts: [],
         archivedAt: null,
+        pinnedAt: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
       },
     ] as never,
   useVisibleThreadShells: () => [],
@@ -101,8 +131,8 @@ describe("LayoutLauncher", () => {
     useLayoutStore.getState().setLayoutFromServer(buildLayout([[]]));
     await using screen = await render(<LayoutLauncher tabId={null} context={context} />);
     expect(rowLabels(screen.container)).toEqual([
-      "Alpha",
       "Beta",
+      "Alpha",
       "No project",
       "Add project…",
       "Changes",
@@ -125,6 +155,12 @@ describe("LayoutLauncher", () => {
     useLayoutStore.getState().setLayoutFromServer(buildLayout([[]]));
     await using screen = await render(<LayoutLauncher tabId={null} context={null} />);
     expect(rowLabels(screen.container).filter((label) => label === "No project")).toHaveLength(1);
+  });
+
+  it("orders projects the way the project picker does, pinned first", async () => {
+    useLayoutStore.getState().setLayoutFromServer(buildLayout([[]]));
+    await using screen = await render(<LayoutLauncher tabId={null} context={null} />);
+    expect(rowLabels(screen.container).slice(0, 3)).toEqual(["Beta", "Alpha", "No project"]);
   });
 
   it("adds a project from the last row of Start a thread in", async () => {
