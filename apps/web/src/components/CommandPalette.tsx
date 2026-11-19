@@ -92,7 +92,6 @@ import {
 import type { LegendListRef } from "@legendapp/list/react";
 import { useAtomValue } from "@effect/atom-react";
 
-import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
@@ -106,7 +105,11 @@ import {
 import { useClientSettings } from "../hooks/useSettings";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { readLocalApi } from "../localApi";
-import { desktopLocalBackendId } from "../connection/desktopLocal";
+import {
+  desktopLocalBackendId,
+  isDesktopLocalConnectionTarget,
+  isWslBackendId,
+} from "../connection/desktopLocal";
 import { filesystemEnvironment, useFilesystemReadAccess } from "../state/filesystem";
 import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
@@ -553,8 +556,9 @@ function OpenCommandPaletteDialog(props: {
   const cloneLookupGeneration = useRef(0);
   const [isRemoteProjectLookingUp, setIsRemoteProjectLookingUp] = useState(false);
   const [isRemoteProjectCloning, setIsRemoteProjectCloning] = useState(false);
-  const { environmentLabelById, projectEnvironmentLocationById } = useEnvironmentLookups();
-  const projectGroups = useSortedProjectGroups(environmentLabelById);
+  const { environmentLabelById, projectEnvironmentLocationById, isWslEnvironment } =
+    useEnvironmentLookups();
+  const projectGroups = useSortedProjectGroups(environmentLabelById, isWslEnvironment);
   const contextualProjectRef = resolveThreadActionProjectRef({
     activeDraftThread,
     activeThread: activeThread ?? undefined,
@@ -629,9 +633,7 @@ function OpenCommandPaletteDialog(props: {
       const environment = environments.find(
         (candidate) => candidate.environmentId === option.environmentId,
       );
-      return environment
-        ? desktopLocalBackendId(environment.entry.target)?.startsWith("wsl:") === true
-        : false;
+      return environment ? isWslBackendId(desktopLocalBackendId(environment.entry.target)) : false;
     }) ?? null;
   const browseEnvironmentId = addProjectEnvironmentId ?? defaultAddProjectEnvironmentId;
   const canCreateProject = useEnvironmentScope(browseEnvironmentId, AuthOrchestrationOperateScope);

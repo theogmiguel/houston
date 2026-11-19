@@ -14,6 +14,13 @@ this machine, and can also reach servers on other machines as **environments**.
 A connected environment shows its version and endpoint, and can be removed from this device.
 Removing it forgets its pairing and cached threads; switching it off keeps it saved.
 
+Environments saved on this device, including their pairing tokens, are kept in one encrypted
+file protected by the operating system: DPAPI on Windows and the Secret Service or KWallet on
+Linux. If the system offers only plaintext storage, Houston refuses to
+save an environment instead of writing it unencrypted. Environments saved by an earlier
+version are moved into the encrypted file the first time the desktop app reads them, and the
+older keychain entry is removed.
+
 **Load balancing** chooses how new work is spread across environments by resources. **Pull
 request sharing** chooses which trusted environments may read or act on pull requests with
 this machine's credentials.
@@ -25,7 +32,13 @@ this machine's credentials.
 - **Network access** — off means the server listens on `127.0.0.1` only; on lets other
   devices on the network pair with it.
 - **Tailscale HTTPS** — serve over your tailnet with a Tailscale certificate.
-- **WSL backend** — on Windows, run WSL projects inside the distro, optionally WSL only.
+- **WSL backend** — on Windows, run WSL projects on a Houston server inside the distro, or run
+  only that server. Changing the distro or WSL only restarts the affected server. The WSL
+  backend is a separate environment: it keeps its own threads, projects and saved credentials,
+  so sign in to providers and add source-control and other tokens again inside it. The WSL row
+  in Settings shows whether it is running and, when it cannot start, why. It does not receive
+  the desktop app's resource statistics, its in-app browser channel or its desktop update
+  reports.
 - **Pair a device** — create a pairing link or QR code.
 - **Authorized clients** — list paired devices and revoke their access.
 

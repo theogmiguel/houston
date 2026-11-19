@@ -302,3 +302,49 @@ describe("environment grouping", () => {
     expect(entries.map((entry) => entry.group.displayName)).toEqual(["pinned", "current", "other"]);
   });
 });
+
+describe("WSL environment grouping", () => {
+  const wslEnvironmentId = EnvironmentId.make("env-wsl");
+
+  const groupedProject = (environmentId: EnvironmentId, id: string) =>
+    makeProject({
+      id: ProjectId.make(id),
+      environmentId,
+      repositoryIdentity,
+      workspaceRoot: `/tmp/${id}`,
+    });
+
+  it("marks a group whose remote members are all on the WSL backend", () => {
+    const groups = buildSidebarProjectSnapshots({
+      projects: [
+        groupedProject(primaryEnvironmentId, "local-wsl"),
+        groupedProject(wslEnvironmentId, "remote-wsl"),
+      ],
+      settings: defaultGroupingSettings,
+      primaryEnvironmentId,
+      resolveEnvironmentLabel: () => null,
+      isWslEnvironment: (environmentId) => environmentId === wslEnvironmentId,
+    });
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.allRemoteMembersAreWsl).toBe(true);
+    expect(groups[0]?.allRemoteMembersAreDesktopLocal).toBe(false);
+  });
+
+  it("leaves a group with a non-WSL remote member out of the WSL branch", () => {
+    const groups = buildSidebarProjectSnapshots({
+      projects: [
+        groupedProject(primaryEnvironmentId, "local-mixed"),
+        groupedProject(wslEnvironmentId, "remote-wsl-mixed"),
+        groupedProject(remoteEnvironmentId, "remote-other"),
+      ],
+      settings: defaultGroupingSettings,
+      primaryEnvironmentId,
+      resolveEnvironmentLabel: () => null,
+      isWslEnvironment: (environmentId) => environmentId === wslEnvironmentId,
+    });
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.allRemoteMembersAreWsl).toBe(false);
+  });
+});
