@@ -1,3 +1,4 @@
+import { SERVER_EXIT_CODE_REFUSED_LAUNCH } from "@houston-app/contracts";
 import * as Config from "effect/Config";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Context from "effect/Context";
@@ -9,7 +10,7 @@ import * as Runtime from "effect/Runtime";
 import * as Schema from "effect/Schema";
 
 /** `EX_USAGE`: the launch itself is wrong, so a supervisor must not retry it unchanged. */
-export const HOUSTON_EXIT_CODE_REFUSED_LAUNCH = 64;
+export const HOUSTON_EXIT_CODE_REFUSED_LAUNCH = SERVER_EXIT_CODE_REFUSED_LAUNCH;
 
 // A v1 daemon writes both at the root of its channel directory.
 const V1_CHANNEL_FILES = ["daemon.json", "daemon.lock"] as const;

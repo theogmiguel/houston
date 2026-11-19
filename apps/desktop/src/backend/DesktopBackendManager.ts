@@ -17,6 +17,7 @@ import { HttpClient } from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import {
+  SERVER_EXIT_CODE_REFUSED_LAUNCH,
   SERVER_EXIT_CODE_STATE_DIR_OWNED,
   DesktopBackendBootstrap,
   type DesktopBackendBootstrap as DesktopBackendBootstrapValue,
@@ -934,6 +935,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
           exitCode?: number,
         ) {
           const stateDirOwned = exitCode === SERVER_EXIT_CODE_STATE_DIR_OWNED;
+          const launchRefused = exitCode === SERVER_EXIT_CODE_REFUSED_LAUNCH;
           yield* mutex.withPermits(1)(
             Effect.gen(function* () {
               const { isCurrentRun, nextState, pid, exitObserved, stopRequested, wasReady } =
@@ -1010,6 +1012,12 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
                     return;
                   }
                   yield* Ref.update(state, (latest) => ({ ...latest, desiredRunning: false }));
+                  return;
+                }
+                // A refused launch stays refused until something changes, so retrying is pointless.
+                if (launchRefused && !stopRequested) {
+                  yield* Ref.update(state, (latest) => ({ ...latest, desiredRunning: false }));
+                  yield* reportStartupFailure(`The server refused this launch (${reason}).`);
                   return;
                 }
                 // A dead server is not ready: report the restart before the backoff,

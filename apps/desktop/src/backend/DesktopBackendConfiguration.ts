@@ -1,4 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off -- WSL paths are Linux paths, so they join with POSIX rules rather than the host's.
 import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 
 import { parsePersistedServerObservabilitySettings } from "@houston-app/shared/serverSettings";
 import { currentDesktopBootstrapToken } from "@houston-app/shared/desktopBootstrapToken";
@@ -19,6 +21,7 @@ import * as DesktopBootstrapSecret from "./DesktopBootstrapSecret.ts";
 import { launcherEnvPatch, scrubLauncherEnv } from "./DesktopEnvHygiene.ts";
 import * as DesktopCliShim from "../app/DesktopCliShim.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import { resolveDesktopBaseDir } from "../app/DesktopStatePaths.ts";
 import * as DesktopServerExposure from "./DesktopServerExposure.ts";
 import * as DesktopShellEnvironment from "../shell/DesktopShellEnvironment.ts";
 import * as WindowsServerPath from "../shell/WindowsServerPath.ts";
@@ -258,6 +261,7 @@ type WslPreflightRuntime =
 interface WslPreflightSuccess {
   readonly _tag: "Ready";
   readonly runningDistro: string;
+  readonly userHome: string;
   readonly windowsEntryPath: string;
   readonly runtime: WslPreflightRuntime;
   readonly resolvedPath: string;
@@ -342,6 +346,16 @@ const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(f
     } as const;
   }
 
+  // The WSL backend keeps its state in the distro, so its base dir needs the distro user's home.
+  const userHome = yield* wslEnv.getUserHome(runningDistro);
+  if (!userHome.ok) {
+    return {
+      _tag: "Failed",
+      reason: `WSL home directory unavailable: ${userHome.reason}`,
+      fatal: !userHome.transient,
+    } as const;
+  }
+
   const nodePtyOptions = {
     allowBuild: input.allowBuild,
     nodeEngineRange: serverPackageJson.engines.node,
@@ -398,6 +412,7 @@ const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(f
         return {
           _tag: "Ready",
           runningDistro,
+          userHome: userHome.home,
           windowsEntryPath: environment.backendEntryPath,
           runtime: { kind: "executable", entryPath: `${runtime.linuxAppRoot}/houston` },
           resolvedPath: stagedProbe.resolvedPath,
@@ -444,6 +459,7 @@ const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(f
   return {
     _tag: "Ready",
     runningDistro,
+    userHome: userHome.home,
     windowsEntryPath: mounted.windowsEntryPath,
     runtime: {
       kind: "node-script",
@@ -577,19 +593,6 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
   // wslhost loopback forwarding is unreliable on some Windows hosts; advertise the WSL IP instead.
   const wslBindHost = "0.0.0.0";
 
-  const bootstrap = {
-    mode: "desktop" as const,
-    noBrowser: true,
-    port: input.port,
-    // Omit houstonHome to keep the Linux backend from sharing the primary's Windows SQLite file.
-    host: wslBindHost,
-    desktopBootstrapToken: input.bootstrapToken,
-    desktopBootstrapSecret: input.bootstrapSecret,
-    // PortSchema rejects 0 even when Tailscale Serve is disabled.
-    tailscaleServeEnabled: false,
-    tailscaleServePort: 443,
-  };
-
   const archivePath = environment.path.join(environment.resourcesPath, WSL_RUNTIME_ARCHIVE_NAME);
   const archiveHashPath = environment.path.join(
     environment.resourcesPath,
@@ -628,6 +631,30 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
   // Pin the preflight distro so a default change cannot race backend startup.
   const runningDistro = preflight._tag === "Ready" ? preflight.runningDistro : null;
   const distroForConfig = runningDistro ?? input.distro;
+
+  const bootstrap = {
+    mode: "desktop" as const,
+    noBrowser: true,
+    port: input.port,
+    // The WSL backend is its own environment: its state lives in the distro user's
+    // home, not in the primary's Windows channel directory.
+    ...(preflight._tag === "Ready"
+      ? {
+          houstonHome: resolveDesktopBaseDir({
+            homeDirectory: preflight.userHome,
+            joinPath: NodePath.posix.join,
+            houstonHome: Option.none(),
+            channel: environment.channel,
+          }),
+        }
+      : {}),
+    host: wslBindHost,
+    desktopBootstrapToken: input.bootstrapToken,
+    desktopBootstrapSecret: input.bootstrapSecret,
+    // PortSchema rejects 0 even when Tailscale Serve is disabled.
+    tailscaleServeEnabled: false,
+    tailscaleServePort: 443,
+  };
 
   const distroIp = yield* wslEnvironment.getDistroIp(distroForConfig);
   const usesSharedNetworkStack = Option.match(distroIp, {
@@ -721,6 +748,9 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
     ...(preflight.runtimeId === undefined ? {} : { wslRuntimeId: preflight.runtimeId }),
   } satisfies DesktopBackendManager.DesktopBackendStartConfig;
 });
+
+/** @public */
+export { resolveWslStartConfig };
 
 /** @public */
 export const make = Effect.gen(function* () {

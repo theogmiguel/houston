@@ -75,6 +75,18 @@ export type ProbeWslRuntimeResult =
       readonly reason: string;
     };
 
+export type WslUserHomeResult =
+  | {
+      readonly ok: true;
+      readonly home: string;
+    }
+  | {
+      readonly ok: false;
+      readonly reason: string;
+      // A timed-out or failed probe may succeed on retry; an unusable home will not.
+      readonly transient: boolean;
+    };
+
 export class DesktopWslDistroListError extends Schema.TaggedError<DesktopWslDistroListError>()(
   "DesktopWslDistroListError",
   { reason: Schema.String },
@@ -98,7 +110,7 @@ export class DesktopWslEnvironment extends Context.Service<
       distro: string | null,
       windowsPath: string,
     ) => Effect.Effect<Option.Option<string>>;
-    readonly getUserHome: (distro: string | null) => Effect.Effect<Option.Option<string>>;
+    readonly getUserHome: (distro: string | null) => Effect.Effect<WslUserHomeResult>;
     // Use the distro IP to avoid unreliable wslhost localhost forwarding.
     readonly getDistroIp: (distro: string | null) => Effect.Effect<Option.Option<string>>;
     readonly prepareRuntime: (
@@ -414,6 +426,29 @@ export const parseWslRuntimeRoot = (stdout: string): string | null => {
   if (line === undefined) return null;
   const runtimeRoot = line.slice(prefix.length).replace(/\r$/, "");
   return runtimeRoot.startsWith("/") ? runtimeRoot : null;
+};
+
+// The WSL backend's state lives below the distro user's home, so a home that is
+// not a plain absolute Linux path cannot name a usable directory.
+export const parseWslUserHome = (raw: string): WslUserHomeResult => {
+  if (raw.length === 0) {
+    return { ok: false, reason: "the distro did not report a home directory", transient: false };
+  }
+  if (raw.includes("\0") || raw.includes("\n") || raw.includes("\r")) {
+    return {
+      ok: false,
+      reason: `the distro home directory contains a control character: ${JSON.stringify(raw)}`,
+      transient: false,
+    };
+  }
+  if (!raw.startsWith("/")) {
+    return {
+      ok: false,
+      reason: `the distro home directory is not an absolute Linux path: ${JSON.stringify(raw)}`,
+      transient: false,
+    };
+  }
+  return { ok: true, home: raw };
 };
 
 const NODE_PTY_BINARY_MISSING_EXIT_CODE = 4;
@@ -997,38 +1032,28 @@ const getDistroIpImpl = (
 
 const getUserHomeImpl = (
   distro: string | null,
-): Effect.Effect<Option.Option<string>, never, ChildProcessSpawner.ChildProcessSpawner> =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const command = ChildProcess.make(
-        "wsl.exe",
-        [
-          ...buildDistroArgs(distro),
-          "--",
-          "sh",
-          "-c",
-          'printf "%s" "$(getent passwd "$(id -un)" | cut -d: -f6)"',
-        ],
-        {
-          stdin: "ignore",
-          stdout: "pipe",
-          stderr: "ignore",
-          killSignal: "SIGTERM",
-          forceKillAfter: PROCESS_TERMINATE_GRACE,
-        },
-      );
-      const handle = yield* spawner.spawn(command);
-      const stdoutBytes = yield* Stream.runCollect(handle.stdout);
-      const exitCode = yield* handle.exitCode;
-      if ((exitCode as unknown as number) !== 0) return Option.none<string>();
-      const home = decodeUtf8(concatChunks(stdoutBytes)).trim();
-      return home.startsWith("/") ? Option.some(home) : Option.none<string>();
+): Effect.Effect<WslUserHomeResult, never, ChildProcessSpawner.ChildProcessSpawner> =>
+  runWslShell(distro, 'printf "%s" "$HOME"', USER_HOME_TIMEOUT, { resolveNode: false }).pipe(
+    Effect.map((result) => {
+      if (result.transportFailure !== null) {
+        return {
+          ok: false,
+          reason:
+            result.transportFailure === "timeout"
+              ? "probing the distro home directory timed out"
+              : "probing the distro home directory failed",
+          transient: true,
+        } as const;
+      }
+      if (result.exitCode !== 0) {
+        return {
+          ok: false,
+          reason: `probing the distro home directory exited with code ${result.exitCode}`,
+          transient: true,
+        } as const;
+      }
+      return parseWslUserHome(result.stdout);
     }),
-  ).pipe(
-    Effect.timeoutOption(USER_HOME_TIMEOUT),
-    Effect.map(Option.flatten),
-    Effect.orElseSucceed(() => Option.none<string>()),
   );
 
 export const makeIsAvailable = Effect.fn("DesktopWslEnvironment.makeIsAvailable")(function* (
@@ -1058,7 +1083,7 @@ export interface DesktopWslEnvironmentTestStub {
   readonly distros?: ReadonlyArray<WslDistro>;
   readonly distroListError?: DesktopWslDistroListError;
   readonly windowsToWslPath?: (distro: string | null, windowsPath: string) => Option.Option<string>;
-  readonly getUserHome?: (distro: string | null) => Option.Option<string>;
+  readonly getUserHome?: (distro: string | null) => WslUserHomeResult;
   readonly getDistroIp?: (distro: string | null) => Option.Option<string>;
   readonly prepareRuntime?: (
     distro: string | null,
@@ -1092,7 +1117,13 @@ export const layerTest = (stub: DesktopWslEnvironmentTestStub = {}) => {
         },
       ),
       getUserHome: Effect.fn("DesktopWslEnvironment.getUserHome")(function (distro) {
-        return Effect.succeed(stub.getUserHome?.(distro) ?? Option.none<string>());
+        return Effect.succeed(
+          stub.getUserHome?.(distro) ?? {
+            ok: false,
+            reason: "getUserHome stub not configured",
+            transient: false,
+          },
+        );
       }),
       getDistroIp: Effect.fn("DesktopWslEnvironment.getDistroIp")(function (distro) {
         return Effect.succeed(stub.getDistroIp?.(distro) ?? Option.none<string>());
@@ -1172,9 +1203,9 @@ export const layer = Layer.effect(
     const getUserHome = Effect.fn("desktop.wsl.getUserHome")(function* (distro: string | null) {
       const key = distro ?? "__default__";
       const cached = userHomeCache.get(key);
-      if (cached !== undefined) return Option.some(cached);
+      if (cached !== undefined) return { ok: true, home: cached } as const;
       const resolved = yield* provideSpawner(getUserHomeImpl(distro));
-      if (Option.isSome(resolved)) userHomeCache.set(key, resolved.value);
+      if (resolved.ok) userHomeCache.set(key, resolved.home);
       return resolved;
     });
 

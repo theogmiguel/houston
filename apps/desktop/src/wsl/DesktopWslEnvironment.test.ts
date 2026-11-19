@@ -18,6 +18,7 @@ import {
   buildWslRuntimeProbeScript,
   parseResolvedPath,
   parseWslRuntimeRoot,
+  parseWslUserHome,
 } from "./DesktopWslEnvironment.ts";
 
 // The install script only fails the way this file cares about when a real shell
@@ -431,6 +432,30 @@ describe("parseResolvedPath", () => {
     expect(parseResolvedPath("resolvedPath:/usr/local/bin:/usr/bin\r\n")).toBe(
       "/usr/local/bin:/usr/bin",
     );
+  });
+});
+
+describe("parseWslUserHome", () => {
+  it("accepts an absolute Linux home", () => {
+    expect(parseWslUserHome("/home/theo")).toEqual({ ok: true, home: "/home/theo" });
+  });
+
+  it("names a home that is not absolute", () => {
+    const result = parseWslUserHome(String.raw`C:\Users\theo`);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain(JSON.stringify(String.raw`C:\Users\theo`));
+  });
+
+  it("names a home that contains a control character", () => {
+    for (const raw of ["/home/theo\n", "/home/theo\0", "/home/theo\r"]) {
+      const result = parseWslUserHome(raw);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toContain(JSON.stringify(raw));
+    }
+  });
+
+  it("rejects an empty home", () => {
+    expect(parseWslUserHome("").ok).toBe(false);
   });
 });
 
