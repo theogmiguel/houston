@@ -106,6 +106,107 @@ const layerNet = Layer.succeed(NetService.NetService, {
   findAvailablePort: (preferred) => Effect.succeed(preferred),
 } satisfies NetService.NetService["Service"]);
 
+const startConfigForPort = (port: number): DesktopBackendStartConfig => ({
+  executablePath: "wsl.exe",
+  entryPath: "/home/ubuntu/server.mjs",
+  cwd: "/home/ubuntu",
+  httpBaseUrl: new URL(`http://127.0.0.1:${port}`),
+  args: [],
+  env: {},
+  extendEnv: false,
+  bootstrap: {
+    mode: "desktop",
+    noBrowser: true,
+    port,
+    host: "0.0.0.0",
+    desktopBootstrapToken: "token",
+    tailscaleServeEnabled: false,
+    tailscaleServePort: 443,
+  },
+  bootstrapDelivery: "stdin",
+  captureOutput: true,
+  preflightFailure: Option.none(),
+});
+
+function portScanHarness(input: {
+  readonly distroListening: Option.Option<ReadonlySet<number>>;
+  readonly canListenOnWindows: (port: number) => boolean;
+}) {
+  let capturedSpec: BackendInstanceSpec | null = null;
+  const resolvedPorts: number[] = [];
+  const primary = makeStubInstance({
+    id: DesktopBackendPool.PRIMARY_INSTANCE_ID,
+    label: "Windows",
+    snapshot: primarySnapshot,
+  });
+  const wslInstance = makeStubInstance({
+    id: DesktopBackendPool.BackendInstanceId("wsl:Ubuntu"),
+    label: "WSL (Ubuntu)",
+    snapshot: primarySnapshot,
+  });
+  const layerPool = Layer.succeed(DesktopBackendPool.DesktopBackendPool, {
+    get: (id) =>
+      Effect.succeed(
+        id === DesktopBackendPool.PRIMARY_INSTANCE_ID
+          ? Option.some(primary)
+          : id === wslInstance.id
+            ? Option.some(wslInstance)
+            : Option.none<DesktopBackendPool.DesktopBackendInstance>(),
+      ),
+    list: Effect.succeed([primary]),
+    primary: Effect.succeed(primary),
+    register: (spec) =>
+      Effect.sync(() => {
+        capturedSpec = spec;
+        return wslInstance;
+      }),
+    unregister: () => Effect.void,
+  } satisfies DesktopBackendPool.DesktopBackendPool["Service"]);
+  const layerConfiguration = Layer.succeed(
+    DesktopBackendConfiguration.DesktopBackendConfiguration,
+    {
+      resolvePrimary: Effect.die("unexpected resolvePrimary"),
+      resolvePrimaryLabel: Effect.succeed("Windows"),
+      resolveWsl: ({ port }) => {
+        resolvedPorts.push(port);
+        return Effect.succeed(startConfigForPort(port));
+      },
+      currentBootstrapToken: Effect.die("unexpected currentBootstrapToken"),
+    } satisfies DesktopBackendConfiguration.DesktopBackendConfiguration["Service"],
+  );
+  const layerNet = Layer.succeed(NetService.NetService, {
+    canListenOnHost: (port) => Effect.succeed(input.canListenOnWindows(port)),
+    isPortAvailableOnLoopback: () => Effect.succeed(true),
+    hasListenerOnHost: () => Effect.succeed(false),
+    reserveLoopbackPort: () => Effect.succeed(41773),
+    findAvailablePort: (preferred) => Effect.succeed(preferred),
+  } satisfies NetService.NetService["Service"]);
+  const layer = DesktopWslBackend.layerTest().pipe(
+    Layer.provideMerge(layerPool),
+    Layer.provideMerge(layerConfiguration),
+    Layer.provideMerge(layerServerExposure),
+    Layer.provideMerge(layerServerControl),
+    Layer.provideMerge(layerNet),
+    Layer.provideMerge(
+      DesktopWslEnvironment.layerTest({
+        isAvailable: true,
+        distros: [{ name: "Ubuntu", isDefault: true, version: 2 }],
+        listListeningPorts: () => input.distroListening,
+      }),
+    ),
+    Layer.provideMerge(
+      DesktopAppSettings.layerTest({
+        ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS,
+        wslBackendEnabled: true,
+        wslDistro: "Ubuntu",
+        wslOnly: false,
+      }),
+    ),
+    Layer.provideMerge(layerWslServerAttachment),
+  );
+  return { layer, spec: () => capturedSpec, resolvedPorts };
+}
+
 describe("DesktopWslBackend", () => {
   it.effect("never registers a server inside a distro", () => {
     let registerCount = 0;
@@ -254,5 +355,70 @@ describe("DesktopWslBackend", () => {
         ),
       ),
     );
+  });
+
+  it.effect("skips a port that is only taken inside the distro", () => {
+    const harness = portScanHarness({
+      distroListening: Option.some(new Set([3774])),
+      canListenOnWindows: () => true,
+    });
+
+    return Effect.gen(function* () {
+      const backend = yield* DesktopWslBackend.DesktopWslBackend;
+      yield* backend.reconcile;
+
+      const spec = harness.spec();
+      assert.isTrue(spec !== null);
+      if (spec === null) return;
+
+      const config = yield* spec.configResolve;
+      assert.equal(config.bootstrap.port, 3775);
+      assert.deepEqual(harness.resolvedPorts, [3775]);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("falls back to the Windows check when the distro probe fails", () => {
+    const harness = portScanHarness({
+      distroListening: Option.none(),
+      canListenOnWindows: () => true,
+    });
+
+    return Effect.gen(function* () {
+      const backend = yield* DesktopWslBackend.DesktopWslBackend;
+      yield* backend.reconcile;
+
+      const spec = harness.spec();
+      assert.isTrue(spec !== null);
+      if (spec === null) return;
+
+      const config = yield* spec.configResolve;
+      assert.equal(config.bootstrap.port, 3774);
+      assert.deepEqual(harness.resolvedPorts, [3774]);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("picks a new port when a restart finds the old one taken", () => {
+    const takenOnWindows = new Set<number>();
+    const harness = portScanHarness({
+      distroListening: Option.some(new Set()),
+      canListenOnWindows: (port) => !takenOnWindows.has(port),
+    });
+
+    return Effect.gen(function* () {
+      const backend = yield* DesktopWslBackend.DesktopWslBackend;
+      yield* backend.reconcile;
+
+      const spec = harness.spec();
+      assert.isTrue(spec !== null);
+      if (spec === null) return;
+
+      const first = yield* spec.configResolve;
+      assert.equal(first.bootstrap.port, 3774);
+
+      takenOnWindows.add(3774);
+      const restarted = yield* spec.configResolve;
+      assert.equal(restarted.bootstrap.port, 3775);
+      assert.deepEqual(harness.resolvedPorts, [3774, 3775]);
+    }).pipe(Effect.provide(harness.layer));
   });
 });

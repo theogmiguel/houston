@@ -57,18 +57,35 @@ const buildLabel = (distro: string | null): string =>
 
 const STOPPED_STATUS: DesktopWslBackendStatus = { phase: "stopped", reason: null };
 
-// WSL auto-forwards loopback ports, so only IPv4 loopback availability matters.
-const scanForWslPort = Effect.fn("desktop.wslBackend.scanForWslPort")(function* (
-  startPort: number,
-): Effect.fn.Return<number, NetService.NetError, NetService.NetService> {
+// The WSL server binds 0.0.0.0 inside the distro, so its port must also be free there.
+// The Windows loopback check still matters: WSL forwards loopback ports, and mirrored
+// networking shares the Windows stack.
+const scanForWslPort = Effect.fn("desktop.wslBackend.scanForWslPort")(function* (input: {
+  readonly startPort: number;
+  readonly distro: string | null;
+}): Effect.fn.Return<
+  number,
+  NetService.NetError,
+  NetService.NetService | DesktopWslEnvironment.DesktopWslEnvironment
+> {
   const net = yield* NetService.NetService;
-  for (let port = startPort; port <= MAX_TCP_PORT; port += 1) {
+  const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
+  // One wsl.exe call returns every listening port; a failed probe falls back to Windows only.
+  const listeningInDistro = yield* wslEnvironment.listListeningPorts(input.distro);
+  if (Option.isNone(listeningInDistro)) {
+    yield* logWslBackendWarning(
+      "could not read listening ports inside WSL; using the Windows check only",
+      { distro: input.distro ?? null },
+    );
+  }
+  for (let port = input.startPort; port <= MAX_TCP_PORT; port += 1) {
+    if (Option.isSome(listeningInDistro) && listeningInDistro.value.has(port)) continue;
     if (yield* net.canListenOnHost(port, "127.0.0.1")) {
       return port;
     }
   }
   return yield* new NetService.NetError({
-    message: `No loopback port available for WSL backend between ${startPort} and ${MAX_TCP_PORT}.`,
+    message: `No loopback port available for WSL backend between ${input.startPort} and ${MAX_TCP_PORT}.`,
   });
 });
 
@@ -86,6 +103,16 @@ const makeLayer = (startEnabled: boolean) =>
       const net = yield* NetService.NetService;
       // Serialize bootstrap and IPC reconciles so concurrent reads cannot register competing WSL instances.
       const reconcileMutex = yield* Semaphore.make(1);
+
+      // Scanned per start: a port taken while the backend was down must not be reused.
+      const allocateWslPort = (input: {
+        readonly startPort: number;
+        readonly distro: string | null;
+      }) =>
+        scanForWslPort(input).pipe(
+          Effect.provideService(NetService.NetService, net),
+          Effect.provideService(DesktopWslEnvironment.DesktopWslEnvironment, wslEnvironment),
+        );
 
       const preflightErrorRef = yield* Ref.make(Option.none<string>());
       const backendStatusRef = yield* Ref.make<DesktopWslBackendStatus>(STOPPED_STATUS);
@@ -113,8 +140,8 @@ const makeLayer = (startEnabled: boolean) =>
         readonly distro: string | null;
       }) {
         const primaryConfig = yield* serverExposure.backendConfig;
-        const port = yield* scanForWslPort(primaryConfig.port + 1).pipe(
-          Effect.provideService(NetService.NetService, net),
+        const startPort = primaryConfig.port + 1;
+        const port = yield* allocateWslPort({ startPort, distro: input.distro }).pipe(
           Effect.asSome,
           Effect.catch((error) =>
             logWslBackendWarning("could not allocate port for WSL backend", {
@@ -143,7 +170,12 @@ const makeLayer = (startEnabled: boolean) =>
           .register({
             id: targetId,
             label: Effect.succeed(buildLabel(input.distro)),
-            configResolve: configuration.resolveWsl({ port: allocatedPort, distro: input.distro }),
+            configResolve: allocateWslPort({ startPort, distro: input.distro }).pipe(
+              // The manager re-resolves on restart; scanning again replaces a port taken since
+              // the initial allocation instead of retrying it forever.
+              Effect.orElseSucceed(() => allocatedPort),
+              Effect.flatMap((port) => configuration.resolveWsl({ port, distro: input.distro })),
+            ),
             onStarting: () => Ref.set(backendStatusRef, { phase: "starting", reason: null }),
             onPreflightFailed: (failure) =>
               Ref.set(preflightErrorRef, Option.some(failure.reason)).pipe(

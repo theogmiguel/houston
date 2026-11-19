@@ -27,6 +27,7 @@ const BUILD_TIMEOUT = Duration.minutes(5);
 const USER_HOME_TIMEOUT = Duration.seconds(5);
 const RUNTIME_RECORD_TIMEOUT = Duration.seconds(5);
 const PROCESS_PROBE_TIMEOUT = Duration.seconds(5);
+const LISTENING_PORTS_TIMEOUT = Duration.seconds(5);
 // A runtime record is a few hundred bytes; this bound rejects a runaway file without reading it.
 const MAX_SERVER_RUNTIME_RECORD_BYTES = 64 * 1024;
 const TOOLCHAIN_TRANSPORT_RETRY_LIMIT = 12;
@@ -100,6 +101,10 @@ export class DesktopWslEnvironment extends Context.Service<
       recordPath: string,
     ) => Effect.Effect<WslRuntimeRecordReadResult>;
     readonly isProcessAlive: (distro: string | null, pid: number) => Effect.Effect<boolean>;
+    // A listener inside the distro is invisible to a Windows port scan.
+    readonly listListeningPorts: (
+      distro: string | null,
+    ) => Effect.Effect<Option.Option<ReadonlySet<number>>>;
     // Use the distro IP to avoid unreliable wslhost localhost forwarding.
     readonly getDistroIp: (distro: string | null) => Effect.Effect<Option.Option<string>>;
     readonly ensureNodePty: (
@@ -303,6 +308,58 @@ export const buildWslProcessProbeScript = (pid: number): string =>
   [
     `if kill -0 ${String(pid)} 2>/dev/null; then printf "houstonProcess:alive\\n"; else printf "houstonProcess:dead\\n"; fi`,
   ].join("\n");
+
+const MAX_TCP_PORT = 65_535;
+// /proc/net/tcp{,6} marks a listening socket with state 0A.
+const LISTENING_TCP_STATE = "0A";
+
+export const parseWslListeningPorts = (stdout: string): ReadonlySet<number> => {
+  const ports = new Set<number>();
+  for (const rawLine of stdout.split("\n")) {
+    const fields = rawLine.trim().split(/\s+/);
+    if (fields.length < 4 || !/^\d+:$/.test(fields[0] ?? "")) continue;
+    if ((fields[3] ?? "").toUpperCase() !== LISTENING_TCP_STATE) continue;
+    const localAddress = fields[1] ?? "";
+    const portHex = localAddress.slice(localAddress.lastIndexOf(":") + 1);
+    if (!/^[0-9A-Fa-f]{1,4}$/.test(portHex)) continue;
+    const port = Number.parseInt(portHex, 16);
+    if (port > 0 && port <= MAX_TCP_PORT) ports.add(port);
+  }
+  return ports;
+};
+
+// A minimal distro still exposes /proc; a missing table is a transport problem, not "no listeners".
+const buildWslListeningPortsScript = (): string =>
+  [
+    "read_any=0",
+    "for table in /proc/net/tcp /proc/net/tcp6; do",
+    '  if [ -r "$table" ]; then',
+    "    read_any=1",
+    '    cat "$table"',
+    "  fi",
+    "done",
+    'if [ "$read_any" -eq 0 ]; then',
+    '  printf "houstonListen:unavailable\\n"',
+    "  exit 1",
+    "fi",
+  ].join("\n");
+
+const listListeningPortsImpl = (
+  distro: string | null,
+): Effect.Effect<
+  Option.Option<ReadonlySet<number>>,
+  never,
+  ChildProcessSpawner.ChildProcessSpawner
+> =>
+  runWslShell(distro, buildWslListeningPortsScript(), LISTENING_PORTS_TIMEOUT, {
+    resolveNode: false,
+  }).pipe(
+    Effect.map((result) =>
+      result.transportFailure === null && result.exitCode === 0
+        ? Option.some(parseWslListeningPorts(result.stdout))
+        : Option.none<ReadonlySet<number>>(),
+    ),
+  );
 
 const readServerRuntimeRecordImpl = (
   distro: string | null,
@@ -853,6 +910,7 @@ export interface DesktopWslEnvironmentTestStub {
     recordPath: string,
   ) => WslRuntimeRecordReadResult;
   readonly isProcessAlive?: (distro: string | null, pid: number) => boolean;
+  readonly listListeningPorts?: (distro: string | null) => Option.Option<ReadonlySet<number>>;
   readonly getDistroIp?: (distro: string | null) => Option.Option<string>;
   readonly ensureNodePty?: (
     distro: string | null,
@@ -896,6 +954,9 @@ export const layerTest = (stub: DesktopWslEnvironmentTestStub = {}) => {
       ),
       isProcessAlive: Effect.fn("DesktopWslEnvironment.isProcessAlive")(function (distro, pid) {
         return Effect.succeed(stub.isProcessAlive?.(distro, pid) ?? false);
+      }),
+      listListeningPorts: Effect.fn("DesktopWslEnvironment.listListeningPorts")(function (distro) {
+        return Effect.succeed(stub.listListeningPorts?.(distro) ?? Option.some(new Set<number>()));
       }),
       getDistroIp: Effect.fn("DesktopWslEnvironment.getDistroIp")(function (distro) {
         return Effect.succeed(stub.getDistroIp?.(distro) ?? Option.none<string>());
@@ -968,6 +1029,11 @@ export const layer = Layer.effect(
         Effect.withSpan("desktop.wsl.isProcessAlive"),
       );
 
+    const listListeningPorts = (distro: string | null) =>
+      provideSpawner(listListeningPortsImpl(distro)).pipe(
+        Effect.withSpan("desktop.wsl.listListeningPorts"),
+      );
+
     const probeDistros = provideSpawner(probeWslDistros).pipe(
       Effect.withSpan("desktop.wsl.probeDistros"),
     );
@@ -986,6 +1052,7 @@ export const layer = Layer.effect(
       getUserHome,
       readServerRuntimeRecord,
       isProcessAlive,
+      listListeningPorts,
       getDistroIp,
       ensureNodePty: Effect.fn("desktop.wsl.ensureNodePty")(
         function (distro, linuxAppRoot, options) {

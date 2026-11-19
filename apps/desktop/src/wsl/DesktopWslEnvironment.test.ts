@@ -8,7 +8,12 @@ import { expect } from "vite-plus/test";
 import { ManagedPolicyFileError } from "@houston-app/shared/managedPolicyFile";
 
 import * as DesktopManagedPolicy from "../app/DesktopManagedPolicy.ts";
-import { makeIsAvailable, parseResolvedPath, parseWslUserHome } from "./DesktopWslEnvironment.ts";
+import {
+  makeIsAvailable,
+  parseResolvedPath,
+  parseWslListeningPorts,
+  parseWslUserHome,
+} from "./DesktopWslEnvironment.ts";
 
 describe("parseResolvedPath", () => {
   it("preserves spaces and apostrophes in the resolved login-shell PATH", () => {
@@ -46,6 +51,32 @@ describe("parseWslUserHome", () => {
 
   it("rejects an empty home", () => {
     expect(parseWslUserHome("").ok).toBe(false);
+  });
+});
+
+describe("parseWslListeningPorts", () => {
+  it("collects listening sockets from both tables and skips other states", () => {
+    const output = [
+      "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode",
+      "   0: 00000000:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 1 1",
+      "   1: 0100007F:0016 00000000:0000 01 00000000:00000000 00:00000000 00000000  1000        0 2 1",
+      "   0: 00000000000000000000000000000000:0050 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 3 1",
+      "   1: 00000000000000000000000001000000:01BB 00000000000000000000000000000000:0000 06 00000000:00000000 00:00000000 00000000  1000        0 4 1",
+      "houstonListen:unavailable",
+    ].join("\n");
+
+    expect(parseWslListeningPorts(output)).toEqual(new Set([8080, 80]));
+  });
+
+  it("ignores headers and malformed local addresses", () => {
+    const output = [
+      "  sl  local_address rem_address   st",
+      "   0: not-an-address 00000000:0000 0A",
+      "   1: 0100007F 00000000:0000 0A",
+      "   2: 0100007F:ZZZZ 00000000:0000 0A",
+    ].join("\n");
+
+    expect(parseWslListeningPorts(output)).toEqual(new Set());
   });
 });
 
