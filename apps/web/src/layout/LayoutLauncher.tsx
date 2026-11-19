@@ -1,7 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { scopeProjectRef } from "@houston-app/client-runtime/environment";
-import { pickableProjectGroups } from "@houston-app/client-runtime/state/project-grouping";
 import { isScratchProject } from "@houston-app/client-runtime/state/projects";
 import type { ScopedThreadRef } from "@houston-app/contracts";
 import {
@@ -17,6 +16,8 @@ import {
   TabletSmartphoneIcon,
   ListChecksIcon,
 } from "lucide-react";
+
+import { pickableProjectGroups } from "@houston-app/client-runtime/state/project-grouping";
 
 import { useBrowserDefaults } from "../browser/browserDefaults";
 import { openAddProjectDialog } from "../components/AddProjectDialog";
@@ -223,32 +224,47 @@ function LauncherSurfaces({
     }
   };
 
+  const row: (surface: (typeof SURFACES)[number]) => {
+    readonly key: string;
+    readonly icon: typeof GitCompareIcon;
+    readonly label: string;
+    readonly shortcut: string | null;
+    readonly onSelect: () => void;
+  } = ({ kind, label, icon: Icon }) => ({
+    key: kind,
+    icon: Icon,
+    label,
+    shortcut: shortcutLabelForCommand(keybindings, SURFACE_COMMANDS[kind] ?? null),
+    onSelect: () => show(kind),
+  });
+  const surfaceRows = SURFACES.flatMap((surface) => {
+    if (!openers.surfaces[surface.kind].available) return [];
+    if (surface.kind === "browser" && profiles.length > 1) {
+      return profiles.map((profile) => ({
+        ...row(surface),
+        key: `browser:${profile.id}`,
+        label: `Browser in ${profile.name}`,
+        shortcut: null,
+        onSelect: () => show("browser", profile.id),
+      }));
+    }
+    return [row(surface)];
+  });
+
+  if (surfaceRows.length === 0) return null;
+
   return (
     <>
       <LayoutLauncherGroup>Open beside this thread</LayoutLauncherGroup>
-      {SURFACES.map(({ kind, label, icon: Icon }) => {
-        const { available, reason } = openers.surfaces[kind];
-        return (
-          <LayoutLauncherRow
-            key={kind}
-            icon={<Icon aria-hidden className="size-4" />}
-            label={label}
-            shortcut={shortcutLabelForCommand(keybindings, SURFACE_COMMANDS[kind] ?? null)}
-            {...(available ? {} : { disabledReason: reason })}
-            onSelect={() => show(kind)}
-          />
-        );
-      })}
-      {openers.surfaces.browser.available && profiles.length > 1
-        ? profiles.map((profile) => (
-            <LayoutLauncherRow
-              key={profile.id}
-              icon={<GlobeIcon aria-hidden className="size-4" />}
-              label={`Browser in ${profile.name}`}
-              onSelect={() => show("browser", profile.id)}
-            />
-          ))
-        : null}
+      {surfaceRows.map(({ key, icon: Icon, label, shortcut, onSelect }) => (
+        <LayoutLauncherRow
+          key={key}
+          icon={<Icon aria-hidden className="size-4" />}
+          label={label}
+          shortcut={shortcut}
+          onSelect={onSelect}
+        />
+      ))}
     </>
   );
 }
