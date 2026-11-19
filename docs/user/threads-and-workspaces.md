@@ -42,6 +42,7 @@ processes when the thread settles; an agent's own shell command is never attache
 
 Choose **New thread** from a workspace's **+** or from the **New thread** action of an empty
 workspace to start a draft in that workspace, from the command palette, or press `Ctrl+N`.
+With a chat already on screen, a new thread opens in a new tab of that pane.
 Pick the provider and model in the composer, choose permissions, and send the first
 message. The new-tab launcher lists projects in the project picker's order and can also add a
 project. A new thread starts in a local checkout or in a new worktree, according to
@@ -69,8 +70,10 @@ as a card above the layout.
   (under **Layout…** in the command palette) open a new tab in a new column or pane, a tab's
   **Split right** and **Split down** split its pane, and dragging a tab to a pane's edge does the
   same. Drag a tab between panes or onto another workspace to move it.
-- Closing a tab closes that view only; the thread keeps its history. **Reopen closed tab**
-  (its rebindable shortcut, or the command palette) brings back the most recent one.
+- Closing a tab closes that view only; the thread keeps its history, and an unsent draft keeps
+  its text until you send it. Closing a draft with text offers **Reopen** in a notice.
+  **Reopen closed tab** (its rebindable shortcut, or the command palette) brings back the most
+  recent one.
 - **Fill the window** gives the focused pane the whole window, and the same command undoes it.
   **Column width** cycles ⅓, ½, ⅔ and full width; **Center column**, **Pull pane into the left
   column** and **Push pane out to its own column** rearrange the strip. The workspaces overview

@@ -14,7 +14,14 @@ vi.mock(import("../state/entities"), async (original) => ({
       : null) as never,
 }));
 
+const toastAdd = vi.hoisted(() => vi.fn());
+vi.mock(import("../components/ui/toast"), async (original) => {
+  const actual = await original();
+  return { ...actual, toastManager: { ...actual.toastManager, add: toastAdd } };
+});
+
 import { useClosedViewStore } from "../closedViewStore";
+import { DraftId, useComposerDraftStore } from "../composerDraftStore";
 import {
   closeLayoutTabByUser,
   closeOtherLayoutTabsByUser,
@@ -173,6 +180,89 @@ describe("closeLayoutTabByUser: reopening", () => {
     expect(useClosedViewStore.getState().entries).toMatchObject([
       { kind: "chat", threadRef: parentRef, paneId: location.pane.id, index: location.tabIndex },
     ]);
+    useClosedViewStore.setState({ entries: [] });
+  });
+});
+
+describe("closeLayoutTabByUser: drafts", () => {
+  const draftId = DraftId.make("draft-1");
+  const draftRef = scopeThreadRef(environmentId, ThreadId.make("draft-thread"));
+  const draftContent: LayoutTabContent = {
+    kind: "chat",
+    target: { kind: "draft", draftId },
+  };
+  const seedDraft = (prompt: string) => {
+    useComposerDraftStore.setState({
+      draftsByThreadKey: prompt.length === 0 ? {} : { [draftId]: { prompt } as never },
+      draftThreadsByThreadKey: {
+        [draftId]: {
+          environmentId,
+          projectId: "project-1",
+          threadId: draftRef.threadId,
+          logicalProjectKey: "local:project-1",
+          createdAt: "2026-11-19T00:00:00.000Z",
+          runtimeMode: "default",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          envMode: "local",
+          startFromOrigin: false,
+        } as never,
+      },
+    });
+  };
+  const clearDrafts = () =>
+    useComposerDraftStore.setState({ draftsByThreadKey: {}, draftThreadsByThreadKey: {} });
+
+  it("remembers a closed draft's id, keeps its text and offers to reopen it", () => {
+    using _drafts = { [Symbol.dispose]: clearDrafts };
+    using layout = setup([draftContent]);
+    seedDraft("hello");
+    toastAdd.mockClear();
+    const tab = layout.tabOf(draftContent)!;
+
+    closeLayoutTabByUser(tab.id);
+
+    expect(useClosedViewStore.getState().entries).toMatchObject([
+      { kind: "chat", draftId, threadRef: draftRef },
+    ]);
+    expect(useComposerDraftStore.getState().getComposerDraft(draftId)?.prompt).toBe("hello");
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Draft closed",
+        actionProps: expect.objectContaining({ children: "Reopen" }),
+      }),
+    );
+    useClosedViewStore.setState({ entries: [] });
+  });
+
+  it("closes an empty draft silently", () => {
+    using _drafts = { [Symbol.dispose]: clearDrafts };
+    using layout = setup([draftContent]);
+    seedDraft("");
+    toastAdd.mockClear();
+
+    closeLayoutTabByUser(layout.tabOf(draftContent)!.id);
+
+    expect(toastAdd).not.toHaveBeenCalled();
+    expect(useClosedViewStore.getState().entries).toMatchObject([{ draftId }]);
+    useClosedViewStore.setState({ entries: [] });
+  });
+
+  it("recovers a draft's id from the thread ref when the tab carries only that", () => {
+    using _drafts = { [Symbol.dispose]: clearDrafts };
+    const serverDraft: LayoutTabContent = {
+      kind: "chat",
+      target: { kind: "server", threadRef: draftRef },
+    };
+    using layout = setup([serverDraft]);
+    seedDraft("hello");
+    toastAdd.mockClear();
+
+    closeLayoutTabByUser(layout.tabOf(serverDraft)!.id);
+
+    expect(useClosedViewStore.getState().entries).toMatchObject([{ draftId, threadRef: draftRef }]);
+    expect(toastAdd).toHaveBeenCalledOnce();
     useClosedViewStore.setState({ entries: [] });
   });
 });
