@@ -5,7 +5,9 @@ import { describe, expect, it } from "vite-plus/test";
 import type { DraftId } from "../composerDraftStore";
 
 import {
+  closeLayoutTab,
   createLayoutState,
+  focusLayoutWorkspace,
   normalizeLayout,
   findLayoutTabByContent,
   openLayoutTab,
@@ -67,6 +69,16 @@ describe("listLayoutWorkspaces", () => {
     } finally {
       setEmptyWorkspaceRetention(() => false);
     }
+  });
+
+  it("lists a workspace the user created after its last tab closes, while another is focused", () => {
+    let state = twoWorkspaces();
+    const [first, second] = state.workspaces;
+    const tab = findLayoutTabByContent(state, chat("b"))!;
+    state = closeLayoutTab(state, tab.tab.id);
+    state = focusLayoutWorkspace(state, first!.id);
+    expect(names(state)).toEqual([null, "Second"]);
+    expect(listLayoutWorkspaces(state).map((workspace) => workspace.id)).toContain(second!.id);
   });
 });
 

@@ -105,6 +105,11 @@ export interface LayoutWorkspace {
   pinnedAt?: string | null;
   /** The sidebar lists a hidden workspace only in its hidden-workspaces menu. Absent: shown. */
   hidden?: boolean;
+  /**
+   * True for a workspace the server already stores or the user created explicitly. An empty one
+   * stays in the layout instead of being dropped as the trailing placeholder.
+   */
+  keepWhenEmpty?: boolean;
 }
 
 export interface LayoutState {
@@ -588,6 +593,7 @@ export function normalizeLayout(state: LayoutState): LayoutState {
       workspace.columns.length > 0 ||
       workspace.id === state.focusedWorkspaceId ||
       index === workspaces.length - 1 ||
+      workspace.keepWhenEmpty === true ||
       retainsEmptyWorkspace(workspace.id),
   );
   // Drop an empty, unfocused workspace that sits right above the trailing one.
@@ -596,6 +602,7 @@ export function normalizeLayout(state: LayoutState): LayoutState {
     workspaces.at(-1)!.columns.length === 0 &&
     workspaces.at(-2)!.columns.length === 0 &&
     workspaces.at(-2)!.id !== state.focusedWorkspaceId &&
+    workspaces.at(-2)!.keepWhenEmpty !== true &&
     !retainsEmptyWorkspace(workspaces.at(-2)!.id)
   ) {
     workspaces.splice(workspaces.length - 2, 1);
@@ -760,6 +767,15 @@ export function focusLayoutWorkspace(state: LayoutState, workspaceId: string): L
   if (state.focusedWorkspaceId === workspaceId) return state;
   if (!state.workspaces.some((workspace) => workspace.id === workspaceId)) return state;
   return normalizeLayout({ ...state, focusedWorkspaceId: workspaceId });
+}
+
+/** Marks a workspace as one that stays after its last tab closes, because the user created it. */
+export function keepLayoutWorkspaceWhenEmpty(state: LayoutState, workspaceId: string): LayoutState {
+  return mapWorkspaces(state, (workspace) =>
+    workspace.id === workspaceId && workspace.keepWhenEmpty !== true
+      ? { ...workspace, keepWhenEmpty: true }
+      : workspace,
+  );
 }
 
 /** Move focus to the neighboring pane, column, or workspace. */

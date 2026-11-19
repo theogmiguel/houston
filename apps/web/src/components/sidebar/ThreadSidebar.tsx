@@ -910,7 +910,7 @@ export function ThreadSidebar({
   const createWorkspace = (name: string): string | null => {
     const refusal = createLayoutWorkspaceAction(name);
     if (refusal !== null) return refusal;
-    // A workspace is stored once it holds a tab, so it opens a ready draft to start a thread in.
+    // A new workspace opens a ready draft, so it is ready to start a thread in.
     openNewThreadInWorkspace(useLayoutStore.getState().layout.focusedWorkspaceId);
     return null;
   };
