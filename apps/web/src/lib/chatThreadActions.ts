@@ -6,6 +6,7 @@ import type {
   ScopedProjectRef,
 } from "@houston-app/contracts";
 import type { ComposerThreadDraftState, DraftThreadEnvMode } from "../composerDraftStore";
+import { requestComposerFocus } from "./composerFocus";
 
 type ComposerModelSelectionState = Pick<
   ComposerThreadDraftState,
@@ -91,5 +92,6 @@ export async function startNewThreadFromContext(
   }
 
   await context.handleNewThread(projectRef);
+  requestComposerFocus();
   return true;
 }
