@@ -14,6 +14,13 @@ this machine, and can also reach servers on other machines as **environments**.
 A connected environment shows its version and endpoint, and can be removed from this device.
 Removing it forgets its pairing and cached threads; switching it off keeps it saved.
 
+Environments saved on this device, including their pairing tokens, are kept in one encrypted
+file protected by the operating system: DPAPI on Windows and the Secret Service or KWallet on
+Linux. If the system offers only plaintext storage, Houston refuses to
+save an environment instead of writing it unencrypted. Environments saved by an earlier
+version are moved into the encrypted file the first time the desktop app reads them, and the
+older keychain entry is removed.
+
 **Load balancing** chooses how new work is spread across environments by resources. **Pull
 request sharing** chooses which trusted environments may read or act on pull requests with
 this machine's credentials.
