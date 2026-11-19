@@ -34,6 +34,7 @@ import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsL
 import { ManagedByOrganization } from "../ManagedPolicy";
 import { hostBridgeErrorMessage } from "../desktop/hostBridgeError";
 import { LocalEnvironmentSetting } from "./LocalEnvironmentSetting";
+import { WslBackendStatus } from "./WslBackendStatus";
 import { searchableSetting } from "./settingsSearch";
 import { EnvironmentIconChangeControl } from "./EnvironmentIconPicker";
 import { useIsPhone } from "../../mobile/usePhone";
@@ -859,12 +860,20 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
   const renderWslBackendRow = () => {
     if (!wslRowsVisible) return null;
     const enabled = desktopWslState?.enabled ?? false;
+    const backendFailed = desktopWslState?.backendStatus.phase === "failed";
     const status = desktopWslError ? (
-      <span className="block text-destructive">{desktopWslError}</span>
-    ) : desktopWslState?.preflightError ? (
-      <span className="block text-destructive">
-        WSL backend couldn't start: {desktopWslState.preflightError}
-      </span>
+      <p role="status" className="text-destructive">
+        {desktopWslError}
+      </p>
+    ) : desktopWslState ? (
+      <>
+        <WslBackendStatus state={desktopWslState} />
+        {!backendFailed && desktopWslState.preflightError ? (
+          <p role="status" className="text-destructive">
+            WSL backend couldn't start: {desktopWslState.preflightError}
+          </p>
+        ) : null}
+      </>
     ) : null;
     return (
       <SettingsRow

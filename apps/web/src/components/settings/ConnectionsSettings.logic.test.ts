@@ -4,6 +4,7 @@ import {
   applyWslDistroSelection,
   applyWslEnableSelection,
   applyWslOnlySelection,
+  describeWslBackendStatus,
   isWslSettingsRowVisible,
   resolveShareablePairDeviceUrl,
   resolveTailscaleServeBaseUrl,
@@ -73,6 +74,7 @@ const baseWslState: DesktopWslState = {
   wslOnly: true,
   distros: [],
   preflightError: null,
+  backendStatus: { phase: "stopped", reason: null },
 };
 
 describe("applyWslEnableSelection", () => {
@@ -221,6 +223,7 @@ describe("isWslSettingsRowVisible", () => {
     wslOnly: false,
     distros: [],
     preflightError: null,
+    backendStatus: { phase: "stopped", reason: null },
     ...overrides,
   });
 
@@ -241,5 +244,59 @@ describe("isWslSettingsRowVisible", () => {
 
   it("shows the rows so a failed state query stays visible", () => {
     expect(isWslSettingsRowVisible({ state: null, error: "wsl.exe failed" })).toBe(true);
+  });
+});
+
+describe("describeWslBackendStatus", () => {
+  const state = (overrides: Partial<DesktopWslState>): DesktopWslState => ({
+    enabled: true,
+    distro: "Ubuntu",
+    available: true,
+    wslOnly: false,
+    distros: [],
+    preflightError: null,
+    backendStatus: { phase: "stopped", reason: null },
+    ...overrides,
+  });
+
+  it("names the distro and reason a failed WSL backend reported", () => {
+    expect(
+      describeWslBackendStatus(
+        state({
+          backendStatus: {
+            phase: "failed",
+            reason: "The Houston state directory in Ubuntu is owned by PID 4242 in distro Ubuntu.",
+          },
+        }),
+      ),
+    ).toEqual({
+      text: "The WSL backend couldn't start in the Ubuntu distro: The Houston state directory in Ubuntu is owned by PID 4242 in distro Ubuntu.",
+      failed: true,
+    });
+  });
+
+  it("uses the default distro's name when the setting tracks the default", () => {
+    expect(
+      describeWslBackendStatus(
+        state({
+          distro: null,
+          distros: [{ name: "Debian", isDefault: true, version: 2 }],
+          backendStatus: { phase: "starting", reason: null },
+        }),
+      ),
+    ).toEqual({ text: "Starting the WSL backend in the Debian distro…", failed: false });
+  });
+
+  it("describes a ready backend", () => {
+    expect(
+      describeWslBackendStatus(state({ backendStatus: { phase: "ready", reason: null } })),
+    ).toEqual({ text: "The WSL backend is running in the Ubuntu distro.", failed: false });
+  });
+
+  it("stays quiet when disabled or stopped", () => {
+    expect(describeWslBackendStatus(state({ enabled: false }))).toBeNull();
+    expect(
+      describeWslBackendStatus(state({ backendStatus: { phase: "stopped", reason: null } })),
+    ).toBeNull();
   });
 });

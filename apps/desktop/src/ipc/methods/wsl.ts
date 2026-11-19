@@ -19,6 +19,7 @@ const UNSUPPORTED_WSL_STATE: DesktopWslState = {
   wslOnly: false,
   distros: [],
   preflightError: null,
+  backendStatus: { phase: "stopped", reason: null },
 };
 
 export class DesktopWslRequestError extends Schema.TaggedError<DesktopWslRequestError>()(
@@ -41,11 +42,13 @@ const readWslState: Effect.Effect<
   | DesktopEnvironment.DesktopEnvironment
   | DesktopAppSettings.DesktopAppSettings
   | DesktopWslEnvironment.DesktopWslEnvironment
+  | DesktopWslBackend.DesktopWslBackend
 > = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   if (environment.platform !== "win32") return UNSUPPORTED_WSL_STATE;
   const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
   const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
+  const wslBackend = yield* DesktopWslBackend.DesktopWslBackend;
   const settings = yield* appSettings.get;
   const available = settings.localEnvironmentEnabled && (yield* wslEnvironment.isAvailable);
   // Listing distros on non-WSL hosts spawns wsl.exe only to time out.
@@ -62,6 +65,7 @@ const readWslState: Effect.Effect<
       distro: settings.wslDistro,
       distros,
     }),
+    backendStatus: yield* wslBackend.backendStatus,
   };
 });
 

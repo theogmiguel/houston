@@ -103,6 +103,33 @@ export function isWslSettingsRowVisible(input: {
   return state ? state.available || state.enabled || state.wslOnly : error !== null;
 }
 
+export interface WslBackendStatusDescription {
+  readonly text: string;
+  readonly failed: boolean;
+}
+
+/** The secondary WSL instance's status, phrased for the Settings row; null when it has nothing to say. */
+export function describeWslBackendStatus(
+  state: DesktopWslState,
+): WslBackendStatusDescription | null {
+  if (!state.enabled) return null;
+  const distroName = state.distro ?? state.distros.find((distro) => distro.isDefault)?.name ?? null;
+  const where = distroName === null ? "the default distro" : `the ${distroName} distro`;
+  switch (state.backendStatus.phase) {
+    case "starting":
+      return { text: `Starting the WSL backend in ${where}…`, failed: false };
+    case "ready":
+      return { text: `The WSL backend is running in ${where}.`, failed: false };
+    case "failed":
+      return {
+        text: `The WSL backend couldn't start in ${where}: ${state.backendStatus.reason ?? "the server did not report a reason."}`,
+        failed: true,
+      };
+    case "stopped":
+      return null;
+  }
+}
+
 /**
  * Once client/server versions match, this passive Version label follows the sidebar update action,
  * including retryable failures. Rechecks retain downloaded-update labels; `state` is null outside desktop.

@@ -554,6 +554,19 @@ export const DesktopWslDistroSchema = Schema.Struct({
   version: Schema.Literals([1, 2]),
 });
 
+export type DesktopWslBackendPhase = "starting" | "ready" | "failed" | "stopped";
+
+export interface DesktopWslBackendStatus {
+  readonly phase: DesktopWslBackendPhase;
+  // The failure the WSL server reported; null in every other phase.
+  readonly reason: string | null;
+}
+
+export const DesktopWslBackendStatusSchema = Schema.Struct({
+  phase: Schema.Literals(["starting", "ready", "failed", "stopped"]),
+  reason: Schema.NullOr(Schema.String),
+});
+
 export interface DesktopWslState {
   enabled: boolean;
   // null means "track the current WSL default distro".
@@ -563,6 +576,8 @@ export interface DesktopWslState {
   distros: readonly DesktopWslDistro[];
   // Always null in wsl-only mode, which falls back to Windows with a dialog.
   preflightError: string | null;
+  // The secondary WSL instance's own start/ready/failure state.
+  backendStatus: DesktopWslBackendStatus;
 }
 
 export const DesktopWslStateSchema = Schema.Struct({
@@ -572,6 +587,7 @@ export const DesktopWslStateSchema = Schema.Struct({
   wslOnly: Schema.Boolean,
   distros: Schema.Array(DesktopWslDistroSchema),
   preflightError: Schema.NullOr(Schema.String),
+  backendStatus: DesktopWslBackendStatusSchema,
 });
 
 export type DesktopPreviewNavStatus =
