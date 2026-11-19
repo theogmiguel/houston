@@ -109,7 +109,17 @@ the `static` job runs. It prints `nothing relevant changed` and exits 0 when the
 review, and blocks force pushes and deletion; repository admins
 can bypass it in an emergency. There is no merge queue, nightly run or CODEOWNERS file.
 
-Dependencies are updated by hand; no bot opens pull requests. A dependency pull request fails
+Dependencies are updated by hand. The one bot pull request comes from `sync-model-manifest.yml`:
+once a day it translates upstream's `model-manifest.json` with `scripts/ci/sync-model-manifest.mjs`
+(renaming `t3CodeRange` to `houstonCodeRange`, refusing any other upstream-specific key, and
+keeping Houston's own compatibility entry for each driver in `HELD_COMPATIBILITY` until the code
+its upstream ranges depend on is ported) and,
+when the result differs from `main`, force-pushes `bot/sync-model-manifest` and opens or refreshes
+its pull request. Pushes made with the workflow token start no `pull_request` run, so the workflow
+dispatches `ci.yml` on the branch to produce `ci-gate`. Creating the pull request needs the
+repository's **Allow GitHub Actions to create and approve pull requests** setting. Clients read
+the manifest from `main`, so the merge is the rollout: drop any entry whose adapter code Houston
+has not ported before merging. A dependency pull request fails
 `static` until the licence inventory is regenerated with
 `node scripts/gen-third-party-licenses.mjs`.
 

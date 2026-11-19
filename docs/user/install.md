@@ -88,14 +88,14 @@ reads to its own provider. See [Privacy and diagnostics](privacy.md).
 
 ## Platform differences
 
-| Feature              | Linux                                                                 | Windows                                                      |
-| -------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Updates              | Verified download, then install                                       | Verified download, then the NSIS installer                   |
-| Native notifications | Supported by the desktop notification service                         | Supported                                                    |
-| Keep in tray         | Available when a tray exists                                          | Available when a tray exists                                 |
-| WSL backend          | Unavailable                                                           | Experimental; x86_64 WSL 2 with glibc 2.35 or newer          |
-| Browser start page   | Lists loopback servers started by agents and terminals in the project | Lists loopback servers started from terminals, not by agents |
-| Browser automation   | Headless Chromium is downloaded on first use                          | Headless Chromium is downloaded on first use                 |
+| Feature              | Linux                                                                 | Windows                                                                                                                                                                                                      |
+| -------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Updates              | Verified download, then install                                       | Verified download, then the NSIS installer                                                                                                                                                                   |
+| Native notifications | Supported by the desktop notification service                         | Supported                                                                                                                                                                                                    |
+| Keep in tray         | Available when a tray exists                                          | Available when a tray exists                                                                                                                                                                                 |
+| WSL backend          | Unavailable                                                           | Experimental; needs an x86_64 WSL 2 distro with glibc 2.35 or newer, Node.js 22.16 or newer (23.11 or newer on Node 23, 24.10 or newer on Node 24 and later), and the agent CLIs installed inside the distro |
+| Browser start page   | Lists loopback servers started by agents and terminals in the project | Lists loopback servers started from terminals, not by agents                                                                                                                                                 |
+| Browser automation   | Headless Chromium is downloaded on first use                          | Headless Chromium is downloaded on first use                                                                                                                                                                 |
 
 See [The right panel](right-panel.md) for browser and file features, and
 [Updating Houston](updating.md) for installing over Houston 1.

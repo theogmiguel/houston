@@ -1,0 +1,82 @@
+name: Sync model manifest
+
+# Opens, or refreshes, one pull request into main when upstream's model manifest
+# differs from Houston's. Clients read the file from main, so merging it is the
+# rollout; a maintainer reviews every change first.
+on:
+  schedule:
+    # Daily: upstream changes the file a few times a week, and clients poll hourly.
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: sync-model-manifest
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    if: github.repository == 'theogmiguel/houston'
+    runs-on: ubuntu-24.04
+    # Checkout, a cached install and two API calls; the setup step dominates.
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    env:
+      BRANCH: bot/sync-model-manifest
+      MANIFEST: apps/server/src/provider/model-manifest.json
+      UPSTREAM: pingdotgg/t3code
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+      - uses: ./.github/actions/setup
+      - name: Fetch the upstream manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(gh api "repos/$UPSTREAM/commits?path=$MANIFEST&per_page=1" --jq '.[0].sha')
+          if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Upstream commit for $MANIFEST is '$sha'; expected a 40-character hex SHA" >&2
+            exit 1
+          fi
+          gh api "repos/$UPSTREAM/contents/$MANIFEST?ref=$sha" \
+            -H "Accept: application/vnd.github.raw+json" > "$RUNNER_TEMP/upstream.json"
+          echo "UPSTREAM_SHA=$sha" >> "$GITHUB_ENV"
+      - name: Translate it into Houston's manifest
+        run: |
+          node scripts/ci/sync-model-manifest.mjs --upstream "$RUNNER_TEMP/upstream.json" \
+            --target "$MANIFEST" --upstream-sha "$UPSTREAM_SHA" --body "$RUNNER_TEMP/body.md"
+          pnpm exec vp fmt "$MANIFEST"
+      - name: Open or refresh the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- "$MANIFEST"; then
+            echo "main already matches upstream $UPSTREAM_SHA"
+            exit 0
+          fi
+          if git fetch --quiet origin "$BRANCH" 2>/dev/null \
+            && git diff --quiet FETCH_HEAD -- "$MANIFEST"; then
+            echo "$BRANCH already carries upstream $UPSTREAM_SHA"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --create "$BRANCH"
+          git commit --quiet --message "chore(models): sync the model manifest with upstream" -- "$MANIFEST"
+          # The workflow owns this branch and rebuilds it from main on every change.
+          git push --force origin "$BRANCH"
+          pr=$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')
+          if [ -z "$pr" ]; then
+            gh pr create --base main --head "$BRANCH" --body-file "$RUNNER_TEMP/body.md" \
+              --title "chore(models): the model picker offers upstream's latest models"
+          else
+            gh pr edit "$pr" --body-file "$RUNNER_TEMP/body.md"
+          fi
+          # Pushes made with this token start no pull_request run, so start CI for ci-gate.
+          gh workflow run ci.yml --ref "$BRANCH"

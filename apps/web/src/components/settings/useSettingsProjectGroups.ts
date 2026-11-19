@@ -1,3 +1,4 @@
+import { createWslEnvironmentPredicate } from "../../connection/desktopLocal";
 import { useClientSettings } from "../../hooks/useSettings";
 import { buildSidebarProjectSnapshots } from "../../sidebarProjectGrouping";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
@@ -20,5 +21,6 @@ export function useSettingsProjectGroups() {
     settings: { sidebarProjectGroupingMode, sidebarProjectGroupingOverrides },
     primaryEnvironmentId,
     resolveEnvironmentLabel: (id) => labels.get(id) ?? null,
+    isWslEnvironment: createWslEnvironmentPredicate(environments),
   }).sort((a, b) => a.displayName.localeCompare(b.displayName));
 }

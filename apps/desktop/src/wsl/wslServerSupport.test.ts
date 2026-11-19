@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  decideWslEnable,
-  WSL_SERVER_UNAVAILABLE_MESSAGE,
-  wslPreflightError,
-} from "./wslServerSupport.ts";
+import { decideWslEnable, wslPreflightError } from "./wslServerSupport.ts";
 
 const distros = [
   { name: "Ubuntu-24.04", isDefault: true, version: 2 as const },
@@ -13,15 +9,9 @@ const distros = [
 ];
 
 describe("decideWslEnable", () => {
-  it("refuses to start the server in a distro", () => {
-    expect(decideWslEnable({ distro: null, distros })).toEqual({
-      ok: false,
-      reason: WSL_SERVER_UNAVAILABLE_MESSAGE,
-    });
-    expect(decideWslEnable({ distro: "Debian", distros })).toEqual({
-      ok: false,
-      reason: WSL_SERVER_UNAVAILABLE_MESSAGE,
-    });
+  it("accepts the default and a named WSL 2 distro", () => {
+    expect(decideWslEnable({ distro: null, distros })).toEqual({ ok: true });
+    expect(decideWslEnable({ distro: "Debian", distros })).toEqual({ ok: true });
   });
 
   it("names a missing distro and lists what wsl.exe reported", () => {
@@ -41,10 +31,7 @@ describe("decideWslEnable", () => {
   });
 
   it("resolves the default distro case-insensitively", () => {
-    expect(decideWslEnable({ distro: "ubuntu-24.04", distros })).toEqual({
-      ok: false,
-      reason: WSL_SERVER_UNAVAILABLE_MESSAGE,
-    });
+    expect(decideWslEnable({ distro: "ubuntu-24.04", distros })).toEqual({ ok: true });
   });
 });
 

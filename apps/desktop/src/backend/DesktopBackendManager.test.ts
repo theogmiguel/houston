@@ -11,7 +11,10 @@ import * as Stream from "effect/Stream";
 import { HttpClient } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
 
-import { SERVER_EXIT_CODE_STATE_DIR_OWNED } from "@houston-app/contracts";
+import {
+  SERVER_EXIT_CODE_REFUSED_LAUNCH,
+  SERVER_EXIT_CODE_STATE_DIR_OWNED,
+} from "@houston-app/contracts";
 
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopBrowserHost from "../preview/DesktopBrowserHost.ts";
@@ -19,6 +22,8 @@ import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublish
 import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
 import {
   BACKEND_QUIT_STOP_TIMEOUT,
+  BackendInstanceId,
+  type BackendStartupFailure,
   type DesktopBackendAttachment,
   type DesktopBackendStartConfig,
   makeBackendInstance,
@@ -122,14 +127,14 @@ const runningServer: DesktopBackendAttachment = {
   warning: Option.none(),
 };
 
-/** A spawned server that finds the state directory owned and exits, as the real one does. */
-const ownedStateDirSpawner = (spawned: Ref.Ref<number>) =>
+/** A spawned server that exits immediately with the given code, as the real one does. */
+const exitingSpawner = (exitCode: number, spawned: Ref.Ref<number>) =>
   ChildProcessSpawner.make(() =>
     Ref.update(spawned, (count) => count + 1).pipe(
       Effect.as(
         ChildProcessSpawner.makeHandle({
           pid: ChildProcessSpawner.ProcessId(9001),
-          exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(SERVER_EXIT_CODE_STATE_DIR_OWNED)),
+          exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(exitCode)),
           isRunning: Effect.succeed(false),
           kill: () => Effect.void,
           unref: Effect.succeed(Effect.void),
@@ -144,10 +149,13 @@ const ownedStateDirSpawner = (spawned: Ref.Ref<number>) =>
     ),
   );
 
-const hostServices = (spawned: Ref.Ref<number>) =>
+const hostServices = (
+  spawned: Ref.Ref<number>,
+  exitCode: number = SERVER_EXIT_CODE_STATE_DIR_OWNED,
+) =>
   Layer.mergeAll(
     FileSystem.layerNoop({ exists: () => Effect.succeed(true) }),
-    Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, ownedStateDirSpawner(spawned)),
+    Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, exitingSpawner(exitCode, spawned)),
     Layer.succeed(
       HttpClient.HttpClient,
       HttpClient.make(() => Effect.never),
@@ -209,7 +217,10 @@ const launchWithRunningServer = (foundBeforeSpawn: boolean) =>
       configResolve: Effect.succeed(startConfig(3774)),
       onStarting: () => record("starting"),
       onReady: (httpBaseUrl, pid) => record(`ready ${httpBaseUrl.origin} pid=${pid}`),
-      onStateDirOwned: () => record("stateDirOwned").pipe(Effect.as(Option.some(runningServer))),
+      onStateDirOwned: () =>
+        record("stateDirOwned").pipe(
+          Effect.as({ _tag: "Attached", attachment: runningServer } as const),
+        ),
       attachBeforeSpawn: () =>
         record("attachBeforeSpawn").pipe(
           Effect.as(foundBeforeSpawn ? Option.some(runningServer) : Option.none()),
@@ -282,6 +293,59 @@ describe("makeBackendInstance with a server already running", () => {
       const refused = yield* launch.instance.restart.pipe(Effect.flip);
       assert.include(refused.reason, "does not own");
       assert.isFalse((yield* launch.instance.snapshot).restartScheduled);
+    }).pipe(Effect.scoped),
+  );
+});
+
+describe("makeBackendInstance when the server refuses the launch", () => {
+  it.effect("stops instead of restarting and reports the refusal", () =>
+    Effect.gen(function* () {
+      const spawned = yield* Ref.make(0);
+      const failed = yield* Deferred.make<BackendStartupFailure>();
+      const instance = yield* makeBackendInstance({
+        id: PRIMARY_INSTANCE_ID,
+        label: Effect.succeed("WSL"),
+        configResolve: Effect.succeed(startConfig(3774)),
+        onStartupFailure: (failure) => Deferred.succeed(failed, failure).pipe(Effect.asVoid),
+      }).pipe(Effect.provide(hostServices(spawned, SERVER_EXIT_CODE_REFUSED_LAUNCH)));
+
+      yield* instance.start;
+      const failure = yield* Deferred.await(failed);
+
+      assert.include(failure.reason, "refused");
+      assert.equal(yield* Ref.get(spawned), 1);
+      const snapshot = yield* instance.snapshot;
+      assert.isFalse(snapshot.desiredRunning);
+      assert.isFalse(snapshot.restartScheduled);
+    }).pipe(Effect.scoped),
+  );
+});
+
+describe("makeBackendInstance when a WSL server already owns the state directory", () => {
+  it.effect("stops instead of restarting and reports the distro and PID", () =>
+    Effect.gen(function* () {
+      const spawned = yield* Ref.make(0);
+      const failed = yield* Deferred.make<BackendStartupFailure>();
+      const reason =
+        "The Houston state directory in WSL distro Ubuntu is owned by PID 4242, but it does not answer its health endpoint. Houston will not start another server there.";
+      const instance = yield* makeBackendInstance({
+        id: BackendInstanceId("wsl:Ubuntu"),
+        label: Effect.succeed("WSL (Ubuntu)"),
+        configResolve: Effect.succeed(startConfig(3774)),
+        onStateDirOwned: () => Effect.succeed({ _tag: "Unavailable", reason } as const),
+        onStartupFailure: (failure) => Deferred.succeed(failed, failure).pipe(Effect.asVoid),
+      }).pipe(Effect.provide(hostServices(spawned, SERVER_EXIT_CODE_STATE_DIR_OWNED)));
+
+      yield* instance.start;
+      const failure = yield* Deferred.await(failed);
+
+      assert.include(failure.reason, "WSL distro Ubuntu");
+      assert.include(failure.reason, "PID 4242");
+      assert.equal(yield* Ref.get(spawned), 1);
+      const snapshot = yield* instance.snapshot;
+      assert.isFalse(snapshot.desiredRunning);
+      assert.isFalse(snapshot.restartScheduled);
+      assert.isFalse(snapshot.ready);
     }).pipe(Effect.scoped),
   );
 });

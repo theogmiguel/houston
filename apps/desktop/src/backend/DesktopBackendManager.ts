@@ -17,6 +17,7 @@ import { HttpClient } from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import {
+  SERVER_EXIT_CODE_REFUSED_LAUNCH,
   SERVER_EXIT_CODE_STATE_DIR_OWNED,
   DesktopBackendBootstrap,
   type DesktopBackendBootstrap as DesktopBackendBootstrapValue,
@@ -29,7 +30,6 @@ import { waitForHttpReady as waitForHttpReadyShared } from "@houston-app/shared/
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopBrowserHost from "../preview/DesktopBrowserHost.ts";
-import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
 
 const INITIAL_RESTART_DELAY = Duration.millis(500);
 const MAX_RESTART_DELAY = Duration.seconds(10);
@@ -98,7 +98,6 @@ export interface DesktopBackendStartConfig extends BackendProcessContext {
   readonly captureOutput: boolean;
   readonly preflightFailure: Option.Option<PreflightFailure>;
   readonly runningDistro?: string;
-  readonly wslRuntimeId?: string;
 }
 
 export interface PreflightFailure {
@@ -259,6 +258,12 @@ export interface DesktopBackendAttachment {
   readonly warning: Option.Option<string>;
 }
 
+/** What the ownership-lock exit path found for the state directory. */
+export type StateDirOwnedOutcome =
+  | { readonly _tag: "Attached"; readonly attachment: DesktopBackendAttachment }
+  | { readonly _tag: "Unavailable"; readonly reason: string }
+  | { readonly _tag: "None" };
+
 export type BackendInstanceId = string & Brand.Brand<"BackendInstanceId">;
 export const BackendInstanceId = Brand.nominal<BackendInstanceId>();
 
@@ -299,8 +304,8 @@ export interface BackendInstanceSpec {
   readonly onStarting?: () => Effect.Effect<void>;
   readonly onShutdown?: () => Effect.Effect<void>;
   readonly onPreflightFailed?: (failure: PreflightFailure) => Effect.Effect<boolean>;
-  /** Resolve the live server owning the state directory, or fail so the pool can report it. */
-  readonly onStateDirOwned?: () => Effect.Effect<Option.Option<DesktopBackendAttachment>>;
+  /** Resolve the live server owning the state directory, or explain why it cannot attach. */
+  readonly onStateDirOwned?: () => Effect.Effect<StateDirOwnedOutcome>;
   /**
    * A healthy server already serving this config's state, found before spawning.
    * None spawns as usual; the spawned server's ownership lock still decides.
@@ -712,7 +717,6 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
   | DesktopObservability.DesktopBackendOutputLogFactory
   | DesktopTelemetryPublisher.DesktopTelemetryPublisher
   | DesktopBrowserHost.DesktopBrowserHost
-  | DesktopWslEnvironment.DesktopWslEnvironment
   | Scope.Scope
 > {
   const parentScope = yield* Scope.Scope;
@@ -721,7 +725,6 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
   const backendOutputLog = yield* backendOutputLogFactory.forInstance(spec.id);
   const desktopTelemetryPublisher = yield* DesktopTelemetryPublisher.DesktopTelemetryPublisher;
   const desktopBrowserHost = yield* DesktopBrowserHost.DesktopBrowserHost;
-  const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const httpClient = yield* HttpClient.HttpClient;
   const state = yield* Ref.make(initialState);
@@ -846,6 +849,14 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
         }));
         yield* spec.onStarting?.() ?? Effect.void;
 
+        // A healthy server that already owns this state wins over a preflight failure:
+        // attaching never starts or stops anything, so it is always safe to prefer it.
+        const running = yield* spec.attachBeforeSpawn?.(config.value) ?? Effect.succeedNone;
+        if (Option.isSome(running)) {
+          yield* attach(running.value);
+          return;
+        }
+
         const preflightFailure = config.value.preflightFailure;
         if (Option.isSome(preflightFailure)) {
           const { reason, fatal, retryLimit } = preflightFailure.value;
@@ -906,12 +917,6 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
           return;
         }
 
-        const running = yield* spec.attachBeforeSpawn?.(config.value) ?? Effect.succeedNone;
-        if (Option.isSome(running)) {
-          yield* attach(running.value);
-          return;
-        }
-
         const runScope = yield* Scope.make("sequential");
         const runId = yield* Ref.modify(state, (latest) => [
           latest.nextRunId,
@@ -934,6 +939,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
           exitCode?: number,
         ) {
           const stateDirOwned = exitCode === SERVER_EXIT_CODE_STATE_DIR_OWNED;
+          const launchRefused = exitCode === SERVER_EXIT_CODE_REFUSED_LAUNCH;
           yield* mutex.withPermits(1)(
             Effect.gen(function* () {
               const { isCurrentRun, nextState, pid, exitObserved, stopRequested, wasReady } =
@@ -1004,12 +1010,24 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
 
               if (isCurrentRun && nextState.desiredRunning) {
                 if (stateDirOwned && !stopRequested) {
-                  const attachment = yield* spec.onStateDirOwned?.() ?? Effect.succeedNone;
-                  if (Option.isSome(attachment)) {
-                    yield* attach(attachment.value);
+                  const outcome: StateDirOwnedOutcome = yield* (
+                    spec.onStateDirOwned?.() ??
+                      Effect.succeed<StateDirOwnedOutcome>({ _tag: "None" })
+                  );
+                  if (outcome._tag === "Attached") {
+                    yield* attach(outcome.attachment);
                     return;
                   }
                   yield* Ref.update(state, (latest) => ({ ...latest, desiredRunning: false }));
+                  if (outcome._tag === "Unavailable") {
+                    yield* reportStartupFailure(outcome.reason);
+                  }
+                  return;
+                }
+                // A refused launch stays refused until something changes, so retrying is pointless.
+                if (launchRefused && !stopRequested) {
+                  yield* Ref.update(state, (latest) => ({ ...latest, desiredRunning: false }));
+                  yield* reportStartupFailure(`The server refused this launch (${reason}).`);
                   return;
                 }
                 // A dead server is not ready: report the restart before the backoff,
@@ -1066,15 +1084,6 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
             }
 
             yield* spec.onReady?.(config.value.httpBaseUrl, pid) ?? Effect.void;
-            if (
-              config.value.runningDistro !== undefined &&
-              config.value.wslRuntimeId !== undefined
-            ) {
-              yield* wslEnvironment.pruneRuntimes(
-                config.value.runningDistro,
-                config.value.wslRuntimeId,
-              );
-            }
           }),
           onReadinessFailure: Effect.fn("desktop.backendInstance.onReadinessFailure")(
             function* (error) {

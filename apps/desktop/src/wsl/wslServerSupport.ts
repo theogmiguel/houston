@@ -1,12 +1,13 @@
 import type { WslDistro } from "./wslPathParsing.ts";
 
-// Houston starts its server on the host, never inside a WSL distro. The distro and
-// WSL-only selections persist so a later slice can honour them, but enabling the
-// backend is refused by name until the server can run in the distro.
-export const WSL_SERVER_START_ENABLED = false;
-
-export const WSL_SERVER_UNAVAILABLE_MESSAGE =
-  "the WSL backend is not available yet: Houston must start its server inside the distro, which the server-side WSL slice owns. The distro and WSL-only selections were saved.";
+/** Whether the primary backend resolves to the WSL server for these settings. */
+export function wslPrimarySelected(input: {
+  readonly wslBackendEnabled: boolean;
+  readonly wslOnly: boolean;
+  readonly available: boolean;
+}): boolean {
+  return input.wslBackendEnabled && input.wslOnly && input.available;
+}
 
 export type WslEnableDecision =
   | { readonly ok: true }
@@ -58,9 +59,6 @@ export function decideWslEnable(input: {
       ok: false,
       reason: `cannot enable ${selected.name} as the WSL backend: it runs under WSL 1 and Houston needs WSL 2`,
     };
-  }
-  if (!WSL_SERVER_START_ENABLED) {
-    return { ok: false, reason: WSL_SERVER_UNAVAILABLE_MESSAGE };
   }
   return { ok: true };
 }
