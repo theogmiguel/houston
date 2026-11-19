@@ -116,6 +116,7 @@ function groupProps(
     onPickHoldTime: async () => null,
     onDropOnWorkspace: () => {},
     onCreateWorkspace: () => {},
+    onCreateThread: () => {},
     onRenameThread: () => {},
     onSetAutoClose: () => {},
     workspaceMoveFor: () => undefined,

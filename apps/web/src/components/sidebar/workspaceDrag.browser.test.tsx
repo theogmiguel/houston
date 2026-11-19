@@ -122,6 +122,7 @@ function Group({
       onPickHoldTime={async () => null}
       onDropOnWorkspace={onDrop}
       onCreateWorkspace={() => {}}
+      onCreateThread={() => {}}
       onRenameThread={() => {}}
       onSetAutoClose={() => {}}
       workspaceMoveFor={() => undefined}

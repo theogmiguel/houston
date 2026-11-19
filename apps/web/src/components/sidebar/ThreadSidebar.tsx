@@ -29,13 +29,12 @@ import { isDesktopHost } from "../../env";
 import { DEFAULT_SIDEBAR_GRID_THREAD_SORT_ORDER } from "@houston-app/contracts/settings";
 import { selectFocusedTab, type LayoutWorkspace } from "../../layout/layoutModel";
 import { chatTargetThreadRef } from "../../layout/layoutThreadRef";
-import { useLayoutStore } from "../../layout/layoutStore";
+import { runInNewLayoutTab, useLayoutStore } from "../../layout/layoutStore";
 import { useThreadMembershipStore } from "../../layout/threadMembership";
 import {
   createLayoutWorkspaceAction,
   deleteLayoutWorkspaceAction,
   hideLayoutWorkspaceAction,
-  openLayoutLauncherInWorkspaceAction,
   pinLayoutWorkspaceAction,
   renameLayoutWorkspaceAction,
   reorderLayoutWorkspaceAction,
@@ -86,7 +85,6 @@ import { useRevealOpenThread } from "../../threads/useRevealOpenThread";
 import { attachSidebarTree } from "../../lib/sidebarTree";
 import { useShortcutModifierState } from "../../shortcutModifierState";
 import { reportFailure } from "./reportFailure";
-import { SidebarNoProjects } from "./SidebarNoProjects";
 import { ThreadBulkMenuContext, useBulkThreadMenu } from "./useBulkThreadMenu";
 import { ThreadJumpHintContext } from "./threadJumpHints";
 import { SidebarShelves } from "./SidebarShelves";
@@ -125,7 +123,12 @@ import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { primaryServerKeybindingsAtom } from "../../state/server";
 import { threadEnvironment } from "../../state/threads";
 import { useThreadActions } from "../../hooks/useThreadActions";
-import { useNewThreadHandler, type NewThreadHandler } from "../../hooks/useHandleNewThread";
+import {
+  useNewThreadHandler,
+  resolveWorkspaceNewThreadTarget,
+  type NewThreadHandler,
+} from "../../hooks/useHandleNewThread";
+import { useScratchProject } from "../../hooks/useScratchProject";
 import {
   resolveShortcutCommand,
   shouldShowThreadJumpHintsForModifiers,
@@ -219,6 +222,7 @@ export function ThreadSidebar({
   const openProjectGroups = orderSidebarProjectGroups(projectGroups);
   const storedFilterKeys = useUiStateStore((store) => store.sidebarProjectScopeKeys);
   const setStoredFilterKeys = useUiStateStore((store) => store.setSidebarProjectScopeKeys);
+  const projectOrder = useUiStateStore((store) => store.projectOrder);
   const filterKeys = activeProjectFilterKeys(openProjectGroups, storedFilterKeys);
   const orderedProjectGroups = applyProjectFilter(openProjectGroups, filterKeys);
   const projects = orderedProjectGroups.flatMap((group) =>
@@ -280,6 +284,22 @@ export function ThreadSidebar({
 
   const actions = useThreadActions();
   const handleNewThread = useNewThreadHandler();
+  const scratch = useScratchProject();
+  const openNewThreadInWorkspace = (workspaceId: string) => {
+    const target = resolveWorkspaceNewThreadTarget({
+      projects: allProjects,
+      projectOrder,
+      scratchEnvironmentId: scratch.scratchEnvironmentId(null),
+    });
+    if (target === null) return;
+    void runInNewLayoutTab(
+      async () => {
+        if (target.kind === "project") await handleNewThread(target.projectRef);
+        else await scratch.startScratchThread(target.environmentId);
+      },
+      { workspaceId },
+    );
+  };
   // Each foreign thread is asked for once; a refused ask is retried on the next load, not in a loop.
   const askedForeignThreads = useRef(new Set<string>());
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- threads of other environments are hosted outside the layout server, so the window reports their workspace to it
@@ -890,8 +910,8 @@ export function ThreadSidebar({
   const createWorkspace = (name: string): string | null => {
     const refusal = createLayoutWorkspaceAction(name);
     if (refusal !== null) return refusal;
-    // The new workspace is stored once it holds a tab, so it opens a launcher to start a thread in.
-    openLayoutLauncherInWorkspaceAction(useLayoutStore.getState().layout.focusedWorkspaceId);
+    // A workspace is stored once it holds a tab, so it opens a ready draft to start a thread in.
+    openNewThreadInWorkspace(useLayoutStore.getState().layout.focusedWorkspaceId);
     return null;
   };
 
@@ -922,6 +942,7 @@ export function ThreadSidebar({
       onPickHoldTime={pickHoldTime}
       onDropOnWorkspace={dropOnWorkspace}
       onCreateWorkspace={startCreatingWorkspace}
+      onCreateThread={openNewThreadInWorkspace}
       onRenameThread={renameThread}
       onSetAutoClose={setAutoClose}
       workspaceMoveFor={workspaceMoveFor}
@@ -1102,7 +1123,6 @@ export function ThreadSidebar({
                         onDone={() => setCreatingWorkspace(false)}
                       />
                     ) : null}
-                    {projects.length === 0 && query.length === 0 ? <SidebarNoProjects /> : null}
                     {sections.map(renderGroup)}
                     {searching ? <SidebarContentResults results={contentResults} /> : null}
                     {searching &&
@@ -1624,6 +1644,7 @@ export function SidebarWorkspaceGroup({
   onPickHoldTime,
   onDropOnWorkspace,
   onCreateWorkspace,
+  onCreateThread,
   onRenameThread,
   onSetAutoClose,
   workspaceMoveFor,
@@ -1663,6 +1684,8 @@ export function SidebarWorkspaceGroup({
   onPickHoldTime: () => Promise<Pick<SnoozePreset, "snoozedUntil"> | null>;
   onDropOnWorkspace: (source: DraggedThread, targetWorkspaceId: string) => void;
   onCreateWorkspace: () => void;
+  /** Opens a ready draft thread in this workspace. */
+  onCreateThread: (workspaceId: string) => void;
   onRenameThread: (thread: EnvironmentThreadShell, title: string) => void;
   onSetAutoClose: (thread: EnvironmentThreadShell, enabled: boolean) => void;
   workspaceMoveFor: (thread: EnvironmentThreadShell) => ThreadActionMenuWorkspaceInput | undefined;
@@ -1730,7 +1753,7 @@ export function SidebarWorkspaceGroup({
     const refusal = renameLayoutWorkspaceAction(workspaceId, draftName);
     if (refusal !== null) explain("Could not rename workspace", refusal);
   };
-  const createThread = () => openLayoutLauncherInWorkspaceAction(workspaceId);
+  const createThread = () => onCreateThread(workspaceId);
   const deleteWorkspace = () => {
     // The last workspace cannot go; say so at once instead of asking to confirm a refused delete.
     const remaining = useLayoutStore.getState().layout.workspaces.length;
@@ -1893,7 +1916,7 @@ export function SidebarWorkspaceGroup({
                       className="size-3 shrink-0 text-secondary-label"
                     />
                   ) : null}
-                  {threads.length === 0 ? (
+                  {threads.length === 0 && section.empty ? (
                     <span className={SIDEBAR_ROW_TRAILING_CLS} data-heading-trailing="">
                       <span className={SIDEBAR_GROUP_EMPTY_CLS}>empty</span>
                     </span>
@@ -1955,7 +1978,7 @@ export function SidebarWorkspaceGroup({
         )}
       </div>
       <AnimatedHeight>
-        {threads.length === 0 && !collapsed ? (
+        {threads.length === 0 && section.empty && !collapsed ? (
           <div data-workspace-empty="" className={cn(SIDEBAR_GROUP_THREADS_CLS, "py-1")}>
             <div className="flex items-center gap-2 px-2 text-xs text-secondary-label">
               <span className="min-w-0 flex-1 truncate">No threads yet</span>

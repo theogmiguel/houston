@@ -14,6 +14,7 @@ import {
   isLayoutPageContent,
   openLayoutGhostChat,
   openLayoutTab,
+  placeLayoutContent,
   replaceLayoutTabContent,
   selectFocusedTab,
   showLayoutContent,
@@ -105,6 +106,15 @@ export function showRouteInLayout(
         return focusLayoutTab(replaced, newTab.replaceTabId);
       }
       return showLayoutContent(layout, content);
+    }
+    if ("workspaceId" in newTab) {
+      const target = layout.workspaces.find((workspace) => workspace.id === newTab.workspaceId);
+      if (!target) return showLayoutContent(layout, content);
+      return placeLayoutContent(layout, content, {
+        kind: "column",
+        workspaceId: target.id,
+        index: target.columns.length,
+      });
     }
     return openLayoutTab(layout, content, {
       placement: newTab.placement,

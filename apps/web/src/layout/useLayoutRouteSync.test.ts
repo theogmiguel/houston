@@ -2,6 +2,7 @@ import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import { EnvironmentId, ThreadId } from "@houston-app/contracts";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
+import { DraftId } from "../composerDraftStore";
 import { buildLayout } from "./layoutFixtures";
 import { findLayoutTabByContent, selectFocusedTab, type LayoutTabContent } from "./layoutModel";
 import { setThreadMemberships } from "./threadMembership";
@@ -52,5 +53,19 @@ describe("showRouteInLayout", () => {
   it("opens a thread whose membership has not arrived in the focused workspace", () => {
     const shown = showRouteInLayout(buildLayout([[[["a"]]], [[["b"]]]]), chat("late"), null, null);
     expect(shown.focusedWorkspaceId).toBe("w0");
+  });
+
+  it("opens a new draft in the workspace the request names, even with no columns", () => {
+    const draft: LayoutTabContent = {
+      kind: "chat",
+      target: { kind: "draft", draftId: DraftId.make("draft-1") },
+    };
+    const shown = showRouteInLayout(buildLayout([[[["a"]]], []]), draft, null, {
+      workspaceId: "w1",
+    });
+    expect(shown.focusedWorkspaceId).toBe("w1");
+    const opened = findLayoutTabByContent(shown, draft);
+    expect(opened?.workspace.id).toBe("w1");
+    expect(shown.workspaces[1]!.columns).toHaveLength(1);
   });
 });

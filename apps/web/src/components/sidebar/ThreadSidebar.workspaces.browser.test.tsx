@@ -134,6 +134,7 @@ function group(
     onOpenThread?: (thread: EnvironmentThreadShell) => void;
     onDropOnWorkspace?: (source: unknown, workspaceId: string) => void;
     onCreateWorkspace?: () => void;
+    onCreateThread?: (workspaceId: string) => void;
   } = {},
 ) {
   return (
@@ -162,6 +163,7 @@ function group(
         onPickHoldTime={async () => null}
         onDropOnWorkspace={overrides.onDropOnWorkspace ?? (() => {})}
         onCreateWorkspace={overrides.onCreateWorkspace ?? (() => {})}
+        onCreateThread={overrides.onCreateThread ?? (() => {})}
         onRenameThread={() => {}}
         onSetAutoClose={() => {}}
         workspaceMoveFor={() => undefined}
@@ -289,8 +291,9 @@ describe("workspace group", () => {
     using _session = session();
     useLayoutStore.setState({ layout: layoutOf([{ name: "Scratch", chats: [] }]) });
     const target = listLayoutWorkspaces(useLayoutStore.getState().layout)[0]!;
+    const onCreateThread = vi.fn();
     await using screen = await render(
-      group(workspace({ workspaceId: target.id, name: "Scratch" }), []),
+      group(workspace({ workspaceId: target.id, name: "Scratch" }), [], { onCreateThread }),
     );
 
     expect(screen.getByRole("button", { name: /^Scratch empty$/ }).element()).toBeVisible();
@@ -300,10 +303,24 @@ describe("workspace group", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "New thread", exact: true }).element(),
     );
-    const opened = useLayoutStore
-      .getState()
-      .layout.workspaces.find((candidate) => candidate.id === target.id)!;
-    expect(opened.columns[0]?.panes[0]?.tabs[0]?.content.kind).toBe("launcher");
+    expect(onCreateThread).toHaveBeenCalledExactlyOnceWith(target.id);
+    expect(
+      useLayoutStore.getState().layout.workspaces.find((candidate) => candidate.id === target.id)!
+        .columns,
+    ).toHaveLength(0);
+  });
+
+  it("opens a new thread from the heading's plus in that workspace", async () => {
+    using _session = session();
+    useLayoutStore.setState({ layout: layoutOf([{ name: "Grid 1", chats: [] }]) });
+    const target = listLayoutWorkspaces(useLayoutStore.getState().layout)[0]!;
+    const onCreateThread = vi.fn();
+    await using screen = await render(
+      group(workspace({ workspaceId: target.id, name: "Grid 1" }), [], { onCreateThread }),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "New thread in Grid 1" }).element());
+    expect(onCreateThread).toHaveBeenCalledExactlyOnceWith(target.id);
   });
 
   it("draws rows for unplaced threads under an empty workspace instead of the empty label", async () => {

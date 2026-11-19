@@ -7,9 +7,6 @@ export const RAIL_MENU_ROW_BUTTON_CLS =
 /** The dot that marks the project filter as active. */
 export const RAIL_FILTER_DOT_CLS = "rounded-full";
 
-export const RAIL_EMPTY_TITLE_CLS = "text-xs font-medium text-foreground";
-export const RAIL_EMPTY_HINT_CLS = "text-xs text-secondary-label";
-
 export const RAIL_SECTION_LABEL_CLS = "text-xs font-medium text-secondary-label";
 export const RAIL_NOTICE_CLS = "text-sm text-secondary-label";
 

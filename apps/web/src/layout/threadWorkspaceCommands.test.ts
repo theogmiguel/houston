@@ -4,12 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { DraftId, useComposerDraftStore } from "../composerDraftStore";
 import {
   createLayoutState,
-  findLayoutTab,
   findLayoutTabByContent,
   normalizeLayout,
   openLayoutTab,
 } from "./layoutModel";
-import { openLayoutLauncherInWorkspaceAction } from "./layoutWorkspaceActions";
 import { useLayoutStore } from "./layoutStore";
 import { reportFocus, layoutWorkspacesEnvironment } from "./layoutSyncRuntime";
 import { createLayoutWorkspaceNamed } from "./layoutWorkspaces";
@@ -17,6 +15,7 @@ import {
   claimWorkspaceForNewThread,
   moveThreadToWorkspaceOnServer,
 } from "./threadWorkspaceCommands";
+import { showRouteInLayout } from "./useLayoutRouteSync";
 
 const phone = vi.hoisted(() => ({ isPhone: false }));
 vi.mock("../mobile/usePhone", async (original) => ({
@@ -135,23 +134,32 @@ describe("reportFocus", () => {
 });
 
 describe("a thread started from a workspace heading", () => {
-  it("opens its launcher in that workspace without moving focus, and the thread claims that workspace", async () => {
+  it("opens a ready draft in that workspace, and the thread claims that workspace", async () => {
     const secondId = seedDraftInSecondWorkspace();
     const firstId = useLayoutStore.getState().layout.workspaces[0]!.id;
     useLayoutStore.getState().focusWorkspace(firstId);
 
-    openLayoutLauncherInWorkspaceAction(secondId);
-    const layout = useLayoutStore.getState().layout;
-    const launcher = findLayoutTab(layout, (tab) => tab.content.kind === "launcher");
-    expect(launcher?.workspace.id).toBe(secondId);
-
-    // The launcher turns into the new thread's draft tab, which sits in the same workspace.
-    const draft = findLayoutTabByContent(layout, {
+    const nextDraftId = DraftId.make("draft-2");
+    const nextThreadId = ThreadId.make("new-thread-2");
+    const content = {
       kind: "chat",
-      target: { kind: "draft", draftId },
+      target: { kind: "draft", draftId: nextDraftId },
+    } as const;
+    const shown = showRouteInLayout(useLayoutStore.getState().layout, content, null, {
+      workspaceId: secondId,
     });
+    useLayoutStore.setState({ layout: shown });
+    useComposerDraftStore.setState({
+      draftThreadsByThreadKey: {
+        ...useComposerDraftStore.getState().draftThreadsByThreadKey,
+        [nextDraftId]: { environmentId, threadId: nextThreadId },
+      } as never,
+    });
+
+    const draft = findLayoutTabByContent(shown, content);
     expect(draft?.workspace.id).toBe(secondId);
-    await claimWorkspaceForNewThread({ environmentId, threadId });
+    expect(shown.focusedWorkspaceId).toBe(secondId);
+    await claimWorkspaceForNewThread({ environmentId, threadId: nextThreadId });
     expect(assign.mock.calls[0]![1]).toMatchObject({ input: { workspaceId: secondId } });
   });
 });

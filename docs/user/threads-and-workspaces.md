@@ -40,7 +40,8 @@ processes when the thread settles; an agent's own shell command is never attache
 
 ## Creating a thread
 
-Choose **New thread** from a workspace's **+**, from the command palette, or press `Ctrl+N`.
+Choose **New thread** from a workspace's **+** or from the **New thread** action of an empty
+workspace to start a draft in that workspace, from the command palette, or press `Ctrl+N`.
 Pick the provider and model in the composer, choose permissions, and send the first
 message. A new thread starts in a local checkout or in a new worktree, according to
 **Settings ▸ Threads ▸ New threads**; the composer's workspace control changes it for one
@@ -95,8 +96,9 @@ The sidebar opens with search and icon buttons for **New thread**, **New workspa
 open in that workspace, whichever project they belong to. A thread whose chat is not placed in
 any workspace is listed under the first one. Each group label collapses with **Enter** or
 **Space** and keeps its state; a search opens every group it matches in. The **…** button
-beside the label, or a right-click, opens the workspace's actions. With no projects at all, the
-rail offers **Add project**.
+beside the label, or a right-click, opens the workspace's actions. With no projects, a
+workspace's **New thread** starts a thread without a project, and **Add project** in the search
+row adds one.
 
 The **Workspaces** header carries **Filter by project** and the **Hidden workspaces** menu.
 **View options** sorts threads (**Workspace order**, **Last activity** or **Created**), chooses
