@@ -432,7 +432,24 @@ export function ThreadSidebar({
       openCommandPalette({ open: "new-thread-in" });
       return;
     }
-    void runInNewLayoutTab(() => handleNewThread(target.projectRef), { workspaceId });
+    void runInNewLayoutTab(
+      async () => {
+        const opened = await handleNewThread(target.projectRef);
+        if (opened === null) return;
+        const targetWorkspace = useLayoutStore
+          .getState()
+          .layout.workspaces.find((workspace) => workspace.id === workspaceId);
+        if (targetWorkspace === undefined) return;
+        // A reused empty draft may already have a tab in another workspace; moving it keeps one.
+        useLayoutStore
+          .getState()
+          .placeContent(
+            { kind: "chat", target: { kind: "draft", draftId: opened.draftId } },
+            { kind: "column", workspaceId, index: targetWorkspace.columns.length },
+          );
+      },
+      { workspaceId },
+    );
   };
 
   // Opening a thread the filter hides (history, a link, the palette) widens the filter once, so

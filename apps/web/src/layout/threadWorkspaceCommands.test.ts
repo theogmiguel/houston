@@ -162,4 +162,24 @@ describe("a thread started from a workspace heading", () => {
     await claimWorkspaceForNewThread({ environmentId, threadId: nextThreadId });
     expect(assign.mock.calls[0]![1]).toMatchObject({ input: { workspaceId: secondId } });
   });
+
+  it("moves the project's reusable empty draft tab into the clicked workspace and focuses it", async () => {
+    const secondId = seedDraftInSecondWorkspace();
+    const firstId = useLayoutStore.getState().layout.workspaces[0]!.id;
+    useLayoutStore.getState().focusWorkspace(firstId);
+    const content = { kind: "chat", target: { kind: "draft", draftId } } as const;
+    expect(findLayoutTabByContent(useLayoutStore.getState().layout, content)?.workspace.id).toBe(
+      secondId,
+    );
+
+    const shown = showRouteInLayout(useLayoutStore.getState().layout, content, null, {
+      workspaceId: firstId,
+    });
+    useLayoutStore.setState({ layout: shown });
+
+    expect(findLayoutTabByContent(shown, content)?.workspace.id).toBe(firstId);
+    expect(shown.focusedWorkspaceId).toBe(firstId);
+    await claimWorkspaceForNewThread({ environmentId, threadId });
+    expect(assign.mock.calls[0]![1]).toMatchObject({ input: { workspaceId: firstId } });
+  });
 });

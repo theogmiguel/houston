@@ -91,6 +91,18 @@ export function showRouteInLayout(
       return focusLayoutTab(replaced, draftTab.tab.id);
     }
   }
+  if (newTab && "workspaceId" in newTab) {
+    const target = layout.workspaces.find((workspace) => workspace.id === newTab.workspaceId);
+    if (!target) return showLayoutContent(layout, content);
+    const existing = findLayoutTabByContent(layout, content);
+    if (existing?.workspace.id === target.id) return focusLayoutTab(layout, existing.tab.id);
+    // A draft a project reuses may already have a tab elsewhere: move it here, keeping one tab.
+    return placeLayoutContent(layout, content, {
+      kind: "column",
+      workspaceId: target.id,
+      index: target.columns.length,
+    });
+  }
   if (newTab && !findLayoutTabByContent(layout, content)) {
     if ("ghostOf" in newTab) {
       if (content.kind !== "chat") return showLayoutContent(layout, content);
@@ -106,15 +118,6 @@ export function showRouteInLayout(
         return focusLayoutTab(replaced, newTab.replaceTabId);
       }
       return showLayoutContent(layout, content);
-    }
-    if ("workspaceId" in newTab) {
-      const target = layout.workspaces.find((workspace) => workspace.id === newTab.workspaceId);
-      if (!target) return showLayoutContent(layout, content);
-      return placeLayoutContent(layout, content, {
-        kind: "column",
-        workspaceId: target.id,
-        index: target.columns.length,
-      });
     }
     return openLayoutTab(layout, content, {
       placement: newTab.placement,

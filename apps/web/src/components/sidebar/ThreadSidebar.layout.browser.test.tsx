@@ -11,8 +11,10 @@ import { act, render } from "../../../test/render";
 import { beginThreadDragAt, endThreadDrag } from "../../threads/threadDrag";
 import {
   createLayoutState,
+  findLayoutTabByContent,
   normalizeLayout,
   openLayoutTab,
+  selectFocusedTab,
   type LayoutState,
   type LayoutTabContent,
 } from "../../layout/layoutModel";
@@ -35,7 +37,10 @@ const moves = vi.hoisted(() => ({
   created: 0,
 }));
 
-const openedThreads = vi.hoisted(() => ({ refs: [] as unknown[] }));
+const openedThreads = vi.hoisted(() => ({
+  refs: [] as unknown[],
+  result: null as unknown,
+}));
 
 const palette = vi.hoisted(() => ({ opened: [] as unknown[] }));
 
@@ -53,7 +58,7 @@ vi.mock(import("../../hooks/useHandleNewThread"), async (original) => {
     useNewThreadHandler: () =>
       ((projectRef: unknown) => {
         openedThreads.refs.push(projectRef);
-        return Promise.resolve(null);
+        return Promise.resolve(openedThreads.result);
       }) as never,
   };
 });
@@ -264,6 +269,7 @@ function seed(
   moves.calls = [];
   moves.created = 0;
   openedThreads.refs = [];
+  openedThreads.result = null;
   palette.opened = [];
   const layout = layoutOf(spec);
   useLayoutStore.setState({ layout });
@@ -357,6 +363,43 @@ describe("ThreadSidebar workspaces", () => {
     await userEvent.click(screen.getByRole("button", { name: "New thread in Notes" }).element());
 
     expect(openedThreads.refs).toEqual([{ environmentId: "env-1", projectId: "project-2" }]);
+  });
+
+  it("moves a reused empty draft's tab into the workspace whose heading + was clicked", async () => {
+    using _seed = seed(
+      [
+        { name: "One", chats: ["t1"] },
+        { name: "Docs", chats: [] },
+      ],
+      [liveThread("t1")],
+    );
+    const root = useLayoutStore.getState().layout;
+    const docs = listLayoutWorkspaces(root).find((workspace) => workspace.name === "Docs")!;
+    const one = listLayoutWorkspaces(root).find((workspace) => workspace.name === "One")!;
+    useLayoutStore.getState().focusWorkspace(docs.id);
+    const draft = {
+      kind: "chat",
+      target: { kind: "draft", draftId: DraftId.make("draft-reused") },
+    } as const;
+    useLayoutStore.setState({
+      layout: openLayoutTab(useLayoutStore.getState().layout, draft),
+    });
+    useLayoutStore.getState().focusWorkspace(one.id);
+    openedThreads.result = {
+      draftId: draft.target.draftId,
+      threadId: ThreadId.make("reused"),
+    };
+
+    await using screen = await render(<RailHarness />);
+    await vi.waitFor(() => expect(groupNames(screen.container)).toEqual(["One", "Docs"]));
+    await userEvent.click(screen.getByRole("button", { name: "New thread in One" }).element());
+
+    await vi.waitFor(() => {
+      const layout = useLayoutStore.getState().layout;
+      expect(findLayoutTabByContent(layout, draft)?.workspace.id).toBe(one.id);
+      expect(layout.focusedWorkspaceId).toBe(one.id);
+      expect(selectFocusedTab(layout)?.content).toEqual(draft);
+    });
   });
 
   it("opens the project picker instead of a no-project draft when no real project exists", async () => {

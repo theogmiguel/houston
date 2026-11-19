@@ -4,7 +4,12 @@ import { afterEach, describe, expect, it } from "vite-plus/test";
 
 import { DraftId } from "../composerDraftStore";
 import { buildLayout } from "./layoutFixtures";
-import { findLayoutTabByContent, selectFocusedTab, type LayoutTabContent } from "./layoutModel";
+import {
+  findLayoutTabByContent,
+  openLayoutTab,
+  selectFocusedTab,
+  type LayoutTabContent,
+} from "./layoutModel";
 import { setThreadMemberships } from "./threadMembership";
 import { showRouteInLayout } from "./useLayoutRouteSync";
 
@@ -67,5 +72,25 @@ describe("showRouteInLayout", () => {
     const opened = findLayoutTabByContent(shown, draft);
     expect(opened?.workspace.id).toBe("w1");
     expect(shown.workspaces[1]!.columns).toHaveLength(1);
+  });
+
+  it("moves a draft's tab from another workspace into the requested one and focuses it", () => {
+    const draft: LayoutTabContent = {
+      kind: "chat",
+      target: { kind: "draft", draftId: DraftId.make("draft-1") },
+    };
+    const layout = openLayoutTab(buildLayout([[[["a"]]], []]), draft);
+    expect(findLayoutTabByContent(layout, draft)?.workspace.id).toBe("w0");
+
+    const shown = showRouteInLayout(layout, draft, null, { workspaceId: "w1" });
+
+    expect(findLayoutTabByContent(shown, draft)?.workspace.id).toBe("w1");
+    expect(shown.focusedWorkspaceId).toBe("w1");
+    expect(selectFocusedTab(shown)?.content).toEqual(draft);
+    expect(
+      shown.workspaces[0]!.columns.flatMap((column) => column.panes)
+        .flatMap((pane) => pane.tabs)
+        .map((tab) => tab.content),
+    ).not.toContainEqual(draft);
   });
 });
