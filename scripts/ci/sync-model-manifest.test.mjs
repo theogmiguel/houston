@@ -158,3 +158,46 @@ NodeTest.test("an upstream commit that is not a full SHA is refused", () => {
     /upstream commit "main"; expected a 40-character hex SHA/,
   );
 });
+
+NodeTest.test(
+  "a held compatibility entry keeps Houston's text while the rest follows upstream",
+  () => {
+    const bundled = NodeFS.readFileSync(BUNDLED_PATH, "utf8");
+    const upstream = JSON.parse(bundled.replaceAll('"houstonCodeRange":', '"t3CodeRange":'));
+    for (const entry of upstream.compatibility) {
+      if (entry.driver === "antigravity") entry.recommendedRange = ">=1.5.1 <2";
+      if (entry.driver === "grok") entry.recommendedRange = ">=1.0.20";
+    }
+    const { manifest, text } = translateUpstreamText(JSON.stringify(upstream, null, 2), bundled);
+    const byDriver = new Map(manifest.compatibility.map((entry) => [entry.driver, entry]));
+    const houston = new Map(
+      JSON.parse(bundled).compatibility.map((entry) => [entry.driver, entry]),
+    );
+    NodeAssert.deepEqual(byDriver.get("antigravity"), houston.get("antigravity"));
+    NodeAssert.equal(byDriver.get("grok").recommendedRange, ">=1.0.20");
+    NodeAssert.deepEqual(JSON.parse(text), manifest);
+  },
+);
+
+NodeTest.test(
+  "a held driver without exactly one entry on each side is refused with its count",
+  () => {
+    const houston = JSON.stringify(manifest({}, [{ driver: "codex", houstonCodeRange: "*" }]));
+    const upstream = JSON.stringify(
+      manifest({}, [{ driver: "antigravity", t3CodeRange: "*", ranges: [] }]),
+    );
+    NodeAssert.throws(
+      () => translateUpstreamText(upstream, houston),
+      /Houston manifest has 0 compatibility entries for held driver "antigravity"; expected exactly 1/,
+    );
+  },
+);
+
+NodeTest.test("the pull request body names each held driver and why", () => {
+  const body = formatPullRequestBody({
+    upstreamSha: "0123456789abcdef0123456789abcdef01234567",
+    changes: [],
+    held: ["antigravity"],
+  });
+  NodeAssert.match(body, /- `antigravity`: Houston installs and launches the pinned ACP server/);
+});

@@ -13,6 +13,16 @@ const UPSTREAM_KEY = /t3/i;
 // Every slug shipped so far fits; the bound keeps an upstream value from flooding the PR body.
 const SLUG = /^[A-Za-z0-9][A-Za-z0-9._:/[\]-]{0,127}$/;
 const SHA = /^[0-9a-f]{40}$/;
+/**
+ * Compatibility entries Houston keeps instead of upstream's, with the reason shown in the pull
+ * request. Remove a driver once Houston has ported the code its upstream ranges depend on.
+ */
+export const HELD_COMPATIBILITY = new Map([
+  [
+    "antigravity",
+    "Houston installs and launches the pinned ACP server from antigravityRelease.ts; upstream's 1.5 ranges need the native `agy acp` CLI launch (pingdotgg/t3code#35409), which Houston has not ported.",
+  ],
+]);
 
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -71,20 +81,73 @@ export function translateUpstreamManifest(upstream) {
   return translated;
 }
 
+/** Start and end offsets of each top-level object in the manifest's compatibility array. */
+function compatibilitySpans(text) {
+  const key = text.indexOf('"compatibility"');
+  const start = key === -1 ? -1 : text.indexOf("[", key);
+  if (start === -1) {
+    throw new Error("Manifest text has no compatibility array; expected one");
+  }
+  const spans = [];
+  let depth = 0;
+  let inString = false;
+  let objectStart = -1;
+  for (let index = start; index < text.length; index++) {
+    const char = text[index];
+    if (inString) {
+      if (char === "\\") index++;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') inString = true;
+    else if (char === "[" || char === "{") {
+      if (depth === 1 && char === "{") objectStart = index;
+      depth++;
+    } else if (char === "]" || char === "}") {
+      depth--;
+      if (depth === 1 && char === "}") spans.push([objectStart, index + 1]);
+      if (depth === 0) return spans;
+    }
+  }
+  throw new Error("Manifest compatibility array is not closed; expected valid JSON");
+}
+
+function heldEntrySpan(text, driver, side) {
+  const spans = compatibilitySpans(text).filter(
+    ([start, end]) => JSON.parse(text.slice(start, end)).driver === driver,
+  );
+  if (spans.length !== 1) {
+    throw new Error(
+      `${side} manifest has ${spans.length} compatibility entries for held driver "${driver}"; expected exactly 1`,
+    );
+  }
+  return spans[0];
+}
+
 /**
  * Renames keys in the upstream text rather than re-serialising the object, so the
- * formatter's layout survives and the pull request diff shows only real changes.
+ * formatter's layout survives and the pull request diff shows only real changes. Held
+ * compatibility entries are copied verbatim from `currentText`, Houston's committed file.
  */
-export function translateUpstreamText(text) {
+export function translateUpstreamText(text, currentText) {
   const translated = translateUpstreamManifest(JSON.parse(text));
-  const renamed = text.replaceAll('"t3CodeRange":', '"houstonCodeRange":');
-  const output = renamed.endsWith("\n") ? renamed : `${renamed}\n`;
-  if (JSON.stringify(JSON.parse(output)) !== JSON.stringify(translated)) {
+  let output = text.replaceAll('"t3CodeRange":', '"houstonCodeRange":');
+  if (!output.endsWith("\n")) output = `${output}\n`;
+  const expected = { ...translated, compatibility: [...translated.compatibility] };
+  for (const driver of currentText === undefined ? [] : HELD_COMPATIBILITY.keys()) {
+    const [heldStart, heldEnd] = heldEntrySpan(currentText, driver, "Houston");
+    const [start, end] = heldEntrySpan(output, driver, "Upstream");
+    const held = currentText.slice(heldStart, heldEnd);
+    output = `${output.slice(0, start)}${held}${output.slice(end)}`;
+    const index = expected.compatibility.findIndex((entry) => entry.driver === driver);
+    expected.compatibility[index] = JSON.parse(held);
+  }
+  if (JSON.stringify(JSON.parse(output)) !== JSON.stringify(expected)) {
     throw new Error(
       'Renaming "t3CodeRange" in the upstream text changed more than the compatibility entries; expected the key only there',
     );
   }
-  return { manifest: translated, text: output };
+  return { manifest: expected, text: output };
 }
 
 function modelSlugs(manifest, provider) {
@@ -114,7 +177,7 @@ function code(value) {
   return `\`${value}\``;
 }
 
-export function formatPullRequestBody({ upstreamSha, changes }) {
+export function formatPullRequestBody({ upstreamSha, changes, held = [] }) {
   if (!SHA.test(upstreamSha)) {
     throw new Error(`Got upstream commit "${upstreamSha}"; expected a 40-character hex SHA`);
   }
@@ -133,6 +196,14 @@ export function formatPullRequestBody({ upstreamSha, changes }) {
     ...(lines.length > 0
       ? lines
       : ["No model was added or removed; compatibility ranges or model metadata changed."]),
+    ...(held.length > 0
+      ? [
+          "",
+          "Kept Houston's compatibility entry instead of upstream's for:",
+          "",
+          ...held.map((driver) => `- ${code(driver)}: ${HELD_COMPATIBILITY.get(driver)}`),
+        ]
+      : []),
     "",
     "## Why",
     "",
@@ -166,13 +237,15 @@ function main() {
       );
     }
   }
-  const before = JSON.parse(NodeFS.readFileSync(values.target, "utf8"));
+  const currentText = NodeFS.readFileSync(values.target, "utf8");
   const { manifest: after, text } = translateUpstreamText(
     NodeFS.readFileSync(values.upstream, "utf8"),
+    currentText,
   );
   const body = formatPullRequestBody({
     upstreamSha: values["upstream-sha"],
-    changes: summarizeModelChanges(before, after),
+    changes: summarizeModelChanges(JSON.parse(currentText), after),
+    held: [...HELD_COMPATIBILITY.keys()],
   });
   NodeFS.writeFileSync(values.target, text);
   NodeFS.writeFileSync(values.body, body);
