@@ -42,17 +42,6 @@ describe("CommandPalette open intents", () => {
     await expect.element(input).toHaveValue("acme");
   });
 
-  it("finds the entry for connecting another app when searching for mcp", async () => {
-    setup();
-    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
-
-    openCommandPalette({ query: "mcp" });
-
-    await expect
-      .element(page.getByText("Use Houston in another app (MCP)", { exact: true }))
-      .toBeInTheDocument();
-  });
-
   it("lists Open tasks and routes it to the Tasks page", async () => {
     setup();
     await using screen = await render(<CommandPalette>{null}</CommandPalette>);

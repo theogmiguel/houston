@@ -421,12 +421,18 @@ function OpenCommandPaletteDialog(props: {
   const focusedWorkspace = useLayoutStore((store) =>
     store.layout.workspaces.find((workspace) => workspace.id === store.layout.focusedWorkspaceId),
   );
+  const visibleWorkspaceCount = useLayoutStore(
+    (store) => store.layout.workspaces.filter((workspace) => workspace.hidden !== true).length,
+  );
   // Opens a draft in the layout for a project that was just added.
   const openDraftForProject = async (environmentId: EnvironmentId, projectId: string) => {
     await handleNewThread(scopeProjectRef(environmentId, projectId as ProjectId));
   };
   const { confirmAndDeleteThread } = useThreadActions();
   const projects = useProjects();
+  const hasRealProject = projects.some(
+    (project) => project.isScratch !== true && project.archivedAt == null,
+  );
   const taskBacklog = useAllTasksSnapshot();
   const referenceThreadRef =
     pathname === "/pull-requests"
@@ -444,11 +450,9 @@ function OpenCommandPaletteDialog(props: {
   );
   const queuePullRequest =
     selectedPanelSurface?.kind === "pull-request" ? selectedPanelSurface : null;
-  // Without an open pull request the queue commands still act on the first project that can have one.
+  // Without an open pull request the queue commands still act on the first project that has a repository.
   const contextualQueueProject =
-    queuePullRequest ??
-    projects.find((project) => project.repositoryIdentity !== undefined) ??
-    null;
+    queuePullRequest ?? projects.find((project) => project.repositoryIdentity != null) ?? null;
   const queueEnvironmentId = (contextualQueueProject?.environmentId ??
     null) as EnvironmentId | null;
   const queueProjectId = (contextualQueueProject?.id ?? null) as ProjectId | null;
@@ -461,6 +465,7 @@ function OpenCommandPaletteDialog(props: {
     queueEnvironmentId,
     queueProjectId,
   );
+  const hasMergeQueue = contextualQueueProject !== null && paletteQueueSnapshot !== null;
   const enqueueMergeQueue = useAtomCommand(mergeQueueEnvironment.enqueue, {
     reportFailure: false,
   });
@@ -663,6 +668,9 @@ function OpenCommandPaletteDialog(props: {
           input: {},
         }),
   );
+  const hasConnectedSourceControl = (
+    sourceControlDiscovery.data?.sourceControlProviders ?? []
+  ).some((provider) => provider.status === "available" && provider.auth.status === "authenticated");
   const browseEnvironmentPlatform = getEnvironmentBrowsePlatform(
     browseEnvironment?.serverConfig?.environment.platform.os,
   );
@@ -720,6 +728,16 @@ function OpenCommandPaletteDialog(props: {
   const canTriage =
     useAtomValue(serverEnvironment.prepareTriage.permissionAtom(triageEnvironmentId)) &&
     supportsTriage(triageEnvironmentId);
+  const triageProviderReady =
+    triageEnvironmentId !== null &&
+    (providersByEnvironment
+      .get(triageEnvironmentId)
+      ?.some(
+        (provider) =>
+          provider.enabled !== false &&
+          (provider.readiness === undefined || provider.readiness.state === "ready"),
+      ) ??
+      false);
   const currentProject = resolveCommandPaletteProject(
     projectByKey,
     currentProjectEnvironmentId,
@@ -1155,11 +1173,6 @@ function OpenCommandPaletteDialog(props: {
     startAddProjectFlow(addProjectEntry.environmentId);
   });
 
-  const openNewProjectFlow = () => {
-    const firstOption = newProjectEnvironmentOptions[0];
-    if (firstOption) startNewProject(firstOption.environmentId, null);
-  };
-
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
   actionItems.push(...buildLayoutPaletteItems());
 
@@ -1238,14 +1251,16 @@ function OpenCommandPaletteDialog(props: {
       ),
       run: async () => pinLayoutWorkspaceAction(workspace.id, !pinned),
     });
-    actionItems.push({
-      kind: "action",
-      value: "action:workspace-hide",
-      searchTerms: ["workspace", "hide", "visibility"],
-      title: "Hide workspace from the sidebar",
-      icon: <EyeOffIcon className={ITEM_ICON_CLASS} />,
-      run: async () => hideLayoutWorkspaceAction(workspace.id, true),
-    });
+    if (visibleWorkspaceCount > 1) {
+      actionItems.push({
+        kind: "action",
+        value: "action:workspace-hide",
+        searchTerms: ["workspace", "hide", "visibility"],
+        title: "Hide workspace from the sidebar",
+        icon: <EyeOffIcon className={ITEM_ICON_CLASS} />,
+        run: async () => hideLayoutWorkspaceAction(workspace.id, true),
+      });
+    }
   }
   const focusedThreadRef =
     paletteRouteTarget?.kind === "server" ? paletteRouteTarget.threadRef : null;
@@ -1274,7 +1289,7 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  if (triageEnvironmentId !== null && canTriage) {
+  if (triageEnvironmentId !== null && canTriage && triageProviderReady) {
     actionItems.push({
       kind: "action",
       value: "action:triage",
@@ -1431,53 +1446,52 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  actionItems.push({
-    kind: "action",
-    value: "action:use-in-another-app",
-    searchTerms: ["mcp", "connect", "agent", "claude code", "codex", "outside", "external", "app"],
-    title: "Use Houston in another app (MCP)",
-    icon: <WaypointsIcon className={ITEM_ICON_CLASS} />,
-    run: async () => {
-      openUseInAnotherApp();
-    },
-  });
-
-  actionItems.push({
-    kind: "action",
-    value: "action:open-file-picker",
-    searchTerms: ["go to file", "open file", "file picker", "find file", "quick open"],
-    title: "Go to file",
-    icon: <FileSearchIcon className={ITEM_ICON_CLASS} />,
-    keepOpen: true,
-    shortcutCommand: "filePicker.toggle",
-    run: async () => {
-      openChildSearch("files", { query, linkedThreadSearch });
-    },
-  });
-
-  actionItems.push({
-    kind: "action",
-    value: "action:search-project-contents",
-    searchTerms: ["search project", "find in files", "grep", "content search", "text search"],
-    title: "Search project contents",
-    icon: <TextSearchIcon className={ITEM_ICON_CLASS} />,
-    keepOpen: true,
-    shortcutCommand: "projectSearch.toggle",
-    run: async () => {
-      openChildSearch("content", { query, linkedThreadSearch });
-    },
-  });
-
-  if (newProjectEnvironmentOptions.length > 0) {
+  if (hasRealProject) {
     actionItems.push({
       kind: "action",
-      value: "action:new-project",
-      searchTerms: ["new project", "create project", "empty", "repository", "repo", "git init"],
-      title: "New project",
-      icon: <FolderGit2Icon className={ITEM_ICON_CLASS} />,
-      keepOpen: true,
+      value: "action:use-in-another-app",
+      searchTerms: [
+        "mcp",
+        "connect",
+        "agent",
+        "claude code",
+        "codex",
+        "outside",
+        "external",
+        "app",
+      ],
+      title: "Use Houston in another app (MCP)",
+      icon: <WaypointsIcon className={ITEM_ICON_CLASS} />,
       run: async () => {
-        openNewProjectFlow();
+        openUseInAnotherApp();
+      },
+    });
+  }
+
+  if (currentProject != null) {
+    actionItems.push({
+      kind: "action",
+      value: "action:open-file-picker",
+      searchTerms: ["go to file", "open file", "file picker", "find file", "quick open"],
+      title: "Go to file",
+      icon: <FileSearchIcon className={ITEM_ICON_CLASS} />,
+      keepOpen: true,
+      shortcutCommand: "filePicker.toggle",
+      run: async () => {
+        openChildSearch("files", { query, linkedThreadSearch });
+      },
+    });
+
+    actionItems.push({
+      kind: "action",
+      value: "action:search-project-contents",
+      searchTerms: ["search project", "find in files", "grep", "content search", "text search"],
+      title: "Search project contents",
+      icon: <TextSearchIcon className={ITEM_ICON_CLASS} />,
+      keepOpen: true,
+      shortcutCommand: "projectSearch.toggle",
+      run: async () => {
+        openChildSearch("content", { query, linkedThreadSearch });
       },
     });
   }
@@ -1530,7 +1544,7 @@ function OpenCommandPaletteDialog(props: {
 
   actionItems.push(themeEditorItem);
 
-  if (environments.some((environment) => environment.serverConfig !== null)) {
+  if (hasConnectedSourceControl) {
     actionItems.push({
       kind: "action",
       value: "action:pull-requests",
@@ -1556,6 +1570,9 @@ function OpenCommandPaletteDialog(props: {
         await navigate({ to: "/pull-requests", search: readPullRequestListPreferences() });
       },
     });
+  }
+
+  if (hasMergeQueue) {
     actionItems.push({
       kind: "action",
       value: "action:merge-queue-open",
