@@ -6,6 +6,7 @@ import type { ScopedThreadRef } from "@houston-app/contracts";
 import {
   CircleDotIcon,
   FolderIcon,
+  FolderPlusIcon,
   GitCompareIcon,
   GlobeIcon,
   MessageSquareTextIcon,
@@ -17,6 +18,7 @@ import {
 } from "lucide-react";
 
 import { useBrowserDefaults } from "../browser/browserDefaults";
+import { openAddProjectDialog } from "../components/AddProjectDialog";
 import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
 import {
   LayoutLauncherGroup,
@@ -140,6 +142,11 @@ export function LayoutLauncher({
           onSelect={() => {
             if (scratchEnvironment !== null) start(() => startScratchThread(scratchEnvironment));
           }}
+        />
+        <LayoutLauncherRow
+          icon={<FolderPlusIcon aria-hidden className="size-4" />}
+          label="Add project…"
+          onSelect={() => openAddProjectDialog()}
         />
         {contextRef === null ? null : (
           <LauncherSurfaces threadRef={contextRef} tabId={tabId} paneId={paneId} />

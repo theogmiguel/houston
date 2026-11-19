@@ -9,6 +9,7 @@ const harness = vi.hoisted(() => ({
   scratch: vi.fn(),
   newThread: vi.fn(),
   scratchEnvironment: "local" as string | null,
+  addProject: vi.fn(),
 }));
 
 vi.mock(import("../state/entities"), async (original) => ({
@@ -50,6 +51,9 @@ vi.mock(import("../browser/browserDefaults"), async (original) => ({
         { id: "home", name: "Home" },
       ],
     }) as never,
+}));
+vi.mock(import("../components/AddProjectDialog"), () => ({
+  openAddProjectDialog: harness.addProject,
 }));
 vi.mock(import("./useThreadSurfaceOpeners"), () => {
   const kinds = [
@@ -100,6 +104,7 @@ describe("LayoutLauncher", () => {
       "Alpha",
       "Beta",
       "No project",
+      "Add project…",
       "Changes",
       "Files",
       "Browser",
@@ -120,6 +125,20 @@ describe("LayoutLauncher", () => {
     useLayoutStore.getState().setLayoutFromServer(buildLayout([[]]));
     await using screen = await render(<LayoutLauncher tabId={null} context={null} />);
     expect(rowLabels(screen.container).filter((label) => label === "No project")).toHaveLength(1);
+  });
+
+  it("adds a project from the last row of Start a thread in", async () => {
+    useLayoutStore.getState().setLayoutFromServer(buildLayout([[]]));
+    harness.addProject.mockClear();
+    await using screen = await render(<LayoutLauncher tabId={null} context={null} />);
+    const labels = rowLabels(screen.container);
+    const addProject = Array.from(
+      screen.container.querySelectorAll<HTMLElement>("[data-layout-launcher-row]"),
+    ).find((candidate) => candidate.textContent?.startsWith("Add project…"));
+    expect(addProject).toBeDefined();
+    expect(labels.indexOf("Add project…")).toBeGreaterThan(labels.indexOf("No project"));
+    addProject!.click();
+    expect(harness.addProject).toHaveBeenCalledTimes(1);
   });
 
   it("draws every row at one height, with or without a shortcut", async () => {
