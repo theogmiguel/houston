@@ -371,6 +371,9 @@ export const DesktopUpdateCheckResultSchema = Schema.Struct({
 
 export const PRIMARY_LOCAL_ENVIRONMENT_ID = "primary";
 
+/** The desktop backend instance id prefix for its WSL backend, `wsl:<distro>`. */
+export const WSL_BACKEND_ID_PREFIX = "wsl:";
+
 export interface DesktopEnvironmentBootstrap {
   // Stable backend identity used to reopen routed projects.
   id: string;

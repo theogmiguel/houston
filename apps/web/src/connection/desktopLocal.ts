@@ -1,6 +1,8 @@
 import type { ConnectionTarget } from "@houston-app/client-runtime/connection";
 import {
   PRIMARY_LOCAL_ENVIRONMENT_ID,
+  WSL_BACKEND_ID_PREFIX,
+  type EnvironmentId,
   type HostBridge,
   type DesktopEnvironmentBootstrap,
 } from "@houston-app/contracts";
@@ -24,6 +26,29 @@ export function desktopLocalBackendId(target: ConnectionTarget): string | null {
   return isDesktopLocalConnectionTarget(target)
     ? target.connectionId.slice(DESKTOP_LOCAL_CONNECTION_ID_PREFIX.length)
     : null;
+}
+
+export function isWslBackendId(backendId: string | null): boolean {
+  return backendId !== null && backendId.startsWith(WSL_BACKEND_ID_PREFIX);
+}
+
+/** Which environment ids the desktop serves from its WSL backend, for sidebar grouping. */
+export function createWslEnvironmentPredicate(
+  environments: ReadonlyArray<{
+    readonly environmentId: EnvironmentId;
+    readonly entry?: { readonly target: ConnectionTarget } | undefined;
+  }>,
+): (environmentId: EnvironmentId) => boolean {
+  const wslEnvironmentIds = new Set(
+    environments
+      .filter(
+        (environment) =>
+          environment.entry !== undefined &&
+          isWslBackendId(desktopLocalBackendId(environment.entry.target)),
+      )
+      .map((environment) => environment.environmentId),
+  );
+  return (environmentId) => wslEnvironmentIds.has(environmentId);
 }
 
 export type DesktopSecondaryBootstrapsRead =

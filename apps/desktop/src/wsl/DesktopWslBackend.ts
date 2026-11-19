@@ -6,7 +6,7 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
 
-import type { DesktopWslBackendStatus } from "@houston-app/contracts";
+import { type DesktopWslBackendStatus, WSL_BACKEND_ID_PREFIX } from "@houston-app/contracts";
 import * as NetService from "@houston-app/shared/Net";
 
 import * as DesktopObservability from "../app/DesktopObservability.ts";
@@ -19,7 +19,7 @@ import * as DesktopWslEnvironment from "./DesktopWslEnvironment.ts";
 import * as DesktopWslServerAttachment from "./DesktopWslServerAttachment.ts";
 import { wslPrimarySelected, WSL_SERVER_START_ENABLED } from "./wslServerSupport.ts";
 
-export const WSL_INSTANCE_ID_PREFIX = "wsl:";
+export const WSL_INSTANCE_ID_PREFIX = WSL_BACKEND_ID_PREFIX;
 const WSL_DEFAULT_DISTRO_ID = `${WSL_INSTANCE_ID_PREFIX}default`;
 const MAX_TCP_PORT = 65_535;
 

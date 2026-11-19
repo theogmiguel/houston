@@ -1,3 +1,5 @@
+import { WSL_BACKEND_ID_PREFIX } from "@houston-app/contracts";
+
 export interface WslUncPath {
   readonly distro: string;
   readonly linuxPath: string;
@@ -25,7 +27,7 @@ export interface WslProjectSelection<TEnvironmentId extends string = string> ext
 
 const WSL_UNC_PREFIXES = ["\\\\wsl.localhost\\", "\\\\wsl$\\"] as const;
 const WSL_DISTRO_NAME_PATTERN = /^[A-Za-z0-9._-]+$/;
-const WSL_DEFAULT_BACKEND_ID = "wsl:default";
+const WSL_DEFAULT_BACKEND_ID = `${WSL_BACKEND_ID_PREFIX}default`;
 
 export function parseWslUncPath(input: string): WslUncPath | null {
   const normalized = input.trim().replaceAll("/", "\\");
@@ -59,11 +61,11 @@ export function resolveWslProjectSelection<TEnvironmentId extends string>(
   }
 
   const exact = candidates.find((candidate) => {
-    if (!candidate.backendId.startsWith("wsl:")) {
+    if (!candidate.backendId.startsWith(WSL_BACKEND_ID_PREFIX)) {
       return false;
     }
 
-    const backendDistro = candidate.backendId.slice("wsl:".length);
+    const backendDistro = candidate.backendId.slice(WSL_BACKEND_ID_PREFIX.length);
     const runningDistro =
       candidate.runningDistro ??
       (backendDistro.length > 0 && backendDistro.toLowerCase() !== "default"
@@ -99,7 +101,7 @@ function resolveConfiguredWslBackend(
     (distro) => distro.name.toLowerCase() === configuredDistro.toLowerCase(),
   );
   const resolvedDistro = installedDistro?.name ?? configuredDistro;
-  return { backendId: `wsl:${resolvedDistro}`, runningDistro: resolvedDistro };
+  return { backendId: `${WSL_BACKEND_ID_PREFIX}${resolvedDistro}`, runningDistro: resolvedDistro };
 }
 
 export function resolveProjectPickerTarget<TEnvironmentId extends string>(input: {

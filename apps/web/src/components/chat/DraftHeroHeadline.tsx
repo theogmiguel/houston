@@ -12,6 +12,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { useRef, useState } from "react";
 
 import { openAddProjectDialog } from "../AddProjectDialog";
+import { createWslEnvironmentPredicate } from "~/connection/desktopLocal";
 import { shortcutLabelForCommand } from "~/keybindings";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
@@ -114,6 +115,7 @@ export function DraftHeroHeadline({
       settings: projectGroupingSettings,
       primaryEnvironmentId,
       resolveEnvironmentLabel: (environmentId) => environmentLabelById.get(environmentId) ?? null,
+      isWslEnvironment: createWslEnvironmentPredicate(environments),
     }),
     threads,
     projectSortOrder,

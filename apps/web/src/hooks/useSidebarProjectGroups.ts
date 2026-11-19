@@ -3,8 +3,9 @@ import {
   getProjectOrderKey,
   selectProjectGroupingSettings,
 } from "@houston-app/client-runtime/state/project-grouping";
+import { createWslEnvironmentPredicate } from "../connection/desktopLocal";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
-import { useEnvironmentIdentities, usePrimaryEnvironmentId } from "../state/environments";
+import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { useDelegatedUnderParent, useProjects, useQuietThreadShells } from "../state/entities";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { useClientSettings } from "./useSettings";
@@ -17,7 +18,7 @@ export function useSidebarProjectGroups() {
   const delegatedUnderParent = useDelegatedUnderParent();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const groupingSettings = useClientSettings(selectProjectGroupingSettings);
-  const environments = useEnvironmentIdentities();
+  const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const orderedProjects = orderItemsByPreferredIds({
     items: projects,
@@ -37,6 +38,7 @@ export function useSidebarProjectGroups() {
     settings: groupingSettings,
     primaryEnvironmentId,
     resolveEnvironmentLabel: (environmentId) => labels.get(environmentId) ?? null,
+    isWslEnvironment: createWslEnvironmentPredicate(environments),
   });
   // The rail keeps the order the user dragged projects into; activity never reorders it.
   return sortSidebarV2ProjectGroups(unsortedGroups, threads, "manual", delegatedUnderParent);
