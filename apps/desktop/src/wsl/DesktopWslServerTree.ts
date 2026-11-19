@@ -37,7 +37,6 @@ export class DesktopWslServerTree extends Context.Service<
   DesktopWslServerTree,
   {
     readonly ensure: Effect.Effect<WslServerTreeResult>;
-    readonly cleanupLegacy: Effect.Effect<void>;
   }
 >()("@houston-app/desktop/wsl/DesktopWslServerTree") {}
 
@@ -146,25 +145,6 @@ export const make = Effect.gen(function* () {
 
   const gate = yield* Semaphore.make(1);
 
-  const cleanupLegacy = gate
-    .withPermits(1)(
-      needsExtraction
-        ? Effect.gen(function* () {
-            // Delete completeness first: a locked Windows file can leave a half-deleted tree that must not be reused.
-            yield* fs.remove(join(versionDir, MARKER_FILE_NAME), { force: true });
-            yield* fs.remove(treeRoot, { recursive: true, force: true });
-          }).pipe(
-            Effect.catch((cause) =>
-              Effect.logWarning("[wsl-server-tree] Could not remove the legacy extraction cache.", {
-                treeRoot,
-                cause,
-              }),
-            ),
-          )
-        : Effect.void,
-    )
-    .pipe(Effect.withSpan("desktop.wslServerTree.cleanupLegacy"));
-
   const ensure: Effect.Effect<WslServerTreeResult> = gate
     .withPermits(1)(
       Effect.gen(function* () {
@@ -195,14 +175,13 @@ export const make = Effect.gen(function* () {
     )
     .pipe(Effect.withSpan("desktop.wslServerTree.ensure"));
 
-  return DesktopWslServerTree.of({ ensure, cleanupLegacy });
+  return DesktopWslServerTree.of({ ensure });
 });
 
 export const layer = Layer.effect(DesktopWslServerTree, make);
 
 export interface DesktopWslServerTreeTestStub {
   readonly result?: WslServerTreeResult;
-  readonly cleanupLegacy?: Effect.Effect<void>;
 }
 
 export const layerTest = (stub: DesktopWslServerTreeTestStub = {}) =>
@@ -212,7 +191,6 @@ export const layerTest = (stub: DesktopWslServerTreeTestStub = {}) =>
       const environment = yield* DesktopEnvironment.DesktopEnvironment;
       return DesktopWslServerTree.of({
         ensure: Effect.succeed(stub.result ?? { ok: true, root: environment.appRoot }),
-        cleanupLegacy: stub.cleanupLegacy ?? Effect.void,
       });
     }),
   );

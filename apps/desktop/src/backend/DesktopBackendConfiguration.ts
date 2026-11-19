@@ -246,17 +246,11 @@ interface SharedBootstrapInput {
   readonly observabilitySettings: BackendObservabilitySettings;
 }
 
-type WslPreflightRuntime =
-  | {
-      readonly kind: "executable";
-      readonly entryPath: string;
-    }
-  | {
-      readonly kind: "node-script";
-      // Launch the exact Node path probed with node-pty, even if later PATH lookup would resolve another version.
-      readonly nodePath: string;
-      readonly linuxEntryPath: string;
-    };
+type WslPreflightRuntime = {
+  // Launch the exact Node path probed with node-pty, even if later PATH lookup would resolve another version.
+  readonly nodePath: string;
+  readonly linuxEntryPath: string;
+};
 
 interface WslPreflightSuccess {
   readonly _tag: "Ready";
@@ -265,7 +259,6 @@ interface WslPreflightSuccess {
   readonly windowsEntryPath: string;
   readonly runtime: WslPreflightRuntime;
   readonly resolvedPath: string;
-  readonly runtimeId?: string;
 }
 
 interface WslPreflightFailure {
@@ -276,14 +269,6 @@ interface WslPreflightFailure {
 }
 
 const WSL_TRANSIENT_PREFLIGHT_RETRY_LIMIT = 12;
-const WSL_RUNTIME_ARCHIVE_NAME = "wsl-runtime.tar.gz";
-const WSL_RUNTIME_ARCHIVE_HASH_NAME = `${WSL_RUNTIME_ARCHIVE_NAME}.sha256`;
-const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/i;
-
-const parseWslRuntimeArchiveHash = (value: string): string | null => {
-  const trimmed = value.trim();
-  return SHA256_HEX_PATTERN.test(trimmed) ? trimmed.toLowerCase() : null;
-};
 
 type FailedNodePtyResult = Extract<
   DesktopWslEnvironment.EnsureWslNodePtyResult,
@@ -292,7 +277,6 @@ type FailedNodePtyResult = Extract<
 
 const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(function* (input: {
   readonly distro: string | null;
-  readonly runtimeArchive: DesktopWslEnvironment.WslRuntimeArchive | null;
   readonly allowBuild: boolean;
 }): Effect.fn.Return<
   WslPreflightSuccess | WslPreflightFailure,
@@ -394,50 +378,9 @@ const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(f
       : ({ ok: true, windowsEntryPath, linuxAppRoot: mountedAppRoot.value } as const);
   });
 
-  let stagedFailure: { readonly runtimeId?: string; readonly reason: string } | undefined;
-  const failedStaged = (failure: { readonly reason: string }) =>
-    ({
-      _tag: "Failed",
-      reason: `WSL runtime unavailable: ${failure.reason}`,
-      fatal: true,
-    }) as const;
-
-  if (input.runtimeArchive !== null) {
-    const runtime = yield* wslEnv.prepareRuntime(runningDistro, input.runtimeArchive);
-    if (runtime.ok) {
-      // Staged runtimes bundle Node and node-pty; provider PATH discovery must not require them.
-      const stagedProbe = yield* wslEnv.probeRuntime(runningDistro, runtime.linuxAppRoot);
-      if (stagedProbe.ok) {
-        yield* wslServerTree.cleanupLegacy;
-        return {
-          _tag: "Ready",
-          runningDistro,
-          userHome: userHome.home,
-          windowsEntryPath: environment.backendEntryPath,
-          runtime: { kind: "executable", entryPath: `${runtime.linuxAppRoot}/houston` },
-          resolvedPath: stagedProbe.resolvedPath,
-          runtimeId: input.runtimeArchive.runtimeId,
-        } as const;
-      }
-      yield* Effect.logWarning(
-        "The staged WSL runtime did not start; retrying from the mounted server tree.",
-        { reason: stagedProbe.reason },
-      );
-      stagedFailure = { runtimeId: input.runtimeArchive.runtimeId, reason: stagedProbe.reason };
-    } else {
-      stagedFailure = { reason: runtime.reason };
-      yield* Effect.logWarning(
-        "Could not stage the WSL runtime; launching from the mounted server tree instead.",
-        { reason: runtime.reason },
-      );
-    }
-  }
-
   const mounted = yield* resolveMountedAppRoot;
   if (!mounted.ok) {
-    return stagedFailure && mounted.fatal
-      ? failedStaged(stagedFailure)
-      : ({ _tag: "Failed", reason: mounted.reason, fatal: mounted.fatal } as const);
+    return { _tag: "Failed", reason: mounted.reason, fatal: mounted.fatal } as const;
   }
 
   const nodePtyResult = yield* wslEnv.ensureNodePty(
@@ -446,14 +389,7 @@ const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(f
     nodePtyOptions,
   );
   if (!nodePtyResult.ok) {
-    // Only substitute a staged failure for a fatal mounted failure; transient /mnt failures must remain retryable.
-    return stagedFailure && nodePtyResult.fatal
-      ? failedStaged(stagedFailure)
-      : failedNodePty(nodePtyResult);
-  }
-
-  if (stagedFailure?.runtimeId) {
-    yield* wslEnv.invalidateRuntime(runningDistro, stagedFailure.runtimeId);
+    return failedNodePty(nodePtyResult);
   }
 
   return {
@@ -462,7 +398,6 @@ const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(f
     userHome: userHome.home,
     windowsEntryPath: mounted.windowsEntryPath,
     runtime: {
-      kind: "node-script",
       nodePath: nodePtyResult.nodePath,
       linuxEntryPath: `${mounted.linuxAppRoot}/apps/server/dist/bin.mjs`,
     },
@@ -575,43 +510,12 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
 > {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
-  const fileSystem = yield* FileSystem.FileSystem;
 
   // wslhost loopback forwarding is unreliable on some Windows hosts; advertise the WSL IP instead.
   const wslBindHost = "0.0.0.0";
 
-  const archivePath = environment.path.join(environment.resourcesPath, WSL_RUNTIME_ARCHIVE_NAME);
-  const archiveHashPath = environment.path.join(
-    environment.resourcesPath,
-    WSL_RUNTIME_ARCHIVE_HASH_NAME,
-  );
-
-  const hasArchive = environment.isPackaged
-    ? yield* fileSystem.exists(archivePath).pipe(Effect.orElseSucceed(() => false))
-    : false;
-  const archiveHash = hasArchive
-    ? yield* fileSystem.readFileString(archiveHashPath).pipe(
-        Effect.map(parseWslRuntimeArchiveHash),
-        Effect.orElseSucceed(() => null),
-      )
-    : null;
-  if (hasArchive && archiveHash === null) {
-    yield* Effect.logWarning(
-      "Ignoring the WSL runtime archive because its SHA-256 identity is missing or invalid; launching from the mounted server tree instead.",
-      { hashPath: archiveHashPath },
-    );
-  }
-
   const preflight = yield* runWslPreflight({
     distro: input.distro,
-    runtimeArchive:
-      archiveHash === null
-        ? null
-        : {
-            windowsPath: archivePath,
-            runtimeId: `sha256-${archiveHash}`,
-            sha256: archiveHash,
-          },
     allowBuild: !environment.isPackaged,
   });
 
@@ -704,14 +608,8 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
 
   // wsl.exe --exec omits the login-shell PATH needed to find provider CLIs and npm.
   const runtime = preflight.runtime;
-  const launchPath =
-    runtime.kind === "executable"
-      ? `${WSL_SERVER_SYSTEM_PATH}:${preflight.resolvedPath}`
-      : `${nodeBinDirOf(runtime.nodePath)}:${WSL_SERVER_SYSTEM_PATH}:${preflight.resolvedPath}`;
-  const command =
-    runtime.kind === "executable"
-      ? [runtime.entryPath]
-      : [runtime.nodePath, runtime.linuxEntryPath];
+  const launchPath = `${nodeBinDirOf(runtime.nodePath)}:${WSL_SERVER_SYSTEM_PATH}:${preflight.resolvedPath}`;
+  const command = [runtime.nodePath, runtime.linuxEntryPath];
 
   return {
     ...baseConfig,
@@ -726,7 +624,6 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
       ...devUrlArgs,
     ],
     preflightFailure: Option.none(),
-    ...(preflight.runtimeId === undefined ? {} : { wslRuntimeId: preflight.runtimeId }),
   } satisfies DesktopBackendManager.DesktopBackendStartConfig;
 });
 

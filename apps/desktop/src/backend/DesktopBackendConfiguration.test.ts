@@ -166,7 +166,6 @@ const wslServices = (
       DesktopWslServerTree.DesktopWslServerTree,
       DesktopWslServerTree.DesktopWslServerTree.of({
         ensure: Effect.succeed({ ok: true, root: String.raw`C:\app` }),
-        cleanupLegacy: Effect.void,
       }),
     ),
     FileSystem.layerNoop({ exists: () => Effect.succeed(true) }),

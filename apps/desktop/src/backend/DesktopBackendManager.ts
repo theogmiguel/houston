@@ -30,7 +30,6 @@ import { waitForHttpReady as waitForHttpReadyShared } from "@houston-app/shared/
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopBrowserHost from "../preview/DesktopBrowserHost.ts";
-import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
 
 const INITIAL_RESTART_DELAY = Duration.millis(500);
 const MAX_RESTART_DELAY = Duration.seconds(10);
@@ -99,7 +98,6 @@ export interface DesktopBackendStartConfig extends BackendProcessContext {
   readonly captureOutput: boolean;
   readonly preflightFailure: Option.Option<PreflightFailure>;
   readonly runningDistro?: string;
-  readonly wslRuntimeId?: string;
 }
 
 export interface PreflightFailure {
@@ -719,7 +717,6 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
   | DesktopObservability.DesktopBackendOutputLogFactory
   | DesktopTelemetryPublisher.DesktopTelemetryPublisher
   | DesktopBrowserHost.DesktopBrowserHost
-  | DesktopWslEnvironment.DesktopWslEnvironment
   | Scope.Scope
 > {
   const parentScope = yield* Scope.Scope;
@@ -728,7 +725,6 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
   const backendOutputLog = yield* backendOutputLogFactory.forInstance(spec.id);
   const desktopTelemetryPublisher = yield* DesktopTelemetryPublisher.DesktopTelemetryPublisher;
   const desktopBrowserHost = yield* DesktopBrowserHost.DesktopBrowserHost;
-  const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const httpClient = yield* HttpClient.HttpClient;
   const state = yield* Ref.make(initialState);
@@ -1088,15 +1084,6 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
             }
 
             yield* spec.onReady?.(config.value.httpBaseUrl, pid) ?? Effect.void;
-            if (
-              config.value.runningDistro !== undefined &&
-              config.value.wslRuntimeId !== undefined
-            ) {
-              yield* wslEnvironment.pruneRuntimes(
-                config.value.runningDistro,
-                config.value.wslRuntimeId,
-              );
-            }
           }),
           onReadinessFailure: Effect.fn("desktop.backendInstance.onReadinessFailure")(
             function* (error) {
