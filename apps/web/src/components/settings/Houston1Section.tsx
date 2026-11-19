@@ -1,91 +1,23 @@
-import { useAtomCommand } from "~/state/use-atom-command";
-import { useEnvironmentQuery } from "~/state/query";
-import {
-  V1_IMPORT_EMPTY_INPUT,
-  v1SlackImportRun,
-  v1SlackImportStatus,
-  v1TaskImportRun,
-  v1TaskImportStatus,
-  v1IssueImportRun,
-  v1IssueImportStatus,
-} from "~/state/v1Import";
 import type { DesktopV1CleanupReport } from "@houston-app/contracts";
 import { useEffect, useState } from "react";
 
 import { Button } from "../ui/button";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
-import {
-  houston1ImportDescription,
-  houston1ImportFailure,
-  houston1ImportSteps,
-  houston1ImportVisible,
-  type Houston1ImportStatuses,
-} from "./houston1Import.logic";
+import { useHouston1Import } from "./useHouston1Import";
 
 export function Houston1ImportSection() {
   const { environment } = useSettingsScope();
   const environmentId = environment?.environmentId ?? null;
-  const tasks = useEnvironmentQuery(
-    environmentId === null
-      ? null
-      : v1TaskImportStatus({ environmentId, input: V1_IMPORT_EMPTY_INPUT }),
-  );
-  const issues = useEnvironmentQuery(
-    environmentId === null
-      ? null
-      : v1IssueImportStatus({ environmentId, input: V1_IMPORT_EMPTY_INPUT }),
-  );
-  const slack = useEnvironmentQuery(
-    environmentId === null
-      ? null
-      : v1SlackImportStatus({ environmentId, input: V1_IMPORT_EMPTY_INPUT }),
-  );
-  const runTasks = useAtomCommand(v1TaskImportRun, { reportFailure: false });
-  const runIssues = useAtomCommand(v1IssueImportRun, { reportFailure: false });
-  const runSlack = useAtomCommand(v1SlackImportRun, { reportFailure: false });
-  const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
-
-  const statuses: Houston1ImportStatuses = {
-    tasks: tasks.data,
-    issues: issues.data,
-    slack: slack.data,
-  };
-  const steps = houston1ImportSteps(statuses);
-  const visible = houston1ImportVisible(statuses);
+  const { steps, visible, description, busy, failure, run } = useHouston1Import(environmentId);
   if (!visible || environmentId === null) return null;
-
-  const run = async () => {
-    setBusy(true);
-    setFailure(null);
-    // Each step runs only after the previous one succeeded; the first failure is shown.
-    let failed: { readonly cause: unknown } | null = null;
-    if (steps.includes("tasks")) {
-      const result = await runTasks({ environmentId, input: V1_IMPORT_EMPTY_INPUT });
-      if (result._tag === "Failure") failed = { cause: result.cause };
-    }
-    if (failed === null && steps.includes("issues")) {
-      const result = await runIssues({ environmentId, input: V1_IMPORT_EMPTY_INPUT });
-      if (result._tag === "Failure") failed = { cause: result.cause };
-    }
-    if (failed === null && steps.includes("slack")) {
-      const result = await runSlack({ environmentId, input: V1_IMPORT_EMPTY_INPUT });
-      if (result._tag === "Failure") failed = { cause: result.cause };
-    }
-    if (failed !== null) setFailure(houston1ImportFailure(failed.cause));
-    tasks.refresh();
-    issues.refresh();
-    slack.refresh();
-    setBusy(false);
-  };
 
   return (
     <SettingsSection id="houston-1" title="Coming from Houston 1">
       <SettingsRow
         id="houston-1-import"
         title="Import Houston 1 data"
-        description={houston1ImportDescription(statuses)}
+        description={description}
         status={failure ?? undefined}
         control={
           steps.length > 0 ? (

@@ -121,10 +121,6 @@ export const SIDEBAR_NEEDS_YOU_HEADING_GLYPH_CLS = "inline-grid size-3 shrink-0 
 /** A thread row's project name on its first line. */
 export const SIDEBAR_THREAD_PROJECT_CLS = "min-w-0 truncate";
 
-/** Indented to the project name, so it reads as the empty list's content. */
-export const SIDEBAR_PROJECT_EMPTY_ACTION_CLS =
-  "flex h-(--h-row) w-full cursor-pointer items-center gap-2 rounded-lg py-0 pr-2 pl-7.5 text-left text-xs text-secondary-label transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
-
 /**
  * A thread card's inner start padding: text never touches the card edge. Matches the card's end
  * padding in `SIDEBAR_THREAD_ROW_CLS`.
@@ -134,6 +130,14 @@ export const SIDEBAR_THREAD_ROW_INDENT_CLS = "pl-3";
 /** A fixed 14px box in both states; the chevron rotates inside instead of swapping icons. */
 export const SIDEBAR_GROUP_CHEVRON_BOX_CLS =
   "inline-grid size-3.5 shrink-0 place-items-center text-secondary-label";
+
+/** The heading's chevron: the only control that collapses and expands the group. */
+export const SIDEBAR_GROUP_CHEVRON_BUTTON_CLS =
+  "inline-grid size-3.5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+
+/** The heading's name: it shows the workspace in the main area. */
+export const SIDEBAR_GROUP_LABEL_BUTTON_CLS =
+  "flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 export const SIDEBAR_GROUP_CHEVRON_CLS =
   "size-3 transition-transform duration-(--motion-disclosure) ease-standard";

@@ -265,10 +265,40 @@ describe("layout sync", () => {
     stop();
   });
 
-  it("empties a closed workspace before deleting it so its tabs do not come back", async () => {
+  it("keeps a server-stored empty workspace while another workspace changes", async () => {
+    const empty = { ...record("a", 0, "ta"), columns: [] };
+    const server = fakeServer([empty, record("b", 1, "tb")]);
+    const stop = start(server);
+    expect(store.getState().layout.workspaces.map((workspace) => workspace.id)).toContain("a");
+    store.getState().focusWorkspace("b");
+    store.getState().openKeptTab(chat("tc"));
+    await settle();
+    expect(server.records.has("a")).toBe(true);
+    expect(server.calls).not.toContain("delete:a");
+    stop();
+  });
+
+  it("keeps a workspace whose last tab closed when the server already stores it", async () => {
     const server = fakeServer([record("a", 0, "ta"), record("b", 1, "tb")]);
     const stop = start(server);
     store.getState().closeTab("b-t");
+    await settle();
+    expect(server.calls).toEqual(["put:b@1"]);
+    expect(server.records.get("b")!.columns).toEqual([]);
+    expect([...server.records.keys()]).toEqual(["a", "b"]);
+    stop();
+  });
+
+  it("still empties and deletes a workspace the window removed", async () => {
+    const server = fakeServer([record("a", 0, "ta"), record("b", 1, "tb")]);
+    const stop = start(server);
+    const layout = store.getState().layout;
+    store.setState({
+      layout: {
+        ...layout,
+        workspaces: layout.workspaces.filter((workspace) => workspace.id !== "b"),
+      },
+    });
     await settle();
     expect(server.calls).toEqual(["put:b@1", "delete:b"]);
     expect([...server.records.keys()]).toEqual(["a"]);

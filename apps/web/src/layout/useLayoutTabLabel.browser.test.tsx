@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import "~/index.css";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
@@ -6,8 +6,24 @@ import { ProviderDriverKind, ProviderInstanceId } from "@houston-app/contracts";
 
 import { render } from "../../test/render";
 import type { SidebarProviderEntry } from "../components/sidebar/SidebarThreadRow";
+import { DraftId as DraftIdValue, useComposerDraftStore } from "../composerDraftStore";
 import type { LayoutTab } from "./layoutModel";
 import { ChatTabIcon, useLayoutTabLabel } from "./useLayoutTabLabel";
+
+vi.mock(import("../state/entities"), async (original) => ({
+  ...(await original()),
+  useProjects: () =>
+    [
+      { environmentId: "env-1", id: "p-notes", title: "notes-app", archivedAt: null },
+      {
+        environmentId: "env-1",
+        id: "p-scratch",
+        title: "No project",
+        archivedAt: null,
+        isScratch: true,
+      },
+    ] as never,
+}));
 
 function Icons({ tabs }: { readonly tabs: readonly LayoutTab[] }) {
   const labelOf = useLayoutTabLabel();
@@ -83,5 +99,67 @@ describe("chat tab icon", () => {
       const folder = icon.querySelector<SVGElement>("svg.lucide-square-pen")!;
       expect(getComputedStyle(folder).display).not.toBe("none");
     }
+  });
+});
+
+describe("chat tab title", () => {
+  const draftSession = (projectId: string, threadId: string) =>
+    ({
+      environmentId: "env-1",
+      projectId,
+      threadId,
+      logicalProjectKey: `env-1:${projectId}`,
+      createdAt: "2026-11-19T00:00:00.000Z",
+      runtimeMode: "default",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      envMode: "local",
+      startFromOrigin: false,
+    }) as never;
+  const draftTab = (draftId: string): LayoutTab => ({
+    id: `chat:${draftId}`,
+    content: { kind: "chat", target: { kind: "draft", draftId: DraftIdValue.make(draftId) } },
+  });
+  function Labels({ tabs }: { readonly tabs: readonly LayoutTab[] }) {
+    const labelOf = useLayoutTabLabel();
+    return (
+      <div>
+        {tabs.map((tab) => {
+          const label = labelOf(tab);
+          return (
+            <span key={tab.id} data-title={tab.id} data-tooltip={label.tooltip ?? ""}>
+              {label.title}
+            </span>
+          );
+        })}
+      </div>
+    );
+  }
+
+  it("names the draft's project in the tab and its tooltip", async () => {
+    using _restore = {
+      [Symbol.dispose]: () => useComposerDraftStore.setState({ draftThreadsByThreadKey: {} }),
+    };
+    useComposerDraftStore.setState({
+      draftThreadsByThreadKey: { "draft-notes": draftSession("p-notes", "thread-notes") },
+    });
+    await using screen = await render(<Labels tabs={[draftTab("draft-notes")]} />);
+    const title = screen.container.querySelector<HTMLElement>('[data-title="chat:draft-notes"]')!;
+    expect(title.textContent).toBe("New thread · notes-app");
+    expect(title.dataset.tooltip).toBe("New thread · notes-app");
+  });
+
+  it("keeps a scratch draft's tab titled New thread", async () => {
+    using _restore = {
+      [Symbol.dispose]: () => useComposerDraftStore.setState({ draftThreadsByThreadKey: {} }),
+    };
+    useComposerDraftStore.setState({
+      draftThreadsByThreadKey: { "draft-scratch": draftSession("p-scratch", "thread-scratch") },
+    });
+    await using screen = await render(<Labels tabs={[draftTab("draft-scratch")]} />);
+    const title = screen.container.querySelector<HTMLElement>('[data-title="chat:draft-scratch"]')!;
+    expect(title.textContent).toBe("New thread");
+    expect(title.dataset.tooltip).toBe("");
   });
 });

@@ -13,6 +13,7 @@ import {
   resolveCommandPaletteProject,
   buildThreadActionItems,
   buildLinkedThreadActionItems,
+  commandPaletteEmptyStateMessage,
   filterPinnedBrowseEntries,
   filterCommandPaletteGroups,
   reduceCommandPaletteUiState,
@@ -1103,5 +1104,41 @@ describe("command palette opening groups", () => {
     expect(reduceCommandPaletteUiState(closed, { _tag: "OpenNewThreadIn" }).openIntent).toEqual({
       kind: "new-thread-in",
     });
+  });
+});
+
+describe("command palette empty state", () => {
+  it("tells the user what to do in folder path mode", () => {
+    expect(
+      commandPaletteEmptyStateMessage({
+        isBrowsing: true,
+        relativePathNeedsActiveProject: false,
+        isThreadSearchPending: false,
+      }),
+    ).toBe("Type a folder path, or pick one below");
+  });
+
+  it("keeps the other empty states", () => {
+    expect(
+      commandPaletteEmptyStateMessage({
+        isBrowsing: false,
+        relativePathNeedsActiveProject: true,
+        isThreadSearchPending: false,
+      }),
+    ).toBe("Relative paths require an active project.");
+    expect(
+      commandPaletteEmptyStateMessage({
+        isBrowsing: false,
+        relativePathNeedsActiveProject: false,
+        isThreadSearchPending: true,
+      }),
+    ).toBe("Searching thread messages…");
+    expect(
+      commandPaletteEmptyStateMessage({
+        isBrowsing: false,
+        relativePathNeedsActiveProject: false,
+        isThreadSearchPending: false,
+      }),
+    ).toBeUndefined();
   });
 });

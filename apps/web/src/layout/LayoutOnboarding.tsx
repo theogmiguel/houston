@@ -22,6 +22,7 @@ import {
 import { Popover, PopoverPopup } from "../components/ui/popover";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { isMacPlatform } from "../lib/utils";
+import { useAllEnvironmentShellsBootstrapped, useThreadShells } from "../state/entities";
 import { LayoutTourDiagram, LayoutTourKeys, type LayoutTourLesson } from "./LayoutTourDiagram";
 import { useLayoutStore } from "./layoutStore";
 import { useLayoutOverlayStore } from "./layoutOverlayStore";
@@ -87,6 +88,9 @@ export function LayoutLearningTips() {
 /** A dismissible introduction, followed by a five-step tour anchored to the real workspace. */
 export function LayoutOnboarding() {
   const [completed, setCompleted] = useLocalStorage(LAYOUT_TOUR_KEY, false, Schema.Boolean);
+  const bootstrapped = useAllEnvironmentShellsBootstrapped();
+  const threads = useThreadShells();
+  const [firstTime, setFirstTime] = useState<boolean | null>(null);
   const [step, setStep] = useState<number | null>(null);
   const nextRef = useRef<HTMLButtonElement | null>(null);
   const [learnedBeforeTour, setLearnedBeforeTour] = useState<ReadonlyArray<string>>([]);
@@ -123,6 +127,13 @@ export function LayoutOnboarding() {
       Icon: KeyboardIcon,
     },
   ];
+  // The tour speaks to people upgrading from the older layout. Someone with no threads yet never
+  // saw that layout; decided once, when the shells prove the workspace is empty.
+  if (firstTime === null && bootstrapped) setFirstTime(threads.length === 0);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- records the skipped tour in this device's storage so it never opens for a first-time user
+  useEffect(() => {
+    if (firstTime === true && !completed) setCompleted(true);
+  }, [firstTime, completed, setCompleted]);
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- the overview lesson opens the real workspace overview and restores the prior state on leaving it.
   useEffect(() => {
     if (step !== 3) return;
@@ -136,6 +147,7 @@ export function LayoutOnboarding() {
     setStep(null);
   };
   const learned = useLayoutLessons();
+  if (firstTime !== false) return null;
   if (completed && step === null) return null;
   if (step === null)
     return (
@@ -150,8 +162,8 @@ export function LayoutOnboarding() {
             <div className="flex flex-col gap-2">
               <DialogTitle render={<h1 />}>Tabs, side by side</DialogTitle>
               <DialogDescription>
-                Chats, terminals, diffs and the browser are all tabs now. Put them side by side,
-                scroll to the rest, and zoom out to see it all.
+                Chats, terminals, diffs and the browser are all tabs. Put them side by side, scroll
+                to the rest, and zoom out to see it all.
               </DialogDescription>
             </div>
             <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 md:grid-cols-4">
@@ -166,7 +178,7 @@ export function LayoutOnboarding() {
                   ],
                   [
                     "keys",
-                    "Same keys as before",
+                    "Keys for everything",
                     isMacPlatform(navigator.platform)
                       ? "⌘J for a terminal, ⌥⌘B for the diff."
                       : "Ctrl+J for a terminal, Ctrl+Alt+B for the diff.",

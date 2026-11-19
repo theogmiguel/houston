@@ -184,13 +184,15 @@ export function selectIntendedLayout(): LayoutState {
 }
 
 /**
- * Where the next new thread's route opens: a placement, in place of a launcher tab, or as the
- * ghost tab beside the chat of the thread it was opened from.
+ * Where the next new thread's route opens: a placement, in place of a launcher tab, as the ghost
+ * tab beside the chat of the thread it was opened from, or in a named workspace (even one with no
+ * columns yet).
  */
 export type LayoutNewTabRequest =
   | LayoutOpenPlacement
   | { readonly replaceTabId: string }
-  | { readonly ghostOf: ScopedThreadRef };
+  | { readonly ghostOf: ScopedThreadRef }
+  | { readonly workspaceId: string };
 
 /** One pending request; its identity tells overlapping requests apart. */
 export interface LayoutNewTabTicket {

@@ -3,7 +3,9 @@
  */
 import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import { useClosedViewStore } from "../closedViewStore";
-import { DraftId, useComposerDraftStore } from "../composerDraftStore";
+import { composerDraftHasUserContent, DraftId, useComposerDraftStore } from "../composerDraftStore";
+import { requestReopenClosedView } from "../components/ReopenClosedViewShortcut";
+import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { getLayoutBehavior } from "./layoutBehavior";
 import {
   createLayoutLauncherContent,
@@ -160,10 +162,15 @@ export function closeLayoutTabByUser(tabId: string, options: { bulk?: boolean } 
   }
   if (location && tab?.content.kind === "chat") {
     const target = tab.content.target;
-    const draft =
+    const drafts = useComposerDraftStore.getState();
+    // A draft's tab can name its draft directly, or only carry the draft's thread ref.
+    const draftId =
       target.kind === "draft"
-        ? useComposerDraftStore.getState().getDraftSession(target.draftId)
-        : null;
+        ? target.draftId
+        : target.kind === "server"
+          ? drafts.getDraftIdByRef(target.threadRef)
+          : null;
+    const draft = draftId === null ? null : drafts.getDraftSession(draftId);
     const threadRef =
       target.kind === "server"
         ? target.threadRef
@@ -176,8 +183,26 @@ export function closeLayoutTabByUser(tabId: string, options: { bulk?: boolean } 
         threadRef,
         paneId: location.pane.id,
         index: location.tabIndex,
-        ...(target.kind === "draft" ? { draftId: target.draftId } : {}),
+        ...(draftId === null ? {} : { draftId }),
       });
+    // Closing an unsent draft keeps its text, so say where it went and offer it back.
+    if (
+      draftId !== null &&
+      draft?.promotedTo == null &&
+      composerDraftHasUserContent(drafts.getComposerDraft(draftId))
+    ) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "info",
+          title: "Draft closed",
+          description: "Its unsent text is kept until you reopen it.",
+          actionProps: {
+            children: "Reopen",
+            onClick: () => void requestReopenClosedView(),
+          },
+        }),
+      );
+    }
     const lineage =
       threadRef && !options.bulk && selectFocusedTab(store.layout)?.id === tabId
         ? readThreadLineage(threadRef)

@@ -1,6 +1,5 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { useAtomValue } from "@effect/atom-react";
-import { useLocation, useNavigate } from "@tanstack/react-router";
 import { Atom } from "effect/reactivity";
 import { useEffect, useState } from "react";
 
@@ -73,8 +72,6 @@ export function FirstRunGate({
   readonly hostedStatic: boolean;
   readonly children: React.ReactNode;
 }) {
-  const navigate = useNavigate();
-  const pathname = useLocation({ select: (location) => location.pathname });
   const hydrationStatus = useClientSettingsHydrationStatus();
   const hydrated = hydrationStatus === "ready";
   const onboardingCompletedAt = useClientSettings((settings) => settings.onboardingCompletedAt);
@@ -158,23 +155,12 @@ export function FirstRunGate({
     return () => window.clearTimeout(timer);
   }, [decision, enabled, hydrated]);
 
-  // Setup opens by itself only from the home route. A direct link, such as
-  // Settings, opens as asked so setup can never lock a user out of the app.
-  const wizardOwnsRoute = pathname === "/";
-  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- navigates from the home route to /welcome when the gate decides on the wizard
-  useEffect(() => {
-    if (decision === "wizard" && wizardOwnsRoute) {
-      void navigate({ to: "/welcome", replace: true });
-    }
-  }, [decision, navigate, wizardOwnsRoute]);
-
   if (settingsReadFailed) {
     return <FirstRunRecovery reason="settings" retrying={hydrationStatus === "retrying"} />;
   }
-  if (decision === "wizard" && !wizardOwnsRoute) {
-    return children;
-  }
-  if (decision !== "app") {
+  // Setup opens from the board's empty state; the gate only holds the app back while the
+  // first-run decision is still pending.
+  if (decision !== "app" && decision !== "wizard") {
     return stalled ? <FirstRunRecovery reason="connection" /> : null;
   }
   return children;

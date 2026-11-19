@@ -7,7 +7,7 @@ import {
 import { FolderOpenIcon, FolderPlusIcon, GitForkIcon } from "lucide-react";
 import { create } from "zustand";
 
-import type { AddProjectFlowRequest } from "../addProjectFlow";
+import type { AddProjectAction, AddProjectFlowRequest } from "../addProjectFlow";
 import { openCommandPalette } from "../commandPaletteBus";
 import { useEnvironmentQuery } from "../state/query";
 import { sourceControlEnvironment } from "../state/sourceControl";
@@ -24,8 +24,15 @@ const useOpen = create<{ readonly open: boolean; readonly session: number }>(() 
   session: 0,
 }));
 
-/** Opens the chooser for a project that already exists locally, a clone, or a new repository. */
-export function openAddProjectDialog(): void {
+/**
+ * Opens the chooser for a project that already exists locally, a clone, or a new repository.
+ * With an action, the same flow starts at that step without showing the chooser.
+ */
+export function openAddProjectDialog(options: { readonly action?: AddProjectAction } = {}): void {
+  if (options.action !== undefined) {
+    openCommandPalette({ open: "add-project", addProject: { action: options.action } });
+    return;
+  }
   useOpen.setState((state) => ({ open: true, session: state.session + 1 }));
 }
 

@@ -11,11 +11,13 @@ import {
 } from "./layoutRecords";
 import {
   createLayoutState,
+  normalizeLayout,
   type LayoutState,
   type LayoutTab,
   type LayoutTabContent,
   type LayoutWorkspace,
 } from "./layoutModel";
+import { createLayoutWorkspaceNamed } from "./layoutWorkspaces";
 
 const environmentId = EnvironmentId.make("local");
 const ref = (id: string) => scopeThreadRef(environmentId, ThreadId.make(id));
@@ -98,6 +100,32 @@ describe("layoutStateToRecords", () => {
     const records = layoutStateToRecords(createLayoutState(), new Map(), NOW);
     expect(records).toHaveLength(1);
     expect(records[0]!.columns).toEqual([]);
+  });
+
+  it("keeps an empty workspace the server already stores, so it survives a reload", () => {
+    const state = stateOf([
+      workspace("w1", [column("c1", [tab("t1", chat("a"))])]),
+      workspace("w2", [], { name: "Docs" }),
+    ]);
+    const known = new Map<string, KnownLayoutRecord>([
+      ["w1", { name: "Workspace 1", createdAt: NOW }],
+      ["w2", { name: "Docs", createdAt: NOW }],
+    ]);
+    expect(layoutStateToRecords(state, known, NOW).map((record) => record.id)).toEqual([
+      "w1",
+      "w2",
+    ]);
+  });
+
+  it("keeps an empty workspace the user just created", () => {
+    const before = normalizeLayout({
+      workspaces: [workspace("w1", [column("c1", [tab("t1", chat("a"))])])],
+      focusedWorkspaceId: "w1",
+    });
+    const created = createLayoutWorkspaceNamed(before, "Docs").state;
+    const records = layoutStateToRecords(created, new Map(), NOW);
+    expect(records.map((record) => record.id)).toEqual(["w1", created.workspaces.at(-1)!.id]);
+    expect(records[1]!.name).toBe("Docs");
   });
 
   it("names an unnamed workspace by its place and reuses the stored name afterwards", () => {
@@ -225,6 +253,17 @@ describe("layoutStateFromRecords", () => {
     expect(back).toMatchObject({ pinnedAt: NOW, hidden: true });
     expect(layoutRecordContentKey(back!)).toBe(layoutRecordContentKey(pinned));
     expect(layoutRecordContentKey(pinned)).not.toBe(layoutRecordContentKey(record("a", 0, ["ta"])));
+  });
+
+  it("keeps a stored empty workspace that is neither focused nor last", () => {
+    const empty = { ...record("b", 1, ["tb"]), columns: [] };
+    const state = layoutStateFromRecords(
+      [record("a", 0, ["ta"]), empty, record("c", 2, ["tc"])],
+      null,
+      new Set(),
+    );
+    expect(state.workspaces.map((workspace) => workspace.id)).toContain("b");
+    expect(state.workspaces.find((workspace) => workspace.id === "b")!.columns).toEqual([]);
   });
 
   it("yields the default empty layout for no records", () => {
