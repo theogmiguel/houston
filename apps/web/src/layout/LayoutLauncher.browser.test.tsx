@@ -247,6 +247,15 @@ describe("LayoutLauncher", () => {
     expect(screen.container.textContent).not.toContain("Open beside this thread");
   });
 
+  it("says what Device opens", async () => {
+    resetHarness();
+    useLayoutStore.getState().setLayoutFromServer(buildLayout([[]]));
+    await using screen = await render(<LayoutLauncher tabId={null} context={context} />);
+    expect(row(screen.container, "Device")?.textContent).toContain(
+      "iOS Simulators and Android emulators.",
+    );
+  });
+
   it("opens the chosen surface of its thread, in a browser profile when one is chosen", async () => {
     resetHarness();
     useLayoutStore.getState().setLayoutFromServer(buildLayout([[]]));

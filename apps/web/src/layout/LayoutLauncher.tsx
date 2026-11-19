@@ -53,6 +53,7 @@ const SURFACES: ReadonlyArray<{
   kind: LauncherSurfaceKind;
   label: string;
   icon: typeof GitCompareIcon;
+  detail?: string;
 }> = [
   { kind: "diff", label: "Changes", icon: GitCompareIcon },
   { kind: "files", label: "Files", icon: FolderIcon },
@@ -60,7 +61,12 @@ const SURFACES: ReadonlyArray<{
   { kind: "terminal", label: "Terminal", icon: SquareTerminalIcon },
   { kind: "pull-request", label: "Pull request", icon: PullRequestGlyph.pullRequest },
   { kind: "pull-requests", label: "Linked pull requests", icon: PullRequestGlyph.link },
-  { kind: "device", label: "Device", icon: TabletSmartphoneIcon },
+  {
+    kind: "device",
+    label: "Device",
+    icon: TabletSmartphoneIcon,
+    detail: "iOS Simulators and Android emulators.",
+  },
   { kind: "side-chat", label: "Side chat", icon: MessageSquareTextIcon },
 ];
 
@@ -228,12 +234,14 @@ function LauncherSurfaces({
     readonly key: string;
     readonly icon: typeof GitCompareIcon;
     readonly label: string;
+    readonly detail?: string;
     readonly shortcut: string | null;
     readonly onSelect: () => void;
-  } = ({ kind, label, icon: Icon }) => ({
+  } = ({ kind, label, icon: Icon, detail }) => ({
     key: kind,
     icon: Icon,
     label,
+    ...(detail === undefined ? {} : { detail }),
     shortcut: shortcutLabelForCommand(keybindings, SURFACE_COMMANDS[kind] ?? null),
     onSelect: () => show(kind),
   });
@@ -256,11 +264,12 @@ function LauncherSurfaces({
   return (
     <>
       <LayoutLauncherGroup>Open beside this thread</LayoutLauncherGroup>
-      {surfaceRows.map(({ key, icon: Icon, label, shortcut, onSelect }) => (
+      {surfaceRows.map(({ key, icon: Icon, label, detail, shortcut, onSelect }) => (
         <LayoutLauncherRow
           key={key}
           icon={<Icon aria-hidden className="size-4" />}
           label={label}
+          {...(detail === undefined ? {} : { detail })}
           shortcut={shortcut}
           onSelect={onSelect}
         />
