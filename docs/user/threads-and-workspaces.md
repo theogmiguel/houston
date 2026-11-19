@@ -20,9 +20,7 @@ Houston 1 has projects to bring, the first screen also offers **Import N project
 `Start without a project` opens a thread with no project; a thread without a folder can be
 turned into a project from its thread actions later.
 
-The first screen also introduces the three terms: a **project** is a folder on this machine, a
-**thread** is a conversation with one agent (in a project or not), and a **workspace** holds tabs
-side by side that threads of any project can share.
+The first screen also defines project, thread and workspace in one line each.
 
 To clone into `<host>/<owner>/<repo>` folders, turn on **Clone into host folders** under
 **Settings ▸ Threads**. Clones then default to that path under the add-project base directory,
@@ -49,10 +47,13 @@ processes when the thread settles; an agent's own shell command is never attache
 
 Choose **New thread** from a workspace's **+** or from the **New thread** action of an empty
 workspace to start a draft in that workspace, from the command palette, or press `Ctrl+N`.
-With a chat already on screen, a new thread opens in a new tab of that pane.
+The draft belongs to the project of the thread in focus, else to the most recently active
+project; with no project yet, the project picker opens instead. With a chat already on screen,
+a new thread opens in a new tab of that pane, and a draft's tab names its project. The new-tab
+launcher lists projects in the project picker's order and can also add a project.
+
 Pick the provider and model in the composer, choose permissions, and send the first
-message. The new-tab launcher lists projects in the project picker's order and can also add a
-project. A new thread starts in a local checkout or in a new worktree, according to
+message. A new thread starts in a local checkout or in a new worktree, according to
 **Settings ▸ Threads ▸ New threads**; the composer's workspace control changes it for one
 thread.
 
@@ -292,9 +293,9 @@ stays out of the thread until you choose **Send to thread**.
 Each thread has a terminal drawer for shell commands (`Ctrl+J`). The right panel is a
 separate set of surfaces; see [The right panel](right-panel.md). In a layout pane, a terminal
 or a panel surface opens as a tab: use the new-tab launcher, which lists only the surfaces the
-thread can open now, the command palette or the shortcut. A thread's **details** control (`Ctrl+Shift+B`) shows its environment, branch, pull
-requests, scripts, local servers, context and usage limits. The card starts closed and stays
-as you leave it.
+thread can open now, the command palette or the shortcut. A thread's **details** control
+(`Ctrl+Shift+B`) shows its environment, branch, pull requests, scripts, local servers, context
+and usage limits. The card starts closed and stays as you leave it.
 
 In the layout a thread's surfaces open as tabs, beside or below its chat as set in the layout
 settings in **Settings ▸ Appearance**, instead of a panel that follows the focused pane.
