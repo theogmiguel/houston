@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@houston-app/shared/keybindings";
@@ -167,6 +168,20 @@ it("keeps the caret in place when an edit briefly makes the folder path not a pa
 });
 
 describe("add folder path mode", () => {
+  it("starts browsing from the add-project base folder under StrictMode", async () => {
+    state.browseData = undefined;
+    await using _screen = await render(
+      <StrictMode>
+        <CommandPalette>{null}</CommandPalette>
+      </StrictMode>,
+    );
+    await act(() =>
+      openCommandPalette({ open: "add-project", addProject: { action: "open-folder" } }),
+    );
+
+    await expect.element(page.getByRole("combobox")).toHaveValue("/workspace/");
+  });
+
   it("does not create a folder when Enter confirms a path that does not exist", async () => {
     state.browseData = undefined;
     await using _screen = await render(<CommandPalette>{null}</CommandPalette>);

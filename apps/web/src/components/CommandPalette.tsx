@@ -818,6 +818,8 @@ function OpenCommandPaletteDialog(props: {
       browseNavigation.invalidate();
       // A replaced or closed session must not report its in-flight lookup.
       cloneLookupGeneration.current += 1;
+      // The invalidation drops a flow the add-project intent started; a remount starts it again.
+      cloneIntentHandled.current = false;
     },
     [browseNavigation],
   );
