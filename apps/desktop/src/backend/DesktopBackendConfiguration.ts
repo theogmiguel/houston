@@ -28,7 +28,7 @@ import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
 import * as DesktopWslServerAttachment from "../wsl/DesktopWslServerAttachment.ts";
 import * as DesktopWslServerTree from "../wsl/DesktopWslServerTree.ts";
-import { WSL_SERVER_START_ENABLED } from "../wsl/wslServerSupport.ts";
+import { wslPrimarySelected } from "../wsl/wslServerSupport.ts";
 
 export class DesktopBackendObservabilitySettingsReadError extends Schema.TaggedError<DesktopBackendObservabilitySettingsReadError>()(
   "DesktopBackendObservabilitySettingsReadError",
@@ -715,7 +715,11 @@ export const make = Effect.gen(function* () {
     const persistedSettings = yield* settings.get;
     const wslRequested = persistedSettings.wslOnly && persistedSettings.wslBackendEnabled;
     // When WSL is unavailable its controls are hidden; fall back to Windows to keep recovery possible.
-    const useWsl = WSL_SERVER_START_ENABLED && wslRequested && (yield* wslEnvironment.isAvailable);
+    const useWsl = wslPrimarySelected({
+      wslBackendEnabled: persistedSettings.wslBackendEnabled,
+      wslOnly: persistedSettings.wslOnly,
+      available: yield* wslEnvironment.isAvailable,
+    });
     return { useWsl, wslRequested, distro: persistedSettings.wslDistro };
   });
 

@@ -11,11 +11,12 @@ import * as NetService from "@houston-app/shared/Net";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopBackendConfiguration from "../backend/DesktopBackendConfiguration.ts";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
+import * as DesktopServerControl from "../backend/DesktopServerControl.ts";
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopWslEnvironment from "./DesktopWslEnvironment.ts";
 import * as DesktopWslServerAttachment from "./DesktopWslServerAttachment.ts";
-import { WSL_SERVER_START_ENABLED } from "./wslServerSupport.ts";
+import { wslPrimarySelected, WSL_SERVER_START_ENABLED } from "./wslServerSupport.ts";
 
 export const WSL_INSTANCE_ID_PREFIX = "wsl:";
 const WSL_DEFAULT_DISTRO_ID = `${WSL_INSTANCE_ID_PREFIX}default`;
@@ -26,6 +27,15 @@ export class DesktopWslBackend extends Context.Service<
   {
     readonly reconcile: Effect.Effect<void>;
     readonly lastPreflightError: Effect.Effect<Option.Option<string>>;
+    readonly applyWslBackendEnabled: (
+      enabled: boolean,
+    ) => Effect.Effect<void, DesktopAppSettings.DesktopSettingsWriteError>;
+    readonly applyWslOnly: (
+      enabled: boolean,
+    ) => Effect.Effect<void, DesktopAppSettings.DesktopSettingsWriteError>;
+    readonly applyWslDistro: (
+      distro: string | null,
+    ) => Effect.Effect<void, DesktopAppSettings.DesktopSettingsWriteError>;
   }
 >()("@houston-app/desktop/wsl/DesktopWslBackend") {}
 
@@ -63,6 +73,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const pool = yield* DesktopBackendPool.DesktopBackendPool;
     const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+    const serverControl = yield* DesktopServerControl.DesktopServerControl;
     const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
     const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
     const wslServerAttachment = yield* DesktopWslServerAttachment.DesktopWslServerAttachment;
@@ -236,9 +247,72 @@ export const layer = Layer.effect(
         Effect.withSpan("desktop.wslBackend.reconcile"),
       );
 
+    const restartPrimary = serverControl.restart.pipe(
+      Effect.asVoid,
+      Effect.catchTags({
+        DesktopServerRestartError: (error) =>
+          logWslBackendWarning("could not restart the primary backend after a WSL setting change", {
+            error: error.message,
+          }),
+      }),
+    );
+
+    // Persisting and applying share the reconcile mutex so a concurrent toggle cannot
+    // compare against settings another toggle already replaced.
+    const applySettingsChange = (
+      update: Effect.Effect<
+        DesktopAppSettings.DesktopSettingsChange,
+        DesktopAppSettings.DesktopSettingsWriteError
+      >,
+    ) =>
+      reconcileMutex.withPermits(1)(
+        Effect.gen(function* () {
+          const before = yield* appSettings.get;
+          const change = yield* update;
+          if (!change.changed) return;
+
+          const after = change.settings;
+          const available = yield* wslEnvironment.isAvailable;
+          const beforeUsesWsl = wslPrimarySelected({
+            wslBackendEnabled: before.wslBackendEnabled,
+            wslOnly: before.wslOnly,
+            available,
+          });
+          const afterUsesWsl = wslPrimarySelected({
+            wslBackendEnabled: after.wslBackendEnabled,
+            wslOnly: after.wslOnly,
+            available,
+          });
+          const primaryNeedsRestart =
+            beforeUsesWsl !== afterUsesWsl ||
+            (afterUsesWsl && before.wslDistro !== after.wslDistro);
+
+          // The WSL server holding a distro must release it before the primary claims it,
+          // and the primary must leave a distro before the secondary starts there.
+          if (afterUsesWsl) {
+            yield* reconcileBody;
+            if (primaryNeedsRestart) yield* restartPrimary;
+          } else {
+            if (primaryNeedsRestart) yield* restartPrimary;
+            yield* reconcileBody;
+          }
+        }),
+      );
+
     return DesktopWslBackend.of({
       reconcile,
       lastPreflightError: Ref.get(preflightErrorRef),
+      applyWslBackendEnabled: Effect.fn("DesktopWslBackend.applyWslBackendEnabled")(
+        function* (enabled) {
+          yield* applySettingsChange(appSettings.setWslBackendEnabled(enabled));
+        },
+      ),
+      applyWslOnly: Effect.fn("DesktopWslBackend.applyWslOnly")(function* (enabled) {
+        yield* applySettingsChange(appSettings.setWslOnly(enabled));
+      }),
+      applyWslDistro: Effect.fn("DesktopWslBackend.applyWslDistro")(function* (distro) {
+        yield* applySettingsChange(appSettings.setWslDistro(distro));
+      }),
     });
   }),
 );

@@ -33,6 +33,7 @@ this machine's credentials.
   devices on the network pair with it.
 - **Tailscale HTTPS** — serve over your tailnet with a Tailscale certificate.
 - **WSL backend** — on Windows, run WSL projects inside the distro, optionally WSL only.
+  Changing the distro or WSL only restarts the affected server.
 - **Pair a device** — create a pairing link or QR code.
 - **Authorized clients** — list paired devices and revoke their access.
 

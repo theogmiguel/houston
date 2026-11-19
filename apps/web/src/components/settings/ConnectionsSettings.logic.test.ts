@@ -1,7 +1,9 @@
 import type { DesktopWslState } from "@houston-app/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import {
+  applyWslDistroSelection,
   applyWslEnableSelection,
+  applyWslOnlySelection,
   isWslSettingsRowVisible,
   resolveShareablePairDeviceUrl,
   resolveTailscaleServeBaseUrl,
@@ -107,6 +109,60 @@ describe("applyWslEnableSelection", () => {
 
     expect(calls).toEqual(["setWslOnly:false", "setWslDistro:Debian", "setWslBackendEnabled:true"]);
     expect(state).toMatchObject({ enabled: true, distro: "Debian", wslOnly: false });
+  });
+});
+
+describe("applyWslOnlySelection", () => {
+  it("calls the bridge once for a real toggle", async () => {
+    const setWslOnly = vi.fn(async () => baseWslState);
+    const state = await applyWslOnlySelection({
+      bridge: { setWslOnly },
+      nextValue: true,
+      persistedValue: false,
+    });
+
+    expect(setWslOnly).toHaveBeenCalledTimes(1);
+    expect(setWslOnly).toHaveBeenCalledWith(true);
+    expect(state).toBe(baseWslState);
+  });
+
+  it("does not call the bridge for an unchanged value", async () => {
+    const setWslOnly = vi.fn(async () => baseWslState);
+    const state = await applyWslOnlySelection({
+      bridge: { setWslOnly },
+      nextValue: false,
+      persistedValue: false,
+    });
+
+    expect(setWslOnly).not.toHaveBeenCalled();
+    expect(state).toBeNull();
+  });
+});
+
+describe("applyWslDistroSelection", () => {
+  it("calls the bridge once for a changed distro", async () => {
+    const setWslDistro = vi.fn(async () => baseWslState);
+    const state = await applyWslDistroSelection({
+      bridge: { setWslDistro },
+      nextDistro: "Debian",
+      persistedDistro: "Ubuntu",
+    });
+
+    expect(setWslDistro).toHaveBeenCalledTimes(1);
+    expect(setWslDistro).toHaveBeenCalledWith("Debian");
+    expect(state).toBe(baseWslState);
+  });
+
+  it("does not call the bridge for an unchanged distro", async () => {
+    const setWslDistro = vi.fn(async () => baseWslState);
+    const state = await applyWslDistroSelection({
+      bridge: { setWslDistro },
+      nextDistro: "Ubuntu",
+      persistedDistro: "Ubuntu",
+    });
+
+    expect(setWslDistro).not.toHaveBeenCalled();
+    expect(state).toBeNull();
   });
 });
 

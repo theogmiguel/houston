@@ -51,6 +51,8 @@ export function canRevokeOtherClients(
 }
 
 type WslEnableBridge = Pick<HostBridge, "setWslBackendEnabled" | "setWslDistro" | "setWslOnly">;
+type WslOnlyBridge = Pick<HostBridge, "setWslOnly">;
+type WslDistroBridge = Pick<HostBridge, "setWslDistro">;
 
 /** Never offer loopback URLs as QR targets; scanning devices would connect to themselves. */
 export function isQrShareableEndpoint(endpoint: AdvertisedEndpoint): boolean {
@@ -166,6 +168,26 @@ export async function applyWslEnableSelection(input: {
     await bridge.setWslDistro(nextDistro);
   }
   return await bridge.setWslBackendEnabled(true);
+}
+
+/** A real toggle restarts the primary server in the desktop; an unchanged value must not. */
+export async function applyWslOnlySelection(input: {
+  readonly bridge: WslOnlyBridge;
+  readonly nextValue: boolean;
+  readonly persistedValue: boolean;
+}): Promise<DesktopWslState | null> {
+  if (input.nextValue === input.persistedValue) return null;
+  return await input.bridge.setWslOnly(input.nextValue);
+}
+
+/** A real distro change reconciles the WSL instance in the desktop; an unchanged value must not. */
+export async function applyWslDistroSelection(input: {
+  readonly bridge: WslDistroBridge;
+  readonly nextDistro: string | null;
+  readonly persistedDistro: string | null;
+}): Promise<DesktopWslState | null> {
+  if (input.nextDistro === input.persistedDistro) return null;
+  return await input.bridge.setWslDistro(input.nextDistro);
 }
 
 const accessTimestampFormatter = new Intl.DateTimeFormat(undefined, {

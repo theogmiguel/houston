@@ -8,6 +8,7 @@ import * as NetService from "@houston-app/shared/Net";
 
 import * as DesktopBackendConfiguration from "../backend/DesktopBackendConfiguration.ts";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
+import * as DesktopServerControl from "../backend/DesktopServerControl.ts";
 import type {
   DesktopBackendSnapshot,
   DesktopBackendStartConfig,
@@ -82,6 +83,10 @@ const layerWslServerAttachment = Layer.succeed(
   }),
 );
 
+const layerServerControl = Layer.succeed(DesktopServerControl.DesktopServerControl, {
+  restart: Effect.die("unexpected restart"),
+} satisfies DesktopServerControl.DesktopServerControl["Service"]);
+
 const layerNet = Layer.succeed(NetService.NetService, {
   canListenOnHost: () => Effect.succeed(true),
   isPortAvailableOnLoopback: () => Effect.succeed(true),
@@ -128,6 +133,7 @@ describe("DesktopWslBackend", () => {
           Layer.provideMerge(layerPool),
           Layer.provideMerge(layerBackendConfiguration),
           Layer.provideMerge(layerServerExposure),
+          Layer.provideMerge(layerServerControl),
           Layer.provideMerge(layerNet),
           Layer.provideMerge(
             DesktopAppSettings.layerTest({

@@ -24,7 +24,9 @@ import * as Cause from "effect/Cause";
 
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 import {
+  applyWslDistroSelection,
   applyWslEnableSelection,
+  applyWslOnlySelection,
   resolveLocalVersionStatusLabel,
   resolveTailscaleServeBaseUrl,
 } from "./ConnectionsSettings.logic";
@@ -629,7 +631,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
         />
       );
     });
-  const applyWslSettingChange = async (apply: () => Promise<DesktopWslState>) => {
+  const applyWslSettingChange = async (apply: () => Promise<DesktopWslState | null>) => {
     if (
       !hostBridge ||
       primaryEnvironmentId === null ||
@@ -639,8 +641,8 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     setIsUpdatingWslBackend(true);
     setDesktopWslMutationError(null);
     const settled = await settlePromise(async () => {
-      await apply();
-      refreshDesktopWslState();
+      const state = await apply();
+      if (state !== null) refreshDesktopWslState();
     });
     if (settled._tag === "Failure") {
       const error = Cause.squash(settled.cause);
@@ -728,10 +730,22 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
       return;
     }
     if (change.kind === "distro") {
-      void applyWslSettingChange(() => hostBridge.setWslDistro(change.nextDistro));
+      void applyWslSettingChange(() =>
+        applyWslDistroSelection({
+          bridge: hostBridge,
+          nextDistro: change.nextDistro,
+          persistedDistro: desktopWslState?.distro ?? null,
+        }),
+      );
       return;
     }
-    void applyWslSettingChange(() => hostBridge.setWslOnly(change.nextValue));
+    void applyWslSettingChange(() =>
+      applyWslOnlySelection({
+        bridge: hostBridge,
+        nextValue: change.nextValue,
+        persistedValue: desktopWslState?.wslOnly ?? false,
+      }),
+    );
   };
 
   const renderAuthorizedClients = ({
@@ -883,7 +897,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
       <>
         <SettingsRow
           title="WSL distro"
-          description="The distro Houston runs WSL projects in."
+          description="The distro Houston runs WSL projects in. Changing it restarts the WSL backend."
           control={
             <Select
               value={selectValue}

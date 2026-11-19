@@ -8,6 +8,15 @@ export const WSL_SERVER_START_ENABLED = false;
 export const WSL_SERVER_UNAVAILABLE_MESSAGE =
   "the WSL backend is not available yet: Houston must start its server inside the distro, which the server-side WSL slice owns. The distro and WSL-only selections were saved.";
 
+/** Whether the primary backend resolves to the WSL server for these settings. */
+export function wslPrimarySelected(input: {
+  readonly wslBackendEnabled: boolean;
+  readonly wslOnly: boolean;
+  readonly available: boolean;
+}): boolean {
+  return WSL_SERVER_START_ENABLED && input.wslBackendEnabled && input.wslOnly && input.available;
+}
+
 export type WslEnableDecision =
   | { readonly ok: true }
   | { readonly ok: false; readonly reason: string };

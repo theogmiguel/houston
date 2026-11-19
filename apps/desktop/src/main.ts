@@ -222,8 +222,13 @@ const layerDesktopBackend = DesktopBackendPool.layer.pipe(
   Layer.provideMerge(layerDesktopWindow),
 );
 
+const layerDesktopServerControl = DesktopServerControl.layer.pipe(
+  Layer.provideMerge(layerDesktopBackend),
+);
+
 const layerDesktopWslBackend = DesktopWslBackend.layer.pipe(
   Layer.provideMerge(layerDesktopBackend),
+  Layer.provideMerge(layerDesktopServerControl),
 );
 
 const layerDesktopLocalEnvironmentAuth = DesktopLocalEnvironmentAuth.layer.pipe(
@@ -239,7 +244,6 @@ const layerDesktopApplication = Layer.mergeAll(
   DesktopApplicationMenu.layer,
   DesktopLinuxUrlHandler.layer,
   DesktopCliCommand.layer,
-  DesktopServerControl.layer,
   layerDesktopSsh,
 ).pipe(
   Layer.provideMerge(layerDesktopSnapShot),
