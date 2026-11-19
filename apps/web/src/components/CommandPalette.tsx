@@ -845,6 +845,8 @@ function OpenCommandPaletteDialog(props: {
       locationByEnvironmentId: projectEnvironmentLocationById,
       runProject: openProjectFromSearch,
       pin: projectPin,
+      isScratch: (project) =>
+        isScratchProject(project, scratchWorkspaceRootFor(project.environmentId)),
     }),
     rowOrderKey("project"),
     true,
