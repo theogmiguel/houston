@@ -131,6 +131,14 @@ export const SIDEBAR_THREAD_ROW_INDENT_CLS = "pl-3";
 export const SIDEBAR_GROUP_CHEVRON_BOX_CLS =
   "inline-grid size-3.5 shrink-0 place-items-center text-secondary-label";
 
+/** The heading's chevron: the only control that collapses and expands the group. */
+export const SIDEBAR_GROUP_CHEVRON_BUTTON_CLS =
+  "inline-grid size-3.5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+
+/** The heading's name: it shows the workspace in the main area. */
+export const SIDEBAR_GROUP_LABEL_BUTTON_CLS =
+  "flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+
 export const SIDEBAR_GROUP_CHEVRON_CLS =
   "size-3 transition-transform duration-(--motion-disclosure) ease-standard";
 

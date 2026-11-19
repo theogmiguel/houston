@@ -25,6 +25,7 @@ import {
 } from "../../layout/layoutWorkspaces";
 import { act, render, type Screen } from "../../../test/render";
 import { SidebarOptionsMenu } from "../ui/sidebar-sections";
+import { SIDEBAR_ROW_SURFACE_CLS } from "../ui/sidebar-rail-recipes";
 import { toastManager } from "../ui/toast";
 import { TooltipProvider } from "../ui/tooltip";
 import { SidebarWorkspaceGroup } from "./ThreadSidebar";
@@ -173,17 +174,37 @@ function group(
   );
 }
 
-function headingFor(screen: Screen, workspaceId: string): HTMLButtonElement {
+function headingFor(screen: Screen, workspaceId: string): HTMLElement {
   const heading = screen.container.querySelector(
-    `[data-workspace-key="${workspaceId}"] button[aria-expanded]`,
+    `[data-workspace-key="${workspaceId}"] [data-sidebar-row]`,
   );
-  if (!(heading instanceof HTMLButtonElement)) {
-    throw new Error(`The workspace ${workspaceId} has no heading button.`);
+  if (!(heading instanceof HTMLElement)) {
+    throw new Error(`The workspace ${workspaceId} has no heading row.`);
   }
   return heading;
 }
 
-/** The heading row: the toggle and its actions, which share one hover and selection fill. */
+function nameButtonFor(screen: Screen, workspaceId: string): HTMLButtonElement {
+  const button = screen.container
+    .querySelector(`[data-workspace-key="${workspaceId}"] [data-workspace-name]`)
+    ?.closest("button");
+  if (!(button instanceof HTMLButtonElement)) {
+    throw new Error(`The workspace ${workspaceId} has no name button.`);
+  }
+  return button;
+}
+
+function chevronButtonFor(screen: Screen, workspaceId: string): HTMLButtonElement {
+  const button = screen.container
+    .querySelector(`[data-workspace-key="${workspaceId}"] [data-workspace-chevron-box]`)
+    ?.closest("button");
+  if (!(button instanceof HTMLButtonElement)) {
+    throw new Error(`The workspace ${workspaceId} has no chevron button.`);
+  }
+  return button;
+}
+
+/** The heading row: the label, its chevron and its actions, which share one hover and selection fill. */
 function headingRowFor(screen: Screen, workspaceId: string): HTMLElement {
   const row = headingFor(screen, workspaceId).closest("[data-workspace-heading-row]");
   if (!(row instanceof HTMLElement)) {
@@ -192,7 +213,7 @@ function headingRowFor(screen: Screen, workspaceId: string): HTMLElement {
   return row;
 }
 
-function headingGeometry(heading: HTMLButtonElement) {
+function headingGeometry(heading: HTMLElement) {
   const chevron = heading.querySelector("svg");
   const chevronBox = heading.querySelector("[data-workspace-chevron-box]");
   const name = heading.children[1];
@@ -506,12 +527,12 @@ describe("workspace group", () => {
 
     await userEvent.keyboard("{Tab}");
     await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
-    expect(document.activeElement).toBe(heading);
+    expect(headingRowFor(screen, "ws-h").contains(document.activeElement)).toBe(true);
     await expect.poll(() => opacity(add)).toBe(1);
     expect(opacity(more)).toBe(1);
   });
 
-  it("keeps every workspace heading untinted, open or not", async () => {
+  it("marks only the workspace on screen with the selected row fill", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
       <>
@@ -520,16 +541,16 @@ describe("workspace group", () => {
       </>,
     );
 
-    expect(headingRowFor(screen, "ws-a").className).not.toContain("bg-sidebar-row-selected");
-    expect(headingRowFor(screen, "ws-b").className).not.toContain("bg-sidebar-row-selected");
+    expect(headingRowFor(screen, "ws-a").className).toContain(SIDEBAR_ROW_SURFACE_CLS.selected);
+    expect(headingRowFor(screen, "ws-b").className).not.toContain(SIDEBAR_ROW_SURFACE_CLS.selected);
   });
 
-  it("leaves an open empty workspace's heading untinted", async () => {
+  it("marks an open empty workspace's heading as selected", async () => {
     await using screen = await render(
       group(workspace({ workspaceId: "ws-e", name: "UI/UX design" }), [], { open: true }),
     );
 
-    expect(headingRowFor(screen, "ws-e").className).not.toContain("bg-sidebar-row-selected");
+    expect(headingRowFor(screen, "ws-e").className).toContain(SIDEBAR_ROW_SURFACE_CLS.selected);
   });
 
   it("fills the whole heading row, actions included, while it is hovered", async () => {
@@ -547,16 +568,16 @@ describe("workspace group", () => {
     expect(headingFor(screen, "ws-h2").className).not.toContain("hover:bg-");
   });
 
-  it("leaves the open workspace's heading untinted while its focused thread row shows the selection", async () => {
+  it("keeps the workspace on screen selected while its focused thread row shows the selection", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
       group(workspace(), threads, { open: true, focusedThreadKey: threadKey("thread-a") }),
     );
 
-    expect(headingRowFor(screen, "ws-a").className).not.toContain("bg-sidebar-row-selected");
+    expect(headingRowFor(screen, "ws-a").className).toContain(SIDEBAR_ROW_SURFACE_CLS.selected);
   });
 
-  it("hands the open workspace's selection fill to its revealed thread row while collapsed", async () => {
+  it("keeps the workspace selected while collapsed and still reveals its open thread row", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
       group(workspace(), threads, {
@@ -566,16 +587,16 @@ describe("workspace group", () => {
       }),
     );
 
-    expect(headingRowFor(screen, "ws-a").className).not.toContain("bg-sidebar-row-selected");
+    expect(headingRowFor(screen, "ws-a").className).toContain(SIDEBAR_ROW_SURFACE_CLS.selected);
     expect(screen.container.querySelector("[data-thread-key$=':thread-a']")).not.toBeNull();
     expect(screen.container.querySelector("[data-thread-key$=':thread-b']")).toBeNull();
   });
 
-  it("leaves the open workspace's heading untinted when collapsing hides every row", async () => {
+  it("keeps the workspace selected when collapsing hides every row", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(group(workspace(), threads, { open: true, collapsed: true }));
 
-    expect(headingRowFor(screen, "ws-a").className).not.toContain("bg-sidebar-row-selected");
+    expect(headingRowFor(screen, "ws-a").className).toContain(SIDEBAR_ROW_SURFACE_CLS.selected);
   });
 
   it("keeps the chevron and text still across collapse and thread counts", async () => {
@@ -606,7 +627,7 @@ describe("workspace group", () => {
       expectSameX(expanded.textLeft, reference.textLeft);
       expectSameX(expanded.chevronWidth, reference.chevronWidth);
 
-      await userEvent.click(heading);
+      await userEvent.click(chevronButtonFor(screen, `ws-${count}`));
       expect(heading.getAttribute("aria-expanded")).toBe("false");
       const collapsed = headingGeometry(heading);
       expect(collapsed.chevron).toBe(expanded.chevron);
@@ -618,30 +639,77 @@ describe("workspace group", () => {
       const root = screen.container.querySelector(`[data-workspace-key="ws-${count}"]`);
       expect(root?.querySelectorAll("[data-thread-key]")).toHaveLength(0);
 
-      await userEvent.click(heading);
+      await userEvent.click(chevronButtonFor(screen, `ws-${count}`));
       expect(heading.getAttribute("aria-expanded")).toBe("true");
       expect(root?.querySelectorAll("[data-thread-key]")).toHaveLength(count);
       expectSameX(headingGeometry(heading).textLeft, reference.textLeft);
     }
   });
 
-  it("toggles collapse from Enter and Space on the focused heading", async () => {
+  it("focuses the workspace from its name and expands the group", async () => {
+    using _session = session();
+    const layout = layoutOf([
+      { name: "One", chats: ["thread-1"] },
+      { name: "Two", chats: ["thread-2"] },
+    ]);
+    useLayoutStore.setState({ layout });
+    const [one, two] = listLayoutWorkspaces(layout);
+    useLayoutStore.getState().focusWorkspace(one!.id);
+    const onToggleCollapsed = vi.fn();
     await using screen = await render(
-      <CollapsibleGroup
-        value={workspace({ workspaceId: "ws-toggle", name: "Toggle" })}
-        threads={[thread()]}
-      />,
+      group(workspace({ workspaceId: two!.id, name: "Two" }), [thread({ id: "thread-2" })], {
+        collapsed: true,
+        onToggleCollapsed,
+      }),
     );
-    const heading = headingFor(screen, "ws-toggle");
+
+    await userEvent.click(nameButtonFor(screen, two!.id));
+
+    expect(useLayoutStore.getState().layout.focusedWorkspaceId).toBe(two!.id);
+    expect(onToggleCollapsed).toHaveBeenCalledOnce();
+  });
+
+  it("collapses from the chevron alone, without focusing the workspace", async () => {
+    using _session = session();
+    const layout = layoutOf([
+      { name: "One", chats: ["thread-1"] },
+      { name: "Two", chats: ["thread-2"] },
+    ]);
+    useLayoutStore.setState({ layout });
+    const [one, two] = listLayoutWorkspaces(layout);
+    useLayoutStore.getState().focusWorkspace(one!.id);
+    const onToggleCollapsed = vi.fn();
+    await using screen = await render(
+      group(workspace({ workspaceId: two!.id, name: "Two" }), [thread({ id: "thread-2" })], {
+        onToggleCollapsed,
+      }),
+    );
+
+    await userEvent.click(chevronButtonFor(screen, two!.id));
+
+    expect(onToggleCollapsed).toHaveBeenCalledOnce();
+    expect(useLayoutStore.getState().layout.focusedWorkspaceId).toBe(one!.id);
+  });
+
+  it("focuses the workspace from Enter on its focused label", async () => {
+    using _session = session();
+    const layout = layoutOf([
+      { name: "One", chats: ["thread-1"] },
+      { name: "Two", chats: ["thread-2"] },
+    ]);
+    useLayoutStore.setState({ layout });
+    const [one, two] = listLayoutWorkspaces(layout);
+    useLayoutStore.getState().focusWorkspace(one!.id);
+    await using screen = await render(
+      group(workspace({ workspaceId: two!.id, name: "Two" }), [thread({ id: "thread-2" })]),
+    );
+    const heading = headingFor(screen, two!.id);
 
     heading.focus();
     expect(document.activeElement).toBe(heading);
-
     await userEvent.keyboard("{Enter}");
-    expect(heading.getAttribute("aria-expanded")).toBe("false");
 
-    await userEvent.keyboard(" ");
-    expect(heading.getAttribute("aria-expanded")).toBe("true");
+    expect(useLayoutStore.getState().layout.focusedWorkspaceId).toBe(two!.id);
   });
 
   it("truncates long names without moving the chevron or the overflow button", async () => {

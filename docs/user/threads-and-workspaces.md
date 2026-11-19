@@ -98,10 +98,11 @@ same id.
 The sidebar opens with search and icon buttons for **New thread**, **New workspace**,
 **Add project** and **View options**, then one group per layout workspace, in workspace order. A group lists the threads whose chat is
 open in that workspace, whichever project they belong to. A thread whose chat is not placed in
-any workspace is listed under the first one. Each group label collapses with **Enter** or
-**Space** and keeps its state; a search opens every group it matches in. The **…** button
-beside the label, or a right-click, opens the workspace's actions. With no real projects, a
-workspace's **New thread** opens the project picker, which offers **No project** and
+any workspace is listed under the first one. Clicking a group label shows that workspace in the
+main area, and **Enter** or **Space** on the focused label does the same. Its chevron collapses
+and expands the group, which keeps its state; a search opens every group it matches in. The
+**…** button beside the label, or a right-click, opens the workspace's actions. With no real
+projects, a workspace's **New thread** opens the project picker, which offers **No project** and
 **Add project…**; **Add project** in the search row adds one.
 
 The **Workspaces** header carries **Filter by project** and the **Hidden workspaces** menu.
