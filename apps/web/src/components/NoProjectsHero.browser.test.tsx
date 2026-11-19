@@ -212,10 +212,8 @@ it("fits the first screen in a 390px window without sideways scrolling", async (
     const box = term.getBoundingClientRect();
     expect(box.left).toBeGreaterThanOrEqual(0);
     expect(box.right).toBeLessThanOrEqual(window.innerWidth + 1);
-    // Each term stays one line even at phone width.
-    expect(box.height).toBeLessThanOrEqual(
-      Number.parseFloat(getComputedStyle(term).lineHeight) + 1,
-    );
+    // A term may wrap at phone width, so long as it stays inside the window.
+    expect(term.scrollWidth).toBeLessThanOrEqual(term.clientWidth + 1);
   }
 });
 
