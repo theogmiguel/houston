@@ -189,6 +189,7 @@ import {
   ADDON_ICON_CLASS,
   browseInputEndPaddingClass,
   buildBrowseGroups,
+  commandPaletteEmptyStateMessage,
   availablePaletteActions,
   buildRootGroups,
   buildLinkedThreadActionItems,
@@ -2306,12 +2307,64 @@ function OpenCommandPaletteDialog(props: {
     );
   };
 
+  const isSubmenu = paletteMode === "submenu" || paletteMode === "submenu-browse";
+  const hasHighlightedBrowseItem = highlightedItemValue?.startsWith("browse:") ?? false;
+  const canWriteSourceControl = useEnvironmentScope(
+    addProjectCloneFlow?.environmentId ?? null,
+    AuthSourceControlWriteScope,
+  );
+  const canCreateClonedProject = useEnvironmentScope(
+    addProjectCloneFlow?.environmentId ?? null,
+    AuthOrchestrationOperateScope,
+  );
+  const canCloneProject = canWriteSourceControl && canCreateClonedProject;
+  const isCloneDestinationStep = addProjectCloneFlow?.step === "confirm";
+  const canSubmitBrowsePath =
+    isBrowsing &&
+    !relativePathNeedsActiveProject &&
+    canCreateProject &&
+    (!isCloneDestinationStep || canCloneProject) &&
+    canCreateProjectInEnvironment(browseEnvironment?.connection.phase);
+  const willCreateProjectPath =
+    canSubmitBrowsePath &&
+    !isBrowsePending &&
+    browseAccessError === null &&
+    query.trim().length > 0 &&
+    !hasHighlightedBrowseItem &&
+    (hasTrailingPathSeparator(query) ? !browseResult : exactBrowseEntry === null);
+  const browseAddablePath = hasTrailingPathSeparator(query)
+    ? (browseResult?.parentPath ?? null)
+    : (exactBrowseEntry?.fullPath ?? null);
+  const creatableFolderPath =
+    !isCloneDestinationStep &&
+    canSubmitBrowsePath &&
+    !isBrowsePending &&
+    browseAccessError === null &&
+    query.trim().length > 0 &&
+    !hasTrailingPathSeparator(query) &&
+    exactBrowseEntry === null
+      ? query.trim()
+      : null;
+
   const resolvedAddProjectPath = hasTrailingPathSeparator(query)
     ? (browseResult?.parentPath ?? query.trim())
     : (exactBrowseEntry?.fullPath ?? query.trim());
 
   const canBrowseUp = !relativePathNeedsActiveProject && browsePath.canBrowseUp;
 
+  const createFolderItem: CommandPaletteActionItem | null =
+    creatableFolderPath === null
+      ? null
+      : {
+          kind: "action",
+          value: "browse:create-folder",
+          searchTerms: [creatableFolderPath, "create", "folder"],
+          title: `Create folder ${creatableFolderPath} and add it`,
+          icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
+          run: async () => {
+            await handleAddProject(creatableFolderPath);
+          },
+        };
   const browseGroups = buildBrowseGroups({
     browseEntries: visibleBrowseEntries,
     browseQuery: query,
@@ -2320,6 +2373,7 @@ function OpenCommandPaletteDialog(props: {
     directoryIcon: <FolderIcon className={ITEM_ICON_CLASS} />,
     browseUp,
     browseTo,
+    extraItems: createFolderItem === null ? [] : [createFolderItem],
   });
   const cloneDestinationBrowseGroups = browseGroups.map((group) =>
     group.value === "directories" ? { ...group, label: "Select where to clone" } : group,
@@ -2464,40 +2518,13 @@ function OpenCommandPaletteDialog(props: {
       ? "Project name"
       : (remoteProjectInputPlaceholder(addProjectCloneFlow) ??
         getCommandPaletteInputPlaceholder(paletteMode));
-  const isSubmenu = paletteMode === "submenu" || paletteMode === "submenu-browse";
-  const hasHighlightedBrowseItem = highlightedItemValue?.startsWith("browse:") ?? false;
-  const canWriteSourceControl = useEnvironmentScope(
-    addProjectCloneFlow?.environmentId ?? null,
-    AuthSourceControlWriteScope,
-  );
-  const canCreateClonedProject = useEnvironmentScope(
-    addProjectCloneFlow?.environmentId ?? null,
-    AuthOrchestrationOperateScope,
-  );
-  const canCloneProject = canWriteSourceControl && canCreateClonedProject;
-  const isCloneDestinationStep = addProjectCloneFlow?.step === "confirm";
-  const canSubmitBrowsePath =
-    isBrowsing &&
-    !relativePathNeedsActiveProject &&
-    canCreateProject &&
-    (!isCloneDestinationStep || canCloneProject) &&
-    canCreateProjectInEnvironment(browseEnvironment?.connection.phase);
-  const willCreateProjectPath =
-    canSubmitBrowsePath &&
-    !isBrowsePending &&
-    browseAccessError === null &&
-    query.trim().length > 0 &&
-    !hasHighlightedBrowseItem &&
-    (hasTrailingPathSeparator(query) ? !browseResult : exactBrowseEntry === null);
   const useMetaForMod = isMacPlatform(navigator.platform);
   const submitModifierLabel = useMetaForMod ? "\u2318" : "Ctrl";
   const submitActionLabel = isCloneDestinationStep
     ? willCreateProjectPath
       ? "Create & Clone"
       : "Clone"
-    : willCreateProjectPath
-      ? "Create & Add"
-      : "Add";
+    : "Add";
   const addShortcutLabel = hasHighlightedBrowseItem ? `${submitModifierLabel} Enter` : "Enter";
   const hasHighlightedNewProjectItem = newProjectFlow !== null && highlightedItemValue !== null;
   const createShortcutLabel = hasHighlightedNewProjectItem
@@ -2638,15 +2665,36 @@ function OpenCommandPaletteDialog(props: {
     const shouldSubmitBrowsePath =
       canSubmitBrowsePath &&
       event.key === "Enter" &&
-      (!hasHighlightedBrowseItem || isPrimaryModifierPressed(event));
+      (!hasHighlightedBrowseItem || isPrimaryModifierPressed(event)) &&
+      // Enter adds a folder that exists; a missing one is created only from its explicit row.
+      (isCloneDestinationStep || browseAddablePath !== null);
 
     if (shouldSubmitBrowsePath) {
       event.preventDefault();
       if (isCloneDestinationStep) {
         void submitAddProjectCloneFlow(resolvedAddProjectPath);
-      } else {
-        void handleAddProject(resolvedAddProjectPath);
+      } else if (browseAddablePath !== null) {
+        void handleAddProject(browseAddablePath);
       }
+      return;
+    }
+
+    // A typed path that does not exist is never created from Enter alone; it is an explicit row.
+    if (
+      isBrowsing &&
+      !isCloneDestinationStep &&
+      event.key === "Enter" &&
+      !hasHighlightedBrowseItem &&
+      !event.nativeEvent.isComposing &&
+      event.keyCode !== 229
+    ) {
+      event.preventDefault();
+      const closestPath = exactBrowseEntry?.fullPath ?? visibleBrowseEntries[0]?.fullPath ?? null;
+      const closestItem =
+        closestPath === null
+          ? null
+          : findHighlightedCommandPaletteItem(displayedGroups, `browse:${closestPath}`);
+      if (closestItem !== null) executeItem(closestItem);
       return;
     }
 
@@ -2876,7 +2924,9 @@ function OpenCommandPaletteDialog(props: {
           !canCreateProject ||
           !canCreateProjectInEnvironment(browseEnvironment?.connection.phase) ||
           relativePathNeedsActiveProject ||
-          (isCloneDestinationStep && (!canCloneProject || isRemoteProjectPending))
+          (isCloneDestinationStep
+            ? !canCloneProject || isRemoteProjectPending
+            : browseAddablePath === null)
         }
         onSubmit={() => {
           if (relativePathNeedsActiveProject) {
@@ -2884,8 +2934,8 @@ function OpenCommandPaletteDialog(props: {
           }
           if (isCloneDestinationStep) {
             void submitAddProjectCloneFlow(resolvedAddProjectPath);
-          } else {
-            void handleAddProject(resolvedAddProjectPath);
+          } else if (browseAddablePath !== null) {
+            void handleAddProject(browseAddablePath);
           }
         }}
       />
@@ -2901,7 +2951,9 @@ function OpenCommandPaletteDialog(props: {
       : addProjectCloneFlow?.step === "repository"
         ? (remoteProjectButtonLabel ?? "Continue")
         : isBrowsing
-          ? !canSubmitBrowsePath || hasHighlightedBrowseItem
+          ? !canSubmitBrowsePath ||
+            hasHighlightedBrowseItem ||
+            (!isCloneDestinationStep && browseAddablePath === null)
             ? "Select"
             : undefined
           : "Open";
@@ -2920,6 +2972,12 @@ function OpenCommandPaletteDialog(props: {
     // still arrive below it.
     <span className="text-muted-foreground text-xs">Searching messages…</span>
   ) : null;
+
+  const emptyStateMessage = commandPaletteEmptyStateMessage({
+    isBrowsing,
+    relativePathNeedsActiveProject,
+    isThreadSearchPending,
+  });
 
   // Browsing mode edits the query in place; swapping the view would remount the
   // input and drop its caret and focus mid-edit.
@@ -3022,16 +3080,9 @@ function OpenCommandPaletteDialog(props: {
               }
             : addProjectCloneFlow?.step === "confirm"
               ? { emptyStateMessage: "Choose a destination path and press Enter to clone." }
-              : relativePathNeedsActiveProject
-                ? { emptyStateMessage: "Relative paths require an active project." }
-                : willCreateProjectPath
-                  ? {
-                      emptyStateMessage:
-                        "Press Enter to create this folder and add it as a project.",
-                    }
-                  : isThreadSearchPending
-                    ? { emptyStateMessage: "Searching thread messages…" }
-                    : {})}
+              : emptyStateMessage === undefined
+                ? {}
+                : { emptyStateMessage })}
         />
       </CommandPaletteContent>
     </Swap>

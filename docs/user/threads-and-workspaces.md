@@ -33,6 +33,9 @@ and you can still change the destination before cloning.
 clone from. **New project** appears when the server configures a projects folder. Adding a project opens a new thread in the focused
 workspace with the composer ready.
 
+In **Add folder**, **Enter** adds a folder that exists and never creates one; a path that does
+not exist offers an explicit **Create folder … and add it** row.
+
 **Project settings** in a thread's action menu
 or the command palette renames a project, pins it, archives it and changes its checkouts.
 Pinned projects lead the list.

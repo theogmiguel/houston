@@ -103,7 +103,7 @@ See [The right panel](right-panel.md) for browser and file features, and
 ## When Houston does not start
 
 Run `npx houston-app triage` in a terminal. It needs Node.js 20.11 or newer and works on
-Linux; on Windows, open the command palette in Houston and choose **What went wrong?**
+Linux; on Windows, open the command palette in Houston and choose **Triage an issue**
 instead. The command downloads the `houston-app` launcher from npm, which downloads the
 server for the same version from the GitHub release, verifies its checksum and keeps it in
 `~/.houston/v2/runtime/versions/`. It then starts Claude Code or Codex with a triage
