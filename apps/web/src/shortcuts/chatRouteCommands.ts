@@ -8,7 +8,7 @@ import { useComposerDraftStore } from "../composerDraftStore";
 import { dispatchPreviewAction, type PreviewAction } from "../components/preview/previewActionBus";
 import { createWslEnvironmentPredicate } from "../connection/desktopLocal";
 import { isAppModalPage } from "../components/sidebar/mainAppLocation";
-import { shouldCreateNewThreadInCurrentProject } from "../components/Sidebar.logic";
+import { shouldPickNewThreadProject } from "../components/Sidebar.logic";
 import { createNewThreadHandler, resolveDefaultProjectRef } from "../hooks/useHandleNewThread";
 import { createScratchProjectActions } from "../hooks/useScratchProject";
 import { getClientSettings } from "../hooks/useSettings";
@@ -139,13 +139,7 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
           return;
         }
         const groups = readProjectGroups();
-        if (
-          !shouldCreateNewThreadInCurrentProject(
-            false,
-            groups.filter((group) => !group.archived).length,
-            groups.length,
-          )
-        ) {
+        if (shouldPickNewThreadProject({ shiftKey: false, groups })) {
           claim(event);
           openCommandPalette({ open: "new-thread-in" });
           return;

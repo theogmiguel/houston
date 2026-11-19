@@ -450,7 +450,8 @@ export function resolveDefaultProjectRef(
   projectOrder: readonly string[],
 ): ScopedProjectRef | null {
   const [defaultProject] = orderItemsByPreferredIds({
-    items: projects.filter((project) => project.archivedAt == null),
+    // "No project" is an explicit choice, never the default for a new thread.
+    items: projects.filter((project) => project.archivedAt == null && project.isScratch !== true),
     preferredIds: projectOrder,
     getId: getProjectOrderKey,
     getPreferenceIds: (project) => [
