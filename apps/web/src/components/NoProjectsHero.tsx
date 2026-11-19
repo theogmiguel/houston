@@ -35,6 +35,12 @@ import { Text } from "./ui/text";
 import { HoustonMark } from "./HoustonWordmark";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
 
+const INTRO_TERMS = [
+  { term: "Project", definition: "a folder on this machine." },
+  { term: "Thread", definition: "a conversation with one agent, in a project or not." },
+  { term: "Workspace", definition: "tabs side by side; any project's threads share one." },
+] as const;
+
 const PROVIDER_LABELS: Partial<Record<string, string>> = {
   claudeAgent: "Claude Code",
   codex: "Codex",
@@ -132,8 +138,7 @@ export function NoProjectsHero() {
             </EmptyMedia>
             <EmptyTitle variant="display">Add a project to start</EmptyTitle>
             <EmptyDescription variant="welcome" className="max-w-[62ch]">
-              A project is a folder on this machine. Its threads run on Houston's local server and
-              keep running when you close the window.
+              Threads run on Houston's local server and keep running when you close the window.
             </EmptyDescription>
             <div className="mt-1 flex flex-wrap justify-center gap-2">
               {canImportHouston1 ? (
@@ -172,6 +177,16 @@ export function NoProjectsHero() {
                 </EmptyDescription>
               )
             ) : null}
+            <EmptyDescription className="mt-1 max-w-[62ch]">
+              {INTRO_TERMS.map(({ term, definition }) => (
+                <Text key={term} as="p" variant="caption" tone="inherit" data-hero-term={term}>
+                  <Text as="span" variant="caption" tone="inherit" weight="semibold">
+                    {term}
+                  </Text>
+                  : {definition}
+                </Text>
+              ))}
+            </EmptyDescription>
             <div className="mt-3 flex items-center gap-1">
               <Button variant="ghost" size="sm" onClick={openProviderSetup}>
                 {providersOk ? (

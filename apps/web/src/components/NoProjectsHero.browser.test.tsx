@@ -163,19 +163,60 @@ it("describes the status line for every mix of provider states", () => {
   expect(providerStatusLine([missing("opencode")])).toBe("1 not installed");
 });
 
-it("calls folders projects instead of Houston 1 workspaces", async () => {
+it("calls folders projects and keeps the local-server fact", async () => {
   resetHeroState();
   state.providers = [provider("claudeAgent")];
   await using _screen = await renderHero();
 
-  await expect
-    .element(
-      page.getByText(
-        "A project is a folder on this machine. Its threads run on Houston's local server and keep running when you close the window.",
-      ),
-    )
-    .toBeVisible();
-  expect(document.querySelector("main")!.textContent).not.toContain("workspace");
+  await expect.element(page.getByText(/Threads run on Houston's local server/)).toBeVisible();
+  const main = document.querySelector<HTMLElement>("main")!;
+  // "Workspace" now names a layout, never a project's folder.
+  expect(main.textContent).toContain("Workspace");
+});
+
+it("introduces project, thread and workspace between the actions and the status line", async () => {
+  resetHeroState();
+  state.providers = [provider("claudeAgent")];
+  await using _screen = await renderHero();
+
+  const terms = [...document.querySelectorAll<HTMLElement>("[data-hero-term]")];
+  expect(terms.map((term) => term.dataset.heroTerm)).toEqual(["Project", "Thread", "Workspace"]);
+  expect(terms.map((term) => term.textContent?.trim())).toEqual([
+    "Project: a folder on this machine.",
+    "Thread: a conversation with one agent, in a project or not.",
+    "Workspace: tabs side by side; any project's threads share one.",
+  ]);
+
+  const add = page.getByRole("button", { name: "Add folder" }).element();
+  const line = page.getByRole("button", { name: /Claude Code ready/ }).element();
+  for (const term of terms) {
+    expect(term.getBoundingClientRect().top).toBeGreaterThan(add.getBoundingClientRect().bottom);
+    expect(term.getBoundingClientRect().bottom).toBeLessThan(line.getBoundingClientRect().top);
+  }
+});
+
+it("fits the first screen in a 390px window without sideways scrolling", async () => {
+  const previousViewport = { width: window.innerWidth, height: window.innerHeight };
+  await page.viewport(390, 844);
+  await using _viewport = {
+    [Symbol.asyncDispose]: () => page.viewport(previousViewport.width, previousViewport.height),
+  };
+  resetHeroState();
+  state.providers = [provider("claudeAgent")];
+  await using _screen = await renderHero();
+
+  const main = document.querySelector<HTMLElement>("main")!;
+  expect(main.scrollWidth).toBeLessThanOrEqual(main.clientWidth + 1);
+  expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(window.innerWidth + 1);
+  for (const term of document.querySelectorAll<HTMLElement>("[data-hero-term]")) {
+    const box = term.getBoundingClientRect();
+    expect(box.left).toBeGreaterThanOrEqual(0);
+    expect(box.right).toBeLessThanOrEqual(window.innerWidth + 1);
+    // Each term stays one line even at phone width.
+    expect(box.height).toBeLessThanOrEqual(
+      Number.parseFloat(getComputedStyle(term).lineHeight) + 1,
+    );
+  }
 });
 
 it("keeps Add folder the dominant action above the status line", async () => {
@@ -214,7 +255,7 @@ it("leaves one focal action: logo, title, one line, two buttons, status and one 
   const main = document.querySelector<HTMLElement>("main")!;
   // Add folder, Clone a repository, the status line and the info button; no scratch target here.
   expect(main.querySelectorAll("button")).toHaveLength(4);
-  await expect.element(page.getByText(/A project is a folder on this machine/)).toBeVisible();
+  await expect.element(page.getByText(/Project: a folder on this machine/)).toBeVisible();
 });
 
 it("offers to import Houston 1 projects from the first screen", async () => {

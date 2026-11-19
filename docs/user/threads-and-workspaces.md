@@ -20,6 +20,10 @@ Houston 1 has projects to bring, the first screen also offers **Import N project
 `Start without a project` opens a thread with no project; a thread without a folder can be
 turned into a project from its thread actions later.
 
+The first screen also introduces the three terms: a **project** is a folder on this machine, a
+**thread** is a conversation with one agent (in a project or not), and a **workspace** holds tabs
+side by side that threads of any project can share.
+
 To clone into `<host>/<owner>/<repo>` folders, turn on **Clone into host folders** under
 **Settings ▸ Threads**. Clones then default to that path under the add-project base directory,
 and you can still change the destination before cloning.
