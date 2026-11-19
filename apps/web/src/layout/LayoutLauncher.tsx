@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { scopeProjectRef } from "@houston-app/client-runtime/environment";
+import { isScratchProject } from "@houston-app/client-runtime/state/projects";
 import type { ScopedThreadRef } from "@houston-app/contracts";
 import {
   CircleDotIcon,
@@ -90,12 +91,16 @@ export function LayoutLauncher({
   const projects = useProjects();
   const threads = useVisibleThreadShells();
   const handleNewThread = useNewThreadHandler();
-  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
+  const { scratchEnvironmentId, scratchWorkspaceRootFor, startScratchThread } = useScratchProject();
   const openPage = useOpenLayoutPage();
   const focusedWorkspaceId = useLayoutStore((state) => state.layout.focusedWorkspaceId);
   const contextRef = context === null ? null : chatTargetThreadRef(context);
   const ranked = sortScopedProjectsForSidebar(
-    projects.filter((project) => project.archivedAt == null),
+    projects.filter(
+      (project) =>
+        project.archivedAt == null &&
+        !isScratchProject(project, scratchWorkspaceRootFor(project.environmentId)),
+    ),
     threads,
     "updated_at",
   );

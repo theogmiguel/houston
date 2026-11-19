@@ -17,6 +17,13 @@ vi.mock(import("../state/entities"), async (original) => ({
     [
       { environmentId: "local", id: "p1", title: "Alpha", archivedAt: null },
       { environmentId: "local", id: "p2", title: "Beta", archivedAt: null },
+      {
+        environmentId: "local",
+        id: "scratch",
+        title: "No project",
+        workspaceRoot: "/scratch",
+        archivedAt: null,
+      },
     ] as never,
   useVisibleThreadShells: () => [],
 }));
@@ -29,6 +36,8 @@ vi.mock(import("../hooks/useScratchProject"), async (original) => ({
   useScratchProject: () =>
     ({
       scratchEnvironmentId: () => harness.scratchEnvironment,
+      scratchWorkspaceRootFor: (environmentId: string | null) =>
+        environmentId === "local" ? "/scratch" : null,
       startScratchThread: harness.scratch,
     }) as never,
 }));
@@ -105,6 +114,12 @@ describe("LayoutLauncher", () => {
       "Issues",
       "Tasks",
     ]);
+  });
+
+  it("lists No project once, leaving the scratch project out", async () => {
+    useLayoutStore.getState().setLayoutFromServer(buildLayout([[]]));
+    await using screen = await render(<LayoutLauncher tabId={null} context={null} />);
+    expect(rowLabels(screen.container).filter((label) => label === "No project")).toHaveLength(1);
   });
 
   it("draws every row at one height, with or without a shortcut", async () => {
