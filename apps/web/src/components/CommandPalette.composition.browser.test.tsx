@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@houston-app/shared/keybindings";
@@ -8,6 +9,10 @@ import { CommandPalette } from "./CommandPaletteShell";
 import "./CommandPalette";
 import { openCommandPalette } from "../commandPaletteBus";
 import { primaryServerKeybindingsAtom } from "../state/server";
+
+const state = vi.hoisted(() => ({
+  browseData: undefined as unknown,
+}));
 
 vi.mock("@effect/atom-react", async (original) => ({
   ...(await original<typeof import("@effect/atom-react")>()),
@@ -98,7 +103,7 @@ vi.mock("../state/filesystem", async (original) => ({
 }));
 vi.mock("../state/query", async (original) => ({
   ...(await original<typeof import("../state/query")>()),
-  useEnvironmentQuery: () => ({ data: undefined, isLoading: false }),
+  useEnvironmentQuery: () => ({ data: state.browseData, isLoading: false }),
 }));
 vi.mock("./settings/useAvailableSettingsSearchItems", () => ({
   useAvailableSettingsSearchItems: () => [],
@@ -136,6 +141,10 @@ describe.each(["repository", "folder", "destination"] as const)("add-project %s"
     if (step === "repository") {
       await userEvent.keyboard("{Enter}");
       await expect.element(input()).toHaveValue("/workspace/計画");
+    } else if (step === "folder") {
+      // A path that does not exist is never created from Enter alone.
+      await userEvent.keyboard("{Enter}");
+      await expect.element(input()).toHaveValue(value);
     } else {
       await userEvent.keyboard("{Enter}");
       await expect.element(page.getByRole("combobox")).not.toBeInTheDocument();
@@ -156,4 +165,79 @@ it("keeps the caret in place when an edit briefly makes the folder path not a pa
   await expect.element(input()).toHaveValue("/workspace/project");
   await userEvent.keyboard("w");
   await expect.element(input()).toHaveValue("/wworkspace/project");
+});
+
+describe("add folder path mode", () => {
+  it("starts browsing from the add-project base folder under StrictMode", async () => {
+    state.browseData = undefined;
+    await using _screen = await render(
+      <StrictMode>
+        <CommandPalette>{null}</CommandPalette>
+      </StrictMode>,
+    );
+    await act(() =>
+      openCommandPalette({ open: "add-project", addProject: { action: "open-folder" } }),
+    );
+
+    await expect.element(page.getByRole("combobox")).toHaveValue("/workspace/");
+  });
+
+  it("does not create a folder when Enter confirms a path that does not exist", async () => {
+    state.browseData = undefined;
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+    await act(() =>
+      openCommandPalette({ open: "add-project", addProject: { action: "open-folder" } }),
+    );
+
+    const input = () => page.getByRole("combobox");
+    await input().fill("/workspace/missing");
+    await userEvent.keyboard("{Enter}");
+
+    await expect
+      .element(page.getByText("Create folder /workspace/missing and add it", { exact: true }))
+      .toBeInTheDocument();
+    await expect.element(input()).toHaveValue("/workspace/missing");
+  });
+
+  it("creates a folder only from its explicit row", async () => {
+    state.browseData = undefined;
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+    await act(() =>
+      openCommandPalette({ open: "add-project", addProject: { action: "open-folder" } }),
+    );
+
+    await page.getByRole("combobox").fill("/workspace/missing");
+    await page.getByText("Create folder /workspace/missing and add it", { exact: true }).click();
+
+    await expect.element(page.getByRole("combobox")).not.toBeInTheDocument();
+  });
+
+  it("adds an existing folder typed with a trailing separator on Enter", async () => {
+    state.browseData = { parentPath: "/workspace/notes-app", entries: [] };
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+    await act(() =>
+      openCommandPalette({ open: "add-project", addProject: { action: "open-folder" } }),
+    );
+
+    await page.getByRole("combobox").fill("/workspace/notes-app/");
+    await userEvent.keyboard("{Enter}");
+
+    await expect.element(page.getByRole("combobox")).not.toBeInTheDocument();
+  });
+
+  it("adds the existing folder a typed path names on Enter", async () => {
+    state.browseData = {
+      parentPath: "/workspace",
+      entries: [{ name: "missing", fullPath: "/workspace/missing" }],
+    };
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+    await act(() =>
+      openCommandPalette({ open: "add-project", addProject: { action: "open-folder" } }),
+    );
+
+    await page.getByRole("combobox").fill("/workspace/missing");
+    await userEvent.keyboard("{Enter}");
+
+    await expect.element(page.getByRole("combobox")).not.toBeInTheDocument();
+  });
 });

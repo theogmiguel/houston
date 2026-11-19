@@ -758,6 +758,22 @@ export function shouldCreateNewThreadInCurrentProject(
   return shiftKey || openProjectGroupCount === 1 || projectGroupCount === 0;
 }
 
+/**
+ * Scratch projects are not projects the user picked, so they never make the
+ * "New thread in" picker necessary.
+ */
+export function shouldPickNewThreadProject(input: {
+  readonly shiftKey: boolean;
+  readonly groups: ReadonlyArray<{ readonly archived: boolean; readonly isScratch?: boolean }>;
+}): boolean {
+  const realGroups = input.groups.filter((group) => group.isScratch !== true);
+  return !shouldCreateNewThreadInCurrentProject(
+    input.shiftKey,
+    realGroups.filter((group) => !group.archived).length,
+    realGroups.length,
+  );
+}
+
 export function orderItemsByPreferredIds<TItem, TId>(input: {
   items: readonly TItem[];
   preferredIds: readonly TId[];

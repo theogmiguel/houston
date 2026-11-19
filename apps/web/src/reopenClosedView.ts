@@ -64,11 +64,12 @@ export function planNextReopen(
 
 /** A draft that was sent since the tab closed reopens as its thread. */
 export function closedChatTarget(view: Extract<ClosedView, { kind: "chat" }>): ThreadRouteTarget {
-  const promoted = view.draftId
-    ? useComposerDraftStore.getState().getPromotedDraftRedirect(view.draftId)
-    : null;
-  return view.draftId && !promoted
-    ? { kind: "draft", draftId: view.draftId }
+  const drafts = useComposerDraftStore.getState();
+  // An older or partial record has only the draft's thread ref; the store still knows the draft.
+  const draftId = view.draftId ?? drafts.getDraftIdByRef(view.threadRef);
+  const promoted = draftId ? drafts.getPromotedDraftRedirect(draftId) : null;
+  return draftId && !promoted
+    ? { kind: "draft", draftId }
     : { kind: "server", threadRef: promoted ?? view.threadRef };
 }
 

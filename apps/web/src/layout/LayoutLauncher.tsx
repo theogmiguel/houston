@@ -1,10 +1,12 @@
 import { useAtomValue } from "@effect/atom-react";
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { scopeProjectRef } from "@houston-app/client-runtime/environment";
+import { isScratchProject } from "@houston-app/client-runtime/state/projects";
 import type { ScopedThreadRef } from "@houston-app/contracts";
 import {
   CircleDotIcon,
   FolderIcon,
+  FolderPlusIcon,
   GitCompareIcon,
   GlobeIcon,
   MessageSquareTextIcon,
@@ -15,18 +17,23 @@ import {
   ListChecksIcon,
 } from "lucide-react";
 
+import { pickableProjectGroups } from "@houston-app/client-runtime/state/project-grouping";
+
 import { useBrowserDefaults } from "../browser/browserDefaults";
-import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
+import { openAddProjectDialog } from "../components/AddProjectDialog";
+import { useEnvironmentLookups, useSortedProjectGroups } from "../components/CommandPaletteLookups";
 import {
   LayoutLauncherGroup,
   LayoutLauncherList,
   LayoutLauncherRow,
   LayoutLauncherFrame,
 } from "../components/ui/layout-launcher";
+import { useComposerDraftStore } from "../composerDraftStore";
 import { shortcutLabelForCommand } from "../keybindings";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useScratchProject } from "../hooks/useScratchProject";
-import { useProjects, useVisibleThreadShells } from "../state/entities";
+import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
+import { useQuietThreadShell } from "../state/entities";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import type { ThreadRouteTarget } from "../threadRoutes";
 import {
@@ -46,6 +53,7 @@ const SURFACES: ReadonlyArray<{
   kind: LauncherSurfaceKind;
   label: string;
   icon: typeof GitCompareIcon;
+  detail?: string;
 }> = [
   { kind: "diff", label: "Changes", icon: GitCompareIcon },
   { kind: "files", label: "Files", icon: FolderIcon },
@@ -53,7 +61,12 @@ const SURFACES: ReadonlyArray<{
   { kind: "terminal", label: "Terminal", icon: SquareTerminalIcon },
   { kind: "pull-request", label: "Pull request", icon: PullRequestGlyph.pullRequest },
   { kind: "pull-requests", label: "Linked pull requests", icon: PullRequestGlyph.link },
-  { kind: "device", label: "Device", icon: TabletSmartphoneIcon },
+  {
+    kind: "device",
+    label: "Device",
+    icon: TabletSmartphoneIcon,
+    detail: "iOS Simulators and Android emulators.",
+  },
   { kind: "side-chat", label: "Side chat", icon: MessageSquareTextIcon },
 ];
 
@@ -87,17 +100,29 @@ export function LayoutLauncher({
   readonly context: ThreadRouteTarget | null;
 }) {
   const { paneId } = useLayoutPane();
-  const projects = useProjects();
-  const threads = useVisibleThreadShells();
   const handleNewThread = useNewThreadHandler();
-  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
+  const { scratchEnvironmentId, scratchWorkspaceRootFor, startScratchThread } = useScratchProject();
   const openPage = useOpenLayoutPage();
   const focusedWorkspaceId = useLayoutStore((state) => state.layout.focusedWorkspaceId);
   const contextRef = context === null ? null : chatTargetThreadRef(context);
-  const ranked = sortScopedProjectsForSidebar(
-    projects.filter((project) => project.archivedAt == null),
-    threads,
-    "updated_at",
+  const { environmentLabelById, isWslEnvironment } = useEnvironmentLookups();
+  const projectGroups = useSortedProjectGroups(environmentLabelById, isWslEnvironment);
+  const contextShell = useQuietThreadShell(contextRef);
+  const contextDraft = useComposerDraftStore((store) =>
+    contextRef === null ? null : store.getDraftThreadByRef(contextRef),
+  );
+  const preferredProjectRef =
+    contextShell !== null
+      ? scopeProjectRef(contextShell.environmentId, contextShell.projectId)
+      : contextDraft !== null
+        ? scopeProjectRef(contextDraft.environmentId, contextDraft.projectId)
+        : null;
+  const ranked = buildSidebarProjectPickerEntries({
+    groups: pickableProjectGroups(projectGroups),
+    preferredProjectRef,
+  }).filter(
+    ({ targetProject }) =>
+      !isScratchProject(targetProject, scratchWorkspaceRootFor(targetProject.environmentId)),
   );
   const scratchEnvironment = scratchEnvironmentId(contextRef?.environmentId ?? null);
 
@@ -116,13 +141,15 @@ export function LayoutLauncher({
     <LayoutLauncherFrame data-new-tab-launcher="">
       <LayoutLauncherList aria-label="New tab">
         <LayoutLauncherGroup>Start a thread in</LayoutLauncherGroup>
-        {ranked.map((project) => (
+        {ranked.map(({ group, targetProject }) => (
           <LayoutLauncherRow
-            key={`${project.environmentId}:${project.id}`}
+            key={`${targetProject.environmentId}:${targetProject.id}`}
             icon={<PlusIcon aria-hidden className="size-4" />}
-            label={project.title}
+            label={group.displayName}
             onSelect={() =>
-              start(() => handleNewThread(scopeProjectRef(project.environmentId, project.id)))
+              start(() =>
+                handleNewThread(scopeProjectRef(targetProject.environmentId, targetProject.id)),
+              )
             }
           />
         ))}
@@ -135,6 +162,11 @@ export function LayoutLauncher({
           onSelect={() => {
             if (scratchEnvironment !== null) start(() => startScratchThread(scratchEnvironment));
           }}
+        />
+        <LayoutLauncherRow
+          icon={<FolderPlusIcon aria-hidden className="size-4" />}
+          label="Add project…"
+          onSelect={() => openAddProjectDialog()}
         />
         {contextRef === null ? null : (
           <LauncherSurfaces threadRef={contextRef} tabId={tabId} paneId={paneId} />
@@ -198,32 +230,50 @@ function LauncherSurfaces({
     }
   };
 
+  const row: (surface: (typeof SURFACES)[number]) => {
+    readonly key: string;
+    readonly icon: typeof GitCompareIcon;
+    readonly label: string;
+    readonly detail?: string;
+    readonly shortcut: string | null;
+    readonly onSelect: () => void;
+  } = ({ kind, label, icon: Icon, detail }) => ({
+    key: kind,
+    icon: Icon,
+    label,
+    ...(detail === undefined ? {} : { detail }),
+    shortcut: shortcutLabelForCommand(keybindings, SURFACE_COMMANDS[kind] ?? null),
+    onSelect: () => show(kind),
+  });
+  const surfaceRows = SURFACES.flatMap((surface) => {
+    if (!openers.surfaces[surface.kind].available) return [];
+    if (surface.kind === "browser" && profiles.length > 1) {
+      return profiles.map((profile) => ({
+        ...row(surface),
+        key: `browser:${profile.id}`,
+        label: `Browser in ${profile.name}`,
+        shortcut: null,
+        onSelect: () => show("browser", profile.id),
+      }));
+    }
+    return [row(surface)];
+  });
+
+  if (surfaceRows.length === 0) return null;
+
   return (
     <>
       <LayoutLauncherGroup>Open beside this thread</LayoutLauncherGroup>
-      {SURFACES.map(({ kind, label, icon: Icon }) => {
-        const { available, reason } = openers.surfaces[kind];
-        return (
-          <LayoutLauncherRow
-            key={kind}
-            icon={<Icon aria-hidden className="size-4" />}
-            label={label}
-            shortcut={shortcutLabelForCommand(keybindings, SURFACE_COMMANDS[kind] ?? null)}
-            {...(available ? {} : { disabledReason: reason })}
-            onSelect={() => show(kind)}
-          />
-        );
-      })}
-      {openers.surfaces.browser.available && profiles.length > 1
-        ? profiles.map((profile) => (
-            <LayoutLauncherRow
-              key={profile.id}
-              icon={<GlobeIcon aria-hidden className="size-4" />}
-              label={`Browser in ${profile.name}`}
-              onSelect={() => show("browser", profile.id)}
-            />
-          ))
-        : null}
+      {surfaceRows.map(({ key, icon: Icon, label, detail, shortcut, onSelect }) => (
+        <LayoutLauncherRow
+          key={key}
+          icon={<Icon aria-hidden className="size-4" />}
+          label={label}
+          {...(detail === undefined ? {} : { detail })}
+          shortcut={shortcut}
+          onSelect={onSelect}
+        />
+      ))}
     </>
   );
 }

@@ -8,11 +8,13 @@ import { AsyncResult } from "effect/reactivity";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { type ClosedViewEntry, useClosedViewStore } from "./closedViewStore";
+import { DraftId, useComposerDraftStore } from "./composerDraftStore";
 import { __setClientSettingsForTests } from "./hooks/useSettings";
 import { createLayoutState, findLayoutTab, selectFocusedTab } from "./layout/layoutModel";
 import { useLayoutStore } from "./layout/layoutStore";
 import { readThreadPreviewState, resetPreviewStateForTests } from "./previewStateStore";
 import {
+  closedChatTarget,
   planNextReopen,
   pullRequestsSearchForRestore,
   type ReopenOwnerState,
@@ -91,6 +93,53 @@ describe("reopenClosedView", () => {
     expect(selectFocusedTab(useLayoutStore.getState().layout)?.id).toBe(restored.tab.id);
     expect(planNextReopen([entry], () => owner)).toEqual({ drop: [entry], restore: null });
     expect(openPreview).not.toHaveBeenCalled();
+  });
+
+  it("restores a draft from its thread ref when the closed record has no draft id", async () => {
+    const original = useLayoutStore.getState().layout;
+    using _restore = { [Symbol.dispose]: () => useLayoutStore.setState({ layout: original }) };
+    using _drafts = {
+      [Symbol.dispose]: () =>
+        useComposerDraftStore.setState({ draftsByThreadKey: {}, draftThreadsByThreadKey: {} }),
+    };
+    useLayoutStore.setState({ layout: createLayoutState() });
+    const draftId = DraftId.make("draft-1");
+    useComposerDraftStore.setState({
+      draftsByThreadKey: { [draftId]: { prompt: "hello" } as never },
+      draftThreadsByThreadKey: {
+        [draftId]: {
+          environmentId: threadRef.environmentId,
+          projectId: "project-1",
+          threadId: threadRef.threadId,
+          logicalProjectKey: "local:project-1",
+          createdAt: "2026-11-19T00:00:00.000Z",
+          runtimeMode: "default",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          envMode: "local",
+          startFromOrigin: false,
+        } as never,
+      },
+    });
+    const entry = {
+      kind: "chat",
+      id: "closed-draft",
+      threadRef,
+      paneId: "pane-that-no-longer-exists",
+      index: 0,
+    } as const;
+
+    expect(closedChatTarget(entry)).toEqual({ kind: "draft", draftId });
+    expect(await reopenClosedView(entry, { openPreview: vi.fn(), workspaceAvailable: true })).toBe(
+      true,
+    );
+    expect(
+      findLayoutTab(
+        useLayoutStore.getState().layout,
+        (candidate) => candidate.content.kind === "chat",
+      )?.tab.content,
+    ).toEqual({ kind: "chat", target: { kind: "draft", draftId } });
   });
 
   it("opens a chat in the active pane when the pane it closed in is gone", async () => {

@@ -1,6 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
 import { scopedThreadKey, scopeThreadRef } from "@houston-app/client-runtime/environment";
-import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
+import type {
+  EnvironmentProject,
+  EnvironmentThreadShell,
+} from "@houston-app/client-runtime/state/models";
 import {
   CircleDotIcon,
   ListChecksIcon,
@@ -24,8 +27,9 @@ import {
   SidebarProviderStack,
   type SidebarProviderEntry,
 } from "../components/sidebar/SidebarThreadRow";
+import { type DraftThreadState, useComposerDraftStore } from "../composerDraftStore";
 import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
-import { useQuietThreadShells } from "../state/entities";
+import { useProjects, useQuietThreadShells } from "../state/entities";
 import { chatTargetThreadRef } from "./layoutThreadRef";
 import { THREAD_TERMINAL_SURFACE_ID, type LayoutTab } from "./layoutModel";
 import type { LayoutTabLabel } from "./PaneTabBar";
@@ -97,6 +101,20 @@ export function ChatTabIcon({
   );
 }
 
+/** A draft names its project so tabs of different projects stay apart. A scratch draft does not. */
+function draftTabTitle(
+  session: DraftThreadState | undefined,
+  projects: ReadonlyArray<EnvironmentProject>,
+): string | null {
+  if (!session) return null;
+  const project = projects.find(
+    (candidate) =>
+      candidate.environmentId === session.environmentId && candidate.id === session.projectId,
+  );
+  if (!project || project.isScratch === true) return null;
+  return `${NEW_THREAD_TITLE} · ${project.title}`;
+}
+
 /**
  * The label of every tab, from the thread and surface state it shows. The tab bar calls the
  * returned function once per tab while it renders, so the stores it reads are subscribed here.
@@ -105,6 +123,8 @@ export function useLayoutTabLabel(): (tab: LayoutTab) => LayoutTabLabel {
   const shells = useQuietThreadShells();
   const providerEntriesByEnvironment = useAtomValue(sidebarProviderEntriesAtom);
   const panels = useRightPanelStore((state) => state.byThreadKey);
+  const draftSessions = useComposerDraftStore((state) => state.draftThreadsByThreadKey);
+  const projects = useProjects();
   const shellByKey = new Map(
     shells.map(
       (shell) => [scopedThreadKey(scopeThreadRef(shell.environmentId, shell.id)), shell] as const,
@@ -116,6 +136,10 @@ export function useLayoutTabLabel(): (tab: LayoutTab) => LayoutTabLabel {
       case "chat": {
         const ref = chatTargetThreadRef(content.target);
         const shell = ref === null ? null : (shellByKey.get(scopedThreadKey(ref)) ?? null);
+        const draftTitle =
+          shell === null && content.target.kind === "draft"
+            ? draftTabTitle(draftSessions[content.target.draftId], projects)
+            : null;
         return {
           icon: (
             <ChatTabIcon
@@ -127,7 +151,8 @@ export function useLayoutTabLabel(): (tab: LayoutTab) => LayoutTabLabel {
               }
             />
           ),
-          title: shell?.title || NEW_THREAD_TITLE,
+          title: shell?.title || draftTitle || NEW_THREAD_TITLE,
+          ...(draftTitle === null ? {} : { tooltip: draftTitle }),
         };
       }
       case "surface": {

@@ -130,6 +130,7 @@ function groupProps(
     onPickHoldTime: async () => null,
     onDropOnWorkspace: () => {},
     onCreateWorkspace: () => {},
+    onCreateThread: () => {},
     onRenameThread: () => {},
     onSetAutoClose: () => {},
     workspaceMoveFor: () => undefined,
@@ -187,14 +188,16 @@ describe("workspace groups on the rail", () => {
     resetTestState();
     const sections = workspaceSections();
     await using first = await render(<CollapsibleSections sections={sections} />);
-    await userEvent.click(first.getByRole("button", { name: /^Research$/ }).element());
-    const label = first.getByRole("button", { name: /^Research 2$/ }).element();
-    expect(label.getAttribute("aria-expanded")).toBe("false");
+    await userEvent.click(first.getByRole("button", { name: "Collapse Research" }).element());
+    const row = first.container.querySelector('[data-workspace-key="ws-1"] [data-sidebar-row]')!;
+    expect(row.getAttribute("aria-expanded")).toBe("false");
     expect(first.container.querySelector("[data-thread-key]")).toBeNull();
     await first[Symbol.asyncDispose]();
 
     await using second = await render(<CollapsibleSections sections={sections} />);
-    const restored = second.getByRole("button", { name: /^Research 2$/ }).element();
+    const restored = second.container.querySelector(
+      '[data-workspace-key="ws-1"] [data-sidebar-row]',
+    )!;
     expect(restored.getAttribute("aria-expanded")).toBe("false");
     expect(second.container.querySelector("[data-thread-key]")).toBeNull();
   });
@@ -206,9 +209,8 @@ describe("workspace groups on the rail", () => {
       <CollapsibleSections sections={workspaceSections()} query="thread-a" />,
     );
     expect(
-      screen
-        .getByRole("button", { name: /^Research$/ })
-        .element()
+      screen.container
+        .querySelector('[data-workspace-key="ws-1"] [data-sidebar-row]')!
         .getAttribute("aria-expanded"),
     ).toBe("true");
     expect(screen.container.querySelector("[data-thread-key$=':thread-a']")).not.toBeNull();

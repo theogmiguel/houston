@@ -706,6 +706,8 @@ export const BranchToolbar = memo(function BranchToolbar({
 
   const narrow = forceNarrow ?? labelsNarrow;
   const envModeLabel = resolveEnvModeLabel(effectiveEnvMode, true);
+  // The collapsed chip stays one line but its accessible name keeps the checkout's full name.
+  const envModeAccessibleLabel = resolveEnvModeLabel(effectiveEnvMode);
   const resolvedBranch =
     resolveBranchToolbarValue({
       envMode: effectiveEnvMode,
@@ -719,7 +721,12 @@ export const BranchToolbar = memo(function BranchToolbar({
   // A branch that is only the mode's name ("Local") would repeat it: show one part.
   const chipLabelClass =
     resolvedBranch === null ? CONTEXT_CHIP_BRANCH_CLS : CONTEXT_CHIP_BRANCH_MONO_CLS;
-  const workspaceChipShowsEnvMode = branchLabel !== envModeLabel;
+  const workspaceChipTitle =
+    resolvedBranch === null ? envModeAccessibleLabel : `${branchLabel} · ${envModeAccessibleLabel}`;
+  const workspaceChipAriaLabel =
+    resolvedBranch === null
+      ? `Workspace: ${envModeAccessibleLabel}`
+      : `Workspace: ${branchLabel}, ${envModeAccessibleLabel}`;
 
   const projectChip = !isServerThread ? (
     <span
@@ -838,7 +845,8 @@ export const BranchToolbar = memo(function BranchToolbar({
     ) : null;
 
   if (narrow) {
-    // One chip holds the checkout, branch and pull request, so the toolbar keeps its row.
+    // One chip holds the checkout, branch and pull request, so the toolbar keeps its row; the
+    // trailing control stays outside it and drops its label rather than leaving the row.
     const WorkspaceIcon = effectiveEnvMode === "worktree" ? FolderGit2Icon : LaptopIcon;
     return (
       <>
@@ -858,12 +866,8 @@ export const BranchToolbar = memo(function BranchToolbar({
                 size="xs"
                 data-composer-context-control
                 className={CONTEXT_CHIP_TRIGGER_CLS}
-                title={workspaceChipShowsEnvMode ? `${branchLabel} · ${envModeLabel}` : branchLabel}
-                aria-label={
-                  workspaceChipShowsEnvMode
-                    ? `Workspace: ${branchLabel}, ${envModeLabel}`
-                    : `Workspace: ${branchLabel}`
-                }
+                title={workspaceChipTitle}
+                aria-label={workspaceChipAriaLabel}
               />
             }
           >
@@ -888,12 +892,12 @@ export const BranchToolbar = memo(function BranchToolbar({
               {runContextNode}
               {showGitControls ? branchSelector("branch", "min-w-0 flex-1 justify-end") : null}
               {environmentNode}
-              {trailing}
             </div>
           </PopoverPopup>
         </Popover>
         {showGitControls ? branchSelector("pr", "ms-0.5 shrink-0", prIconOnly) : null}
         {uploadsNode}
+        {trailing}
       </>
     );
   }

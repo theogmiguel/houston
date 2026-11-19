@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { render } from "../../../test/render";
@@ -127,7 +127,10 @@ describe("WorkingTimelineRow in a narrow pane", () => {
     expect(hint.getBoundingClientRect().width).toBeLessThanOrEqual(1);
     expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth + 1);
     expect(row.textContent).toContain("Running");
-    await userEvent.hover(row);
+    // The row text is a live timer, so a text-derived locator goes stale between ticks.
+    row.dataset.testid = "working-row";
+    // The restart note inside the row has its own tooltip, so hover the row's leading edge.
+    await userEvent.hover(page.getByTestId("working-row"), { position: { x: 2, y: 2 } });
     await vi.waitFor(() =>
       expect(document.querySelector('[data-slot="tooltip-popup"]')?.textContent).toBe(
         "Esc to interrupt",

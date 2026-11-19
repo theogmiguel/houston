@@ -21,6 +21,7 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { openThreadInLayout } from "../../threads/openThreadInLayout";
+import { useComposerDraftStore } from "../../composerDraftStore";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import { requestConfirmDialog } from "../../confirmDialog";
 import { openAddProjectDialog } from "../AddProjectDialog";
@@ -29,13 +30,12 @@ import { isDesktopHost } from "../../env";
 import { DEFAULT_SIDEBAR_GRID_THREAD_SORT_ORDER } from "@houston-app/contracts/settings";
 import { selectFocusedTab, type LayoutWorkspace } from "../../layout/layoutModel";
 import { chatTargetThreadRef } from "../../layout/layoutThreadRef";
-import { useLayoutStore } from "../../layout/layoutStore";
+import { runInNewLayoutTab, useLayoutStore } from "../../layout/layoutStore";
 import { useThreadMembershipStore } from "../../layout/threadMembership";
 import {
   createLayoutWorkspaceAction,
   deleteLayoutWorkspaceAction,
   hideLayoutWorkspaceAction,
-  openLayoutLauncherInWorkspaceAction,
   pinLayoutWorkspaceAction,
   renameLayoutWorkspaceAction,
   reorderLayoutWorkspaceAction,
@@ -86,7 +86,6 @@ import { useRevealOpenThread } from "../../threads/useRevealOpenThread";
 import { attachSidebarTree } from "../../lib/sidebarTree";
 import { useShortcutModifierState } from "../../shortcutModifierState";
 import { reportFailure } from "./reportFailure";
-import { SidebarNoProjects } from "./SidebarNoProjects";
 import { ThreadBulkMenuContext, useBulkThreadMenu } from "./useBulkThreadMenu";
 import { ThreadJumpHintContext } from "./threadJumpHints";
 import { SidebarShelves } from "./SidebarShelves";
@@ -125,7 +124,12 @@ import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { primaryServerKeybindingsAtom } from "../../state/server";
 import { threadEnvironment } from "../../state/threads";
 import { useThreadActions } from "../../hooks/useThreadActions";
-import { useNewThreadHandler, type NewThreadHandler } from "../../hooks/useHandleNewThread";
+import {
+  useNewThreadHandler,
+  resolveWorkspaceNewThreadTarget,
+  type NewThreadHandler,
+} from "../../hooks/useHandleNewThread";
+import { resolveThreadActionProjectRef } from "../../lib/chatThreadActions";
 import {
   resolveShortcutCommand,
   shouldShowThreadJumpHintsForModifiers,
@@ -157,7 +161,7 @@ import type { ThreadActionMenuWorkspaceInput } from "../../hooks/useThreadAction
 import {
   SIDEBAR_EMPTY_ACTION_CLS,
   SIDEBAR_GROUP_ACTION_CLS,
-  SIDEBAR_GROUP_CHEVRON_BOX_CLS,
+  SIDEBAR_GROUP_CHEVRON_BUTTON_CLS,
   SIDEBAR_GROUP_CHEVRON_CLS,
   SIDEBAR_GROUP_CHEVRON_EXPANDED_CLS,
   SIDEBAR_GROUP_COUNT_CLS,
@@ -166,6 +170,7 @@ import {
   SIDEBAR_GROUP_HEADING_DROP_CLS,
   SIDEBAR_GROUP_SECTION_DROP_CLS,
   SIDEBAR_GROUP_HEADING_ROW_CLS,
+  SIDEBAR_GROUP_LABEL_BUTTON_CLS,
   SIDEBAR_GROUP_RENAME_CLS,
   SIDEBAR_NEEDS_YOU_DOT_CLS,
   SIDEBAR_NEEDS_YOU_HEADING_CLS,
@@ -181,6 +186,7 @@ import {
   sidebarGroupNameCls,
   type SidebarMenuOptions,
 } from "../ui/sidebar-sections";
+import { SIDEBAR_ROW_SURFACE_CLS } from "../ui/sidebar-rail-recipes";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
@@ -219,6 +225,7 @@ export function ThreadSidebar({
   const openProjectGroups = orderSidebarProjectGroups(projectGroups);
   const storedFilterKeys = useUiStateStore((store) => store.sidebarProjectScopeKeys);
   const setStoredFilterKeys = useUiStateStore((store) => store.setSidebarProjectScopeKeys);
+  const projectOrder = useUiStateStore((store) => store.projectOrder);
   const filterKeys = activeProjectFilterKeys(openProjectGroups, storedFilterKeys);
   const orderedProjectGroups = applyProjectFilter(openProjectGroups, filterKeys);
   const projects = orderedProjectGroups.flatMap((group) =>
@@ -407,6 +414,45 @@ export function ThreadSidebar({
     focusedShell ??
     (routeShell?.environmentId === routeRef?.environmentId ? routeShell : undefined);
   useRevealOpenThread(railRef, revealShell === undefined ? null : threadKeyOf(revealShell));
+
+  const openNewThreadInWorkspace = (workspaceId: string) => {
+    const focusedDraftThread =
+      focusedContent?.kind === "chat" && focusedContent.target.kind === "draft"
+        ? useComposerDraftStore.getState().getDraftSession(focusedContent.target.draftId)
+        : null;
+    const target = resolveWorkspaceNewThreadTarget({
+      projects: allProjects,
+      projectOrder,
+      focusedProjectRef: resolveThreadActionProjectRef({
+        activeThread: focusedShell,
+        activeDraftThread: focusedDraftThread,
+        defaultProjectRef: null,
+        handleNewThread,
+      }),
+    });
+    if (target.kind === "picker") {
+      openCommandPalette({ open: "new-thread-in" });
+      return;
+    }
+    void runInNewLayoutTab(
+      async () => {
+        const opened = await handleNewThread(target.projectRef);
+        if (opened === null) return;
+        const targetWorkspace = useLayoutStore
+          .getState()
+          .layout.workspaces.find((workspace) => workspace.id === workspaceId);
+        if (targetWorkspace === undefined) return;
+        // A reused empty draft may already have a tab in another workspace; moving it keeps one.
+        useLayoutStore
+          .getState()
+          .placeContent(
+            { kind: "chat", target: { kind: "draft", draftId: opened.draftId } },
+            { kind: "column", workspaceId, index: targetWorkspace.columns.length },
+          );
+      },
+      { workspaceId },
+    );
+  };
 
   // Opening a thread the filter hides (history, a link, the palette) widens the filter once, so
   // the row the user navigated to is on the rail.
@@ -890,8 +936,8 @@ export function ThreadSidebar({
   const createWorkspace = (name: string): string | null => {
     const refusal = createLayoutWorkspaceAction(name);
     if (refusal !== null) return refusal;
-    // The new workspace is stored once it holds a tab, so it opens a launcher to start a thread in.
-    openLayoutLauncherInWorkspaceAction(useLayoutStore.getState().layout.focusedWorkspaceId);
+    // A new workspace opens a ready draft, so it is ready to start a thread in.
+    openNewThreadInWorkspace(useLayoutStore.getState().layout.focusedWorkspaceId);
     return null;
   };
 
@@ -922,6 +968,7 @@ export function ThreadSidebar({
       onPickHoldTime={pickHoldTime}
       onDropOnWorkspace={dropOnWorkspace}
       onCreateWorkspace={startCreatingWorkspace}
+      onCreateThread={openNewThreadInWorkspace}
       onRenameThread={renameThread}
       onSetAutoClose={setAutoClose}
       workspaceMoveFor={workspaceMoveFor}
@@ -1102,7 +1149,6 @@ export function ThreadSidebar({
                         onDone={() => setCreatingWorkspace(false)}
                       />
                     ) : null}
-                    {projects.length === 0 && query.length === 0 ? <SidebarNoProjects /> : null}
                     {sections.map(renderGroup)}
                     {searching ? <SidebarContentResults results={contentResults} /> : null}
                     {searching &&
@@ -1624,6 +1670,7 @@ export function SidebarWorkspaceGroup({
   onPickHoldTime,
   onDropOnWorkspace,
   onCreateWorkspace,
+  onCreateThread,
   onRenameThread,
   onSetAutoClose,
   workspaceMoveFor,
@@ -1663,6 +1710,8 @@ export function SidebarWorkspaceGroup({
   onPickHoldTime: () => Promise<Pick<SnoozePreset, "snoozedUntil"> | null>;
   onDropOnWorkspace: (source: DraggedThread, targetWorkspaceId: string) => void;
   onCreateWorkspace: () => void;
+  /** Opens a ready draft thread in this workspace. */
+  onCreateThread: (workspaceId: string) => void;
   onRenameThread: (thread: EnvironmentThreadShell, title: string) => void;
   onSetAutoClose: (thread: EnvironmentThreadShell, enabled: boolean) => void;
   workspaceMoveFor: (thread: EnvironmentThreadShell) => ThreadActionMenuWorkspaceInput | undefined;
@@ -1730,7 +1779,12 @@ export function SidebarWorkspaceGroup({
     const refusal = renameLayoutWorkspaceAction(workspaceId, draftName);
     if (refusal !== null) explain("Could not rename workspace", refusal);
   };
-  const createThread = () => openLayoutLauncherInWorkspaceAction(workspaceId);
+  const createThread = () => onCreateThread(workspaceId);
+  const headingSurfaceCls = open ? SIDEBAR_ROW_SURFACE_CLS.selected : null;
+  const focusWorkspaceFromHeading = () => {
+    if (collapsed) onToggleCollapsed();
+    useLayoutStore.getState().focusWorkspace(workspaceId);
+  };
   const deleteWorkspace = () => {
     // The last workspace cannot go; say so at once instead of asking to confirm a refused delete.
     const remaining = useLayoutStore.getState().layout.workspaces.length;
@@ -1822,6 +1876,7 @@ export function SidebarWorkspaceGroup({
         data-reorder-side={reorderTarget ?? undefined}
         className={cn(
           SIDEBAR_GROUP_HEADING_ROW_CLS,
+          headingSurfaceCls,
           reorderHighlight && SIDEBAR_GROUP_HEADING_DROP_CLS,
         )}
         onPointerDown={(event) => {
@@ -1853,71 +1908,107 @@ export function SidebarWorkspaceGroup({
             className={SIDEBAR_GROUP_RENAME_CLS}
           />
         ) : (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
-                  data-sidebar-row={workspaceRowId(workspaceId)}
-                  onClick={onToggleCollapsed}
-                  onKeyDown={(event) => {
-                    if (event.key === "F2") {
-                      event.preventDefault();
-                      startRenaming();
-                      return;
-                    }
-                    if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
-                      event.preventDefault();
-                      openWorkspaceMenuBelow(event.currentTarget);
-                    }
-                  }}
-                  aria-expanded={!collapsed}
-                  className={SIDEBAR_GROUP_HEADING_CLS}
-                >
-                  <span className={SIDEBAR_GROUP_CHEVRON_BOX_CLS} data-workspace-chevron-box="">
-                    <ChevronRightIcon
-                      aria-hidden
-                      className={cn(
-                        SIDEBAR_GROUP_CHEVRON_CLS,
-                        !collapsed && SIDEBAR_GROUP_CHEVRON_EXPANDED_CLS,
-                      )}
-                    />
-                  </span>
-                  <span data-workspace-name="" className={sidebarGroupNameCls(open)}>
-                    <HighlightedText text={workspaceName} query={query} />
-                  </span>
-                  {section.pinned ? (
-                    <PinIcon
-                      aria-label="Pinned"
-                      data-workspace-pin=""
-                      className="size-3 shrink-0 text-secondary-label"
-                    />
-                  ) : null}
-                  {threads.length === 0 ? (
-                    <span className={SIDEBAR_ROW_TRAILING_CLS} data-heading-trailing="">
-                      <span className={SIDEBAR_GROUP_EMPTY_CLS}>empty</span>
-                    </span>
-                  ) : collapsed ? (
-                    <span className={SIDEBAR_ROW_TRAILING_CLS} data-heading-trailing="">
-                      {threads.some((thread) => isNeedsYouThread(thread, nowIso)) ? (
-                        <span
-                          aria-hidden
-                          className={SIDEBAR_NEEDS_YOU_DOT_CLS}
-                          data-needs-you-dot=""
-                        />
-                      ) : null}
-                      <span className={SIDEBAR_GROUP_COUNT_CLS} data-heading-count="">
-                        {threads.length}
-                      </span>
-                    </span>
-                  ) : null}
-                </button>
+          <div
+            role="treeitem"
+            tabIndex={0}
+            data-sidebar-row={workspaceRowId(workspaceId)}
+            aria-expanded={!collapsed}
+            onClick={(event) => {
+              if (event.target === event.currentTarget) onToggleCollapsed();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "F2") {
+                event.preventDefault();
+                startRenaming();
+                return;
               }
-            />
-            <TooltipPopup side="bottom" align="start">
-              {workspaceName}
-            </TooltipPopup>
-          </Tooltip>
+              if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+                event.preventDefault();
+                openWorkspaceMenuBelow(event.currentTarget);
+                return;
+              }
+              if (event.target !== event.currentTarget) return;
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                focusWorkspaceFromHeading();
+              }
+            }}
+            className={SIDEBAR_GROUP_HEADING_CLS}
+          >
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    data-workspace-chevron-box=""
+                    aria-label={`${collapsed ? "Expand" : "Collapse"} ${workspaceName}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onToggleCollapsed();
+                    }}
+                    className={SIDEBAR_GROUP_CHEVRON_BUTTON_CLS}
+                  />
+                }
+              >
+                <ChevronRightIcon
+                  aria-hidden
+                  className={cn(
+                    SIDEBAR_GROUP_CHEVRON_CLS,
+                    !collapsed && SIDEBAR_GROUP_CHEVRON_EXPANDED_CLS,
+                  )}
+                />
+              </TooltipTrigger>
+              <TooltipPopup side="bottom">
+                {collapsed ? "Expand workspace" : "Collapse workspace"}
+              </TooltipPopup>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      focusWorkspaceFromHeading();
+                    }}
+                    className={SIDEBAR_GROUP_LABEL_BUTTON_CLS}
+                  />
+                }
+              >
+                <span data-workspace-name="" className={sidebarGroupNameCls(open)}>
+                  <HighlightedText text={workspaceName} query={query} />
+                </span>
+                {section.pinned ? (
+                  <PinIcon
+                    aria-label="Pinned"
+                    data-workspace-pin=""
+                    className="size-3 shrink-0 text-secondary-label"
+                  />
+                ) : null}
+                {threads.length === 0 && section.empty ? (
+                  <span className={SIDEBAR_ROW_TRAILING_CLS} data-heading-trailing="">
+                    <span className={SIDEBAR_GROUP_EMPTY_CLS}>empty</span>
+                  </span>
+                ) : collapsed ? (
+                  <span className={SIDEBAR_ROW_TRAILING_CLS} data-heading-trailing="">
+                    {threads.some((thread) => isNeedsYouThread(thread, nowIso)) ? (
+                      <span
+                        aria-hidden
+                        className={SIDEBAR_NEEDS_YOU_DOT_CLS}
+                        data-needs-you-dot=""
+                      />
+                    ) : null}
+                    <span className={SIDEBAR_GROUP_COUNT_CLS} data-heading-count="">
+                      {threads.length}
+                    </span>
+                  </span>
+                ) : null}
+              </TooltipTrigger>
+              <TooltipPopup side="bottom" align="start">
+                {workspaceName}
+              </TooltipPopup>
+            </Tooltip>
+          </div>
         )}
         {renaming ? null : (
           <span className={SIDEBAR_ROW_ACTIONS_CLS}>
@@ -1955,7 +2046,7 @@ export function SidebarWorkspaceGroup({
         )}
       </div>
       <AnimatedHeight>
-        {threads.length === 0 && !collapsed ? (
+        {threads.length === 0 && section.empty && !collapsed ? (
           <div data-workspace-empty="" className={cn(SIDEBAR_GROUP_THREADS_CLS, "py-1")}>
             <div className="flex items-center gap-2 px-2 text-xs text-secondary-label">
               <span className="min-w-0 flex-1 truncate">No threads yet</span>

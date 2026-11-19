@@ -707,6 +707,24 @@ export function buildNestedSearchItems(
   });
 }
 
+/** The instructional line for a result list with nothing in it. */
+export function commandPaletteEmptyStateMessage(input: {
+  readonly isBrowsing: boolean;
+  readonly relativePathNeedsActiveProject: boolean;
+  readonly isThreadSearchPending: boolean;
+}): string | undefined {
+  if (input.relativePathNeedsActiveProject) {
+    return "Relative paths require an active project.";
+  }
+  if (input.isBrowsing) {
+    return "Type a folder path, or pick one below";
+  }
+  if (input.isThreadSearchPending) {
+    return "Searching thread messages…";
+  }
+  return undefined;
+}
+
 export function buildBrowseGroups(input: {
   browseEntries: ReadonlyArray<FilesystemBrowseEntry>;
   browseQuery: string;
@@ -715,6 +733,7 @@ export function buildBrowseGroups(input: {
   directoryIcon: ReactNode;
   browseUp: () => void | Promise<void>;
   browseTo: (name: string) => void | Promise<void>;
+  extraItems?: ReadonlyArray<CommandPaletteActionItem>;
 }): CommandPaletteGroup[] {
   const items: CommandPaletteActionItem[] = [];
 
@@ -745,6 +764,7 @@ export function buildBrowseGroups(input: {
       },
     });
   }
+  if (input.extraItems !== undefined) items.push(...input.extraItems);
 
   return [{ value: "directories", label: "Directories", items }];
 }
