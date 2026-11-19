@@ -3,6 +3,7 @@ import { EnvironmentId, ThreadId } from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  closeLayoutTab,
   createLayoutState,
   focusLayoutTab,
   layoutChatSwaps,
@@ -365,6 +366,20 @@ describe("placeLayoutTabs", () => {
     });
     expect(shapeOf(placed)).toEqual(expected);
     expect(placed.focusedWorkspaceId).toBe(layout.focusedWorkspaceId);
+  });
+});
+
+describe("closeLayoutTab", () => {
+  it.each<{ case: string; content: LayoutTabContent }>([
+    { case: "a chat", content: chatOf("A") },
+    { case: "a draft", content: draftOf("d") },
+    { case: "a surface", content: { kind: "surface", threadRef: refOf("A"), surfaceId: "diff" } },
+  ])("gives the window's last $case tab a launcher without its context", ({ content }) => {
+    const state = openLayoutTab(createLayoutState(), content);
+    const closed = closeLayoutTab(state, selectFocusedTab(state)!.id);
+    expect(columnsOf(closed)).toEqual([
+      [{ kind: "launcher", id: expect.any(String), context: null }],
+    ]);
   });
 });
 
