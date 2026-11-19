@@ -7,6 +7,7 @@ import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import {
   shouldCreateNewThreadInCurrentProject,
+  shouldPickNewThreadProject,
   deleteSelectedThreadEntries,
   getFallbackThreadIdAfterDelete,
   hasUnseenCompletion,
@@ -1668,5 +1669,37 @@ describe("shouldCreateNewThreadInCurrentProject", () => {
     expect(shouldCreateNewThreadInCurrentProject(false, 1, 3)).toBe(true);
     expect(shouldCreateNewThreadInCurrentProject(false, 0, 0)).toBe(true);
     expect(shouldCreateNewThreadInCurrentProject(true, 2, 2)).toBe(true);
+  });
+});
+
+describe("shouldPickNewThreadProject", () => {
+  it("does not let the scratch project force the picker beside one real project", () => {
+    expect(
+      shouldPickNewThreadProject({
+        shiftKey: false,
+        groups: [{ archived: false }, { archived: false, isScratch: true }],
+      }),
+    ).toBe(false);
+  });
+
+  it("needs the picker only with more than one real open project", () => {
+    expect(
+      shouldPickNewThreadProject({
+        shiftKey: false,
+        groups: [{ archived: false }, { archived: false }],
+      }),
+    ).toBe(true);
+    expect(
+      shouldPickNewThreadProject({
+        shiftKey: false,
+        groups: [{ archived: false }, { archived: true }],
+      }),
+    ).toBe(false);
+    expect(
+      shouldPickNewThreadProject({
+        shiftKey: false,
+        groups: [{ archived: false }, { archived: false }, { archived: false, isScratch: true }],
+      }),
+    ).toBe(true);
   });
 });

@@ -14,9 +14,13 @@ an agent makes to a workspace appears in the open window.
 ## Adding a project
 
 Houston starts with **Add a project to start**. Choose **Add folder** for an existing
-folder, or **Clone a repository** to clone a Git URL to a chosen machine and location.
+folder, or **Clone a repository** to clone a Git URL to a chosen machine and location. When
+Houston 1 has projects to bring, the first screen also offers **Import N projects from Houston
+1**, which runs the import described in [Updating Houston](updating.md#coming-from-houston-1).
 `Start without a project` opens a thread with no project; a thread without a folder can be
 turned into a project from its thread actions later.
+
+The first screen also defines project, thread and workspace in one line each.
 
 To clone into `<host>/<owner>/<repo>` folders, turn on **Clone into host folders** under
 **Settings ▸ Threads**. Clones then default to that path under the add-project base directory,
@@ -26,6 +30,9 @@ and you can still change the destination before cloning.
 **Clone repository** and **New project**, followed by the provider repositories Houston can
 clone from. **New project** appears when the server configures a projects folder. Adding a project opens a new thread in the focused
 workspace with the composer ready.
+
+In **Add folder**, **Enter** adds a folder that exists and never creates one; a path that does
+not exist offers an explicit **Create folder … and add it** row.
 
 **Project settings** in a thread's action menu
 or the command palette renames a project, pins it, archives it and changes its checkouts.
@@ -38,7 +45,13 @@ processes when the thread settles; an agent's own shell command is never attache
 
 ## Creating a thread
 
-Choose **New thread** from a workspace's **+**, from the command palette, or press `Ctrl+N`.
+Choose **New thread** from a workspace's **+** or from the **New thread** action of an empty
+workspace to start a draft in that workspace, from the command palette, or press `Ctrl+N`.
+The draft belongs to the project of the thread in focus, else to the most recently active
+project; with no project yet, the project picker opens instead. With a chat already on screen,
+a new thread opens in a new tab of that pane, and a draft's tab names its project. The new-tab
+launcher lists projects in the project picker's order and can also add a project.
+
 Pick the provider and model in the composer, choose permissions, and send the first
 message. A new thread starts in a local checkout or in a new worktree, according to
 **Settings ▸ Threads ▸ New threads**; the composer's workspace control changes it for one
@@ -65,8 +78,10 @@ as a card above the layout.
   (under **Layout…** in the command palette) open a new tab in a new column or pane, a tab's
   **Split right** and **Split down** split its pane, and dragging a tab to a pane's edge does the
   same. Drag a tab between panes or onto another workspace to move it.
-- Closing a tab closes that view only; the thread keeps its history. **Reopen closed tab**
-  (its rebindable shortcut, or the command palette) brings back the most recent one.
+- Closing a tab closes that view only; the thread keeps its history, and an unsent draft keeps
+  its text until you send it. Closing a draft with text offers **Reopen** in a notice.
+  **Reopen closed tab** (its rebindable shortcut, or the command palette) brings back the most
+  recent one.
 - **Fill the window** gives the focused pane the whole window, and the same command undoes it.
   **Column width** cycles ⅓, ½, ⅔ and full width; **Center column**, **Pull pane into the left
   column** and **Push pane out to its own column** rearrange the strip. The workspaces overview
@@ -91,10 +106,12 @@ same id.
 The sidebar opens with search and icon buttons for **New thread**, **New workspace**,
 **Add project** and **View options**, then one group per layout workspace, in workspace order. A group lists the threads whose chat is
 open in that workspace, whichever project they belong to. A thread whose chat is not placed in
-any workspace is listed under the first one. Each group label collapses with **Enter** or
-**Space** and keeps its state; a search opens every group it matches in. The **…** button
-beside the label, or a right-click, opens the workspace's actions. With no projects at all, the
-rail offers **Add project**.
+any workspace is listed under the first one. Clicking a group label shows that workspace in the
+main area, and **Enter** or **Space** on the focused label does the same. Its chevron collapses
+and expands the group, which keeps its state; a search opens every group it matches in. The
+**…** button beside the label, or a right-click, opens the workspace's actions. With no real
+projects, a workspace's **New thread** opens the project picker, which offers **No project** and
+**Add project…**; **Add project** in the search row adds one.
 
 The **Workspaces** header carries **Filter by project** and the **Hidden workspaces** menu.
 **View options** sorts threads (**Workspace order**, **Last activity** or **Created**), chooses
@@ -275,10 +292,10 @@ stays out of the thread until you choose **Send to thread**.
 
 Each thread has a terminal drawer for shell commands (`Ctrl+J`). The right panel is a
 separate set of surfaces; see [The right panel](right-panel.md). In a layout pane, a terminal
-or a panel surface opens as a tab: use the new-tab launcher (**Changes**, **Files**,
-**Browser**, **Terminal**), the command palette or the shortcut. A thread's **details**
-control (`Ctrl+Shift+B`) shows its environment, branch, pull requests, scripts, local
-servers, context and usage limits. The card starts closed and stays as you leave it.
+or a panel surface opens as a tab: use the new-tab launcher, which lists only the surfaces the
+thread can open now, the command palette or the shortcut. A thread's **details** control
+(`Ctrl+Shift+B`) shows its environment, branch, pull requests, scripts, local servers, context
+and usage limits. The card starts closed and stays as you leave it.
 
 In the layout a thread's surfaces open as tabs, beside or below its chat as set in the layout
 settings in **Settings ▸ Appearance**, instead of a panel that follows the focused pane.

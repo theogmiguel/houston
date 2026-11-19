@@ -164,7 +164,7 @@ import { useWorkspaceMutationRefresh } from "../hooks/useWorkspaceMutationRefres
 import { DEFAULT_INTERACTION_MODE, type ChatMessage } from "../types";
 import { useTheme } from "../hooks/useTheme";
 import { copyThreadReference } from "../lib/copyThreadReference";
-import { subscribeSnapShotComposerFocus } from "../lib/desktopSnapShot";
+import { subscribeComposerFocus } from "../lib/composerFocus";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { FileMetadataThreadProvider } from "../hooks/FileMetadataThreadProvider";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
@@ -1976,9 +1976,9 @@ export default function ChatView(props: ChatViewProps) {
     }
   };
   const onInterruptStable = useStableCallback(onInterrupt);
-  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- window listener for the desktop snapshot event that focuses the composer
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- window listener for the composer focus event a snapshot or a new thread raises
   useEffect(
-    () => (embedded ? undefined : subscribeSnapShotComposerFocus(focusComposerStable)),
+    () => (embedded ? undefined : subscribeComposerFocus(focusComposerStable)),
     [embedded, focusComposerStable],
   );
   const scheduleComposerFocus = () => {

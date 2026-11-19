@@ -30,7 +30,8 @@ import {
 } from "../../lib/snapShotAnimation";
 import { resizeSnapShotSource } from "../../lib/snapShotSource";
 import { playSnapShotSound } from "../../lib/snapShotSound";
-import { dispatchSnapShotComposerFocus, getDesktopSnapShotBridge } from "../../lib/desktopSnapShot";
+import { dispatchComposerFocus } from "../../lib/composerFocus";
+import { getDesktopSnapShotBridge } from "../../lib/desktopSnapShot";
 import {
   countQuestionRequestAttachments,
   openQuestionAttachmentDraft,
@@ -219,7 +220,7 @@ export async function deliverSnapShot(
     await afterNextPaint();
   }
   await bridge.acknowledgeSnapShot(capture.id);
-  dispatchSnapShotComposerFocus();
+  dispatchComposerFocus();
 }
 
 export function SnapShotCoordinator() {

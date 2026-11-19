@@ -39,12 +39,14 @@ removal stands down while a Houston 1 daemon is still running, because that daem
 reinstall its entries at startup; **Settings ▸ Maintenance** shows the outcome and names
 anything that still needs you to quit Houston 1.
 
-Houston 1 conversations are not imported. A one-time, read-only import in **Settings ▸
-Maintenance** under **Coming from Houston 1** copies:
+Houston 1 conversations are not imported. A one-time, read-only import copies:
 
 - projects from Houston 1 workspaces that still exist on disk;
 - the Tasks backlog and its settings;
 - task-source settings and links, and Slack intake.
+
+With no projects, the first screen offers **Import N projects from Houston 1**; the
+import also lives in **Settings ▸ Maintenance** under **Coming from Houston 1**.
 
 The import reads Houston 1's `houston.db` and leaves it untouched. It refuses to copy tasks
 into a v2 backlog that already has tasks rather than merging two unrelated numbering

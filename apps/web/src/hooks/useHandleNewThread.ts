@@ -450,7 +450,8 @@ export function resolveDefaultProjectRef(
   projectOrder: readonly string[],
 ): ScopedProjectRef | null {
   const [defaultProject] = orderItemsByPreferredIds({
-    items: projects.filter((project) => project.archivedAt == null),
+    // "No project" is an explicit choice, never the default for a new thread.
+    items: projects.filter((project) => project.archivedAt == null && project.isScratch !== true),
     preferredIds: projectOrder,
     getId: getProjectOrderKey,
     getPreferenceIds: (project) => [
@@ -459,6 +460,41 @@ export function resolveDefaultProjectRef(
     ],
   });
   return defaultProject ? scopeProjectRef(defaultProject.environmentId, defaultProject.id) : null;
+}
+
+/** Where a workspace's New thread starts: a real project, or the project picker when none exists. */
+type WorkspaceNewThreadTarget =
+  | { readonly kind: "project"; readonly projectRef: ScopedProjectRef }
+  | { readonly kind: "picker" };
+
+function isRealProject(project: EnvironmentProject): boolean {
+  return project.archivedAt == null && project.isScratch !== true;
+}
+
+/**
+ * The project a workspace's New thread starts in: the project of the focused thread or draft when
+ * it is real, else the most recently active real project, the same one `chat.new` uses for a fresh
+ * start. With no real project the picker opens, which also offers "No project" and "Add project…".
+ */
+export function resolveWorkspaceNewThreadTarget(input: {
+  readonly projects: ReadonlyArray<EnvironmentProject>;
+  readonly projectOrder: readonly string[];
+  readonly focusedProjectRef?: ScopedProjectRef | null;
+}): WorkspaceNewThreadTarget {
+  const focused = input.focusedProjectRef
+    ? input.projects.find(
+        (project) =>
+          project.id === input.focusedProjectRef?.projectId &&
+          project.environmentId === input.focusedProjectRef.environmentId &&
+          isRealProject(project),
+      )
+    : undefined;
+  if (focused !== undefined) {
+    return { kind: "project", projectRef: scopeProjectRef(focused.environmentId, focused.id) };
+  }
+  const projectRef = resolveDefaultProjectRef(input.projects, input.projectOrder);
+  if (projectRef !== null) return { kind: "project", projectRef };
+  return { kind: "picker" };
 }
 
 export function useHandleNewThread() {

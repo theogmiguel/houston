@@ -85,6 +85,25 @@ describe("AddProjectDialog", () => {
     });
   });
 
+  it("starts a named flow without showing the chooser", async () => {
+    resetDialogState();
+    await using _screen = await render(<AddProjectDialogHost />);
+
+    await act(() => openAddProjectDialog({ action: "open-folder" }));
+    expect(openCommandPalette).toHaveBeenCalledExactlyOnceWith({
+      open: "add-project",
+      addProject: { action: "open-folder" },
+    });
+    expect(page.getByRole("dialog", { name: "Add project" }).elements()).toHaveLength(0);
+
+    await act(() => openAddProjectDialog({ action: "clone" }));
+    expect(openCommandPalette).toHaveBeenLastCalledWith({
+      open: "add-project",
+      addProject: { action: "clone" },
+    });
+    expect(page.getByRole("dialog", { name: "Add project" }).elements()).toHaveLength(0);
+  });
+
   it("lists only configured integrations and links to provider settings", async () => {
     resetDialogState();
     state.discovery = discovery([

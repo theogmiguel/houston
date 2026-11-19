@@ -1,9 +1,5 @@
 /** The workspace operations of `layoutWorkspaces` applied to the layout store. Each returns the refusal text, or null when it applied. */
-import {
-  createLayoutLauncherContent,
-  type LayoutState,
-  type LayoutTabContent,
-} from "./layoutModel";
+import { type LayoutState, type LayoutTabContent } from "./layoutModel";
 import { useLayoutStore } from "./layoutStore";
 import {
   createLayoutWorkspaceNamed,
@@ -85,16 +81,4 @@ export function moveLayoutChatToWorkspaceAction(
   workspaceId: string,
 ): string | null {
   return applyWorkspaceChange((layout) => moveLayoutChatToWorkspace(layout, content, workspaceId));
-}
-
-/** Open a launcher tab at the end of a workspace and go there, to start a thread in it. */
-export function openLayoutLauncherInWorkspaceAction(workspaceId: string): void {
-  const store = useLayoutStore.getState();
-  const workspace = store.layout.workspaces.find((candidate) => candidate.id === workspaceId);
-  if (!workspace) return;
-  store.placeContent(createLayoutLauncherContent(null), {
-    kind: "column",
-    workspaceId,
-    index: workspace.columns.length,
-  });
 }

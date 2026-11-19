@@ -124,10 +124,9 @@ function nameOf(
 }
 
 /**
- * The workspaces to store. The empty workspace at the bottom of the strip is the place a new
- * workspace starts, so it is stored only once it holds tabs or threads; when no workspace holds
- * any, the first stays so the server always has one. `position` is the server's to set and is filled
- * from the place in this list; the server ignores it on a put.
+ * The workspaces to store. A trailing empty workspace is a place for the next one, stored only
+ * once it holds tabs or threads, was persisted, or the user created it; when none holds anything,
+ * the first stays. `position` is the server's to set, and a put ignores it after the first save.
  */
 export function layoutStateToRecords(
   state: LayoutState,
@@ -135,7 +134,11 @@ export function layoutStateToRecords(
   now: string,
 ): HoustonLayoutWorkspaceRecord[] {
   const filled = state.workspaces.filter(
-    (workspace) => workspace.columns.length > 0 || isEmptyWorkspaceRetained(workspace.id),
+    (workspace) =>
+      workspace.columns.length > 0 ||
+      workspace.keepWhenEmpty === true ||
+      known.has(workspace.id) ||
+      isEmptyWorkspaceRetained(workspace.id),
   );
   const kept = filled.length > 0 ? filled : state.workspaces.slice(0, 1);
   return kept.map((workspace, index) => ({
@@ -217,6 +220,7 @@ export function layoutStateFromRecords(
       cameraWidth: local?.cameraWidth ?? null,
       ...(record.pinnedAt === null ? {} : { pinnedAt: record.pinnedAt }),
       ...(record.hidden ? { hidden: true } : {}),
+      keepWhenEmpty: true,
     };
   });
   const recordIds = new Set(workspaces.map((workspace) => workspace.id));

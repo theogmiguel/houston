@@ -343,7 +343,7 @@ it(
       expect(sendRight.left).toBeGreaterThanOrEqual(surfaceBox.left);
 
       if (width < 520) {
-        // The folded workspace chip keeps checkout, branch and access reachable.
+        // The folded workspace chip keeps checkout and branch reachable in its panel.
         const chip = trayNow.querySelector<HTMLElement>('[aria-label^="Workspace:"]')!;
         expect(chip).not.toBeNull();
         await userEvent.click(chip);
@@ -352,11 +352,13 @@ it(
           expect(found).not.toBeNull();
           return found!;
         });
-        expect(panel.querySelectorAll("[data-composer-context-control]").length).toBeGreaterThan(1);
+        expect(panel.querySelectorAll("[data-composer-context-control]").length).toBeGreaterThan(0);
         await userEvent.keyboard("{Escape}");
         await vi.waitFor(() =>
           expect(document.querySelector('[data-slot="popover-popup"]')).toBeNull(),
         );
+        // Access never leaves the row: it drops its label to its icon instead.
+        expect(trayNow.querySelector('[aria-label^="Permissions:"]')).not.toBeNull();
       }
     }
   },
@@ -544,6 +546,82 @@ it.each([342, 312, 280, 240])(
           false,
         );
       }
+    }
+  },
+  APP_BOOT_TEST_TIMEOUT_MS,
+);
+
+it(
+  "never drops checkout or permissions from the context row in a narrow composer",
+  async () => {
+    const previousViewport = { width: window.innerWidth, height: window.innerHeight };
+    await page.viewport(1440, 900);
+    await using _viewport = {
+      [Symbol.asyncDispose]: () => page.viewport(previousViewport.width, previousViewport.height),
+    };
+    using _environment = installFakeEnvironment([]);
+    await using _app = await bootDraftComposer();
+
+    const form = await vi.waitFor(
+      () => {
+        const found = document.querySelector<HTMLFormElement>('[data-chat-composer-form="true"]');
+        expect(found).not.toBeNull();
+        return found!;
+      },
+      { timeout: 10_000 },
+    );
+    form.style.width = "420px";
+    form.style.maxWidth = "none";
+    const surface = document.querySelector<HTMLElement>('[data-chat-composer-surface="true"]')!;
+    await vi.waitFor(() =>
+      expect(Math.abs(surface.getBoundingClientRect().width - 420)).toBeLessThan(3),
+    );
+
+    const tab = await vi.waitFor(
+      () => {
+        const found = document.querySelector<HTMLElement>('[data-composer-context-tray="true"]');
+        expect(found).not.toBeNull();
+        return found!;
+      },
+      { timeout: 5_000 },
+    );
+    // The collapsed workspace chip still names the checkout in its accessible name and tooltip.
+    const workspaceChip = await vi.waitFor(
+      () => {
+        const found = tab.querySelector<HTMLElement>('[aria-label^="Workspace:"]');
+        expect(found).not.toBeNull();
+        return found!;
+      },
+      { timeout: 5_000 },
+    );
+    expect(
+      `${workspaceChip.getAttribute("aria-label") ?? ""} ${workspaceChip.getAttribute("title") ?? ""}`,
+    ).toContain("Local checkout");
+
+    // Permissions stay in the row as an icon with its accessible name, not only in a popover.
+    const permissions = await vi.waitFor(
+      () => {
+        const found = tab.querySelector<HTMLElement>('[aria-label^="Permissions:"]');
+        expect(found).not.toBeNull();
+        return found!;
+      },
+      { timeout: 5_000 },
+    );
+    expect(permissions.getBoundingClientRect().width).toBeGreaterThan(1);
+    expect(permissions.getAttribute("aria-label")).toBe("Permissions: Full access");
+
+    const tabBox = tab.getBoundingClientRect();
+
+    // Nothing in the row overflows it horizontally.
+    for (const control of tab.querySelectorAll<HTMLElement>("button")) {
+      if (control.getClientRects().length === 0) continue;
+      const box = control.getBoundingClientRect();
+      expect(box.left, `${control.ariaLabel} clipped on the left`).toBeGreaterThanOrEqual(
+        tabBox.left - 1,
+      );
+      expect(box.right, `${control.ariaLabel} clipped on the right`).toBeLessThanOrEqual(
+        tabBox.right + 1,
+      );
     }
   },
   APP_BOOT_TEST_TIMEOUT_MS,

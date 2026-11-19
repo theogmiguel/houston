@@ -31,13 +31,21 @@ interface ProjectItemsInput {
 }
 
 /** Projects as root search results; a grouped project matches on every member. */
-export function buildProjectSearchItems(input: ProjectItemsInput) {
+export function buildProjectSearchItems(
+  input: ProjectItemsInput & {
+    /** The scratch folder is the "No project" action, never a project row. */
+    readonly isScratch?: (project: CommandPaletteProject) => boolean;
+  },
+) {
+  const projects = input.isScratch
+    ? input.projects.filter((project) => !input.isScratch!(project))
+    : input.projects;
   const membersOf = (project: CommandPaletteProject) =>
     input.projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`)?.memberProjects ?? [
       project,
     ];
   return buildProjectActionItems({
-    projects: input.projects,
+    projects,
     valuePrefix: "project",
     searchTerms: (project) =>
       buildCommandPaletteProjectMetadata({

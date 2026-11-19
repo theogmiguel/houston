@@ -26,12 +26,20 @@ import {
   usePrimaryEnvironmentId,
 } from "../state/environments";
 import { primaryServerProvidersAtom } from "../state/server";
+import { useHouston1Import } from "./settings/useHouston1Import";
 import { Button } from "./ui/button";
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "./ui/empty";
 import { SidebarInset } from "./ui/sidebar";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
+import { Text } from "./ui/text";
 import { HoustonMark } from "./HoustonWordmark";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
+
+const INTRO_TERMS = [
+  { term: "Project", definition: "a folder on this machine." },
+  { term: "Thread", definition: "a conversation with one agent, in a project or not." },
+  { term: "Workspace", definition: "tabs side by side; any project's threads share one." },
+] as const;
 
 const PROVIDER_LABELS: Partial<Record<string, string>> = {
   claudeAgent: "Claude Code",
@@ -88,6 +96,12 @@ export function NoProjectsHero() {
   const navigate = useNavigate();
   const providersByEnvironment = useEnvironmentProviders();
   const primaryProviders = useAtomValue(primaryServerProvidersAtom);
+  const houston1 = useHouston1Import(primaryEnvironmentId);
+  const houston1Projects =
+    primaryEnvironmentId !== null && houston1.statuses.tasks?.state === "available"
+      ? (houston1.statuses.tasks.workspaceCount ?? 0)
+      : 0;
+  const canImportHouston1 = houston1Projects > 0;
   const providers =
     (primaryEnvironmentId === null
       ? undefined
@@ -124,19 +138,55 @@ export function NoProjectsHero() {
             </EmptyMedia>
             <EmptyTitle variant="display">Add a project to start</EmptyTitle>
             <EmptyDescription variant="welcome" className="max-w-[62ch]">
-              Each folder becomes a workspace. Threads run on a local server there and keep running
-              when you close the window.
+              Threads run on Houston's local server and keep running when you close the window.
             </EmptyDescription>
             <div className="mt-1 flex flex-wrap justify-center gap-2">
-              <Button onClick={() => openAddProjectDialog()}>
+              {canImportHouston1 ? (
+                <Button disabled={houston1.busy} onClick={() => void houston1.run()}>
+                  {houston1.busy
+                    ? "Importing…"
+                    : `Import ${houston1Projects} ${houston1Projects === 1 ? "project" : "projects"} from Houston 1`}
+                </Button>
+              ) : null}
+              <Button
+                variant={canImportHouston1 ? "outline" : "default"}
+                onClick={() => openAddProjectDialog({ action: "open-folder" })}
+              >
                 <FolderPlusIcon className="size-4" />
                 Add folder
               </Button>
-              <Button variant="outline" onClick={() => openAddProjectDialog()}>
+              <Button variant="outline" onClick={() => openAddProjectDialog({ action: "clone" })}>
                 <GitForkIcon className="size-4" />
                 Clone a repository
               </Button>
             </div>
+            {canImportHouston1 ? (
+              houston1.failure !== null ? (
+                <Text
+                  as="p"
+                  variant="caption"
+                  tone="danger"
+                  role="alert"
+                  className="mt-2 max-w-[62ch]"
+                >
+                  {houston1.failure}
+                </Text>
+              ) : (
+                <EmptyDescription className="mt-2 max-w-[62ch]">
+                  {houston1.description}
+                </EmptyDescription>
+              )
+            ) : null}
+            <EmptyDescription className="mt-1 max-w-[62ch]">
+              {INTRO_TERMS.map(({ term, definition }) => (
+                <Text key={term} as="p" variant="caption" tone="inherit" data-hero-term={term}>
+                  <Text as="span" variant="caption" tone="inherit" weight="semibold">
+                    {term}
+                  </Text>
+                  : {definition}
+                </Text>
+              ))}
+            </EmptyDescription>
             <div className="mt-3 flex items-center gap-1">
               <Button variant="ghost" size="sm" onClick={openProviderSetup}>
                 {providersOk ? (

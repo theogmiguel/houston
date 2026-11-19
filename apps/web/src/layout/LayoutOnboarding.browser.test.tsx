@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../test/render";
@@ -11,6 +11,21 @@ import {
 } from "./LayoutOnboarding";
 import { useLayoutStore } from "./layoutStore";
 
+const harness = vi.hoisted(() => ({
+  bootstrapped: true,
+  threadCount: 1,
+}));
+
+vi.mock(import("../state/entities"), async (original) => ({
+  ...(await original()),
+  useAllEnvironmentShellsBootstrapped: () => harness.bootstrapped,
+  useThreadShells: () =>
+    Array.from({ length: harness.threadCount }, (_value, index) => ({
+      environmentId: "local",
+      id: `thread-${index}`,
+    })) as never,
+}));
+
 const Host = () => (
   <>
     <div data-layout-strip="" />
@@ -22,6 +37,8 @@ const Host = () => (
 function openSession(): Disposable {
   localStorage.removeItem(LAYOUT_TOUR_KEY);
   localStorage.removeItem(LAYOUT_LEARNED_KEY);
+  harness.bootstrapped = true;
+  harness.threadCount = 1;
   useLayoutStore.getState().reset();
   return {
     [Symbol.dispose]() {
@@ -37,6 +54,7 @@ describe("LayoutOnboarding", () => {
     using _session = openSession();
     const first = await render(<Host />);
     await expect.element(page.getByRole("heading", { name: "Tabs, side by side" })).toBeVisible();
+    await expect.element(page.getByText("Keys for everything")).toBeVisible();
     await userEvent.click(page.getByRole("button", { name: "Show me" }));
     for (let step = 1; step <= 4; step++) {
       await expect.element(page.getByText(`${step} of 5`)).toBeVisible();
@@ -50,6 +68,23 @@ describe("LayoutOnboarding", () => {
 
     await using _again = await render(<Host />);
     expect(page.getByRole("heading", { name: "Tabs, side by side" }).elements()).toHaveLength(0);
+  });
+
+  it("marks the tour done without showing it when there are no threads yet", async () => {
+    using _session = openSession();
+    harness.threadCount = 0;
+    await using _screen = await render(<Host />);
+    await vi.waitFor(() => expect(localStorage.getItem(LAYOUT_TOUR_KEY)).toBe("true"));
+    expect(page.getByRole("heading", { name: "Tabs, side by side" }).elements()).toHaveLength(0);
+  });
+
+  it("waits for the thread shells before deciding", async () => {
+    using _session = openSession();
+    harness.bootstrapped = false;
+    harness.threadCount = 0;
+    await using _screen = await render(<Host />);
+    expect(page.getByRole("dialog").elements()).toHaveLength(0);
+    expect(localStorage.getItem(LAYOUT_TOUR_KEY)).toBeNull();
   });
 
   it("is dismissed for good by Got it on the introduction", async () => {

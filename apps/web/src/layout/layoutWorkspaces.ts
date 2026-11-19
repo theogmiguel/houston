@@ -12,6 +12,7 @@ import {
   focusLayoutPane,
   focusLayoutWorkspace,
   isEmptyWorkspaceRetained,
+  keepLayoutWorkspaceWhenEmpty,
   moveLayoutTab,
   normalizeLayout,
   placeLayoutContent,
@@ -32,12 +33,16 @@ export interface WorkspaceResult {
   readonly refusal: string | null;
 }
 
-/** Workspaces as a person counts them: those with tabs or threads, plus the empty one while it has
- * focus. The unfocused trailing empty workspace is plumbing, not a workspace. */
+/**
+ * Workspaces as a person counts them: every one with something in it, every one the server stores
+ * or the user created, those threads belong to, plus the empty one while it has focus. The unfocused trailing empty
+ * workspace is plumbing, not a workspace.
+ */
 export function listLayoutWorkspaces(state: LayoutState): LayoutWorkspace[] {
   return state.workspaces.filter(
     (workspace) =>
       workspace.columns.length > 0 ||
+      workspace.keepWhenEmpty === true ||
       workspace.id === state.focusedWorkspaceId ||
       isEmptyWorkspaceRetained(workspace.id),
   );
@@ -67,13 +72,14 @@ function nameRefusal(name: string): string | null {
     : null;
 }
 
-/** Go to the empty workspace at the bottom of the stack and name it. It is stored once it holds a tab. */
+/** Go to the empty workspace at the bottom of the stack and name it. It stays after its last tab closes. */
 export function createLayoutWorkspaceNamed(state: LayoutState, name: string): WorkspaceResult {
   const refusal = nameRefusal(name);
   if (refusal) return { state, refusal };
   const trailing = state.workspaces.at(-1)!;
   const focused = focusLayoutWorkspace(state, trailing.id);
-  return { state: renameLayoutWorkspace(focused, trailing.id, name), refusal: null };
+  const named = renameLayoutWorkspace(focused, trailing.id, name);
+  return { state: keepLayoutWorkspaceWhenEmpty(named, trailing.id), refusal: null };
 }
 
 export function renameLayoutWorkspaceChecked(

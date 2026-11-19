@@ -8,10 +8,14 @@ import { WelcomeWizard } from "../components/onboarding/WelcomeWizard";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 
 export const Route = createFileRoute("/welcome")({
-  beforeLoad: ({ context }) => {
+  beforeLoad: ({ context, location }) => {
     const { authGateState } = context;
     if (authGateState.status !== "authenticated" && authGateState.status !== "hosted-static") {
       throw redirect({ to: "/pair", replace: true });
+    }
+    // The board's empty state is the first-run screen; only its setup hash stays here.
+    if (!readWelcomeRouteState(location.hash).setupRequested) {
+      throw redirect({ to: "/", replace: true });
     }
   },
   component: WelcomeRouteView,

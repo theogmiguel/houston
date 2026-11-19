@@ -12,8 +12,9 @@ export interface DraftOpenNavigation {
 }
 
 /**
- * Runs an action that opens a new thread's route so the thread takes the place of the focused
- * tab, as a new thread does in the layout. Outside a loaded layout the action runs as it is.
+ * Runs an action that opens a new thread's route. A chat keeps its tab: the new thread opens
+ * beside it in the focused pane. A launcher turns into the new thread, as before. Outside a
+ * loaded layout the action runs as it is.
  */
 export function openAsNewThreadTab<T>(open: () => Promise<T>): Promise<T> {
   const store = useLayoutStore.getState();
@@ -21,7 +22,10 @@ export function openAsNewThreadTab<T>(open: () => Promise<T>): Promise<T> {
     store.layoutLoaded && store.newTabRequest === null
       ? selectLayoutOpenAnchor(store.layout)
       : null;
-  return anchor ? runInNewLayoutTab(open, { replaceTabId: anchor.tab.id }) : open();
+  if (!anchor) return open();
+  return anchor.tab.content.kind === "chat"
+    ? runInNewLayoutTab(open, "active-pane")
+    : runInNewLayoutTab(open, { replaceTabId: anchor.tab.id });
 }
 
 /** Shows a registered draft in the layout: focuses its tab, or opens it where a new thread goes. */
