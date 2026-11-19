@@ -43,7 +43,8 @@ processes when the thread settles; an agent's own shell command is never attache
 Choose **New thread** from a workspace's **+** or from the **New thread** action of an empty
 workspace to start a draft in that workspace, from the command palette, or press `Ctrl+N`.
 Pick the provider and model in the composer, choose permissions, and send the first
-message. A new thread starts in a local checkout or in a new worktree, according to
+message. The new-tab launcher lists projects in the project picker's order and can also add a
+project. A new thread starts in a local checkout or in a new worktree, according to
 **Settings ▸ Threads ▸ New threads**; the composer's workspace control changes it for one
 thread.
 
@@ -279,10 +280,10 @@ stays out of the thread until you choose **Send to thread**.
 
 Each thread has a terminal drawer for shell commands (`Ctrl+J`). The right panel is a
 separate set of surfaces; see [The right panel](right-panel.md). In a layout pane, a terminal
-or a panel surface opens as a tab: use the new-tab launcher (**Changes**, **Files**,
-**Browser**, **Terminal**), the command palette or the shortcut. A thread's **details**
-control (`Ctrl+Shift+B`) shows its environment, branch, pull requests, scripts, local
-servers, context and usage limits. The card starts closed and stays as you leave it.
+or a panel surface opens as a tab: use the new-tab launcher, which lists only the surfaces the
+thread can open now, the command palette or the shortcut. A thread's **details** control (`Ctrl+Shift+B`) shows its environment, branch, pull
+requests, scripts, local servers, context and usage limits. The card starts closed and stays
+as you leave it.
 
 In the layout a thread's surfaces open as tabs, beside or below its chat as set in the layout
 settings in **Settings ▸ Appearance**, instead of a panel that follows the focused pane.
