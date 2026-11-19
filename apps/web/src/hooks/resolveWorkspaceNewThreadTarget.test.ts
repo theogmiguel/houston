@@ -39,7 +39,6 @@ describe("resolveWorkspaceNewThreadTarget", () => {
           derivePhysicalProjectKey(archived),
           derivePhysicalProjectKey(real),
         ],
-        scratchEnvironmentId: environmentId,
       }),
     ).toEqual({
       kind: "project",
@@ -56,7 +55,6 @@ describe("resolveWorkspaceNewThreadTarget", () => {
         projects: [recent, focused],
         projectOrder: [derivePhysicalProjectKey(recent), derivePhysicalProjectKey(focused)],
         focusedProjectRef: scopeProjectRef(environmentId, focused.id),
-        scratchEnvironmentId: environmentId,
       }),
     ).toEqual({
       kind: "project",
@@ -73,7 +71,6 @@ describe("resolveWorkspaceNewThreadTarget", () => {
         projects: [recent, scratch],
         projectOrder: [derivePhysicalProjectKey(recent), derivePhysicalProjectKey(scratch)],
         focusedProjectRef: scopeProjectRef(environmentId, scratch.id),
-        scratchEnvironmentId: environmentId,
       }),
     ).toEqual({
       kind: "project",
@@ -92,7 +89,6 @@ describe("resolveWorkspaceNewThreadTarget", () => {
         projects: [recent, archived],
         projectOrder: [derivePhysicalProjectKey(recent), derivePhysicalProjectKey(archived)],
         focusedProjectRef: scopeProjectRef(environmentId, archived.id),
-        scratchEnvironmentId: environmentId,
       }),
     ).toEqual({
       kind: "project",
@@ -103,7 +99,6 @@ describe("resolveWorkspaceNewThreadTarget", () => {
         projects: [recent],
         projectOrder: [derivePhysicalProjectKey(recent)],
         focusedProjectRef: scopeProjectRef(environmentId, ProjectId.make("missing")),
-        scratchEnvironmentId: environmentId,
       }),
     ).toEqual({
       kind: "project",
@@ -111,35 +106,23 @@ describe("resolveWorkspaceNewThreadTarget", () => {
     });
   });
 
-  it("opens a scratch draft when every project is scratch", () => {
+  it("opens the project picker when every project is scratch", () => {
     const scratch = project("scratch", "/scratch", { isScratch: true });
 
     expect(
       resolveWorkspaceNewThreadTarget({
         projects: [scratch],
         projectOrder: [derivePhysicalProjectKey(scratch)],
-        scratchEnvironmentId: environmentId,
       }),
-    ).toEqual({ kind: "scratch", environmentId });
+    ).toEqual({ kind: "picker" });
   });
 
-  it("opens a scratch draft when there are no projects", () => {
+  it("opens the project picker when there are no projects", () => {
     expect(
       resolveWorkspaceNewThreadTarget({
         projects: [],
         projectOrder: [],
-        scratchEnvironmentId: environmentId,
       }),
-    ).toEqual({ kind: "scratch", environmentId });
-  });
-
-  it("has no target when there is neither a project nor a scratch root", () => {
-    expect(
-      resolveWorkspaceNewThreadTarget({
-        projects: [],
-        projectOrder: [],
-        scratchEnvironmentId: null,
-      }),
-    ).toBeNull();
+    ).toEqual({ kind: "picker" });
   });
 });

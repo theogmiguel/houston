@@ -5,7 +5,6 @@ import {
 } from "@houston-app/client-runtime/environment";
 import {
   DEFAULT_SERVER_SETTINGS,
-  type EnvironmentId,
   type ScopedProjectRef,
   type ThreadId,
 } from "@houston-app/contracts";
@@ -463,10 +462,10 @@ export function resolveDefaultProjectRef(
   return defaultProject ? scopeProjectRef(defaultProject.environmentId, defaultProject.id) : null;
 }
 
-/** Where a workspace's New thread starts: a real project, or the scratch project when none exists. */
+/** Where a workspace's New thread starts: a real project, or the project picker when none exists. */
 type WorkspaceNewThreadTarget =
   | { readonly kind: "project"; readonly projectRef: ScopedProjectRef }
-  | { readonly kind: "scratch"; readonly environmentId: EnvironmentId };
+  | { readonly kind: "picker" };
 
 function isRealProject(project: EnvironmentProject): boolean {
   return project.archivedAt == null && project.isScratch !== true;
@@ -475,14 +474,13 @@ function isRealProject(project: EnvironmentProject): boolean {
 /**
  * The project a workspace's New thread starts in: the project of the focused thread or draft when
  * it is real, else the most recently active real project, the same one `chat.new` uses for a fresh
- * start, or the scratch project when there is no real project.
+ * start. With no real project the picker opens, which also offers "No project" and "Add project…".
  */
 export function resolveWorkspaceNewThreadTarget(input: {
   readonly projects: ReadonlyArray<EnvironmentProject>;
   readonly projectOrder: readonly string[];
   readonly focusedProjectRef?: ScopedProjectRef | null;
-  readonly scratchEnvironmentId: EnvironmentId | null;
-}): WorkspaceNewThreadTarget | null {
+}): WorkspaceNewThreadTarget {
   const focused = input.focusedProjectRef
     ? input.projects.find(
         (project) =>
@@ -496,10 +494,7 @@ export function resolveWorkspaceNewThreadTarget(input: {
   }
   const projectRef = resolveDefaultProjectRef(input.projects, input.projectOrder);
   if (projectRef !== null) return { kind: "project", projectRef };
-  if (input.scratchEnvironmentId !== null) {
-    return { kind: "scratch", environmentId: input.scratchEnvironmentId };
-  }
-  return null;
+  return { kind: "picker" };
 }
 
 export function useHandleNewThread() {

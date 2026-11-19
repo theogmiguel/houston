@@ -100,9 +100,9 @@ The sidebar opens with search and icon buttons for **New thread**, **New workspa
 open in that workspace, whichever project they belong to. A thread whose chat is not placed in
 any workspace is listed under the first one. Each group label collapses with **Enter** or
 **Space** and keeps its state; a search opens every group it matches in. The **…** button
-beside the label, or a right-click, opens the workspace's actions. With no projects, a
-workspace's **New thread** starts a thread without a project, and **Add project** in the search
-row adds one.
+beside the label, or a right-click, opens the workspace's actions. With no real projects, a
+workspace's **New thread** opens the project picker, which offers **No project** and
+**Add project…**; **Add project** in the search row adds one.
 
 The **Workspaces** header carries **Filter by project** and the **Hidden workspaces** menu.
 **View options** sorts threads (**Workspace order**, **Last activity** or **Created**), chooses

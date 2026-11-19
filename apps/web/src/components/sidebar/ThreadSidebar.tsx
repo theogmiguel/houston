@@ -129,7 +129,6 @@ import {
   resolveWorkspaceNewThreadTarget,
   type NewThreadHandler,
 } from "../../hooks/useHandleNewThread";
-import { useScratchProject } from "../../hooks/useScratchProject";
 import { resolveThreadActionProjectRef } from "../../lib/chatThreadActions";
 import {
   resolveShortcutCommand,
@@ -286,7 +285,6 @@ export function ThreadSidebar({
 
   const actions = useThreadActions();
   const handleNewThread = useNewThreadHandler();
-  const scratch = useScratchProject();
   // Each foreign thread is asked for once; a refused ask is retried on the next load, not in a loop.
   const askedForeignThreads = useRef(new Set<string>());
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- threads of other environments are hosted outside the layout server, so the window reports their workspace to it
@@ -423,7 +421,6 @@ export function ThreadSidebar({
     const target = resolveWorkspaceNewThreadTarget({
       projects: allProjects,
       projectOrder,
-      scratchEnvironmentId: scratch.scratchEnvironmentId(null),
       focusedProjectRef: resolveThreadActionProjectRef({
         activeThread: focusedShell,
         activeDraftThread: focusedDraftThread,
@@ -431,14 +428,11 @@ export function ThreadSidebar({
         handleNewThread,
       }),
     });
-    if (target === null) return;
-    void runInNewLayoutTab(
-      async () => {
-        if (target.kind === "project") await handleNewThread(target.projectRef);
-        else await scratch.startScratchThread(target.environmentId);
-      },
-      { workspaceId },
-    );
+    if (target.kind === "picker") {
+      openCommandPalette({ open: "new-thread-in" });
+      return;
+    }
+    void runInNewLayoutTab(() => handleNewThread(target.projectRef), { workspaceId });
   };
 
   // Opening a thread the filter hides (history, a link, the palette) widens the filter once, so

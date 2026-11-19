@@ -37,6 +37,15 @@ const moves = vi.hoisted(() => ({
 
 const openedThreads = vi.hoisted(() => ({ refs: [] as unknown[] }));
 
+const palette = vi.hoisted(() => ({ opened: [] as unknown[] }));
+
+vi.mock("../../commandPaletteBus", () => ({
+  openCommandPalette: (detail: unknown) => {
+    palette.opened.push(detail);
+  },
+  isCommandPaletteOpen: () => false,
+}));
+
 vi.mock(import("../../hooks/useHandleNewThread"), async (original) => {
   const actual = await original<typeof import("../../hooks/useHandleNewThread")>();
   return {
@@ -255,6 +264,7 @@ function seed(
   moves.calls = [];
   moves.created = 0;
   openedThreads.refs = [];
+  palette.opened = [];
   const layout = layoutOf(spec);
   useLayoutStore.setState({ layout });
   const idOfWorkspace = (name: string) =>
@@ -347,6 +357,27 @@ describe("ThreadSidebar workspaces", () => {
     await userEvent.click(screen.getByRole("button", { name: "New thread in Notes" }).element());
 
     expect(openedThreads.refs).toEqual([{ environmentId: "env-1", projectId: "project-2" }]);
+  });
+
+  it("opens the project picker instead of a no-project draft when no real project exists", async () => {
+    const projects = fixtures.projects;
+    fixtures.projects = [];
+    try {
+      using _seed = seed([{ name: "Blank", chats: [] }], []);
+      await using screen = await render(<RailHarness />);
+      await vi.waitFor(() => expect(groupNames(screen.container)).toEqual(["Blank"]));
+      const empty = screen.container.querySelector("[data-workspace-empty]")!;
+      const newThread = [...empty.querySelectorAll("button")].find(
+        (button) => button.textContent === "New thread",
+      )!;
+      await userEvent.click(newThread);
+      await userEvent.click(screen.getByRole("button", { name: "New thread in Blank" }).element());
+
+      expect(palette.opened).toEqual([{ open: "new-thread-in" }, { open: "new-thread-in" }]);
+      expect(openedThreads.refs).toHaveLength(0);
+    } finally {
+      fixtures.projects = projects;
+    }
   });
 
   it("holds the threads of two projects in one workspace, each row naming its project", async () => {
