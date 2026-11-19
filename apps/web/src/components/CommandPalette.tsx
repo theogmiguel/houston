@@ -306,6 +306,7 @@ function openIntentView(intent: CommandPaletteOpenIntent | null): CommandPalette
 }
 
 const NEW_THREAD_NO_PROJECT_VALUE = "new-thread-in:no-project";
+const NEW_THREAD_ADD_PROJECT_VALUE = "new-thread-in:add-project";
 
 /** The palette's content for its mode; CommandPaletteShell loads it on demand. */
 export function CommandPaletteBody(props: {
@@ -851,6 +852,17 @@ function OpenCommandPaletteDialog(props: {
 
   const opensInNewTab =
     props.openIntent?.kind === "new-thread-in" && props.openIntent.newTab === true;
+  const newThreadAddProjectItem: CommandPaletteActionItem = {
+    kind: "action",
+    value: NEW_THREAD_ADD_PROJECT_VALUE,
+    searchTerms: ["add project", "new project", "folder", "clone"],
+    title: "Add project…",
+    icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      setOpen(false);
+      openAddProjectDialog();
+    },
+  };
   const openingOrderThreadItems = useOrderWhileOpen(
     (() => {
       const isScratch = (project: CommandPaletteProject) =>
@@ -879,7 +891,9 @@ function OpenCommandPaletteDialog(props: {
           await (opensInNewTab ? runInNewLayoutTab(startThread) : startThread());
         },
       });
-      if (scratchTargetEnvironmentId === null) return projectItems;
+      if (scratchTargetEnvironmentId === null) {
+        return [...projectItems, newThreadAddProjectItem];
+      }
 
       const noProjectIndex = newThreadNoProjectIndex(
         projectPickerEntries.map(({ group, targetProject, isPreferred }) => ({
@@ -906,6 +920,7 @@ function OpenCommandPaletteDialog(props: {
               : startScratchThread(scratchTargetEnvironmentId),
         },
         ...projectItems.slice(noProjectIndex),
+        newThreadAddProjectItem,
       ];
     })(),
     rowOrderKey("new-thread-in"),
@@ -914,7 +929,10 @@ function OpenCommandPaletteDialog(props: {
   // Jump shortcuts follow the rows as shown, so a pin cannot move a number to another row.
   const projectJumpItems = new Map(
     enumerateCommandPaletteItems(
-      openingOrderThreadItems.filter((item) => item.value !== NEW_THREAD_NO_PROJECT_VALUE),
+      openingOrderThreadItems.filter(
+        (item) =>
+          item.value !== NEW_THREAD_NO_PROJECT_VALUE && item.value !== NEW_THREAD_ADD_PROJECT_VALUE,
+      ),
     ).map((item) => [item.value, item] as const),
   );
   const projectThreadItems = openingOrderThreadItems.map(
