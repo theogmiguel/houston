@@ -17,6 +17,7 @@ import { useProjects } from "~/state/entities";
 import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
 
+import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { linkedPullRequestSnapshotStatus, prStatusIndicator } from "../ThreadStatusIndicators";
 
 import { ThreadDetailsPrRow } from "./ThreadDetailsPrRow";
@@ -118,6 +119,7 @@ export function ThreadDetailsPrRows({
       ) : null}
       <ThreadDetailsRowButton onClick={() => setExpanded(!expanded)}>
         <ThreadDetailsRowContent
+          icon={<PullRequestGlyph.stack aria-hidden />}
           label={expanded ? "Show less" : `Show ${rest.length} more`}
           right={
             expanded ? (

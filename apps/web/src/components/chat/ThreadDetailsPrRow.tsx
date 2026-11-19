@@ -424,7 +424,7 @@ export function ThreadDetailsPrRow({
             <span className="flex min-w-0 items-center gap-1.5">
               <PullRequestGlyph.pullRequest
                 aria-hidden
-                className={cn(THREAD_DETAILS_PANEL_ICON_CLASS, "me-0.5 hidden max-phone:block")}
+                className={cn(THREAD_DETAILS_PANEL_ICON_CLASS, "me-0.5")}
               />
               <span className="block truncate">{rowLabel}</span>
             </span>

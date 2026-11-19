@@ -12,6 +12,7 @@ import {
   paceOf,
   remainingPercent,
 } from "@houston-app/shared/usageLimits";
+import { CalendarIcon, GaugeIcon, TimerIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { usePrimarySettings } from "../../hooks/useSettings";
@@ -28,6 +29,17 @@ const PACE_LABEL: Record<LimitPace, string> = {
   on: "On pace",
   under: "Under pace",
 };
+
+const LONG_SPAN = /week|month|day/i;
+const SHORT_SPAN = /session|hour|minute/i;
+
+/** A limit window's glyph, from the span its label names; other windows read as a gauge. */
+function UsageGlyph({ label }: { readonly label: string }) {
+  const className = "size-4 shrink-0";
+  if (LONG_SPAN.test(label)) return <CalendarIcon aria-hidden className={className} />;
+  if (SHORT_SPAN.test(label)) return <TimerIcon aria-hidden className={className} />;
+  return <GaugeIcon aria-hidden className={className} />;
+}
 
 export interface ThreadDetailsUsageInput {
   readonly providerInstanceId: ProviderInstanceId | null;
@@ -180,7 +192,10 @@ function UsageRow({
           />
         }
       >
-        <span className="max-w-28 truncate text-muted-foreground">{label}</span>
+        <span className="flex min-w-0 max-w-32 items-center gap-1.5 text-muted-foreground">
+          <UsageGlyph label={label} />
+          <span className="truncate">{label}</span>
+        </span>
         {left !== null ? (
           <span className="relative h-1 rounded-full bg-muted-foreground/25">
             {left > 0 ? (
