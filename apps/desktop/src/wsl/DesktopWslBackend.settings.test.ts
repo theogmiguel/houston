@@ -1,16 +1,3 @@
-import { vi } from "vite-plus/test";
-
-// The start flag stays off until the server-side WSL slice ships; these tests exercise the
-// behaviour that flag turns on.
-vi.mock("./wslServerSupport.ts", () => ({
-  WSL_SERVER_START_ENABLED: true,
-  wslPrimarySelected: (input: {
-    readonly wslBackendEnabled: boolean;
-    readonly wslOnly: boolean;
-    readonly available: boolean;
-  }) => input.wslBackendEnabled && input.wslOnly && input.available,
-}));
-
 import { assert, describe, it } from "@effect/vitest";
 import type { DesktopLocalServerStatus } from "@houston-app/contracts";
 import * as Duration from "effect/Duration";

@@ -32,8 +32,13 @@ this machine's credentials.
 - **Network access** — off means the server listens on `127.0.0.1` only; on lets other
   devices on the network pair with it.
 - **Tailscale HTTPS** — serve over your tailnet with a Tailscale certificate.
-- **WSL backend** — on Windows, run WSL projects inside the distro, optionally WSL only.
-  Changing the distro or WSL only restarts the affected server.
+- **WSL backend** — on Windows, run WSL projects on a Houston server inside the distro, or run
+  only that server. Changing the distro or WSL only restarts the affected server. The WSL
+  backend is a separate environment: it keeps its own threads, projects and saved credentials,
+  so sign in to providers and add source-control and other tokens again inside it. The WSL row
+  in Settings shows whether it is running and, when it cannot start, why. It does not receive
+  the desktop app's resource statistics, its in-app browser channel or its desktop update
+  reports.
 - **Pair a device** — create a pairing link or QR code.
 - **Authorized clients** — list paired devices and revoke their access.
 

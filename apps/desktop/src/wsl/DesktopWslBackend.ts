@@ -17,7 +17,7 @@ import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopWslEnvironment from "./DesktopWslEnvironment.ts";
 import * as DesktopWslServerAttachment from "./DesktopWslServerAttachment.ts";
-import { wslPrimarySelected, WSL_SERVER_START_ENABLED } from "./wslServerSupport.ts";
+import { wslPrimarySelected } from "./wslServerSupport.ts";
 
 export const WSL_INSTANCE_ID_PREFIX = WSL_BACKEND_ID_PREFIX;
 const WSL_DEFAULT_DISTRO_ID = `${WSL_INSTANCE_ID_PREFIX}default`;
@@ -89,7 +89,7 @@ const scanForWslPort = Effect.fn("desktop.wslBackend.scanForWslPort")(function* 
   });
 });
 
-const makeLayer = (startEnabled: boolean) =>
+const makeLayer = () =>
   Layer.effect(
     DesktopWslBackend,
     Effect.gen(function* () {
@@ -252,8 +252,7 @@ const makeLayer = (startEnabled: boolean) =>
         const existingId = Option.map(existing, (instance) => instance.id);
 
         // In wsl-only mode WSL is already primary; do not start a second backend on the same distro.
-        const shouldRun =
-          startEnabled && settings.wslBackendEnabled && available && !settings.wslOnly;
+        const shouldRun = settings.wslBackendEnabled && available && !settings.wslOnly;
         const targetId = shouldRun
           ? Option.some(resolveTargetInstanceId(settings.wslDistro))
           : Option.none<DesktopBackendPool.BackendInstanceId>();
@@ -381,8 +380,4 @@ const makeLayer = (startEnabled: boolean) =>
     }),
   );
 
-export const layer = makeLayer(WSL_SERVER_START_ENABLED);
-
-/** Tests choose whether the launch flag is on; the app always uses the flag. */
-export const layerTest = (options: { readonly startEnabled?: boolean } = {}) =>
-  makeLayer(options.startEnabled ?? true);
+export const layer = makeLayer();

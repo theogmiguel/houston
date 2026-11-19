@@ -11,7 +11,7 @@ import type { WslDistro } from "../../wsl/wslPathParsing.ts";
 import * as IpcChannels from "../channels.ts";
 import { makeIpcMethod } from "../DesktopIpc.ts";
 
-// Houston refuses to run its server in a distro, so a non-Windows host has no WSL state to show.
+// Only a Windows host runs WSL, so any other platform has no WSL state to show.
 const UNSUPPORTED_WSL_STATE: DesktopWslState = {
   enabled: false,
   distro: null,

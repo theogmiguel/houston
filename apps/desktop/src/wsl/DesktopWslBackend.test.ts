@@ -181,7 +181,7 @@ function portScanHarness(input: {
     reserveLoopbackPort: () => Effect.succeed(41773),
     findAvailablePort: (preferred) => Effect.succeed(preferred),
   } satisfies NetService.NetService["Service"]);
-  const layer = DesktopWslBackend.layerTest().pipe(
+  const layer = DesktopWslBackend.layer.pipe(
     Layer.provideMerge(layerPool),
     Layer.provideMerge(layerConfiguration),
     Layer.provideMerge(layerServerExposure),
@@ -208,60 +208,6 @@ function portScanHarness(input: {
 }
 
 describe("DesktopWslBackend", () => {
-  it.effect("never registers a server inside a distro", () => {
-    let registerCount = 0;
-    const primary = makeStubInstance({
-      id: DesktopBackendPool.PRIMARY_INSTANCE_ID,
-      label: "Windows",
-      snapshot: primarySnapshot,
-    });
-    const layerPool = Layer.succeed(DesktopBackendPool.DesktopBackendPool, {
-      get: (id) =>
-        Effect.succeed(
-          id === DesktopBackendPool.PRIMARY_INSTANCE_ID
-            ? Option.some(primary)
-            : Option.none<DesktopBackendPool.DesktopBackendInstance>(),
-        ),
-      list: Effect.succeed([primary]),
-      primary: Effect.succeed(primary),
-      register: () =>
-        Effect.sync(() => {
-          registerCount += 1;
-        }).pipe(Effect.andThen(Effect.die("the WSL backend must not start"))),
-      unregister: () => Effect.void,
-    } satisfies DesktopBackendPool.DesktopBackendPool["Service"]);
-
-    return Effect.gen(function* () {
-      const backend = yield* DesktopWslBackend.DesktopWslBackend;
-
-      yield* backend.reconcile;
-      yield* backend.reconcile;
-
-      assert.equal(registerCount, 0);
-      assert.deepEqual(yield* backend.lastPreflightError, Option.none());
-    }).pipe(
-      Effect.provide(
-        DesktopWslBackend.layerTest({ startEnabled: false }).pipe(
-          Layer.provideMerge(layerPool),
-          Layer.provideMerge(layerBackendConfiguration),
-          Layer.provideMerge(layerServerExposure),
-          Layer.provideMerge(layerServerControl),
-          Layer.provideMerge(layerNet),
-          Layer.provideMerge(
-            DesktopAppSettings.layerTest({
-              ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS,
-              wslBackendEnabled: true,
-              wslDistro: "Ubuntu",
-              wslOnly: false,
-            }),
-          ),
-          Layer.provideMerge(DesktopWslEnvironment.layerTest({ isAvailable: true })),
-          Layer.provideMerge(layerWslServerAttachment),
-        ),
-      ),
-    );
-  });
-
   it.effect("reports a WSL startup failure through getWslState and clears it when ready", () => {
     let capturedSpec: BackendInstanceSpec | null = null;
     const primary = makeStubInstance({
@@ -330,7 +276,7 @@ describe("DesktopWslBackend", () => {
       assert.isNull(ready.backendStatus.reason);
     }).pipe(
       Effect.provide(
-        DesktopWslBackend.layerTest().pipe(
+        DesktopWslBackend.layer.pipe(
           Layer.provideMerge(layerPool),
           Layer.provideMerge(layerBackendConfiguration),
           Layer.provideMerge(layerServerExposure),
