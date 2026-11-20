@@ -3131,7 +3131,9 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       const eventSink = yield* EventSink.EventSinkV2;
       const threadId = ThreadId.make("runtime-pull-request-watch-stale-wake");
       const activeMessageId = MessageId.make("runtime-pull-request-watch-stale-wake-active");
-      const wakeMessageId = MessageId.make("message:pr-watch:runtime-pull-request-watch-stale-wake");
+      const wakeMessageId = MessageId.make(
+        "message:pr-watch:runtime-pull-request-watch-stale-wake",
+      );
       const key = { host: "github.com", repository: "example/houston", number: 7 };
       const url = "https://github.com/example/houston/pull/7";
 
@@ -3241,10 +3243,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
 
       assert.equal(yield* Queue.take(wakeStates), "cancelled");
       const projection = yield* orchestrator.getThreadProjection(threadId);
-      assert.equal(
-        projection.runs.find((run) => run.id === queuedWake.id)?.status,
-        "cancelled",
-      );
+      assert.equal(projection.runs.find((run) => run.id === queuedWake.id)?.status, "cancelled");
       assert.equal(
         projection.messages.find((message) => message.id === wakeMessageId)?.delivery?.state,
         undefined,

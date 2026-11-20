@@ -300,7 +300,12 @@ export const make = Effect.gen(function* () {
       ...(endedWatch === undefined ? {} : { endedWatch }),
       ...(wake === undefined
         ? {}
-        : { wake: { ...wake, messageId: MessageId.make(`${PULL_REQUEST_WATCH_WAKE_MESSAGE_PREFIX}${uuid}`) } }),
+        : {
+            wake: {
+              ...wake,
+              messageId: MessageId.make(`${PULL_REQUEST_WATCH_WAKE_MESSAGE_PREFIX}${uuid}`),
+            },
+          }),
     });
   });
 

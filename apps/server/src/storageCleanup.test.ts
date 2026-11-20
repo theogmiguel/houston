@@ -2300,11 +2300,13 @@ describe("storage cleanup reports and local file policies", () => {
         const truncated = {
           ...git,
           execute: (input: Parameters<typeof git.execute>[0]) =>
-            git.execute(input).pipe(
-              Effect.map((result) =>
-                input.args.includes("ls-files") ? { ...result, stdoutTruncated: true } : result,
+            git
+              .execute(input)
+              .pipe(
+                Effect.map((result) =>
+                  input.args.includes("ls-files") ? { ...result, stdoutTruncated: true } : result,
+                ),
               ),
-            ),
         };
         const { service } = yield* cleanupFixture({
           ...DEFAULT_SERVER_SETTINGS.storageCleanup,

@@ -2081,9 +2081,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
   // A stale wake cancels itself and then lets the next queued run start; the ref keeps the
   // recursive call out of the function's own type inference.
-  const startNextQueuedRunRef = yield* Ref.make<
-    (threadId: ThreadId) => Effect.Effect<void, Error>
-  >(() => Effect.void);
+  const startNextQueuedRunRef = yield* Ref.make<(threadId: ThreadId) => Effect.Effect<void, Error>>(
+    () => Effect.void,
+  );
   const startNextQueuedRun = Effect.fn("Orchestrator.startNextQueuedRun")(
     function* (
       threadId: ThreadId,

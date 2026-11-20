@@ -1507,7 +1507,8 @@ describe("PullRequestSyncReactor", () => {
 
         yield* Effect.gen(function* () {
           const reactor = yield* startAndSweep(fixture);
-          const reads = () => Ref.get(fixture.summaryCalls).pipe(Effect.map((calls) => calls.length));
+          const reads = () =>
+            Ref.get(fixture.summaryCalls).pipe(Effect.map((calls) => calls.length));
           assert.strictEqual(yield* reads(), 1);
 
           yield* sweepAgain(fixture, reactor);

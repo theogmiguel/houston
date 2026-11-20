@@ -93,7 +93,10 @@ export const makePrivateNetworkRejectionLogger = (options?: {
     const at = now();
     const last = lastLoggedAt.get(address);
     if (last !== undefined && at - last < PRIVATE_NETWORK_REJECTION_LOG_INTERVAL_MS) return;
-    if (!lastLoggedAt.has(address) && lastLoggedAt.size >= PRIVATE_NETWORK_REJECTION_LOG_MAX_ADDRESSES) {
+    if (
+      !lastLoggedAt.has(address) &&
+      lastLoggedAt.size >= PRIVATE_NETWORK_REJECTION_LOG_MAX_ADDRESSES
+    ) {
       const oldest = lastLoggedAt.keys().next().value;
       if (oldest !== undefined) lastLoggedAt.delete(oldest);
     }

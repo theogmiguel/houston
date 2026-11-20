@@ -613,8 +613,7 @@ export const make = Effect.gen(function* () {
           failedAttempts.set(key, attempt);
           const backoffMs = Math.min(
             FAILURE_BACKOFF_MAX_MS,
-            FAILURE_BACKOFF_BASE_MS *
-              2 ** Math.min(attempt - 1, FAILURE_BACKOFF_MAX_DOUBLINGS),
+            FAILURE_BACKOFF_BASE_MS * 2 ** Math.min(attempt - 1, FAILURE_BACKOFF_MAX_DOUBLINGS),
           );
           return Clock.currentTimeMillis.pipe(
             Effect.tap((nowMs) => Effect.sync(() => nextAttemptAt.set(key, nowMs + backoffMs))),

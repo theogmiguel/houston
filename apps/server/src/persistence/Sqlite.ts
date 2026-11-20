@@ -106,21 +106,15 @@ const layerWithSetup = Effect.fn("layerWithSetup")(function* (
   );
 });
 
-export const layerFromPath = Effect.fn("makeSqlitePersistenceLive")(
-  function* (dbPath: string) {
-    return yield* layerWithSetup(dbPath, layerSetup);
-  },
-  Layer.unwrap,
-);
+export const layerFromPath = Effect.fn("makeSqlitePersistenceLive")(function* (dbPath: string) {
+  return yield* layerWithSetup(dbPath, layerSetup);
+}, Layer.unwrap);
 
 /** A database a running server owns: never applies migrations, and refuses one this build is too old for. */
-export const layerFromPathWithoutMigrations = Effect.fn(
-  "makeSqlitePersistenceWithoutMigrations",
-)(
+export const layerFromPathWithoutMigrations = Effect.fn("makeSqlitePersistenceWithoutMigrations")(
   function* (dbPath: string) {
     const recorded = recordedMigrations(dbPath);
-    const databaseMigration =
-      recorded === null ? 0 : Math.max(0, ...recorded.map(({ id }) => id));
+    const databaseMigration = recorded === null ? 0 : Math.max(0, ...recorded.map(({ id }) => id));
     if (databaseMigration > BUILD_MIGRATION_HEAD) {
       return yield* new DatabaseMigrationsAheadError({
         databasePath: dbPath,

@@ -572,7 +572,10 @@ it.effect.each(["success", "failure"] as const)(
         const spawner = ChildProcessSpawner.make((command) => {
           if (!ChildProcess.isStandardCommand(command)) return delegate.spawn(command);
           const args = command.args.map(String);
-          calls.push({ args, ...(command.options.cwd === undefined ? {} : { cwd: command.options.cwd }) });
+          calls.push({
+            args,
+            ...(command.options.cwd === undefined ? {} : { cwd: command.options.cwd }),
+          });
           if (
             outcome === "failure" &&
             args.length === 3 &&
