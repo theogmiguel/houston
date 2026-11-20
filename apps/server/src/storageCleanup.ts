@@ -312,6 +312,24 @@ const make = Effect.gen(function* () {
     liveTerminals.set(terminal.threadId, threadTerminals);
   };
 
+  // A path below a regular file reports ENOTDIR; it cannot name a worktree, so treat it as absent.
+  const existsUnlessNotADirectory = (target: string) =>
+    fs.exists(target).pipe(
+      Effect.catchIf(
+        (error) => {
+          const cause = error.reason.cause;
+          return (
+            error.reason._tag === "BadResource" &&
+            typeof cause === "object" &&
+            cause !== null &&
+            "code" in cause &&
+            cause.code === "ENOTDIR"
+          );
+        },
+        () => Effect.succeed(false),
+      ),
+    );
+
   const isWindows = yield* HostProcess.isWindows;
   const pathKey = (target: string) => {
     const resolved = path.resolve(target);
@@ -888,7 +906,7 @@ const make = Effect.gen(function* () {
         return reason;
       };
       yield* Effect.gen(function* () {
-        if (!(yield* fs.exists(worktreePath))) return;
+        if (!(yield* existsUnlessNotADirectory(worktreePath))) return;
         if (deleted && !settings.worktreeOnDelete) return keep("no rules apply");
         if (members.length > 1 && worktreeOwner(members) === undefined)
           return keep(`shared by ${members.length} threads`);
