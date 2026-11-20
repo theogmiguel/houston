@@ -22,6 +22,7 @@ import type * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import type * as Scope from "effect/Scope";
 import * as Path from "effect/Path";
 import * as HttpClient from "effect/http/HttpClient";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
@@ -63,6 +64,16 @@ export class DesktopSshEnvironment extends Context.Service<
     readonly disconnectEnvironment: (
       target: DesktopSshEnvironmentTarget,
     ) => Effect.Effect<void, DesktopSshEnvironmentOperationError>;
+    /** Forwards one remote loopback port to a local loopback port; the scope closes it. */
+    readonly forwardPort: (input: {
+      readonly target: DesktopSshEnvironmentTarget;
+      readonly remotePort: number;
+      readonly localPort: number;
+    }) => Effect.Effect<
+      { readonly localPort: number; readonly stop: Effect.Effect<void> },
+      DesktopSshEnvironmentOperationError,
+      Scope.Scope
+    >;
   }
 >()("@houston-app/desktop/ssh/DesktopSshEnvironment") {}
 
@@ -149,6 +160,13 @@ export const make = Effect.gen(function* () {
     disconnectEnvironment: Effect.fn("desktop.ssh.disconnectEnvironment")(
       function* (target) {
         return yield* manager.disconnectEnvironment(target);
+      },
+      Effect.provideService(SshAuth.SshPasswordPrompt, passwordPrompt),
+      Effect.provide(runtimeContext),
+    ),
+    forwardPort: Effect.fn("desktop.ssh.forwardPort")(
+      function* (input) {
+        return yield* manager.forwardPort(input);
       },
       Effect.provideService(SshAuth.SshPasswordPrompt, passwordPrompt),
       Effect.provide(runtimeContext),
