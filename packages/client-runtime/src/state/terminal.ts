@@ -17,6 +17,7 @@ import {
   type AtomCommand,
   createAtomCommandScheduler,
   createEnvironmentRpcCommand,
+  createEnvironmentRpcQueryAtomFamily,
   createEnvironmentSubscriptionAtomFamily,
   runAtomCommand,
 } from "./runtime.ts";
@@ -86,6 +87,10 @@ export function createTerminalEnvironmentAtoms<R, E>(
           // The scan seed is not an authoritative empty server snapshot.
           Stream.drop(1),
         ),
+    }),
+    shells: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:terminal:shells",
+      tag: WS_METHODS.houstonTerminalShells,
     }),
     open: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:terminal:open",

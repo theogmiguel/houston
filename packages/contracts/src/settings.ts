@@ -1360,6 +1360,8 @@ export const ServerSettings = Schema.Struct({
   ),
   /** Holds an OS sleep inhibitor while any run is active; closing a laptop lid still sleeps it. */
   keepAwakeWhileAgentsWork: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /** Empty starts new terminals with the login shell; otherwise an executable shell command. */
+  terminalShell: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
 
   enableAgentBrowserAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   cloudSpeechCredentials: CloudSpeechCredentials.pipe(
@@ -1686,6 +1688,7 @@ export const ServerSettingsOperation = Schema.Literals([
   "prepare-directory",
   "write-managed-setting",
   "use-disallowed-provider",
+  "validate-terminal-shell",
 ]);
 export type ServerSettingsOperation = typeof ServerSettingsOperation.Type;
 
@@ -1705,6 +1708,8 @@ export class ServerSettingsError extends Schema.TaggedError<ServerSettingsError>
     managedBy: Schema.optional(Schema.String),
     /** For `use-disallowed-provider`: the provider's name as users know it. */
     providerLabel: Schema.optional(Schema.String),
+    /** For `validate-terminal-shell`: why the value was refused, naming it. */
+    detail: Schema.optional(Schema.String),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {
@@ -1717,6 +1722,9 @@ export class ServerSettingsError extends Schema.TaggedError<ServerSettingsError>
         this.managedBy,
         this.providerLabel ?? this.providerInstanceId ?? "this",
       );
+    }
+    if (this.operation === "validate-terminal-shell" && this.detail !== undefined) {
+      return this.detail;
     }
     const provider =
       this.providerInstanceId === undefined ? "" : ` for provider ${this.providerInstanceId}`;
@@ -1794,6 +1802,7 @@ export const ServerSettingsPatch = Schema.Struct({
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
   keepAwakeWhileAgentsWork: Schema.optionalKey(Schema.Boolean),
+  terminalShell: Schema.optionalKey(TrimmedString),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
   cloudSpeechCredentials: Schema.optionalKey(
     Schema.Struct({

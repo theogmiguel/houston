@@ -228,6 +228,7 @@ import * as HoustonLayoutWorkspaces from "./houston/layoutWorkspaces.ts";
 import * as HoustonSlackService from "./houston/slack/Service.ts";
 import * as HoustonSlackV1Import from "./houston/slack/V1Import.ts";
 import * as HoustonMergeQueueService from "./houston/mergeQueue/Service.ts";
+import * as HoustonTerminalShells from "./houston/terminalShells.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
 import { threadWorkspaceRoot } from "./project/threadWorkspaceRoot.ts";
@@ -284,6 +285,7 @@ import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
 import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
 import * as SessionStore from "./auth/SessionStore.ts";
 import { failEnvironmentAuthInvalid, failEnvironmentInternal } from "./auth/http.ts";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import { isNetworkPath } from "@houston-app/shared/path";
 import {
   SOCKET_FRAME_PARTS_QUERY_PARAM,
@@ -2825,6 +2827,14 @@ export const layerWsRpc = (
         [WS_METHODS.serverGetStorageCleanupReport]: () => storageCleanup.reports,
         [WS_METHODS.serverGetDatabaseStorage]: () => databaseStorage.status,
         [WS_METHODS.houstonDatabaseReclaim]: () => databaseStorage.reclaimNow,
+        [WS_METHODS.houstonTerminalShells]: () =>
+          Effect.gen(function* () {
+            return yield* HoustonTerminalShells.detectTerminalShells({
+              fs: yield* FileSystem.FileSystem,
+              platform: yield* HostProcess.Platform,
+              env: yield* HostProcess.Environment,
+            });
+          }),
         [WS_METHODS.peerLinksList]: (_input) =>
           peerLinks.list.pipe(Effect.map((links) => ({ links }))),
         [WS_METHODS.peerLinksLink]: (input) => peerLinks.link(input),

@@ -89,6 +89,13 @@ export type TerminalCloseInput = typeof TerminalCloseInput.Type;
 export const TerminalSessionStatus = Schema.Literals(["starting", "running", "exited", "error"]);
 export type TerminalSessionStatus = typeof TerminalSessionStatus.Type;
 
+/** A saved shell that was unavailable, and the shell this terminal actually started. */
+export const TerminalShellFallback = Schema.Struct({
+  requested: Schema.String.check(Schema.isNonEmpty()),
+  used: Schema.String.check(Schema.isNonEmpty()),
+});
+export type TerminalShellFallback = typeof TerminalShellFallback.Type;
+
 export const TerminalSessionSnapshot = Schema.Struct({
   threadId: Schema.String.check(Schema.isNonEmpty()),
   terminalId: Schema.String.check(Schema.isNonEmpty()),
@@ -105,6 +112,7 @@ export const TerminalSessionSnapshot = Schema.Struct({
   // The PTY grid every renderer of this terminal should draw; absent from older servers.
   cols: Schema.optional(TerminalColsSchema),
   rows: Schema.optional(TerminalRowsSchema),
+  shellFallback: Schema.optional(TerminalShellFallback),
 });
 export type TerminalSessionSnapshot = typeof TerminalSessionSnapshot.Type;
 

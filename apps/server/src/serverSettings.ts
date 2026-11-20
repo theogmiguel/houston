@@ -29,6 +29,7 @@ import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 import * as Effect from "effect/Effect";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as NodeSqliteClient from "@houston-app/shared/nodeSqliteClient";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
@@ -45,6 +46,7 @@ import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 import { writeFileStringAtomically } from "@houston-app/shared/atomicWrite";
 import { resolveSymlinkTarget } from "@houston-app/shared/symlink";
+import { checkTerminalShell } from "./houston/terminalShells.ts";
 import * as ServerConfig from "./config.ts";
 import { type DeepPartial, deepMerge } from "@houston-app/shared/Struct";
 import { fromJsonStringPretty, fromLenientJson } from "@houston-app/shared/schemaJson";
@@ -664,7 +666,29 @@ const make = Effect.gen(function* () {
   const { settingsPath } = yield* ServerConfig.ServerConfig;
   const fs = yield* FileSystem.FileSystem;
   const pathService = yield* Path.Path;
+  const platform = yield* HostProcess.Platform;
+  const environment = yield* HostProcess.Environment;
   const secretStore = yield* ServerSecretStore.ServerSecretStore;
+
+  const ensureTerminalShellAvailable = (
+    patch: ServerSettingsPatch,
+  ): Effect.Effect<void, ServerSettingsError> => {
+    const value = patch.terminalShell;
+    if (value === undefined || value.trim().length === 0) return Effect.void;
+    return checkTerminalShell({ fs, platform, env: environment }, value).pipe(
+      Effect.flatMap((result) =>
+        result.available
+          ? Effect.void
+          : Effect.fail(
+              new ServerSettingsError({
+                settingsPath,
+                operation: "validate-terminal-shell",
+                detail: result.message,
+              }),
+            ),
+      ),
+    );
+  };
   const sql = yield* SqlClient.SqlClient;
   const {
     settings: managed,
@@ -1360,13 +1384,16 @@ const make = Effect.gen(function* () {
     getSettings: getMaterializedSettings,
     updateSettings: (patch) =>
       updateAndPersistSettings(patch, (current) =>
-        ensureSecretProviderWritesAllowed(patch, settingsPath).pipe(
-          Effect.as(applyServerSettingsPatch(current, patch)),
-        ),
+        Effect.gen(function* () {
+          yield* ensureTerminalShellAvailable(patch);
+          yield* ensureSecretProviderWritesAllowed(patch, settingsPath);
+          return applyServerSettingsPatch(current, patch);
+        }),
       ),
     updateProviderInstance: (mutation, patch = {}) =>
       updateAndPersistSettings(patch, (current) =>
         Effect.gen(function* () {
+          yield* ensureTerminalShellAvailable(patch);
           yield* ensureSecretProviderWritesAllowed(patch, settingsPath);
           yield* ensureProviderInstanceMutationAllowed(current, mutation, settingsPath);
           const patched = applyServerSettingsPatch(current, patch);

@@ -316,3 +316,20 @@ describe("terminal session reducers", () => {
     });
   });
 });
+
+describe("terminal shell fallback", () => {
+  it("carries a saved shell that was unavailable through the attach snapshot", () => {
+    const attached = applyTerminalAttachStreamEvent(nextTerminalAttachSeedState(), {
+      type: "snapshot",
+      snapshot: {
+        ...BASE_SNAPSHOT,
+        shellFallback: { requested: "/missing/zsh", used: "/bin/bash" },
+      },
+    });
+
+    expect(combineTerminalSessionState(null, attached).shellFallback).toEqual({
+      requested: "/missing/zsh",
+      used: "/bin/bash",
+    });
+  });
+});

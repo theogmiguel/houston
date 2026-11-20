@@ -766,3 +766,17 @@ describe("auto-close on merge", () => {
     );
   });
 });
+
+describe("terminal shell", () => {
+  it("starts new terminals with the system default", () => {
+    expect(DEFAULT_SERVER_SETTINGS.terminalShell).toBe("");
+    expect(decodeServerSettings({}).terminalShell).toBe("");
+  });
+
+  it("trims a saved shell and accepts it through a settings patch", () => {
+    expect(decodeServerSettings({ terminalShell: "  /bin/zsh " }).terminalShell).toBe("/bin/zsh");
+    expect(decodeServerSettingsPatch({ terminalShell: " /bin/fish " })).toEqual({
+      terminalShell: "/bin/fish",
+    });
+  });
+});

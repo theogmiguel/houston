@@ -2767,5 +2767,37 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         });
       }).pipe(Effect.provide(layerServerSettings(policy))),
     );
+
+    it.effect("refuses a terminal shell that is not executable and saves one that is", () =>
+      Effect.gen(function* () {
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const directory = yield* fs.makeTempDirectoryScoped({ prefix: "houston-terminal-shell-" });
+        const missingShell = path.join(
+          directory,
+          process.platform === "win32" ? "missing-shell.exe" : "missing-shell",
+        );
+        const refused = yield* service
+          .updateSettings({ terminalShell: missingShell })
+          .pipe(Effect.flip);
+        assert.equal(refused.operation, "validate-terminal-shell");
+        assert.include(refused.message, missingShell);
+        assert.include(refused.message, "absolute path to an executable shell");
+
+        const shellPath = path.join(
+          directory,
+          process.platform === "win32" ? "saved-shell.exe" : "saved-shell",
+        );
+        yield* fs.writeFileString(shellPath, "");
+        if (process.platform !== "win32") {
+          yield* fs.chmod(shellPath, 0o755);
+        }
+        const saved = yield* service.updateSettings({ terminalShell: shellPath });
+        assert.equal(saved.terminalShell, shellPath);
+        const reset = yield* service.updateSettings({ terminalShell: "" });
+        assert.equal(reset.terminalShell, "");
+      }).pipe(Effect.provide(layerServerSettings())),
+    );
   },
 );

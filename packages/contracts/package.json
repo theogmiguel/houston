@@ -62,6 +62,10 @@
     "./houston/observability": {
       "types": "./src/houston/observability.ts",
       "import": "./src/houston/observability.ts"
+    },
+    "./houston/terminalShells": {
+      "types": "./src/houston/terminalShells.ts",
+      "import": "./src/houston/terminalShells.ts"
     }
   },
   "scripts": {

@@ -181,6 +181,7 @@ import {
   HoustonDatabaseReclaimError,
   HoustonDatabaseReclaimResult,
 } from "./houston/databaseReclaim.ts";
+import { TerminalShells } from "./houston/terminalShells.ts";
 import {
   HoustonReviewAnchorLinesInput,
   HoustonReviewAnchorMapResult,
@@ -658,6 +659,7 @@ export const WS_METHODS = {
   houstonTasksSettingsGet: "houston.tasks.settings.get",
   houstonTasksSettingsSet: "houston.tasks.settings.set",
   houstonDatabaseReclaim: "houston.database.reclaim",
+  houstonTerminalShells: "houston.terminal.shells",
   houstonTasksImportV1Status: "houston.tasks.importV1.status",
   houstonTasksImportV1Run: "houston.tasks.importV1.run",
   houstonTasksStart: "houston.tasks.start",
@@ -1051,6 +1053,12 @@ const WsHoustonDatabaseReclaimRpc = Rpc.make(WS_METHODS.houstonDatabaseReclaim, 
   payload: Schema.Struct({}),
   success: HoustonDatabaseReclaimResult,
   error: Schema.Union([HoustonDatabaseReclaimError, EnvironmentAuthorizationError]),
+});
+
+const WsHoustonTerminalShellsRpc = Rpc.make(WS_METHODS.houstonTerminalShells, {
+  payload: Schema.Struct({}),
+  success: TerminalShells,
+  error: EnvironmentAuthorizationError,
 });
 
 const WsServerGetDatabaseStorageRpc = Rpc.make(WS_METHODS.serverGetDatabaseStorage, {
@@ -3066,6 +3074,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonTasksSettingsGetRpc,
   WsHoustonTasksSettingsSetRpc,
   WsHoustonDatabaseReclaimRpc,
+  WsHoustonTerminalShellsRpc,
   WsHoustonTasksImportV1StatusRpc,
   WsHoustonTasksImportV1RunRpc,
   WsHoustonTasksStartRpc,
