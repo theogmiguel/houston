@@ -38,6 +38,7 @@ describe("deleteTemporaryAcpSession", () => {
       failure === undefined
         ? Effect.sync(() => {
             deleted.push(sessionId);
+            return {};
           })
         : Effect.fail(
             new AcpRequestError({

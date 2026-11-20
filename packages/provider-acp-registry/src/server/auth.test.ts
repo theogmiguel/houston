@@ -149,6 +149,7 @@ const makeHarness = (
             deleteSession: (sessionId: string) =>
               Effect.sync(() => {
                 deleted.push(sessionId);
+                return {};
               }),
             logout: Effect.succeed({}),
           };

@@ -12,6 +12,7 @@ import {
 import { canonicalizeGitCafePullRequestUrl } from "@houston-app/source-control-definitions/registry";
 import { threadIssueKeysEqual } from "@houston-app/contracts";
 import { threadPullRequestsOf } from "../sourceControl/threadPullRequests.ts";
+import { PULL_REQUEST_WATCH_WAKE_MESSAGE_PREFIX } from "./pullRequestWatch.ts";
 import {
   normalizeThreadPullRequestKey,
   visibleThreadPullRequests,
@@ -826,9 +827,14 @@ function withPullRequestWatch(
 /** A monitor wake is a pull request watch's message; it must not start once that watch or thread ended. */
 function isStalePullRequestWatchWake(
   thread: OrchestrationV2AppThread,
-  message: Pick<OrchestrationV2ConversationMessage, "text" | "notification">,
+  message: Pick<OrchestrationV2ConversationMessage, "id" | "text" | "notification">,
 ): boolean {
-  if (message.notification?.source.kind !== "monitor") return false;
+  const links = threadPullRequestsOf(thread);
+  const namedLink = links.some((link) => message.text.includes(link.url));
+  const isWatchWake =
+    message.id.startsWith(PULL_REQUEST_WATCH_WAKE_MESSAGE_PREFIX) ||
+    (message.notification?.source.kind === "monitor" && namedLink);
+  if (!isWatchWake) return false;
   if (
     thread.archivedAt !== null ||
     thread.deletedAt !== null ||
@@ -838,9 +844,7 @@ function isStalePullRequestWatchWake(
   )
     return true;
   // The server writes the watched pull request's URL into the wake; an ended watch no longer carries one.
-  return !threadPullRequestsOf(thread).some(
-    (link) => link.watch !== undefined && message.text.includes(link.url),
-  );
+  return !links.some((link) => link.watch !== undefined && message.text.includes(link.url));
 }
 
 function legacyPullRequestLink(

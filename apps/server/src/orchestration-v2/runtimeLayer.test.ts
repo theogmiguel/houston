@@ -3131,7 +3131,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       const eventSink = yield* EventSink.EventSinkV2;
       const threadId = ThreadId.make("runtime-pull-request-watch-stale-wake");
       const activeMessageId = MessageId.make("runtime-pull-request-watch-stale-wake-active");
-      const wakeMessageId = MessageId.make("runtime-pull-request-watch-stale-wake-wake");
+      const wakeMessageId = MessageId.make("message:pr-watch:runtime-pull-request-watch-stale-wake");
       const key = { host: "github.com", repository: "example/houston", number: 7 };
       const url = "https://github.com/example/houston/pull/7";
 

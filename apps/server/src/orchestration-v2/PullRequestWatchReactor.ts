@@ -38,6 +38,7 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 import {
   evaluatePullRequestWatch,
   PULL_REQUEST_WATCH_NO_CHECKS_MS,
+  PULL_REQUEST_WATCH_WAKE_MESSAGE_PREFIX,
   pullRequestWatchMessage,
 } from "./pullRequestWatch.ts";
 
@@ -299,7 +300,7 @@ export const make = Effect.gen(function* () {
       ...(endedWatch === undefined ? {} : { endedWatch }),
       ...(wake === undefined
         ? {}
-        : { wake: { ...wake, messageId: MessageId.make(`message:pr-watch:${uuid}`) } }),
+        : { wake: { ...wake, messageId: MessageId.make(`${PULL_REQUEST_WATCH_WAKE_MESSAGE_PREFIX}${uuid}`) } }),
     });
   });
 
