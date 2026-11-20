@@ -59,6 +59,10 @@
       "types": "./src/houston/slack.ts",
       "import": "./src/houston/slack.ts"
     },
+    "./houston/portForwarding": {
+      "types": "./src/houston/portForwarding.ts",
+      "import": "./src/houston/portForwarding.ts"
+    },
     "./houston/observability": {
       "types": "./src/houston/observability.ts",
       "import": "./src/houston/observability.ts"
