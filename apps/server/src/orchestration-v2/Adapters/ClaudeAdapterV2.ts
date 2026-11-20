@@ -8255,7 +8255,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 const nativeThreadId =
                   input.context.input.providerThread.nativeThreadRef?.nativeId ?? null;
                 if (nativeThreadId !== null) {
-                  if (input.status !== "completed") {
+                  // A failed result still leaves the query open, so its background
+                  // tasks keep running; only a closed query or a stopped turn drops them.
+                  const liveQuery = yield* Ref.get(queryContext);
+                  const queryClosed = liveQuery === null || liveQuery.lastTurn !== input.context;
+                  const clearsRoster =
+                    input.status === "interrupted" ||
+                    input.status === "cancelled" ||
+                    (input.status === "failed" && queryClosed);
+                  if (clearsRoster) {
                     yield* clearPendingBackgroundTasksForNativeThread(nativeThreadId);
                     yield* clearNativeThreadTaskIdSet(
                       wakeEligibleBackgroundTasksByNativeThread,
