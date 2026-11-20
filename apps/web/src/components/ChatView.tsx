@@ -635,6 +635,7 @@ export default function ChatView(props: ChatViewProps) {
     serverProjection?.providerTurns ?? [],
     serverProjection,
     activeProviderThread,
+    serverProjection?.thread.activeProviderThreadId ?? null,
   );
   const serverVisibleTurnItems = useQuietThreadVisibleTurnItems(routeThreadDetailRef);
   const serverThreadHistory = useThreadHistory(routeThreadDetailRef);
