@@ -7,7 +7,7 @@ import { DiffStatLabel } from "./DiffStatLabel";
 import { MarkdownFindContext } from "./markdownFindContext";
 import { useChatCanvas } from "./ChatCanvasContext";
 import { WorkLogBlock } from "./WorkLog";
-import { FOOTER_TURN_GAP_CLASS, PACKED_GAP_CLASS, turnOrInTurnGap } from "./timelineSpacing";
+import { FOOTER_GAP_CLASS, PACKED_GAP_CLASS, turnOrInTurnGap } from "./timelineSpacing";
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import type { WorktreeSetupSnapshot } from "@houston-app/contracts";
 import { deriveTimelineMinimapItems } from "./timelineMinimapItems";
@@ -1495,7 +1495,7 @@ function getItemType(item: MessagesTimelineRow) {
 function rowBottomPadding(row: TimelineRow) {
   if (row.kind === "message" && row.groupedWithNext) return PACKED_GAP_CLASS;
   if (row.kind === "message" && row.message.role === "assistant" && row.showAssistantMeta) {
-    return row.leadsToTurn ? FOOTER_TURN_GAP_CLASS : "pb-0";
+    return FOOTER_GAP_CLASS;
   }
   // A user message keeps the hover actions' line under its bubble, so its own gap is that line.
   if (row.kind === "message" && row.message.role === "user") return "pb-0";

@@ -2764,6 +2764,38 @@ describe("MessagesTimeline rhythm", () => {
     expect(rowPadding(screen.container, fold)).toBe(12);
   });
 
+  it("starts the row after an answer's footer below the footer, not under its buttons", async () => {
+    await using _viewport = await desktopViewport();
+    setup();
+    const run1 = RunId.make("footer-run-1");
+    await using screen = await renderTimeline(
+      [
+        message("Question", { runId: run1 }, "footer-user"),
+        message("Answer", { role: "assistant", runId: run1 }, "footer-answer"),
+        work("footer-next-tool", {
+          runId: RunId.make("footer-run-2"),
+          label: "Ran ls",
+          command: "ls -la",
+          tone: "tool",
+          itemType: "command_execution",
+          toolLifecycleStatus: "completed",
+        }),
+      ],
+      { runs: [] },
+    );
+    const footer = await vi.waitFor(() => {
+      const found = screen.container.querySelector<HTMLElement>("[data-assistant-meta-footer]");
+      if (!found) throw new Error("Missing footer");
+      return found;
+    });
+    const rows = [...screen.container.querySelectorAll<HTMLElement>("[data-timeline-row-id]")];
+    const next = rows[rows.findIndex((row) => row.contains(footer)) + 1];
+    if (!next) throw new Error("Missing the row after the answer");
+    expect(next.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      footer.getBoundingClientRect().bottom,
+    );
+  });
+
   it("sets the rows of an expanded group flush under the header in 12px muted type", async () => {
     await using _viewport = await desktopViewport();
     setup();

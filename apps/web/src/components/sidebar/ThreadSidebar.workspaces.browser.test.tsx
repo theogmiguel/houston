@@ -24,7 +24,7 @@ import {
   WORKSPACE_NAME_MAX_CHARS,
 } from "../../layout/layoutWorkspaces";
 import { act, render, type Screen } from "../../../test/render";
-import { SidebarOptionsMenu } from "../ui/sidebar-sections";
+import { SIDEBAR_GROUP_NAME_ON_SCREEN_CLS, SidebarOptionsMenu } from "../ui/sidebar-sections";
 import { SIDEBAR_ROW_SURFACE_CLS } from "../ui/sidebar-rail-recipes";
 import { toastManager } from "../ui/toast";
 import { TooltipProvider } from "../ui/tooltip";
@@ -204,7 +204,7 @@ function chevronButtonFor(screen: Screen, workspaceId: string): HTMLButtonElemen
   return button;
 }
 
-/** The heading row: the label, its chevron and its actions, which share one hover and selection fill. */
+/** The heading row: the label, its chevron and its actions, which share one hover fill. */
 function headingRowFor(screen: Screen, workspaceId: string): HTMLElement {
   const row = headingFor(screen, workspaceId).closest("[data-workspace-heading-row]");
   if (!(row instanceof HTMLElement)) {
@@ -532,25 +532,23 @@ describe("workspace group", () => {
     expect(opacity(more)).toBe(1);
   });
 
-  it("marks only the workspace on screen with the selected row fill", async () => {
+  it("marks the workspace on screen by its name's ink, with no fill on the heading row", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
       <>
         {group(workspace({ workspaceId: "ws-a", name: "v2 rebuild" }), threads, { open: true })}
         {group(workspace({ workspaceId: "ws-b", name: "Review" }), threads, { open: false })}
+        {group(workspace({ workspaceId: "ws-e", name: "UI/UX design" }), [], { open: false })}
       </>,
     );
 
-    expect(headingRowFor(screen, "ws-a").className).toContain(SIDEBAR_ROW_SURFACE_CLS.selected);
-    expect(headingRowFor(screen, "ws-b").className).not.toContain(SIDEBAR_ROW_SURFACE_CLS.selected);
-  });
-
-  it("marks an open empty workspace's heading as selected", async () => {
-    await using screen = await render(
-      group(workspace({ workspaceId: "ws-e", name: "UI/UX design" }), [], { open: true }),
-    );
-
-    expect(headingRowFor(screen, "ws-e").className).toContain(SIDEBAR_ROW_SURFACE_CLS.selected);
+    for (const id of ["ws-a", "ws-b", "ws-e"]) {
+      expect(headingRowFor(screen, id).className).not.toContain(SIDEBAR_ROW_SURFACE_CLS.selected);
+    }
+    const nameOf = (id: string) =>
+      screen.container.querySelector(`[data-workspace-key="${id}"] [data-workspace-name]`)!;
+    expect(nameOf("ws-a").className).toContain(SIDEBAR_GROUP_NAME_ON_SCREEN_CLS);
+    expect(nameOf("ws-b").className).not.toContain(SIDEBAR_GROUP_NAME_ON_SCREEN_CLS);
   });
 
   it("fills the whole heading row, actions included, while it is hovered", async () => {
@@ -568,16 +566,16 @@ describe("workspace group", () => {
     expect(headingFor(screen, "ws-h2").className).not.toContain("hover:bg-");
   });
 
-  it("keeps the workspace on screen selected while its focused thread row shows the selection", async () => {
+  it("leaves the heading row unfilled while the focused thread row shows the selection", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
       group(workspace(), threads, { open: true, focusedThreadKey: threadKey("thread-a") }),
     );
 
-    expect(headingRowFor(screen, "ws-a").className).toContain(SIDEBAR_ROW_SURFACE_CLS.selected);
+    expect(headingRowFor(screen, "ws-a").className).not.toContain(SIDEBAR_ROW_SURFACE_CLS.selected);
   });
 
-  it("keeps the workspace selected while collapsed and still reveals its open thread row", async () => {
+  it("leaves a collapsed heading unfilled and still reveals its open thread row", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(
       group(workspace(), threads, {
@@ -587,16 +585,16 @@ describe("workspace group", () => {
       }),
     );
 
-    expect(headingRowFor(screen, "ws-a").className).toContain(SIDEBAR_ROW_SURFACE_CLS.selected);
+    expect(headingRowFor(screen, "ws-a").className).not.toContain(SIDEBAR_ROW_SURFACE_CLS.selected);
     expect(screen.container.querySelector("[data-thread-key$=':thread-a']")).not.toBeNull();
     expect(screen.container.querySelector("[data-thread-key$=':thread-b']")).toBeNull();
   });
 
-  it("keeps the workspace selected when collapsing hides every row", async () => {
+  it("leaves a collapsed heading unfilled when collapsing hides every row", async () => {
     const threads = [thread({ id: "thread-a" }), thread({ id: "thread-b", title: "Second" })];
     await using screen = await render(group(workspace(), threads, { open: true, collapsed: true }));
 
-    expect(headingRowFor(screen, "ws-a").className).toContain(SIDEBAR_ROW_SURFACE_CLS.selected);
+    expect(headingRowFor(screen, "ws-a").className).not.toContain(SIDEBAR_ROW_SURFACE_CLS.selected);
   });
 
   it("keeps the chevron and text still across collapse and thread counts", async () => {
