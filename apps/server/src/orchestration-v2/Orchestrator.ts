@@ -1066,8 +1066,12 @@ function usageLimitHoldsQueue(
     }
   }
   return (
-    usageLimitBlockedRun(projection.runs, projection.turnItems, latestSession?.lastError ?? null)
-      ?.providerInstanceId === providerInstanceId
+    usageLimitBlockedRun(
+      projection.runs,
+      projection.turnItems,
+      latestSession?.lastError ?? null,
+      providerInstanceId,
+    )?.providerInstanceId === providerInstanceId
   );
 }
 

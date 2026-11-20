@@ -2,6 +2,7 @@ import type {
   OrchestrationV2ProviderFailure,
   OrchestrationV2Run,
   OrchestrationV2TurnItem,
+  ProviderInstanceId,
 } from "@houston-app/contracts";
 import * as DateTime from "effect/DateTime";
 
@@ -54,9 +55,12 @@ export function threadErrorSummary(
 
 export function latestExecutedRun(
   runs: ReadonlyArray<OrchestrationV2Run>,
+  providerInstanceId?: ProviderInstanceId,
 ): OrchestrationV2Run | null {
   let latest: OrchestrationV2Run | null = null;
   for (const run of runs) {
+    if (providerInstanceId !== undefined && run.providerInstanceId !== providerInstanceId)
+      continue;
     if (run.status === "queued") continue;
     if (run.status === "cancelled" && run.startedAt === null) continue;
     if (latest === null || runRanAfter(run, latest)) latest = run;
@@ -80,8 +84,9 @@ export function usageLimitBlockedRun(
   runs: ReadonlyArray<OrchestrationV2Run>,
   turnItems: ReadonlyArray<FailureScanTurnItem>,
   sessionError: string | null,
+  providerInstanceId?: ProviderInstanceId,
 ): OrchestrationV2Run | null {
-  const executed = latestExecutedRun(runs);
+  const executed = latestExecutedRun(runs, providerInstanceId);
   if (executed?.status !== "failed") return null;
   const summary = threadErrorSummary(latestRootProviderFailure(executed, turnItems), sessionError);
   return summary.lastErrorClass === "usage_limit" ? executed : null;
