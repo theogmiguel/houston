@@ -1113,10 +1113,23 @@ export interface DesktopQuickComposerShortcutStatus {
   readonly reason: string | null;
 }
 
+/** A file reference the renderer shows and the host may hand to the OS file manager. */
+export interface DesktopFileDragInput {
+  readonly path: string;
+  readonly workspaceRoot: string;
+}
+
+export const DesktopFileDragInputSchema = Schema.Struct({
+  path: Schema.String.check(Schema.isNonEmpty()),
+  workspaceRoot: Schema.String.check(Schema.isNonEmpty()),
+});
+
 export interface HostBridge {
   getAppBranding: () => DesktopAppBranding | null;
   getRelayTelemetryEnabled: () => boolean;
   getPathForFile: (file: File) => string;
+  /** Starts a native drag that carries an existing workspace file to the OS file manager. */
+  startFileDrag: (input: DesktopFileDragInput) => Promise<void>;
   getClientPlatform: () => string;
   /**
    * Appends one diagnostic record to the host's debug log. Sources and messages are

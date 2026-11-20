@@ -81,6 +81,7 @@ contextBridge.exposeInMainWorld("hostBridge", {
   getRelayTelemetryEnabled: () =>
     ipcRenderer.sendSync(IpcChannels.GET_RELAY_TELEMETRY_ENABLED_CHANNEL) === true,
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
+  startFileDrag: (input) => ipcRenderer.invoke(IpcChannels.START_FILE_DRAG_CHANNEL, input),
   getClientPlatform: () => clientPlatform,
   logDebug: (source, message, payload) =>
     ipcRenderer.invoke(IpcChannels.LOG_DEBUG_CHANNEL, { source, message, payload }),
