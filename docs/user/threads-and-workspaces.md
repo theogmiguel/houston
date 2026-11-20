@@ -255,6 +255,10 @@ The composer sends a message to the thread's provider. It accepts pasted images 
 `@` file references, slash commands and provider skills. **Rich text composer**, the send
 shortcut and skill visibility are in **Settings ▸ Chat**.
 
+In the desktop app, drag a file chip shown in the composer or a message out of the window to
+drop that file into the system file manager. Only files inside the thread's workspace can be
+dragged; a path that resolves outside it is refused.
+
 A message can be sent while its attachments are still uploading: it appears as sending and the
 turn starts when the uploads finish. Answering a question or redirecting a pending approval
 waits for the uploads first. A failed upload blocks the send until it is retried or removed.
