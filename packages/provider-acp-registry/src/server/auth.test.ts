@@ -70,6 +70,7 @@ const makeHarness = (
     const closed: number[] = [];
     const authenticated: string[] = [];
     const started: number[] = [];
+    const deleted: string[] = [];
     let runtimes = 0;
     let version = "1.0.0";
     let terminalSpawn: PtyAdapter.PtySpawnInput | undefined;
@@ -98,7 +99,7 @@ const makeHarness = (
           );
           const initialized: AcpSchema.InitializeResponse = {
             protocolVersion: 2,
-            agentCapabilities: {},
+            agentCapabilities: { sessionCapabilities: { delete: {} } },
             authMethods: [{ ...method, name: `${method.name} ${version}` }],
           };
           let elicitation:
@@ -144,6 +145,10 @@ const makeHarness = (
                   sessionSetupResult: { sessionId: "verified" },
                   modelConfigId: undefined,
                 };
+              }),
+            deleteSession: (sessionId: string) =>
+              Effect.sync(() => {
+                deleted.push(sessionId);
               }),
             logout: Effect.succeed({}),
           };
@@ -204,6 +209,7 @@ const makeHarness = (
       closed,
       authenticated,
       started,
+      deleted,
       phase,
       state,
       terminalSpawn: () => terminalSpawn,
@@ -269,6 +275,7 @@ it.effect(
       assert.deepEqual(h.authenticated, ["browser"]);
       assert.deepEqual(h.changed, [true]);
       assert.deepEqual(h.closed, [1, 2]);
+      assert.deepEqual(h.deleted, ["verified"]);
       yield* h.controller.logout(Effect.void);
       assert.deepEqual(h.changed, [true, false]);
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
@@ -314,6 +321,7 @@ it.effect(
       yield* Deferred.succeed(h.verify, undefined);
       yield* h.phase("succeeded");
       assert.deepEqual(h.started, [3]);
+      assert.deepEqual(h.deleted, ["verified"]);
       assert.deepEqual(h.changed, [true]);
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

@@ -275,6 +275,23 @@ export function acpRegistryProbeResult(
   });
 }
 
+/** A probe session is temporary: remove it when the agent advertises deletion, never failing the probe. */
+export const deleteTemporaryAcpSession = (input: {
+  readonly runtime: Pick<AcpSessionRuntime.AcpSessionRuntime["Service"], "deleteSession">;
+  readonly started: AcpSessionRuntime.AcpSessionRuntimeStartResult;
+  readonly instanceId: ProviderInstanceId;
+}): Effect.Effect<void> =>
+  input.started.initializeResult.agentCapabilities?.sessionCapabilities?.delete == null
+    ? Effect.void
+    : input.runtime.deleteSession(input.started.sessionId).pipe(
+        Effect.catch((error) =>
+          Effect.logDebug("Could not delete the temporary ACP probe session.", {
+            instanceId: input.instanceId,
+            errorTag: error._tag,
+          }),
+        ),
+      );
+
 const AUTHENTICATION_FAILED_PATTERN =
   /\b(?:authenticat(?:e|ed|es|ing|ion)|credentials?|log(?:[\s-]+)?in)\b/iu;
 
@@ -429,7 +446,9 @@ export const probeAcpRegistryConfiguration = Effect.fn("AcpRegistryProbe.probeCo
       yield* Deferred.await(commandsAdvertised).pipe(
         Effect.timeoutOption(COMMAND_ADVERTISEMENT_GRACE),
       );
-      return { resolved, started, commands: yield* Ref.get(commandsRef) };
+      const commands = yield* Ref.get(commandsRef);
+      yield* deleteTemporaryAcpSession({ runtime, started, instanceId: input.instanceId });
+      return { resolved, started, commands };
     }).pipe(
       Effect.scoped,
       Effect.timeoutOrElse({
