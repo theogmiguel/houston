@@ -226,7 +226,9 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                   acpRegistryIconUrl={entry.acpRegistryIconUrl}
                   showBadge={showInstanceBadge}
                   className="z-30 shrink-0"
-                  iconClassName="size-3.5"
+                  iconClassName="size-4"
+                  // The badge hangs off the corner so the brand glyph stays readable beside it.
+                  badgeClassName="-right-1.5 -bottom-1.5 h-3 min-w-3 px-0.5 text-5xs"
                   indicatorBackground={
                     isHovered && !isDisabled
                       ? "var(--muted)"
@@ -234,7 +236,6 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                         ? "var(--background)"
                         : "color-mix(in oklab, var(--muted) 30%, transparent)"
                   }
-                  {...(entry.accentColor ? { badgeClassName: "h-3 min-w-3 px-0.5 text-5xs" } : {})}
                 />
                 {props.phone ? (
                   <span className={MODEL_PICKER_SIDEBAR_NAME_CLS}>

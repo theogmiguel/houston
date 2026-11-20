@@ -43,11 +43,18 @@ import { deriveSubagentElapsedMs } from "@houston-app/shared/orchestrationTiming
 import { groupBy } from "effect/Array";
 import * as DateTime from "effect/DateTime";
 import {
+  ArrowLeftRightIcon,
+  BotIcon,
   ChevronDownIcon,
+  CornerUpLeftIcon,
+  GitForkIcon,
+  HistoryIcon,
+  MessageSquareIcon,
   MoreHorizontalIcon,
   PlusIcon,
   SquareIcon,
   UnplugIcon,
+  type LucideIcon,
 } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 
@@ -81,6 +88,7 @@ import { Spinner } from "../ui/spinner";
 import { cn } from "~/lib/utils";
 import {
   THREAD_DETAILS_PANEL_CHEVRON_CLASS,
+  THREAD_DETAILS_PANEL_ICON_CLASS,
   THREAD_DETAILS_PANEL_LABEL_CLASS,
   THREAD_DETAILS_PANEL_SPLIT_GROUP_CLASS,
   THREAD_DETAILS_PANEL_ROW_CONTENT_CLASS,
@@ -157,6 +165,7 @@ function ThreadLineageGroup<Row extends LineageRow>(props: {
     <div>
       {props.label ? (
         <ThreadDetailsControl aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+          <HistoryIcon aria-hidden className={THREAD_DETAILS_PANEL_ICON_CLASS} />
           <span className={cn(THREAD_DETAILS_PANEL_LABEL_CLASS, "min-w-0 flex-1 truncate")}>
             {props.label}
           </span>
@@ -186,6 +195,22 @@ function ThreadLineageGroup<Row extends LineageRow>(props: {
       ) : null}
     </div>
   );
+}
+
+const RELATIONSHIP_ICONS: Record<string, LucideIcon> = {
+  Subagent: BotIcon,
+  "Parent agent": CornerUpLeftIcon,
+  Fork: GitForkIcon,
+  "Parent thread": CornerUpLeftIcon,
+  "Context transfer": ArrowLeftRightIcon,
+  "Side chat": MessageSquareIcon,
+  "Delegated from": CornerUpLeftIcon,
+};
+
+/** The leading glyph of a lineage row, matching the other rows of the details card. */
+function RelationshipGlyph(props: { readonly relationship: string }) {
+  const Icon = RELATIONSHIP_ICONS[props.relationship] ?? BotIcon;
+  return <Icon aria-hidden className={THREAD_DETAILS_PANEL_ICON_CLASS} />;
 }
 
 function relationshipLabel(edge: ThreadRelationshipEdge, currentThreadId: ThreadId) {
@@ -280,7 +305,8 @@ function RemoteSubagentRow(props: {
             />
           }
         >
-          <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+            <RelationshipGlyph relationship="Subagent" />
             <span className="shrink-0 truncate">Subagent</span>
             <span className="min-w-0 truncate text-muted-foreground">{title}</span>
           </span>
@@ -339,7 +365,8 @@ function DelegatedFromRow(props: {
             />
           }
         >
-          <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+            <RelationshipGlyph relationship="Delegated from" />
             <span className="shrink-0 truncate">Delegated from</span>
             <span className="min-w-0 truncate text-muted-foreground">{title}</span>
           </span>
@@ -723,7 +750,8 @@ export function ThreadRelationshipsPanel(props: {
     );
     const relationshipContent = (
       <>
-        <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+          <RelationshipGlyph relationship={relationship} />
           <span className="shrink-0 truncate">{relationship}</span>
           <span className="min-w-0 truncate text-muted-foreground">{threadTitle}</span>
         </span>
