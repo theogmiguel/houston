@@ -292,5 +292,17 @@
   "Attach the text of the captured window alongside the image, when the desktop exposes it.": "Anexa o texto da janela capturada junto com a imagem, quando o desktop o disponibiliza.",
   "Choose the sound played when capture starts.": "Escolha o som tocado quando a captura começa.",
   "Show a predicted next message in the empty composer after a Claude or Codex turn. Tab uses it. Each is an extra cached request on your plan. Needs Codex 0.165+. Claude threads update on restart.": "Mostra uma próxima mensagem prevista no campo de mensagem vazio após um turno do Claude ou do Codex. Tab a usa. Cada uma é uma requisição extra em cache no seu plano. Requer Codex 0.165+. As threads do Claude atualizam ao reiniciar.",
-  "Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows only final answers. Approvals, questions, and errors always show.": "Oculta os comandos, edições e buscas que os agentes executam. Ocultar com sucesso mantém as falhas. Zen mostra apenas as respostas finais. Aprovações, perguntas e erros sempre aparecem."
+  "Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows only final answers. Approvals, questions, and errors always show.": "Oculta os comandos, edições e buscas que os agentes executam. Ocultar com sucesso mantém as falhas. Zen mostra apenas as respostas finais. Aprovações, perguntas e erros sempre aparecem.",
+  "Terminal": "Terminal",
+  "Shell": "Shell",
+  "The interactive shell new terminals start. Terminals that are already open keep their shell.": "O shell interativo com que os novos terminais iniciam. Terminais já abertos mantêm o shell.",
+  "Current: {shell}": "Atual: {shell}",
+  "System default ({shell})": "Padrão do sistema ({shell})",
+  "Custom path": "Caminho personalizado",
+  "Custom shell path": "Caminho do shell personalizado",
+  "Path to an executable shell": "Caminho para um shell executável",
+  "This shell is not in the detected list. New terminals fall back to the default when it is unavailable.": "Este shell não está na lista detectada. Novos terminais usam o padrão quando ele não estiver disponível.",
+  "Could not detect installed shells.": "Não foi possível detectar os shells instalados.",
+  "shell": "shell",
+  "System default": "Padrão do sistema"
 }

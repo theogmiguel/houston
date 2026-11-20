@@ -38,6 +38,14 @@ composer, menus, dialogs, toasts, the values inside controls and text that inclu
 names or numbers. Product and developer terms (Houston, thread, worktree, commit,
 pull request) are kept in English. A string without a translation is shown in English.
 
+### Terminal
+
+**Settings → General → Terminal → Shell** chooses the interactive shell new terminals start.
+The default follows the system login shell. Choose a shell detected on this machine, or enter
+the path to an executable shell. The setting applies to terminals opened afterwards; a terminal
+that is already open keeps the shell it started with. If a saved shell later disappears, new
+terminals start with the default shell and the terminal shows a message naming the saved shell.
+
 ## Appearance
 
 Colors and themes, light/dark/system mode, contrast, glass opacity, animations,

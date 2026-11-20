@@ -97,6 +97,32 @@ it("retains visible output and selection until a replacement subscription receiv
   expect(terminal.resetAndWrite).toHaveBeenLastCalledWith("");
 });
 
+it("writes a saved shell fallback once when the session reports it", () => {
+  const terminal = {
+    resetAndWrite: vi.fn(),
+    write: vi.fn(),
+    getSelection: vi.fn(() => ""),
+    getSelectionCellCount: vi.fn(() => 0),
+    clearSelection: vi.fn(),
+  };
+  const fallback = { requested: "/missing/zsh", used: "/bin/bash" };
+  const previous = { ...EMPTY_TERMINAL_BUFFER_STATE, shellFallback: null };
+  const withFallback = { ...previous, shellFallback: fallback };
+
+  synchronizeTerminalSession(terminal, previous, withFallback, INITIAL_TERMINAL_OUTPUT_CURSOR);
+  expect(terminal.write).toHaveBeenCalledWith(
+    '\r\n[terminal] Saved shell "/missing/zsh" is unavailable; this terminal started with "/bin/bash".\r\n',
+  );
+  terminal.write.mockClear();
+  synchronizeTerminalSession(
+    terminal,
+    withFallback,
+    { ...withFallback, output: { ...withFallback.output } },
+    INITIAL_TERMINAL_OUTPUT_CURSOR,
+  );
+  expect(terminal.write).not.toHaveBeenCalled();
+});
+
 it("reports an attach failure that leaves the output unchanged", () => {
   const terminal = {
     resetAndWrite: vi.fn(),

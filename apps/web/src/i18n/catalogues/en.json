@@ -292,5 +292,17 @@
   "Attach the text of the captured window alongside the image, when the desktop exposes it.": "Attach the text of the captured window alongside the image, when the desktop exposes it.",
   "Choose the sound played when capture starts.": "Choose the sound played when capture starts.",
   "Show a predicted next message in the empty composer after a Claude or Codex turn. Tab uses it. Each is an extra cached request on your plan. Needs Codex 0.165+. Claude threads update on restart.": "Show a predicted next message in the empty composer after a Claude or Codex turn. Tab uses it. Each is an extra cached request on your plan. Needs Codex 0.165+. Claude threads update on restart.",
-  "Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows only final answers. Approvals, questions, and errors always show.": "Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows only final answers. Approvals, questions, and errors always show."
+  "Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows only final answers. Approvals, questions, and errors always show.": "Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows only final answers. Approvals, questions, and errors always show.",
+  "Terminal": "Terminal",
+  "Shell": "Shell",
+  "The interactive shell new terminals start. Terminals that are already open keep their shell.": "The interactive shell new terminals start. Terminals that are already open keep their shell.",
+  "Current: {shell}": "Current: {shell}",
+  "System default ({shell})": "System default ({shell})",
+  "Custom path": "Custom path",
+  "Custom shell path": "Custom shell path",
+  "Path to an executable shell": "Path to an executable shell",
+  "This shell is not in the detected list. New terminals fall back to the default when it is unavailable.": "This shell is not in the detected list. New terminals fall back to the default when it is unavailable.",
+  "Could not detect installed shells.": "Could not detect installed shells.",
+  "shell": "shell",
+  "System default": "System default"
 }
