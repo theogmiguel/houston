@@ -16,6 +16,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { vi } from "vite-plus/test";
 
 import * as SqlitePersistence from "./Sqlite.ts";
+import { BUILD_MIGRATION_HEAD } from "./databaseMigrationHead.ts";
 
 const workers = vi.hoisted((): Array<NodeWorkerThreads.Worker> => []);
 
@@ -228,3 +229,69 @@ it.effect(
       );
     }),
 );
+
+const writeRecordedMigrations = (
+  dbPath: string,
+  migrations: ReadonlyArray<{ readonly id: number; readonly name: string }>,
+) => {
+  const database = new NodeSqlite.DatabaseSync(dbPath);
+  try {
+    database.exec(
+      "CREATE TABLE effect_sql_migrations (migration_id INTEGER PRIMARY KEY, name TEXT NOT NULL)",
+    );
+    for (const migration of migrations) {
+      database
+        .prepare("INSERT INTO effect_sql_migrations (migration_id, name) VALUES (?, ?)")
+        .run(migration.id, migration.name);
+    }
+  } finally {
+    database.close();
+  }
+};
+
+it.effect("opens a CLI database without applying migrations", () => {
+  const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-sqlite-cli-"));
+  const dbPath = NodePath.join(tempDir, "state.sqlite");
+  writeRecordedMigrations(dbPath, [{ id: 1, name: "Seed" }]);
+  const persistence = SqlitePersistence.layerFromPathWithoutMigrations(dbPath).pipe(
+    Layer.provide(NodeServices.layer),
+  );
+
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const tables = yield* sql<{ readonly name: string }>`
+      SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name
+    `;
+    assert.deepEqual(
+      tables.map(({ name }) => name),
+      ["effect_sql_migrations"],
+    );
+    const recorded = yield* sql<{ readonly count: number }>`
+      SELECT COUNT(*) AS count FROM effect_sql_migrations
+    `;
+    assert.equal(recorded[0]?.count, 1);
+  }).pipe(
+    Effect.provide(persistence),
+    Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
+  );
+});
+
+it.effect("refuses a CLI database whose migrations are newer than this build", () => {
+  const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-sqlite-ahead-"));
+  const dbPath = NodePath.join(tempDir, "state.sqlite");
+  const newer = BUILD_MIGRATION_HEAD + 1;
+  writeRecordedMigrations(dbPath, [{ id: newer, name: "Newer" }]);
+  const persistence = SqlitePersistence.layerFromPathWithoutMigrations(dbPath).pipe(
+    Layer.provide(NodeServices.layer),
+  );
+
+  return Effect.gen(function* () {
+    const error = yield* Layer.build(persistence).pipe(Effect.flip);
+    assert.equal(error._tag, "DatabaseMigrationsAheadError");
+    assert.include(error.message, String(newer));
+    assert.include(error.message, String(BUILD_MIGRATION_HEAD));
+    assert.include(error.message, dbPath);
+  }).pipe(
+    Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
+  );
+});
