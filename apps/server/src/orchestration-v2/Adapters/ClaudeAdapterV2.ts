@@ -132,9 +132,9 @@ import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
-import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -360,6 +360,9 @@ const WORKFLOW_MEMBER_TRANSCRIPT_FLUSH_MS = 500;
 const BACKGROUND_MOVE_TIMEOUT_MS = 5_000;
 // How long a Stop waits for the CLI to exit before the user is offered Force stop.
 const CLAUDE_STOP_CONFIRM_TIMEOUT_MS = 10_000;
+// A request with no frame never settles. Long tools emit task progress, so ten
+// minutes of complete silence means Claude stopped answering the request.
+export const CLAUDE_REQUEST_SILENCE_LIMIT = "10 minutes" as const;
 
 const CLAUDE_GROUP_WATCH_SCRIPT = [
   "{ trap '' TERM; read -r _ <&3; kill -TERM 0; sleep 5; kill -KILL 0; } </dev/null >/dev/null 2>&1 &",
@@ -588,8 +591,6 @@ export interface ClaudeAgentSdkQuerySession {
   readonly close: Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
 }
 
-type ClaudeQueryStreamExit = Exit.Exit<void, ClaudeAgentSdkQueryRunnerError>;
-
 export class ClaudeAgentSdkQueryRunnerError extends Schema.TaggedError<ClaudeAgentSdkQueryRunnerError>()(
   "ClaudeAgentSdkQueryRunnerError",
   {
@@ -608,6 +609,18 @@ class ClaudeMcpRegistrationTimeoutError extends Schema.TaggedError<ClaudeMcpRegi
 ) {
   override get message(): string {
     return "Claude timed out while registering its MCP tools. Retry the turn; if it keeps failing, check Claude and the server logs.";
+  }
+}
+
+export class ClaudeRequestSilenceError extends Schema.TaggedError<ClaudeRequestSilenceError>()(
+  "ClaudeRequestSilenceError",
+  {
+    limit: Schema.String,
+    silence: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Claude produced no output for ${this.silence} while waiting for the model response. The silence limit is ${this.limit}.`;
   }
 }
 
@@ -3893,6 +3906,49 @@ const awaitClaudeUserInputAnswers = Effect.fn("awaitClaudeUserInputAnswers")(fun
   return yield* Effect.raceFirst(Deferred.await(answers), cancellation);
 });
 
+function formatClaudeRequestSilence(millis: number): string {
+  return millis > 0 && millis % 60_000 === 0
+    ? `${millis / 60_000} minute${millis === 60_000 ? "" : "s"}`
+    : Duration.format(Duration.millis(millis));
+}
+
+const watchClaudeRequestSilence = Effect.fnUntraced(function* (input: {
+  readonly limit: Duration.Duration;
+  readonly activeTurn: Ref.Ref<ActiveClaudeTurnContext | null>;
+  readonly pendingRuntimeRequests: Ref.Ref<Map<string, PendingClaudeRuntimeRequest>>;
+  readonly activity: Ref.Ref<Deferred.Deferred<void>>;
+  readonly exceeded: Deferred.Deferred<never, ClaudeAgentSdkQueryRunnerError>;
+}) {
+  const limitMs = Duration.toMillis(input.limit);
+  const awaitActivity = Ref.get(input.activity).pipe(Effect.flatMap(Deferred.await));
+  while (true) {
+    if (
+      (yield* Ref.get(input.activeTurn)) === null ||
+      (yield* Ref.get(input.pendingRuntimeRequests)).size > 0
+    ) {
+      yield* awaitActivity;
+      continue;
+    }
+    const armedAt = yield* Clock.currentTimeMillis;
+    const woke = yield* awaitActivity.pipe(Effect.timeoutOption(input.limit));
+    if (Option.isSome(woke)) continue;
+    if ((yield* Ref.get(input.activeTurn)) === null) continue;
+    if ((yield* Ref.get(input.pendingRuntimeRequests)).size > 0) continue;
+    const silenceMs = (yield* Clock.currentTimeMillis) - armedAt;
+    yield* Deferred.fail(
+      input.exceeded,
+      new ClaudeAgentSdkQueryRunnerError({
+        method: "messages",
+        cause: new ClaudeRequestSilenceError({
+          limit: formatClaudeRequestSilence(limitMs),
+          silence: formatClaudeRequestSilence(silenceMs),
+        }),
+      }),
+    );
+    return;
+  }
+});
+
 /** Exclude CLI-internal "[ede_diagnostic] ..." telemetry from error banners. */
 function resultUserFacingError(result: SDKResultMessage): string | undefined {
   const errors = "errors" in result && Array.isArray(result.errors) ? result.errors : [];
@@ -4870,6 +4926,8 @@ export interface ClaudeAdapterV2Options {
       request: ProviderContinuationRequests.ProviderContinuationRequest,
     ) => Effect.Effect<void>;
   };
+  /** Silence allowed while a request is outstanding; tests inject a shorter limit. */
+  readonly requestSilenceLimit?: Duration.Input;
 }
 
 const MODEL_PATTERN = /\[1m\]$/i;
@@ -4881,6 +4939,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
   const { attachmentsDir, fileSystem, path, random, idAllocator, queryRunner } = adapterOptions;
+  const requestSilenceLimit = Duration.fromInputUnsafe(
+    adapterOptions.requestSilenceLimit ?? CLAUDE_REQUEST_SILENCE_LIMIT,
+  );
   const loadModelCatalog = (
     adapterOptions.modelCatalog ?? Effect.succeed(BUNDLED_CLAUDE_MODEL_CATALOG)
   ).pipe(
@@ -5197,6 +5258,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         const pendingRuntimeRequests = yield* Ref.make(
           new Map<string, PendingClaudeRuntimeRequest>(),
         );
+        // A frame, a request start, or a user-wait ending restarts the silence timer.
+        const requestActivity = yield* Ref.make(yield* Deferred.make<void>());
+        const noteRequestActivity = Effect.gen(function* () {
+          const next = yield* Deferred.make<void>();
+          const previous = yield* Ref.getAndSet(requestActivity, next);
+          yield* Deferred.succeed(previous, undefined);
+        });
         // Background local_bash tasks can trigger wake turns on the query stream with no active provider turn.
         const lastTurnRouteByNativeThread = yield* Ref.make(
           new Map<
@@ -8348,6 +8416,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           yield* Ref.update(activeTurn, (current) =>
             current?.providerTurnId === input.context.providerTurnId ? null : current,
           );
+          yield* noteRequestActivity;
           if (input.status === "completed") {
             settledTurnByNativeThread.set(input.context.nativeThreadId, input.context);
           } else {
@@ -10560,6 +10629,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               });
               return updated;
             });
+            yield* noteRequestActivity;
             yield* Effect.all(
               [
                 emitProviderEvent({
@@ -10589,7 +10659,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   const updated = new Map(current);
                   updated.delete(String(artifacts.request.id));
                   return updated;
-                }),
+                }).pipe(Effect.andThen(noteRequestActivity)),
               ),
             );
             if (!(yield* Deferred.isDone(answers))) yield* cancelWithdrawnRequest(artifacts);
@@ -10700,6 +10770,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             });
             return updated;
           });
+          yield* noteRequestActivity;
           yield* Effect.all(
             [
               emitProviderEvent({
@@ -10730,7 +10801,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 const updated = new Map(current);
                 updated.delete(String(artifacts.request.id));
                 return updated;
-              }),
+              }).pipe(Effect.andThen(noteRequestActivity)),
             ),
           );
           if (!(yield* Deferred.isDone(decision))) yield* cancelWithdrawnRequest(artifacts);
@@ -10797,6 +10868,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             });
             return updated;
           });
+          yield* noteRequestActivity;
           yield* Effect.all(
             [
               emitProviderEvent({
@@ -10829,7 +10901,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 const updated = new Map(current);
                 updated.delete(String(artifacts.request.id));
                 return updated;
-              }),
+              }).pipe(Effect.andThen(noteRequestActivity)),
             ),
           );
           if (resolved === "cancel" && callbackOptions.signal.aborted) {
@@ -11270,76 +11342,89 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             }
             return context;
           });
-          yield* querySession.messages.pipe(
-            Stream.runForEach((message) =>
-              sdkMessageLock.withPermits(1)(
-                Effect.suspend(() => {
-                  if (
-                    message.type === "system" &&
-                    message.subtype === "init" &&
-                    !context.receivedInit
-                  ) {
-                    context.openedPermissionMode =
-                      message.permissionMode ?? context.openedPermissionMode;
-                    context.receivedInit = true;
-                    context.capabilities = new Set(message.capabilities ?? []);
-                  }
-                  if (
-                    message.type === "system" &&
-                    (message.subtype === "init" || message.subtype === "status") &&
-                    message.permissionMode !== undefined
-                  ) {
-                    context.permissionMode = message.permissionMode;
-                  }
-                  if (message.type === "result") {
-                    for (const [model, window] of claudeReportedContextWindows(
-                      message.modelUsage,
-                    )) {
-                      if (reportedContextWindows.get(model) === window) continue;
-                      reportedContextWindows.set(model, window);
-                      resultsReportingNewContextWindow.add(message);
+          const requestSilenceExceeded = yield* Deferred.make<
+            never,
+            ClaudeAgentSdkQueryRunnerError
+          >();
+          yield* Effect.gen(function* () {
+            yield* watchClaudeRequestSilence({
+              limit: requestSilenceLimit,
+              activeTurn,
+              pendingRuntimeRequests,
+              activity: requestActivity,
+              exceeded: requestSilenceExceeded,
+            }).pipe(Effect.forkScoped);
+            const exit = yield* querySession.messages.pipe(
+              Stream.tap(() => noteRequestActivity),
+              Stream.runForEach((message) =>
+                sdkMessageLock.withPermits(1)(
+                  Effect.suspend(() => {
+                    if (
+                      message.type === "system" &&
+                      message.subtype === "init" &&
+                      !context.receivedInit
+                    ) {
+                      context.openedPermissionMode =
+                        message.permissionMode ?? context.openedPermissionMode;
+                      context.receivedInit = true;
+                      context.capabilities = new Set(message.capabilities ?? []);
                     }
-                  }
-                  return Ref.get(activeTurn).pipe(
-                    Effect.flatMap((turn) =>
-                      handleSdkMessage({ query: querySession, message }).pipe(
-                        TraceContext.withinTraceContext(
-                          turn === null ? {} : TraceContext.forTurn(turn.input),
+                    if (
+                      message.type === "system" &&
+                      (message.subtype === "init" || message.subtype === "status") &&
+                      message.permissionMode !== undefined
+                    ) {
+                      context.permissionMode = message.permissionMode;
+                    }
+                    if (message.type === "result") {
+                      for (const [model, window] of claudeReportedContextWindows(
+                        message.modelUsage,
+                      )) {
+                        if (reportedContextWindows.get(model) === window) continue;
+                        reportedContextWindows.set(model, window);
+                        resultsReportingNewContextWindow.add(message);
+                      }
+                    }
+                    return Ref.get(activeTurn).pipe(
+                      Effect.flatMap((turn) =>
+                        handleSdkMessage({ query: querySession, message }).pipe(
+                          TraceContext.withinTraceContext(
+                            turn === null ? {} : TraceContext.forTurn(turn.input),
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                }),
+                    );
+                  }),
+                ),
               ),
-            ),
-            Effect.exit,
-            Effect.flatMap(
-              Effect.fnUntraced(function* (exit: ClaudeQueryStreamExit) {
-                const heldContext = yield* Ref.get(activeTurn);
-                if (
-                  (yield* Ref.get(queryContext))?.query === querySession &&
-                  heldContext !== null &&
-                  heldContext.heldRootFrames.length > 0
-                ) {
-                  yield* releaseHeldRootFrames(heldContext);
-                }
-                const ownsLiveQuery = yield* Ref.modify(queryContext, (current) =>
-                  current?.query === querySession ? [true, null] : [false, current],
-                );
-                if (ownsLiveQuery) {
-                  yield* finalizeActiveTurnAfterQueryExit(
-                    context,
-                    exit._tag === "Failure" ? exit.cause : undefined,
-                  );
-                  yield* endSubagentCallsOfClosedQuery(
-                    context.nativeThreadId,
-                    context.stopping ? "interrupted" : "failed",
-                  );
-                } else {
-                  yield* endSubagentsOfReplacedQuery(context);
-                }
-              }),
-            ),
+              Effect.raceFirst(Deferred.await(requestSilenceExceeded)),
+              Effect.exit,
+            );
+            const heldContext = yield* Ref.get(activeTurn);
+            if (
+              (yield* Ref.get(queryContext))?.query === querySession &&
+              heldContext !== null &&
+              heldContext.heldRootFrames.length > 0
+            ) {
+              yield* releaseHeldRootFrames(heldContext);
+            }
+            const ownsLiveQuery = yield* Ref.modify(queryContext, (current) =>
+              current?.query === querySession ? [true, null] : [false, current],
+            );
+            if (ownsLiveQuery) {
+              yield* finalizeActiveTurnAfterQueryExit(
+                context,
+                exit._tag === "Failure" ? exit.cause : undefined,
+              );
+              yield* endSubagentCallsOfClosedQuery(
+                context.nativeThreadId,
+                context.stopping ? "interrupted" : "failed",
+              );
+            } else {
+              yield* endSubagentsOfReplacedQuery(context);
+            }
+          }).pipe(
+            Effect.scoped,
             Effect.ensuring(Deferred.succeed(closed, undefined)),
             TraceContext.withoutTurnContext,
             Effect.forkIn(sessionScope),
@@ -11482,6 +11567,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             const attachTurn = Effect.gen(function* () {
               querySession.lastTurn = context;
               yield* Ref.set(activeTurn, context);
+              yield* noteRequestActivity;
               if (
                 !isClaudeProviderContinuationTurn(turnInput) &&
                 permissionModeForClaudeRuntimePolicy(turnInput.runtimePolicy) ===
@@ -12643,7 +12729,11 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
     input: ProviderAdapterDriverCreateInput<ClaudeSettings>,
     hooks: Pick<
       ClaudeAdapterV2Options,
-      "scopedLimitNames" | "onUsageLimits" | "modelCatalog" | "routeModelCatalog"
+      | "scopedLimitNames"
+      | "onUsageLimits"
+      | "modelCatalog"
+      | "routeModelCatalog"
+      | "requestSilenceLimit"
     > = {},
   ) {
     const { instanceId, environment, enabled, config } = input;
