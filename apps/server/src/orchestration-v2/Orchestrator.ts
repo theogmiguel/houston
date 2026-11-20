@@ -2075,6 +2075,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     );
   });
 
+  // A stale wake cancels itself and then lets the next queued run start; the ref keeps the
+  // recursive call out of the function's own type inference.
+  const startNextQueuedRunRef = yield* Ref.make<
+    (threadId: ThreadId) => Effect.Effect<void, Error>
+  >(() => Effect.void);
   const startNextQueuedRun = Effect.fn("Orchestrator.startNextQueuedRun")(
     function* (
       threadId: ThreadId,
@@ -2314,7 +2319,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 },
               ]),
         ]);
-        yield* startNextQueuedRun(threadId);
+        yield* (yield* Ref.get(startNextQueuedRunRef))(threadId).pipe(
+          Effect.mapError(
+            (cause) =>
+              new OrchestratorDispatchError({
+                commandId,
+                commandType: "message.dispatch",
+                cause,
+              }),
+          ),
+        );
         return;
       }
 
@@ -2973,6 +2987,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         Effect.catch((cause) => failQueuedRunStart(threadId, cause, options?.queuedRunId)),
       ),
   );
+  yield* Ref.set(startNextQueuedRunRef, (threadId) => startNextQueuedRun(threadId));
 
   // Under load a resumed provider can time out before taking the prompt; the restart still owes the turn.
   const retryContinuationStart = Effect.fn("Orchestrator.retryContinuationStart")(function* (

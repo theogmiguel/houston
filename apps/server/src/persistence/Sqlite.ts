@@ -82,30 +82,29 @@ const makeLayerSetup = (applyMigrations: boolean) =>
 const layerSetup = makeLayerSetup(true);
 const layerSetupWithoutMigrations = makeLayerSetup(false);
 
-const layerWithSetup = (
+const layerWithSetup = Effect.fn("layerWithSetup")(function* (
   dbPath: string,
   setup: typeof layerSetup,
-): Effect.Effect<Layer.Layer<never>, never, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    yield* fs.makeDirectory(path.dirname(dbPath), { recursive: true });
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  yield* fs.makeDirectory(path.dirname(dbPath), { recursive: true });
 
-    return Layer.provideMerge(
-      setup,
-      NodeSqliteClient.layer({
-        filename: dbPath,
-        readerWorker: true,
-        readerPragmas: READER_PRAGMAS,
-        // Run checkpoint fsyncs off the event loop so slow disk flushes cannot stall clients.
-        checkpointWorker: true,
-        spanAttributes: {
-          "db.name": path.basename(dbPath),
-          "service.name": "houston-server",
-        },
-      }),
-    );
-  });
+  return Layer.provideMerge(
+    setup,
+    NodeSqliteClient.layer({
+      filename: dbPath,
+      readerWorker: true,
+      readerPragmas: READER_PRAGMAS,
+      // Run checkpoint fsyncs off the event loop so slow disk flushes cannot stall clients.
+      checkpointWorker: true,
+      spanAttributes: {
+        "db.name": path.basename(dbPath),
+        "service.name": "houston-server",
+      },
+    }),
+  );
+});
 
 export const layerFromPath = Effect.fn("makeSqlitePersistenceLive")(
   function* (dbPath: string) {
