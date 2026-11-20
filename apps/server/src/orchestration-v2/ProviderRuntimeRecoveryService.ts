@@ -10,6 +10,7 @@ import {
   type OrchestrationV2ThreadProjection,
   isOrchestrationV2WorkActive,
   ThreadId,
+  TurnItemId,
 } from "@houston-app/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -162,6 +163,17 @@ const cancelledItem = (
         completedAt: now,
         updatedAt: now,
       };
+
+function recoveryCancellationNoticeOrdinal(
+  turnItems: OrchestrationV2ThreadProjection["turnItems"],
+  runId: OrchestrationV2ThreadProjection["runs"][number]["id"],
+): number {
+  let ordinal = 0;
+  for (const item of turnItems) {
+    if (item.runId === runId && item.ordinal >= ordinal) ordinal = item.ordinal + 1;
+  }
+  return ordinal;
+}
 
 function latestStartedRun(
   projection: ProjectionStore.ProjectionRuntimeRecoveryState,
@@ -535,6 +547,35 @@ export const make = Effect.gen(function* () {
           providerInstanceId: run.providerInstanceId,
           occurredAt: now,
           payload: { ...run, status: "cancelled", queuePosition: null, completedAt: now },
+        });
+        // The cancellation reason reaches the timeline as a notice beside the
+        // cancelled run, so the thread explains why the run ended.
+        events.push({
+          id: yield* allocateEventId(),
+          type: "turn-item.updated",
+          threadId: projection.thread.id,
+          runId: run.id,
+          ...(run.rootNodeId === null ? {} : { nodeId: run.rootNodeId }),
+          providerInstanceId: run.providerInstanceId,
+          occurredAt: now,
+          payload: {
+            id: TurnItemId.make(`turn-item:recovery-cancel:${run.id}`),
+            threadId: projection.thread.id,
+            runId: run.id,
+            nodeId: run.rootNodeId,
+            providerThreadId: run.providerThreadId,
+            providerTurnId: null,
+            nativeItemRef: null,
+            parentItemId: null,
+            ordinal: recoveryCancellationNoticeOrdinal(projection.turnItems, run.id),
+            type: "system_notice",
+            status: "completed",
+            title: detail,
+            message: detail,
+            startedAt: now,
+            completedAt: now,
+            updatedAt: now,
+          },
         });
         for (const attempt of projection.attempts.filter(
           (candidate) =>
