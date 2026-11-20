@@ -21,6 +21,7 @@ async function show(daily: readonly DailyTotals[]) {
     <UsageActivity
       timeZone="UTC"
       untilDay="2026-10-31"
+      retentionDays={365}
       selectedEnvironmentIds={null}
       hiddenProviders={new Set()}
     />,

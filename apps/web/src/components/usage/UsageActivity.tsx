@@ -3,6 +3,7 @@ import { UsageDay } from "@houston-app/contracts";
 import { formatDayShort, formatUsd } from "@houston-app/shared/usageFormat";
 import { useMemo } from "react";
 
+import { useT } from "../../i18n/useT";
 import { useUsage } from "../../state/usage";
 import { buildUsageActivityCalendar, usageActivityWindow } from "./usageActivityCalendar";
 
@@ -19,15 +20,18 @@ const WEEKDAY_LABELS = ["", "Mon", "", "Wed", "", "Fri", ""];
 export function UsageActivity({
   timeZone,
   untilDay,
+  retentionDays,
   selectedEnvironmentIds,
   hiddenProviders,
 }: {
   readonly timeZone: string;
   readonly untilDay: string;
+  readonly retentionDays: number;
   readonly selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null;
   readonly hiddenProviders: ReadonlySet<UsageProviderKind>;
 }) {
-  const window = usageActivityWindow(untilDay);
+  const t = useT();
+  const window = usageActivityWindow(untilDay, retentionDays);
   // useUsage stores the answered window by identity; a fresh input every render loops.
   const input = useMemo(
     () => ({
@@ -49,14 +53,19 @@ export function UsageActivity({
         <h2 className="text-[13px] leading-[18px] font-semibold text-[var(--t1)]">Activity</h2>
         {calendar ? (
           <span className="ml-auto text-xs text-[var(--houston)]">
-            {formatUsd(calendar.totalCostUsd)} in the last year
+            {retentionDays >= 365
+              ? t("{cost} in the last year", { cost: formatUsd(calendar.totalCostUsd) })
+              : t("{cost} in the last {days} days", {
+                  cost: formatUsd(calendar.totalCostUsd),
+                  days: retentionDays,
+                })}
           </span>
         ) : null}
       </div>
       {calendar === null ? (
         <p className="mt-3 text-xs text-[var(--houston)]">Loading activity…</p>
       ) : (
-        <ActivityCalendar calendar={calendar} />
+        <ActivityCalendar calendar={calendar} retentionDays={retentionDays} />
       )}
     </section>
   );
@@ -64,9 +73,12 @@ export function UsageActivity({
 
 function ActivityCalendar({
   calendar,
+  retentionDays,
 }: {
   readonly calendar: ReturnType<typeof buildUsageActivityCalendar>;
+  readonly retentionDays: number;
 }) {
+  const t = useT();
   return (
     <div className="mt-3 overflow-x-auto pb-1">
       <div className="grid w-max gap-1">
@@ -96,7 +108,7 @@ function ActivityCalendar({
           </div>
           <div
             role="grid"
-            aria-label="Cost per day over the last year"
+            aria-label={t("Cost per day over the last {days} days", { days: retentionDays })}
             className="grid"
             style={{
               gridAutoFlow: "column",

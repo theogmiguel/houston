@@ -957,6 +957,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "usage-history-retention",
+    title: "Usage history retention",
+    to: "/settings/usage",
+    targetId: "usage-history-retention",
+    searchTerms: ["usage history retention days purge delete older records year keep all"],
+  },
+  {
     id: "usage-providers",
     title: "Usage providers",
     to: "/settings/providers",
