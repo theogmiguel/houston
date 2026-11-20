@@ -22,6 +22,7 @@ import * as Layer from "effect/Layer";
 import {
   makeSubagentChildThread,
   delegatedTaskProgress,
+  runInterruptedByNativeSubagent,
   subagentResultForRun,
   makeSubagentConversationArtifacts,
   endOrphanedNativeSubagent,
@@ -340,6 +341,48 @@ it("waits for nested work and retains the report across monitor acknowledgements
   });
   assert.equal(progress.state, "result_available");
   assert.equal(progress.resultRun?.id, report.id);
+});
+
+it("scopes held background work to the result run's provider thread", () => {
+  const { projection, run } = taskFixture();
+  const followup: OrchestrationV2Run = {
+    ...run,
+    id: RunId.make("followup"),
+    ordinal: 2,
+    providerThreadId: ProviderThreadId.make("provider-thread:followup"),
+    completedAt: DateTime.makeUnsafe("2026-07-24T09:20:00.000Z"),
+  };
+  const progress = delegatedTaskProgress({
+    ...projection,
+    runs: [run, followup],
+    providerThreads: [
+      {
+        id: ProviderThreadId.make("provider-thread:original"),
+        pendingBackgroundTasks: [{ taskId: "stale", kind: "command", awaited: true }],
+      },
+    ],
+  });
+  assert.equal(progress.state, "result_available");
+  assert.equal(progress.resultRun?.id, followup.id);
+});
+
+it("recognizes a completed run whose native subagent was interrupted", () => {
+  const { run } = taskFixture();
+  assert.isTrue(
+    runInterruptedByNativeSubagent(run, [
+      { status: "interrupted", origin: "provider_native", runId: run.id },
+    ]),
+  );
+  assert.isFalse(
+    runInterruptedByNativeSubagent(run, [
+      { status: "completed", origin: "provider_native", runId: run.id },
+    ]),
+  );
+  assert.isFalse(
+    runInterruptedByNativeSubagent(run, [
+      { status: "interrupted", origin: "app_owned", runId: run.id },
+    ]),
+  );
 });
 
 it("exposes the provider failure rather than a progress message from the failed run", () => {

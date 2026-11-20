@@ -94,6 +94,7 @@ import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterReg
 import {
   subagentResultForRun,
   delegatedTaskProgress,
+  runInterruptedByNativeSubagent,
 } from "@houston-app/provider-core/server/subagentProjection";
 import {
   DispatchModeLimit,
@@ -1556,6 +1557,12 @@ const make = Effect.gen(function* () {
         .pipe(Effect.mapError(threadManagementFailure)));
     const workState =
       task.result !== null ? "result_available" : heldForRestart ? "working" : taskWorkState;
+    const resultRun = taskResultRun ?? childRun;
+    const effectiveResultRun =
+      resultRun !== undefined &&
+      runInterruptedByNativeSubagent(resultRun, childControls.subagents)
+        ? { ...resultRun, status: "interrupted" as const }
+        : resultRun;
     const status =
       task.result !== null
         ? taskStatusForRun(
@@ -1567,15 +1574,15 @@ const make = Effect.gen(function* () {
               : childRun,
           )
         : workState === "result_available"
-          ? taskStatusForRun(taskResultRun ?? childRun)
-          : taskStatusForRun(taskResultRun ?? childRun) === "queued"
+          ? taskStatusForRun(effectiveResultRun)
+          : taskStatusForRun(effectiveResultRun) === "queued"
             ? "queued"
             : "running";
     const derivedResult =
       task.result !== null
         ? task.result
-        : taskResultRun !== undefined && isTerminalTaskStatus(status)
-          ? subagentResultForRun(childProjection, taskResultRun).text
+        : effectiveResultRun !== undefined && isTerminalTaskStatus(status)
+          ? subagentResultForRun(childProjection, effectiveResultRun).text
           : null;
     const resultTransfers = parentProjection.contextTransfers.filter(
       (transfer) =>

@@ -222,6 +222,25 @@ export function subagentResultForRun(
   };
 }
 
+/** A completed run whose native subagent was interrupted ended by interruption, not a result. */
+export function runInterruptedByNativeSubagent(
+  run: Pick<OrchestrationV2Run, "id" | "status"> | undefined,
+  subagents: ReadonlyArray<
+    Pick<OrchestrationV2ThreadProjection["subagents"][number], "origin" | "status" | "runId">
+  >,
+): boolean {
+  return (
+    run !== undefined &&
+    (run.status === "completed" || run.status === "cancelled") &&
+    subagents.some(
+      (task) =>
+        task.origin === "provider_native" &&
+        (task.status === "interrupted" || task.status === "cancelled") &&
+        task.runId === run.id,
+    )
+  );
+}
+
 export function delegatedTaskProgress(projection: {
   readonly runs: OrchestrationV2ThreadProjection["runs"];
   readonly messages: ReadonlyArray<
@@ -231,7 +250,8 @@ export function delegatedTaskProgress(projection: {
     Pick<OrchestrationV2ThreadProjection["subagents"][number], "status" | "completionDelivery">
   >;
   readonly providerThreads: ReadonlyArray<
-    Pick<OrchestrationV2ThreadProjection["providerThreads"][number], "pendingBackgroundTasks">
+    Pick<OrchestrationV2ThreadProjection["providerThreads"][number], "pendingBackgroundTasks"> &
+      Partial<Pick<OrchestrationV2ThreadProjection["providerThreads"][number], "id">>
   >;
 }) {
   const terminal = (status: string) =>
@@ -247,6 +267,12 @@ export function delegatedTaskProgress(projection: {
   const active = workRuns.some(
     (run) => !terminal(run.status) && !(run.status === "queued" && run.queueHeld === true),
   );
+  const resultRun = workRuns
+    .filter((run) => terminal(run.status) && (run.startedAt !== null || run.ordinal === 1))
+    .toSorted((a, b) => (runRanAfter(a, b) ? -1 : runRanAfter(b, a) ? 1 : 0))[0];
+  // Background work holds completion only when it belongs to the run whose
+  // result is being read, so a follow-up never waits on a prior turn's work.
+  const resultProviderThreadId = resultRun?.providerThreadId;
   const children =
     projection.subagents.some(
       (task) =>
@@ -257,12 +283,14 @@ export function delegatedTaskProgress(projection: {
           (task.completionDelivery?.state === "pending" ||
             task.completionDelivery?.state === "claimed")),
     ) ||
-    projection.providerThreads.some((thread) =>
-      backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks ?? []),
-    );
-  const resultRun = workRuns
-    .filter((run) => terminal(run.status) && (run.startedAt !== null || run.ordinal === 1))
-    .toSorted((a, b) => (runRanAfter(a, b) ? -1 : runRanAfter(b, a) ? 1 : 0))[0];
+    projection.providerThreads
+      .filter(
+        (thread) =>
+          resultProviderThreadId === undefined ||
+          resultProviderThreadId === null ||
+          thread.id === resultProviderThreadId,
+      )
+      .some((thread) => backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks ?? []));
   return {
     state:
       active || resultRun === undefined
