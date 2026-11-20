@@ -1,8 +1,8 @@
 import type { OrchestrationV2TurnItem } from "@houston-app/contracts";
-import { expect, it } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
 
 import "~/index.css";
-import { render } from "../../../test/render";
+import { render, stubGlobal } from "../../../test/render";
 import { TimelineFileChangeCard } from "./TimelineFileChangeCard";
 
 type FileChangeItem = Extract<OrchestrationV2TurnItem, { type: "file_change" }>;
@@ -90,4 +90,24 @@ it("keeps the inline diff behind the shared row and qualifies it with its own li
   expect(getComputedStyle(row).borderTopLeftRadius).toBe(resolveRadius("var(--r-ctl)"));
   await expect.element(screen.getByText("context")).toBeVisible();
   await expect.element(screen.getByText("added")).toBeVisible();
+});
+it("starts a native drag for a changed file chip", async () => {
+  const startFileDrag = vi.fn(async () => {});
+  using _bridge = stubGlobal("hostBridge", { startFileDrag });
+  await using screen = await render(
+    <TimelineFileChangeCard item={fileChange()} workspaceRoot="/work/atlas-api" />,
+    { router: false },
+  );
+  const chip = screen.container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Open diff for atlas-api/CHANGELOG.md"]',
+  )!;
+  const event = new DragEvent("dragstart", { bubbles: true, cancelable: true });
+
+  chip.dispatchEvent(event);
+
+  expect(event.defaultPrevented).toBe(true);
+  expect(startFileDrag).toHaveBeenCalledWith({
+    path: "/work/atlas-api/CHANGELOG.md",
+    workspaceRoot: "/work/atlas-api",
+  });
 });

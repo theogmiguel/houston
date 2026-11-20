@@ -9,6 +9,7 @@ import { memo, type MouseEvent as ReactMouseEvent } from "react";
 
 import { readLocalApi } from "../../localApi";
 import { cn } from "../../lib/utils";
+import { filePillDragHandlers } from "~/lib/filePillDrag";
 import { shouldOpenMarkdownFileLinkInEditor } from "../../markdown-links";
 import type { markdownFileCopyPaths } from "../../markdownFileHostPath";
 import { documentChipKindForFileName } from "../../pierre-icons";
@@ -30,6 +31,7 @@ interface MarkdownFileLinkProps {
   targetPath: string;
   iconPath: string;
   workspaceRelativePath: string | null;
+  workspaceRoot?: string | undefined;
   panelPath: string | null;
   line?: number | undefined;
   label: string;
@@ -54,6 +56,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
   targetPath,
   iconPath,
   workspaceRelativePath,
+  workspaceRoot,
   panelPath,
   line,
   label,
@@ -322,6 +325,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
     canOpenInPanel,
   });
   const chipKind = documentChipKindForFileName(iconPath) ?? "mention";
+  const drag = filePillDragHandlers({ path: workspaceRelativePath, workspaceRoot });
 
   return (
     <Tooltip>
@@ -348,6 +352,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
                 handleOpenInFilePreview();
               }}
               onContextMenu={handleContextMenu}
+              {...drag}
             >
               <FileTagChipContent
                 path={iconPath}
@@ -367,6 +372,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
               data-markdown-copy={copyMarkdown}
               onClick={handleContextMenu}
               onContextMenu={handleContextMenu}
+              {...drag}
             >
               <FileTagChipContent
                 path={iconPath}

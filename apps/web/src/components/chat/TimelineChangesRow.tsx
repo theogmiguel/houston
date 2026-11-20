@@ -4,6 +4,7 @@ import { ChevronRightIcon, FileIcon, PencilIcon } from "lucide-react";
 import { useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
+import { filePillDragHandlers } from "~/lib/filePillDrag";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import {
@@ -37,6 +38,7 @@ export function TimelineFileChip({
   readonly onContextMenu?: ((event: ReactMouseEvent<HTMLButtonElement>) => void) | undefined;
 }) {
   const label = formatWorkspaceRelativePath(file.path, workspaceRoot);
+  const drag = filePillDragHandlers({ path: file.path, workspaceRoot });
   return (
     <button
       type="button"
@@ -44,6 +46,7 @@ export function TimelineFileChip({
       onClick={onOpen}
       onContextMenu={onContextMenu}
       className={TIMELINE_CHANGE_CHIP_CLS}
+      {...drag}
     >
       <FileIcon aria-hidden className={cn(TIMELINE_CHANGE_ICON_CLS, "text-(--houston)")} />
       <span className={TIMELINE_CHANGE_LABEL_CLS}>{label}</span>

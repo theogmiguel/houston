@@ -950,6 +950,7 @@ function useChatMarkdownState({
         targetPath={fileLinkMeta.targetPath}
         iconPath={fileLinkMeta.filePath}
         workspaceRelativePath={fileLinkMeta.workspaceRelativePath}
+        workspaceRoot={cwd}
         panelPath={panelPath}
         line={fileLinkMeta.line}
         label={fileLinkLabel(
