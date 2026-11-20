@@ -72,3 +72,51 @@ it("renders the idle-disabled send glyph at full opacity in the muted ink", asyn
   const button = page.getByRole("button", { name: "Submit message" }).element();
   expect(Number(getComputedStyle(button.querySelector("svg")!).opacity)).toBe(1);
 });
+
+function renderStop(interruptPending: boolean, onInterrupt: () => void) {
+  return render(
+    <TooltipProvider delay={0}>
+      <ComposerPrimaryActions
+        compact={false}
+        canOperateThread
+        pendingAction={null}
+        isRunning={false}
+        runningStartedAt="2026-06-20T12:00:00.000Z"
+        canInterrupt
+        interruptPending={interruptPending}
+        showPlanFollowUpPrompt={false}
+        promptHasText={false}
+        isSendBusy={false}
+        sendDisabledReason={null}
+        isEnvironmentUnavailable={false}
+        isPreparingWorktree={false}
+        hasSendableContent={false}
+        onSubmitMessage={() => {}}
+        onPreviousPendingQuestion={() => {}}
+        onInterrupt={onInterrupt}
+        onImplementPlanInNewThread={() => {}}
+      />
+    </TooltipProvider>,
+  );
+}
+
+it("marks the Stop control as stopping and ignores repeated clicks while pending", async () => {
+  let interrupts = 0;
+  await using _screen = await renderStop(true, () => {
+    interrupts += 1;
+  });
+  const button = page.getByRole("button", { name: "Stopping…" });
+  await expect.element(button).toBeDisabled();
+  const element = button.element() as HTMLButtonElement;
+  element.click();
+  expect(interrupts).toBe(0);
+});
+
+it("sends one interrupt when the Stop control is not pending", async () => {
+  let interrupts = 0;
+  await using _screen = await renderStop(false, () => {
+    interrupts += 1;
+  });
+  await page.getByRole("button", { name: "Stop generation · Running" }).click();
+  expect(interrupts).toBe(1);
+});

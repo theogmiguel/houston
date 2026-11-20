@@ -450,6 +450,8 @@ export interface ChatComposerProps {
 
   phase: SessionPhase;
   canInterrupt: boolean;
+  /** A Stop request or the server's own stopping state keeps the Stop control pending. */
+  interruptPending?: boolean;
   /** The provider can redirect an active run in place; otherwise a steer queues instead. */
   canSteerActiveRun: boolean;
   isSendBusy: boolean;
@@ -622,6 +624,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     projectSelectionRequired,
     phase,
     canInterrupt,
+    interruptPending = false,
     canSteerActiveRun,
     isSendBusy,
     canResume,
@@ -4093,6 +4096,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       pendingAction={pendingPrimaryAction}
                       isRunning={false}
                       canInterrupt={false}
+                      interruptPending={false}
                       showPlanFollowUpPrompt={false}
                       promptHasText={false}
                       isSendBusy={isSendBusy}
@@ -4196,6 +4200,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     runningStartedAt={phase === "running" ? (activeTurnStartedAt ?? null) : null}
                     runningStateLabel={threadStatusPill?.label ?? null}
                     canInterrupt={canInterrupt}
+                    interruptPending={interruptPending}
                     followUpBehavior={followUpBehavior}
                     canSteer={!isCompacting && canSteerActiveRun}
                     alternateShortcutLabel={shortcutLabelForCommand(

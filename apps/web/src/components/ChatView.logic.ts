@@ -1293,6 +1293,30 @@ export function releaseChatTimelineAnchor<T extends { readonly messageId: Messag
   return current.messageId === null ? current : { ...current, messageId: null };
 }
 
+/** The Stop control stays pending from the click until the run ends or the server reports it. */
+export function resolveInterruptPending(input: {
+  readonly requestedThreadKey: string | null;
+  readonly activeThreadKey: string | null;
+  readonly serverStopPending: boolean;
+}): boolean {
+  return (
+    input.serverStopPending ||
+    (input.requestedThreadKey !== null && input.requestedThreadKey === input.activeThreadKey)
+  );
+}
+
+/** Clears a local Stop request once another thread is active or the run has settled. */
+export function shouldClearInterruptRequest(input: {
+  readonly requestedThreadKey: string | null;
+  readonly activeThreadKey: string | null;
+  readonly serverStopPending: boolean;
+  readonly runtimeActive: boolean;
+}): boolean {
+  if (input.requestedThreadKey === null) return false;
+  if (input.requestedThreadKey !== input.activeThreadKey) return true;
+  return !input.serverStopPending && !input.runtimeActive;
+}
+
 // The factories below build functions ChatView calls during render, or hands
 // to ChatComposer, which can call them after an await. They live outside the
 // component so each closure keeps only its inputs, not a whole render scope

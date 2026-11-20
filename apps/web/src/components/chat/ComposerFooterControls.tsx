@@ -336,6 +336,8 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
   /** The running thread's status word, such as "Waiting" while it is blocked on the user. */
   runningStateLabel?: string | null;
   canInterrupt: boolean;
+  /** A Stop request or the server's own stopping state keeps the Stop control pending. */
+  interruptPending?: boolean;
   followUpBehavior: "queue" | "steer";
   canSteer: boolean;
   alternateShortcutLabel: string | null;
@@ -388,6 +390,7 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
         runningStartedAt={props.runningStartedAt ?? null}
         runningStateLabel={props.runningStateLabel ?? null}
         canInterrupt={props.canInterrupt}
+        interruptPending={props.interruptPending ?? false}
         followUpBehavior={props.followUpBehavior}
         canSteer={props.canSteer}
         alternateShortcutLabel={props.alternateShortcutLabel}

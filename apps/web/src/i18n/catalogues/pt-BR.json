@@ -324,5 +324,8 @@
   "Delete older records": "Excluir registros mais antigos",
   "{cost} in the last year": "{cost} no último ano",
   "{cost} in the last {days} days": "{cost} nos últimos {days} dias",
-  "Cost per day over the last {days} days": "Custo por dia nos últimos {days} dias"
+  "Cost per day over the last {days} days": "Custo por dia nos últimos {days} dias",
+  "Stopping…": "Parando…",
+  "Stop generation": "Parar geração",
+  "Esc to interrupt": "Esc para interromper"
 }

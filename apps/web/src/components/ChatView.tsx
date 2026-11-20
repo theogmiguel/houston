@@ -13,6 +13,8 @@ import {
   deriveThreadPendingBackgroundTasks,
   deriveWorkspaceMutationId,
   presentThreadShellFromProjection,
+  resolveInterruptPending,
+  shouldClearInterruptRequest,
 } from "./ChatView.logic";
 import { usePullRequestDraftThread } from "./chat/usePullRequestDraftThread";
 import { useComposerSelection } from "./chat/useComposerSelection";
@@ -146,6 +148,7 @@ import {
   type AtomCommandResult,
 } from "@houston-app/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
+import { threadRuntimeIsActive } from "@houston-app/client-runtime/state/shell";
 import { isDesktopHost } from "../env";
 import { useDiffPanelStore } from "../diffPanelStore";
 import { useActiveThreadRef } from "../hooks/useActiveThreadRef";
@@ -273,6 +276,7 @@ import {
   useThreadHistory,
   useQuietThreadShell,
   useThreadCheckpointSummaries,
+  useThreadRunStop,
 } from "../state/entities";
 import { useEnvironmentShellHasSnapshot } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
@@ -1958,22 +1962,50 @@ export default function ChatView(props: ChatViewProps) {
   const focusComposerStable = useStableCallback(focusComposer);
   const canInterruptRunningThread =
     canOperateThread && deriveCanInterruptRunningThread(activeThread !== undefined, activeRuntime);
+  const runStop = useThreadRunStop(routeThreadDetailRef);
+  const [interruptRequestThreadKey, setInterruptRequestThreadKey] = useState<string | null>(null);
+  const serverStopPending = runStop !== null;
+  const runtimeActive = threadRuntimeIsActive(activeRuntime);
+  const interruptPending = resolveInterruptPending({
+    requestedThreadKey: interruptRequestThreadKey,
+    activeThreadKey,
+    serverStopPending,
+  });
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- clears the click's pending Stop once the server's run ends or the view moves on
+  useEffect(() => {
+    if (
+      !shouldClearInterruptRequest({
+        requestedThreadKey: interruptRequestThreadKey,
+        activeThreadKey,
+        serverStopPending,
+        runtimeActive,
+      })
+    ) {
+      return;
+    }
+    setInterruptRequestThreadKey(null);
+  }, [activeThreadKey, interruptRequestThreadKey, runtimeActive, serverStopPending]);
   const onInterrupt = async () => {
     if (
+      interruptPending ||
       !activeThread ||
       !readEnvironmentScope(activeThread.environmentId, AuthOrchestrationOperateScope)
     )
       return;
+    if (activeThreadKey !== null) setInterruptRequestThreadKey(activeThreadKey);
     const result = await interruptThreadTurn({
       environmentId,
       input: { threadId: activeThread.id },
     });
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      const error = squashAtomCommandFailure(result);
-      setThreadError(
-        activeThread.id,
-        error instanceof Error ? error.message : "Failed to interrupt the current turn.",
-      );
+    if (result._tag === "Failure") {
+      setInterruptRequestThreadKey(null);
+      if (!isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        setThreadError(
+          activeThread.id,
+          error instanceof Error ? error.message : "Failed to interrupt the current turn.",
+        );
+      }
     }
   };
   const onInterruptStable = useStableCallback(onInterrupt);
@@ -4011,6 +4043,7 @@ export default function ChatView(props: ChatViewProps) {
                               canSteerActiveRun={canSteerActiveRun}
                               isCompacting={isCompacting}
                               canInterrupt={canInterruptRunningThread}
+                              interruptPending={interruptPending}
                               isSendBusy={
                                 (isSendBusy && !sendQueuesBehindSetup) ||
                                 (setupQueueSendThreadKey !== null &&

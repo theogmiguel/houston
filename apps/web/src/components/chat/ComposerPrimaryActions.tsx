@@ -14,6 +14,7 @@ import { formatContextWindowTokens } from "~/lib/contextWindow";
 import { formatDuration } from "@houston-app/shared/orchestrationTiming";
 import { tickTextContent } from "~/lib/tickTextContent";
 import { cn, isMacPlatform } from "~/lib/utils";
+import { useT } from "~/i18n/useT";
 import { useShortcutModifierState } from "../../shortcutModifierState";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
@@ -43,6 +44,8 @@ interface ComposerPrimaryActionsProps {
   /** The running thread's status word, such as "Waiting" while it is blocked on the user. */
   runningStateLabel?: string | null;
   canInterrupt: boolean;
+  /** A Stop request or the server's own stopping state keeps the Stop control pending. */
+  interruptPending?: boolean;
   followUpBehavior?: "queue" | "steer";
   canSteer?: boolean;
   alternateShortcutLabel?: string | null;
@@ -171,6 +174,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   runningStartedAt = null,
   runningStateLabel = null,
   canInterrupt,
+  interruptPending = false,
   followUpBehavior = "steer",
   canSteer = true,
   alternateShortcutLabel = null,
@@ -197,6 +201,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   const pointerFocusProps = preserveComposerFocusOnPointerDown
     ? { onPointerDown: preventPointerFocus }
     : undefined;
+  const t = useT();
   const shortcutModifiers = useShortcutModifierState();
   const isQueuing =
     !isEditingQueuedMessage &&
@@ -212,6 +217,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   const running = runningStartedAt !== null;
   const runningWord = runningStateLabel ?? "Running";
   const runningStartedMs = runningStartedAt === null ? null : Date.parse(runningStartedAt);
+  const stopping = t("Stopping…");
   const renderStopGenerationButton = () => (
     <Tooltip key="interrupt">
       <TooltipTrigger
@@ -219,37 +225,55 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           <button
             type="button"
             data-composer-running={running ? "true" : undefined}
+            data-composer-stopping={interruptPending ? "true" : undefined}
             className={cn(
               "flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full bg-(--sel) text-(--t1) transition-colors duration-150 hover:bg-(--hover) disabled:pointer-events-none disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:size-3.5",
               boardFocusRing,
             )}
             {...pointerFocusProps}
-            disabled={!canOperateThread}
+            disabled={!canOperateThread || interruptPending}
             onClick={() => {
-              if (canOperateThread) onInterrupt();
+              if (canOperateThread && !interruptPending) onInterrupt();
             }}
-            aria-label={running ? `Stop generation · ${runningWord}` : "Stop generation"}
+            aria-label={
+              interruptPending
+                ? stopping
+                : running
+                  ? `${t("Stop generation")} · ${runningWord}`
+                  : t("Stop generation")
+            }
           />
         }
       >
-        <SquareIcon aria-hidden="true" fill="currentColor" stroke="none" />
+        {interruptPending ? (
+          <Spinner size="sm" aria-hidden="true" />
+        ) : (
+          <SquareIcon aria-hidden="true" fill="currentColor" stroke="none" />
+        )}
       </TooltipTrigger>
       <TooltipPopup>
-        <div className="flex items-center gap-1.5">
-          <span>{runningWord}</span>
-          {running ? (
-            <>
-              <span aria-hidden>·</span>
-              <span
-                ref={tickTextContent(
-                  (nowMs) => formatDuration(Math.max(1_000, nowMs - (runningStartedMs ?? nowMs))),
-                  true,
-                )}
-              />
-            </>
-          ) : null}
-        </div>
-        <div>Esc to interrupt</div>
+        {interruptPending ? (
+          <div>{stopping}</div>
+        ) : (
+          <>
+            <div className="flex items-center gap-1.5">
+              <span>{runningWord}</span>
+              {running ? (
+                <>
+                  <span aria-hidden>·</span>
+                  <span
+                    ref={tickTextContent(
+                      (nowMs) =>
+                        formatDuration(Math.max(1_000, nowMs - (runningStartedMs ?? nowMs))),
+                      true,
+                    )}
+                  />
+                </>
+              ) : null}
+            </div>
+            <div>{t("Esc to interrupt")}</div>
+          </>
+        )}
       </TooltipPopup>
     </Tooltip>
   );

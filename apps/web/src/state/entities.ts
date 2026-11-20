@@ -27,6 +27,7 @@ import type {
   ThreadId,
 } from "@houston-app/contracts";
 import type { ThreadCheckpointSummary } from "@houston-app/client-runtime/state/thread-checkpoints";
+import type { RunStopPresentation } from "@houston-app/client-runtime/state/thread-execution";
 import { Atom } from "effect/reactivity";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentProjects } from "./projects";
@@ -80,6 +81,9 @@ const EMPTY_SECOND_OPINION_REVIEWS_ATOM = Atom.make<ReadonlyMap<RunId, ScopedThr
 ).pipe(Atom.withLabel("web-second-opinion-reviews:empty"));
 const EMPTY_THREAD_HISTORY_ATOM = Atom.make<ThreadHistoryMeta>(EMPTY_THREAD_HISTORY_META).pipe(
   Atom.withLabel("web-thread-history:empty"),
+);
+const EMPTY_RUN_STOP_ATOM = Atom.make<RunStopPresentation | null>(null).pipe(
+  Atom.withLabel("web-thread-run-stop:empty"),
 );
 
 export function useThreadRefs(enabled = true): ReadonlyArray<ScopedThreadRef> {
@@ -265,6 +269,13 @@ export function useThreadStatus(ref: ScopedThreadRef | null): EnvironmentThreadS
 export function useThreadHistory(ref: ScopedThreadRef | null): ThreadHistoryMeta {
   return useAtomValue(
     ref === null ? EMPTY_THREAD_HISTORY_ATOM : environmentThreadDetails.historyAtom(ref),
+  );
+}
+
+/** A Stop the server has not finished yet; see presentRunStop. */
+export function useThreadRunStop(ref: ScopedThreadRef | null): RunStopPresentation | null {
+  return useAtomValue(
+    ref === null ? EMPTY_RUN_STOP_ATOM : environmentThreadDetails.runStopAtom(ref),
   );
 }
 
