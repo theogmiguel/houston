@@ -147,6 +147,16 @@ describe("storage cleanup settings", () => {
   });
 });
 
+describe("ServerSettings usage retention", () => {
+  it("defaults to the current window and bounds the stored days", () => {
+    expect(decodeServerSettings({}).usageRetentionDays).toBe(365);
+    expect(decodeServerSettings({ usageRetentionDays: null }).usageRetentionDays).toBeNull();
+    expect(decodeServerSettings({ usageRetentionDays: 365 }).usageRetentionDays).toBe(365);
+    expect(() => decodeServerSettings({ usageRetentionDays: 0 })).toThrow();
+    expect(() => decodeServerSettings({ usageRetentionDays: 366 })).toThrow();
+  });
+});
+
 describe("ServerSettings usage price overrides", () => {
   const prices = { inputCostPerMillionTokens: 2, outputCostPerMillionTokens: 8 };
 

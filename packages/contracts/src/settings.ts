@@ -23,7 +23,7 @@ import {
   TrimmedString,
 } from "./baseSchemas.ts";
 import { UsageLimitSourceId } from "./usageLimitSourceId.ts";
-import { UsageModelFilter } from "./usage.ts";
+import { USAGE_RETENTION_DEFAULT_DAYS, UsageModelFilter, UsageRetentionDays } from "./usage.ts";
 import { SecretProviderId, SecretProviderSlug } from "./secretReference.ts";
 import { EnvironmentMachineKind, ThreadEnvMode, WorktreeSubmodules } from "./environment.ts";
 import { KeybindingShortcut } from "./keybindings.ts";
@@ -1563,6 +1563,11 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
 
+  /** Rolling days of Usage records to keep; null keeps the supported maximum. */
+  usageRetentionDays: UsageRetentionDays.pipe(
+    Schema.withDecodingDefault(Effect.succeed(USAGE_RETENTION_DEFAULT_DAYS)),
+  ),
+
   /** Sent by the Usage tab with each summary request to this environment; edit in settings.json. Invalid values are ignored. */
   usageModelFilter: ForwardCompatibleOptional(UsageModelFilter),
 });
@@ -1931,6 +1936,8 @@ export const ServerSettingsPatch = Schema.Struct({
   usageModelAliases: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, Schema.NullOr(TrimmedNonEmptyString)),
   ),
+
+  usageRetentionDays: Schema.optionalKey(UsageRetentionDays),
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 

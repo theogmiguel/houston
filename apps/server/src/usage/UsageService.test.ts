@@ -2793,8 +2793,8 @@ describe("UsageService", () => {
     Effect.gen(function* () {
       yield* TestClock.setTime(Date.parse("2026-08-12T00:00:00Z"));
       const { transcript, settings, home } = yield* setup;
-      // The saved-usage cache keeps 92 days counted from the real clock, so the
-      // transcript date must move with it instead of being a fixed calendar day.
+      // The saved-usage window is measured from the clock, so the transcript date
+      // must move with it instead of being a fixed calendar day.
       const dayMs = 24 * 60 * 60 * 1000;
       const writtenAtMs = (yield* Clock.currentTimeMillis) - 10 * dayMs;
       const isoAt = (ms: number) => DateTime.formatIso(DateTime.makeUnsafe(ms));
@@ -2833,6 +2833,65 @@ describe("UsageService", () => {
       assert.deepStrictEqual(later.buckets, []);
       assert.strictEqual(later.sources[0]?.status, "missing");
       assert.strictEqual(later.sources[0]?.scannedFiles, 0);
+    }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
+  );
+
+  it.live("purges cached usage at the configured retention boundary", () =>
+    Effect.gen(function* () {
+      const now = Date.parse("2026-08-12T00:00:00Z");
+      yield* TestClock.setTime(now);
+      const { transcript, settings, home } = yield* setup;
+      const dayMs = 24 * 60 * 60 * 1000;
+      const window: UsageSummaryInput = {
+        timeZone: "UTC",
+        sinceDay: UsageDay.make("2026-08-06"),
+        untilDay: UsageDay.make("2026-08-12"),
+      };
+      yield* Effect.gen(function* () {
+        const { stateDir } = yield* ServerConfig.ServerConfig;
+        const dir = NodePath.dirname(transcript);
+        const boundary = NodePath.join(dir, "boundary.jsonl");
+        const older = NodePath.join(dir, "older.jsonl");
+        const entry = (mtimeMs: number) => ({
+          size: 0,
+          mtimeMs,
+          provider: "claude" as const,
+          records: [],
+          tailRecords: [],
+          malformedRecords: 0,
+          position: { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null },
+        });
+        const cache = makeScanCacheWriter()(
+          new Map([
+            [boundary, entry(now - 2 * dayMs)],
+            [older, entry(now - 2 * dayMs - 1)],
+          ]),
+          {},
+        );
+        yield* Effect.promise(async () => {
+          await NodeFSP.mkdir(stateDir, { recursive: true });
+          await NodeFSP.writeFile(NodePath.join(stateDir, SCAN_CACHE_FILE_NAME), cache);
+        });
+
+        const service = yield* UsageService.make;
+        yield* service.readSummary(window);
+        yield* service.awaitPersisted;
+
+        const persisted = JSON.parse(
+          yield* Effect.promise(() =>
+            NodeFSP.readFile(NodePath.join(stateDir, SCAN_CACHE_FILE_NAME), "utf8"),
+          ),
+        ) as { readonly files: Readonly<Record<string, unknown>> };
+        assert.deepStrictEqual(Object.keys(persisted.files).sort(), [boundary]);
+      }).pipe(
+        Effect.provide(
+          layerService({
+            prefix: "usage-service-retention-prune",
+            home,
+            settings: { ...settings, usageRetentionDays: 2 },
+          }),
+        ),
+      );
     }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
   );
 
