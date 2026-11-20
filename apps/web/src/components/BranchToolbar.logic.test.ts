@@ -7,6 +7,7 @@ import {
   resolveDraftEnvModeAfterBranchChange,
   resolveEffectiveEnvMode,
   resolveBranchToolbarPrBranch,
+  resolveBranchSwitchBlockedReason,
   resolveLocalCheckoutBranchMismatch,
   sanitizeNewRefName,
   shouldIncludeBranchPickerItem,
@@ -252,5 +253,17 @@ describe("sanitizeNewRefName", () => {
   it("does not collapse dashes the user typed", () => {
     expect(sanitizeNewRefName("new - branch")).toBe("new---branch");
     expect(sanitizeNewRefName("foo--bar")).toBe("foo--bar");
+  });
+});
+
+describe("resolveBranchSwitchBlockedReason", () => {
+  it("blocks branch changes while a turn runs", () => {
+    expect(resolveBranchSwitchBlockedReason({ isTurnActive: true })).toBe(
+      "Stop the running turn to switch branches.",
+    );
+  });
+
+  it("allows branch changes when the thread is idle", () => {
+    expect(resolveBranchSwitchBlockedReason({ isTurnActive: false })).toBeNull();
   });
 });

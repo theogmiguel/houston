@@ -327,5 +327,7 @@
   "Cost per day over the last {days} days": "Custo por dia nos últimos {days} dias",
   "Stopping…": "Parando…",
   "Stop generation": "Parar geração",
-  "Esc to interrupt": "Esc para interromper"
+  "Esc to interrupt": "Esc para interromper",
+  "Stop the running turn to switch branches.": "Pare o turno em execução para trocar de branch.",
+  "Turn running": "Turno em execução"
 }

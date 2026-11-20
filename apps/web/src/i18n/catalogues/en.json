@@ -327,5 +327,7 @@
   "Cost per day over the last {days} days": "Cost per day over the last {days} days",
   "Stopping…": "Stopping…",
   "Stop generation": "Stop generation",
-  "Esc to interrupt": "Esc to interrupt"
+  "Esc to interrupt": "Esc to interrupt",
+  "Stop the running turn to switch branches.": "Stop the running turn to switch branches.",
+  "Turn running": "Turn running"
 }
