@@ -4,6 +4,8 @@ import { describe, expect, it } from "@effect/vitest";
 
 import {
   acceptsPrivateNetworkConnection,
+  makePrivateNetworkRejectionLogger,
+  PRIVATE_NETWORK_REJECTION_LOG_MAX_ADDRESSES,
   resolveHeadlessConnectionString,
 } from "./startupAccess.ts";
 
@@ -71,5 +73,48 @@ describe("acceptsPrivateNetworkConnection", () => {
     expect(accepts("203.0.113.7", "192.168.1.31")).toBe(false);
     expect(accepts("169.254.10.1", "169.254.10.2")).toBe(false);
     expect(accepts(undefined, "192.168.1.31")).toBe(false);
+  });
+});
+
+describe("makePrivateNetworkRejectionLogger", () => {
+  it("logs at most one line per address per minute", () => {
+    let now = 0;
+    const logged: string[] = [];
+    const log = makePrivateNetworkRejectionLogger({
+      now: () => now,
+      log: (address) => logged.push(address),
+    });
+    log("203.0.113.7");
+    log("203.0.113.7");
+    now += 59_999;
+    log("203.0.113.7");
+    expect(logged).toEqual(["203.0.113.7"]);
+    now += 1;
+    log("203.0.113.7");
+    expect(logged).toEqual(["203.0.113.7", "203.0.113.7"]);
+    log("198.51.100.4");
+    expect(logged).toEqual(["203.0.113.7", "203.0.113.7", "198.51.100.4"]);
+  });
+
+  it("names an unknown address rather than dropping the line", () => {
+    const logged: string[] = [];
+    const log = makePrivateNetworkRejectionLogger({
+      now: () => 0,
+      log: (address) => logged.push(address),
+    });
+    log(undefined);
+    expect(logged).toEqual(["unknown"]);
+  });
+
+  it("keeps the table bounded", () => {
+    const logged: string[] = [];
+    const log = makePrivateNetworkRejectionLogger({
+      now: () => 0,
+      log: (address) => logged.push(address),
+    });
+    for (let index = 0; index < PRIVATE_NETWORK_REJECTION_LOG_MAX_ADDRESSES + 10; index++) {
+      log(`192.0.2.${index}`);
+    }
+    expect(logged).toHaveLength(PRIVATE_NETWORK_REJECTION_LOG_MAX_ADDRESSES + 10);
   });
 });
