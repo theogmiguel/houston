@@ -186,7 +186,6 @@ import {
   sidebarGroupNameCls,
   type SidebarMenuOptions,
 } from "../ui/sidebar-sections";
-import { SIDEBAR_ROW_SURFACE_CLS } from "../ui/sidebar-rail-recipes";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
@@ -1780,7 +1779,6 @@ export function SidebarWorkspaceGroup({
     if (refusal !== null) explain("Could not rename workspace", refusal);
   };
   const createThread = () => onCreateThread(workspaceId);
-  const headingSurfaceCls = open ? SIDEBAR_ROW_SURFACE_CLS.selected : null;
   const focusWorkspaceFromHeading = () => {
     if (collapsed) onToggleCollapsed();
     useLayoutStore.getState().focusWorkspace(workspaceId);
@@ -1876,7 +1874,6 @@ export function SidebarWorkspaceGroup({
         data-reorder-side={reorderTarget ?? undefined}
         className={cn(
           SIDEBAR_GROUP_HEADING_ROW_CLS,
-          headingSurfaceCls,
           reorderHighlight && SIDEBAR_GROUP_HEADING_DROP_CLS,
         )}
         onPointerDown={(event) => {
