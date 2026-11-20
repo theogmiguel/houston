@@ -256,6 +256,51 @@ it("opens a subagent through the layout pane's opener instead of leaving the lay
   expect(screen.router?.state.location.pathname).toBe(pathname);
 });
 
+it("marks a running subagent with its provider's logo instead of the generic agent glyph", async () => {
+  setup();
+  const projection = makeThreadProjectionFixture();
+  const childId = ThreadId.make("provider-glyph-child");
+  state.projection = {
+    ...projection,
+    subagents: [
+      {
+        id: NodeId.make("agent"),
+        threadId: projection.thread.id,
+        runId: null,
+        parentNodeId: NodeId.make("parent"),
+        origin: "app_owned",
+        createdBy: "agent",
+        driver: "codex",
+        providerInstanceId: projection.thread.providerInstanceId,
+        providerThreadId: null,
+        childThreadId: childId,
+        nativeTaskRef: null,
+        prompt: "Inspect the change",
+        title: "Glyph child",
+        model: null,
+        status: "running",
+        result: null,
+        startedAt: projection.thread.updatedAt,
+        completedAt: null,
+        updatedAt: projection.thread.updatedAt,
+      },
+    ],
+  };
+  await using screen = await render(
+    <ThreadOpenProvider open={vi.fn()}>
+      <ThreadRelationshipsPanel
+        environmentId={EnvironmentId.make("local")}
+        threadId={projection.thread.id}
+        showLineage
+        showSideChats
+      />
+    </ThreadOpenProvider>,
+  );
+  const row = screen.getByRole("button", { name: /Glyph child/ }).element();
+  expect(row.querySelector("svg.lucide-bot")).toBeNull();
+  expect(row.querySelector("svg")).not.toBeNull();
+});
+
 it("shows a lineage thread's full title in its tooltip", async () => {
   setup();
   const longTitle = "Compare the lineage tooltip against a title that the row truncates";

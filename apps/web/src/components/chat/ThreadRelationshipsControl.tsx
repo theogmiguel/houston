@@ -36,6 +36,7 @@ import {
   type OrchestrationV2RemoteTaskChild,
   type OrchestrationV2Subagent,
   type OrchestrationV2ThreadShell,
+  type ProviderDriverKind,
   type ServerProvider,
   type ThreadId,
 } from "@houston-app/contracts";
@@ -71,6 +72,8 @@ import { serverEnvironment } from "../../state/server";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
+  shouldShowInstanceBadge,
+  type ProviderInstanceEntry,
 } from "../../providerInstances";
 import { threadEnvironment } from "../../state/threads";
 import { orchestrationEnvironment } from "../../state/orchestration";
@@ -79,6 +82,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { AgentElapsed } from "./AgentElapsed";
 import { threadRelationshipStatusLabel } from "./ThreadRelationshipIcon";
 import { ThreadLineageWorkflowRow } from "./ThreadLineageWorkflowRow";
+import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { openSideChatTab } from "../../lib/sideChatPane";
 
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
@@ -207,8 +211,38 @@ const RELATIONSHIP_ICONS: Record<string, LucideIcon> = {
   "Delegated from": CornerUpLeftIcon,
 };
 
-/** The leading glyph of a lineage row, matching the other rows of the details card. */
-function RelationshipGlyph(props: { readonly relationship: string }) {
+/** The provider that runs a lineage row's agent, shown in place of the generic glyph. */
+type RelationshipProvider = {
+  readonly driver: ProviderDriverKind;
+  readonly provider: ServerProvider | undefined;
+  readonly entries: ReadonlyArray<ProviderInstanceEntry>;
+};
+
+/**
+ * The leading glyph of a lineage row, matching the other rows of the details card. A subagent
+ * shows its provider's logo when the provider is known, and the generic glyph otherwise.
+ */
+function RelationshipGlyph(props: {
+  readonly relationship: string;
+  readonly provider?: RelationshipProvider | undefined;
+}) {
+  if (props.relationship === "Subagent" && props.provider !== undefined) {
+    const { driver, provider, entries } = props.provider;
+    const entry = entries.find((candidate) => candidate.instanceId === provider?.instanceId);
+    return (
+      <ProviderInstanceIcon
+        driverKind={driver}
+        displayName={entry?.displayName ?? provider?.displayName ?? driver}
+        accentColor={entry?.accentColor}
+        acpRegistryAgentId={entry?.acpRegistryAgentId}
+        acpRegistryIconUrl={entry?.acpRegistryIconUrl ?? provider?.iconUrl}
+        showBadge={entry !== undefined && shouldShowInstanceBadge(entry, entries)}
+        size="compact"
+        iconClassName={THREAD_DETAILS_PANEL_ICON_CLASS}
+        className="z-auto"
+      />
+    );
+  }
   const Icon = RELATIONSHIP_ICONS[props.relationship] ?? BotIcon;
   return <Icon aria-hidden className={THREAD_DETAILS_PANEL_ICON_CLASS} />;
 }
@@ -306,7 +340,18 @@ function RemoteSubagentRow(props: {
           }
         >
           <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            <RelationshipGlyph relationship="Subagent" />
+            <RelationshipGlyph
+              relationship="Subagent"
+              provider={
+                (props.agent.driver ?? props.provider?.driver) === undefined
+                  ? undefined
+                  : {
+                      driver: (props.agent.driver ?? props.provider?.driver) as ProviderDriverKind,
+                      provider: props.provider,
+                      entries: [],
+                    }
+              }
+            />
             <span className="shrink-0 truncate">Subagent</span>
             <span className="min-w-0 truncate text-muted-foreground">{title}</span>
           </span>
@@ -751,7 +796,14 @@ export function ThreadRelationshipsPanel(props: {
     const relationshipContent = (
       <>
         <span className="flex min-w-0 flex-1 items-center gap-1.5">
-          <RelationshipGlyph relationship={relationship} />
+          <RelationshipGlyph
+            relationship={relationship}
+            provider={
+              providerDriver === undefined
+                ? undefined
+                : { driver: providerDriver, provider, entries: providerEntries }
+            }
+          />
           <span className="shrink-0 truncate">{relationship}</span>
           <span className="min-w-0 truncate text-muted-foreground">{threadTitle}</span>
         </span>
