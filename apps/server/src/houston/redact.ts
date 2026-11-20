@@ -1,14 +1,21 @@
 // Credential shapes and paths Houston masks wherever text leaves the server: the merge queue's
 // verification output, Slack messages and pull requests.
 
+import { SENSITIVE_QUERY_PARAM_NAMES } from "@houston-app/shared/sensitiveNames";
+
 const REGEX_SPECIAL_CHARS = /[.*+?^${}()|[\]\\]/g;
 const TRAILING_PATH_SEPARATORS = /[\\/]+$/;
 const ESCAPED_PATH_SEPARATOR = /\\\\|\//g;
 
 const escape = (text: string) => text.replace(REGEX_SPECIAL_CHARS, "\\$&");
 
-// A credential-named key, bare or quoted as in JSON, then `=` or `:`.
-const KEY = String.raw`\b((?:[A-Za-z0-9_]*(?:token|secret|password|passwd|api[_-]?key))["']?\s*[=:]\s*`;
+// A credential-named key, bare or quoted as in JSON, then `=` or `:`. The suffix list catches
+// arbitrarily prefixed names (`accessToken`, `clientSecret`); the shared OAuth parameter list
+// catches names such as `code`, `state` and `dpop` that the suffix list would miss.
+const SENSITIVE_KEY_SOURCE =
+  `[A-Za-z0-9_]*(?:token|secret|password|passwd|api[_-]?key)|` +
+  SENSITIVE_QUERY_PARAM_NAMES.map(escape).join("|");
+const KEY = String.raw`\b((?:${SENSITIVE_KEY_SOURCE})["']?\s*[=:]\s*`;
 
 export type CredentialRules = ReadonlyArray<readonly [RegExp, string]>;
 

@@ -31,6 +31,30 @@ describe("HttpObservability.layer", () => {
     }).pipe(Effect.provide(HttpObservability.layer), Effect.withTracer(tracer));
   });
 
+  it.effect("redacts OAuth codes, states and tokens on HTTP client spans", () => {
+    const spans: Array<Tracer.NativeSpan> = [];
+    const tracer = Tracer.make({
+      span: (options) => {
+        const span = new Tracer.NativeSpan(options);
+        spans.push(span);
+        return span;
+      },
+    });
+    const client = HttpClient.make((request) =>
+      Effect.succeed(HttpClientResponse.fromWeb(request, new Response("ok"))),
+    );
+    return Effect.gen(function* () {
+      yield* client.get("https://example.com/cb?code=abc&state=xyz&access_token=tok");
+      const span = spans.find((candidate) => candidate.kind === "client")!;
+      expect(span.attributes.get("url.full")).toBe(
+        "https://example.com/cb?code=REDACTED&state=REDACTED&access_token=REDACTED",
+      );
+      expect(span.attributes.get("url.query")).toBe(
+        "code=REDACTED&state=REDACTED&access_token=REDACTED",
+      );
+    }).pipe(Effect.provide(HttpObservability.layer), Effect.withTracer(tracer));
+  });
+
   it.effect("redacts the Datadog API key header when request headers are recorded", () => {
     const spans: Array<Tracer.NativeSpan> = [];
     const tracer = Tracer.make({

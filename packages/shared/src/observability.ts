@@ -14,6 +14,7 @@ import * as Tracer from "effect/Tracer";
 import { OtlpResource, OtlpTracer, OtlpSerialization } from "effect/observability";
 
 import { makeAsyncRotatingFileSink } from "./logging.ts";
+import { SENSITIVE_QUERY_PARAM_NAMES } from "./sensitiveNames.ts";
 
 export const OtlpProtocol = Schema.Literals(["http/json", "http/protobuf"]);
 export type OtlpProtocol = typeof OtlpProtocol.Type;
@@ -402,20 +403,39 @@ function spanToTraceRecord(span: SerializableSpan): EffectTraceRecord {
   };
 }
 
-// WebSocket tickets and their DPoP proofs ride in URL queries and stay valid after the request.
-const URL_CREDENTIAL_PARAM_NAMES = ["wsTicket", "dpop"] as const;
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// WebSocket tickets, DPoP proofs, and OAuth parameters ride in URL queries, bodies and JSON
+// fragments and stay valid after the request. `name=value` covers a URL, query string or
+// key=value text; `"name":"value"` covers a serialized JSON fragment. Case-insensitive, and the
+// value stops at its own `&`/`#`/`"`/whitespace boundary, so unrelated text is left alone.
+const SENSITIVE_NAME_ALTERNATION = SENSITIVE_QUERY_PARAM_NAMES.map(escapeRegExp).join("|");
 const URL_CREDENTIAL_PARAMS = new RegExp(
-  String.raw`(^|[?&"\s])(${URL_CREDENTIAL_PARAM_NAMES.join("|")})=[^&#"\\\s]*`,
-  "g",
+  String.raw`((?:^|[?&"\s])(?:${SENSITIVE_NAME_ALTERNATION})=)([^&#"\\\s]*)` +
+    String.raw`|("(?:${SENSITIVE_NAME_ALTERNATION})"\s*:\s*")([^"]*)(")`,
+  "gi",
 );
-// The pattern is case-sensitive and every match contains `<name>=` verbatim, so text without one
-// of these markers cannot match. Nearly no span carries one, and `includes` costs far less than
-// scanning every serialized trace record with the pattern.
-const URL_CREDENTIAL_MARKERS = URL_CREDENTIAL_PARAM_NAMES.map((name) => `${name}=`);
+// Every match contains `<name>=` or `"<name>"`, so text without one of those markers cannot
+// match. Nearly no span carries one, and the marker check costs far less than scanning every
+// serialized trace record with the pattern.
+const SENSITIVE_MARKERS = SENSITIVE_QUERY_PARAM_NAMES.flatMap((name) => {
+  const lower = name.toLowerCase();
+  return [`${lower}=`, `"${lower}"`];
+});
+const hasSensitiveMarker = (text: string) => {
+  const lower = text.toLowerCase();
+  return SENSITIVE_MARKERS.some((marker) => lower.includes(marker));
+};
 
 export const redactUrlCredentials = (text: string) =>
-  URL_CREDENTIAL_MARKERS.some((marker) => text.includes(marker))
-    ? text.replace(URL_CREDENTIAL_PARAMS, "$1$2=<redacted>")
+  hasSensitiveMarker(text)
+    ? text.replace(
+        URL_CREDENTIAL_PARAMS,
+        (match, keyValueHead, keyValueValue, jsonHead, jsonValue, jsonTail) =>
+          keyValueHead !== undefined
+            ? `${keyValueHead}<redacted>`
+            : `${jsonHead}<redacted>${jsonTail}`,
+      )
     : text;
 
 export const makeTraceSink = Effect.fn("makeTraceSink")(function* (options: TraceSinkOptions) {

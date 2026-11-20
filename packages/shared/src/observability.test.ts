@@ -32,6 +32,7 @@ import {
   processServiceInstanceId,
   redactUrlCredentials,
 } from "./observability.ts";
+import { SENSITIVE_QUERY_PARAM_NAMES } from "./sensitiveNames.ts";
 
 describe("processServiceInstanceId", () => {
   it("stays the same for the process unless the operator set one", () => {
@@ -123,33 +124,37 @@ const layerTest = (tracePath: string) =>
 
 const nodeServicesIt = it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer));
 
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 // The redaction pattern before the marker pre-check, kept as the oracle for its equivalence.
-const UNCONDITIONAL_URL_CREDENTIALS = /(^|[?&"\s])(wsTicket|dpop)=[^&#"\\\s]*/g;
+const SENSITIVE_NAME_ALTERNATION = SENSITIVE_QUERY_PARAM_NAMES.map(escapeRegExp).join("|");
+const UNCONDITIONAL_URL_CREDENTIALS = new RegExp(
+  String.raw`((?:^|[?&"\s])(?:${SENSITIVE_NAME_ALTERNATION})=)([^&#"\\\s]*)` +
+    String.raw`|("(?:${SENSITIVE_NAME_ALTERNATION})"\s*:\s*")([^"]*)(")`,
+  "gi",
+);
+const redactUnconditional = (text: string) =>
+  text.replace(
+    UNCONDITIONAL_URL_CREDENTIALS,
+    (match, keyValueHead, keyValueValue, jsonHead, jsonValue, jsonTail) =>
+      keyValueHead !== undefined ? `${keyValueHead}<redacted>` : `${jsonHead}<redacted>${jsonTail}`,
+  );
 
 const urlCredentialCorpus = (): ReadonlyArray<string> => {
-  const names = [
-    "wsTicket",
-    "dpop",
-    "WSTICKET",
-    "wsticket",
-    "WsTicket",
-    "DPOP",
-    "Dpop",
-    "dPoP",
-    "%77sTicket",
-    "ws%54icket",
-    "%64pop",
-    "\\u0077sTicket",
-    "\\u0064pop",
-    "ws Ticket",
-  ];
-  const separators = ["=", "%3D", "%3d", "\\u003d", "\\u003D", " =", "=="];
-  const prefixes = ["", "?", "&", '"', " ", "\n", "\t", '\\"', "/ws?", "x", "#", ";"];
+  const names = SENSITIVE_QUERY_PARAM_NAMES.flatMap((name) => [
+    name,
+    name.toUpperCase(),
+    name[0]!.toUpperCase() + name.slice(1),
+  ]);
+  const separators = ["=", " =", "=="];
+  const prefixes = ["", "?", "&", '"', " ", "\n", "\t", '\\"', "/cb?", "x", "#", ";"];
   const values = ["secret", "", "a&b", 'a"b', "a\\b", "a#b", "a b"];
   const corpus: Array<string> = [
+    "https://host/cb?code=abc&state=xyz",
+    "https://host/cb?code=abc&state=xyz&access_token=secret-token",
+    '{"code":"abc","state":"xyz"}',
+    '{"code": "abc", "access_token": "secret"}',
     "/ws?wsTicket=ticket-secret&dpop=proof-secret&clientSurface=web",
-    "http://127.0.0.1:3773/ws?wsTicket=ticket-secret&dpop=proof-secret&clientSurface=web",
-    "RequestParseError (GET /ws?wsTicket=ticket-secret&dpop=proof-secret)",
     "wsTicket=REDACTED&clientOs=linux&dpop=REDACTED",
     "no credentials here",
     "",
@@ -162,6 +167,7 @@ const urlCredentialCorpus = (): ReadonlyArray<string> => {
         }
       }
     }
+    corpus.push(`"${name}":"abc"`, `"${name}": "abc"`, `{"${name}":"abc"}`);
   }
   // Trace records carry these strings inside serialized JSON, sometimes JSON nested in JSON.
   return corpus.flatMap((text) => [
@@ -176,13 +182,39 @@ describe("redactUrlCredentials", () => {
     const corpus = urlCredentialCorpus();
     let redacted = 0;
     for (const text of corpus) {
-      const expected = text.replace(UNCONDITIONAL_URL_CREDENTIALS, "$1$2=<redacted>");
+      const expected = redactUnconditional(text);
       if (expected !== text) redacted++;
       assert.strictEqual(redactUrlCredentials(text), expected, JSON.stringify(text));
     }
     // The corpus must exercise both outcomes, or the equality above proves nothing.
     assert.isAbove(redacted, 100);
     assert.isAbove(corpus.length - redacted, 100);
+  });
+
+  it("redacts OAuth codes, states and tokens from URLs without touching the host or path", () => {
+    assert.equal(
+      redactUrlCredentials("https://host/cb?code=abc&state=xyz"),
+      "https://host/cb?code=<redacted>&state=<redacted>",
+    );
+    assert.equal(
+      redactUrlCredentials("https://host/cb?code=abc&state=xyz&access_token=token-secret"),
+      "https://host/cb?code=<redacted>&state=<redacted>&access_token=<redacted>",
+    );
+    assert.equal(
+      redactUrlCredentials("https://host/cb?CODE=abc&State=xyz"),
+      "https://host/cb?CODE=<redacted>&State=<redacted>",
+    );
+  });
+
+  it("redacts credential-named keys in JSON fragments", () => {
+    assert.equal(
+      redactUrlCredentials('{"code":"abc","access_token":"token-secret"}'),
+      '{"code":"<redacted>","access_token":"<redacted>"}',
+    );
+    assert.equal(
+      redactUrlCredentials('{"client_secret": "secret-value"}'),
+      '{"client_secret": "<redacted>"}',
+    );
   });
 });
 
@@ -505,9 +537,9 @@ describe("observability", () => {
           const credentialScans = () =>
             replace.mock.contexts.filter((pattern) => String(pattern).includes("wsTicket")).length;
           try {
-            sink.push(makeRecord("plain", "/ws?clientSurface=web&ticket=wsTicket"));
+            sink.push(makeRecord("plain", "/cb?filter=approved&next=/home"));
             assert.strictEqual(credentialScans(), 0);
-            sink.push(makeRecord("credential", "/ws?wsTicket=ticket-secret"));
+            sink.push(makeRecord("credential", "https://host/cb?code=oauth-code&state=xyz"));
             assert.strictEqual(credentialScans(), 1);
           } finally {
             replace.mockRestore();
@@ -515,9 +547,9 @@ describe("observability", () => {
           yield* sink.close();
 
           const written = yield* fileSystem.readFileString(tracePath);
-          assert.notInclude(written, "ticket-secret");
-          assert.include(written, "/ws?wsTicket=<redacted>");
-          assert.include(written, "ticket=wsTicket");
+          assert.notInclude(written, "oauth-code");
+          assert.include(written, "code=<redacted>&state=<redacted>");
+          assert.include(written, "/cb?filter=approved&next=/home");
         }),
       ),
     );
