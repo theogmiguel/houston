@@ -325,15 +325,38 @@ export const DEFAULT_RPC_SPAN_ATTRIBUTES = {
   "rpc.system": "effect-rpc",
 } as const;
 // Diagnostics reads would trace themselves; their spans are unsampled, so nothing below records.
+const DIAGNOSTICS_RPC_METHODS: ReadonlyArray<WsRpcMethod> = [
+  WS_METHODS.serverGetTraceDiagnostics,
+  WS_METHODS.serverGetProcessDiagnostics,
+  WS_METHODS.serverGetProcessResourceHistory,
+  WS_METHODS.serverSignalProcess,
+];
+
+// RPCs whose payload or result carries a credential. Their spans are unsampled, so no payload or
+// result value reaches span attributes, events, the local trace file or an export. This is the
+// single declared set deciding which methods are credential-carrying; a new method of this kind
+// must be added here or its credential rides a sampled span.
+export const CREDENTIAL_CARRYING_WS_METHODS: ReadonlyArray<WsRpcMethod> = [
+  WS_METHODS.secretsAnswerRequest,
+  WS_METHODS.issueTrackersConnect,
+  WS_METHODS.peerLinksLink,
+  WS_METHODS.peerLinksAnswerRequest,
+  WS_METHODS.providerAuthStart,
+  WS_METHODS.providerAuthRespond,
+  WS_METHODS.providerAuthComplete,
+  WS_METHODS.chatGptImportProfile,
+  WS_METHODS.chatGptHandoffSubscribe,
+  WS_METHODS.houstonSlackConnect,
+  WS_METHODS.deviceEasAccount,
+  WS_METHODS.deviceSimlockIdentity,
+  WS_METHODS.serverUpdateSettings,
+  WS_METHODS.houstonObservabilitySetDatadogKey,
+];
+
 export const RPC_SPANS_UNSAMPLED: ReadonlySet<string> = new Set(
-  [
-    WS_METHODS.serverGetTraceDiagnostics,
-    WS_METHODS.serverGetProcessDiagnostics,
-    WS_METHODS.serverGetProcessResourceHistory,
-    WS_METHODS.serverSignalProcess,
-    // Its payload is a credential.
-    WS_METHODS.houstonObservabilitySetDatadogKey,
-  ].map((method) => `${RPC_SPAN_PREFIX}.${method}`),
+  [...DIAGNOSTICS_RPC_METHODS, ...CREDENTIAL_CARRYING_WS_METHODS].map(
+    (method) => `${RPC_SPAN_PREFIX}.${method}`,
+  ),
 );
 
 /** Add after RpcScopeAuthorization to wrap authorization and record rejected calls. */
