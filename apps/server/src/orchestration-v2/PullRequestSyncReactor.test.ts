@@ -1490,6 +1490,50 @@ describe("PullRequestSyncReactor", () => {
     ),
   );
 
+  it.effect("backs off a repeatedly failing read and resets on success", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse(NOW));
+        let fail = true;
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([makeThread("one", { pullRequests: [makeLink(7)] })]),
+          summary: (input) =>
+            fail
+              ? Effect.fail(
+                  new PullRequestOperationError({ operation: "summary", detail: "host down" }),
+                )
+              : Effect.succeed(makeSummary(input)),
+        });
+
+        yield* Effect.gen(function* () {
+          const reactor = yield* startAndSweep(fixture);
+          const reads = () => Ref.get(fixture.summaryCalls).pipe(Effect.map((calls) => calls.length));
+          assert.strictEqual(yield* reads(), 1);
+
+          yield* sweepAgain(fixture, reactor);
+          assert.strictEqual(yield* reads(), 1, "the first retry waits two sweeps");
+          yield* sweepAgain(fixture, reactor);
+          assert.strictEqual(yield* reads(), 2);
+          yield* sweepAgain(fixture, reactor);
+          assert.strictEqual(yield* reads(), 2, "the next retry doubles the wait");
+
+          fail = false;
+          yield* reactor.requestSync({
+            host: "github.com",
+            repository: "owner/repository",
+            number: 7,
+          });
+          yield* Queue.take(fixture.snapshotReads);
+          yield* reactor.drain;
+          assert.strictEqual(yield* reads(), 3);
+
+          yield* sweepAgain(fixture, reactor);
+          assert.strictEqual(yield* reads(), 4, "a success clears the backoff");
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
   it.effect("keeps existing snapshots and continues when the host fails", () =>
     Effect.scoped(
       Effect.gen(function* () {

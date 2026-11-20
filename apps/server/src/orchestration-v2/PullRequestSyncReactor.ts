@@ -47,6 +47,11 @@ const QUIET_SYNC_INTERVAL_MS = 5 * 60 * 1_000;
 // A pull request closed this long ago is rarely reopened, so the sweep stops reading it, as it
 // does merged ones. A reader that sees it open, or a requested refresh, still reads it at once.
 const CLOSED_FINAL_AFTER_MS = 24 * 60 * 60 * 1_000;
+// The sweep runs every minute; a failing read waits two sweeps at first and then doubles, so a
+// host that stays down is asked a few times an hour instead of every minute.
+const FAILURE_BACKOFF_BASE_MS = 2 * 60 * 1_000;
+const FAILURE_BACKOFF_MAX_MS = 30 * 60 * 1_000;
+const FAILURE_BACKOFF_MAX_DOUBLINGS = 16;
 
 const isChangeRequestCloseCommand = (command: string) =>
   sourceControlDefinitions.definitions.some(
@@ -350,9 +355,15 @@ export const make = Effect.gen(function* () {
   const retryStacks = new Set<string>();
   // Pause per project and host because credentials are project-specific; leave paused PRs due until reset.
   const pausedUntil = new Map<string, number>();
+  // Failures per link, and when its next read may start; both clear as soon as a read succeeds.
+  const failedAttempts = new Map<string, number>();
+  const nextAttemptAt = new Map<string, number>();
 
   const isDue = (key: string, entries: ReadonlyArray<LinkEntry>, nowMs: number): boolean => {
-    if (requested.has(key) || retryStacks.has(key)) return true;
+    if (requested.has(key)) return true;
+    const next = nextAttemptAt.get(key);
+    if (next !== undefined && nowMs < next) return false;
+    if (retryStacks.has(key)) return true;
     if (entries.some((entry) => entry.link.snapshot === null)) return true;
     const active = entries.filter((entry) => isUnsettled(entry.thread));
     // Merged snapshots without mergedAt cannot settle threads; reread slowly until supplied.
@@ -406,6 +417,8 @@ export const make = Effect.gen(function* () {
     for (const key of lastSyncedAt.keys()) if (!groups.has(key)) lastSyncedAt.delete(key);
     for (const key of retryStacks) if (!groups.has(key)) retryStacks.delete(key);
     for (const key of requested.keys()) if (!groups.has(key)) requested.delete(key);
+    for (const key of failedAttempts.keys()) if (!groups.has(key)) failedAttempts.delete(key);
+    for (const key of nextAttemptAt.keys()) if (!groups.has(key)) nextAttemptAt.delete(key);
 
     const linkedThisSweep = new Set<string>();
     // Fresh stack reads by group, so a member flagged by a sibling is compared against what the
@@ -584,17 +597,36 @@ export const make = Effect.gen(function* () {
     const skips = new Map<string, { count: number; readonly key: string }>();
     const readGroup = (key: string, entries: ReadonlyArray<LinkEntry>, pauseKey: string) =>
       syncGroup(key, entries).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            failedAttempts.delete(key);
+            nextAttemptAt.delete(key);
+          }),
+        ),
         Effect.catchCause((cause) => {
           if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause);
           const retryAt = rateLimitRetryAt(cause);
           if (retryAt !== undefined) {
             pausedUntil.set(pauseKey, Math.max(retryAt, pausedUntil.get(pauseKey) ?? 0));
           }
-          const reason = skipReason(cause);
-          const skip = skips.get(reason);
-          if (skip === undefined) skips.set(reason, { count: 1, key });
-          else skip.count += 1;
-          return Effect.void;
+          const attempt = (failedAttempts.get(key) ?? 0) + 1;
+          failedAttempts.set(key, attempt);
+          const backoffMs = Math.min(
+            FAILURE_BACKOFF_MAX_MS,
+            FAILURE_BACKOFF_BASE_MS *
+              2 ** Math.min(attempt - 1, FAILURE_BACKOFF_MAX_DOUBLINGS),
+          );
+          return Clock.currentTimeMillis.pipe(
+            Effect.tap((nowMs) => Effect.sync(() => nextAttemptAt.set(key, nowMs + backoffMs))),
+            Effect.andThen(
+              Effect.sync(() => {
+                const reason = skipReason(cause);
+                const skip = skips.get(reason);
+                if (skip === undefined) skips.set(reason, { count: 1, key });
+                else skip.count += 1;
+              }),
+            ),
+          );
         }),
       );
     yield* Effect.forEach(

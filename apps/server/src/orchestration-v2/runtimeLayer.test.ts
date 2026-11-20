@@ -3125,6 +3125,134 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("drops a queued pull request watch wake once its watch ends", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const eventSink = yield* EventSink.EventSinkV2;
+      const threadId = ThreadId.make("runtime-pull-request-watch-stale-wake");
+      const activeMessageId = MessageId.make("runtime-pull-request-watch-stale-wake-active");
+      const wakeMessageId = MessageId.make("runtime-pull-request-watch-stale-wake-wake");
+      const key = { host: "github.com", repository: "example/houston", number: 7 };
+      const url = "https://github.com/example/houston/pull/7";
+
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("pr-watch-stale-wake-create"),
+        threadId,
+        projectId: ProjectId.make("pr-watch-stale-wake-project"),
+        title: "Stale wake",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: process.cwd(),
+      });
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("pr-watch-stale-wake-active"),
+        threadId,
+        messageId: activeMessageId,
+        text: "Active",
+        attachments: [],
+        modelSelection,
+        dispatchMode: { type: "start_immediately" },
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.pull-request.watch",
+        commandId: CommandId.make("pr-watch-stale-wake-start"),
+        threadId,
+        ...key,
+        watching: true,
+        link: { url, source: "agent" },
+      });
+      const started = (yield* orchestrator.getThreadShell(threadId))?.pullRequests?.[0]?.watch;
+      assert.isDefined(started);
+      if (started === undefined) return;
+
+      yield* orchestrator.dispatch({
+        type: "thread.pull-request-watch.sync",
+        commandId: CommandId.make("pr-watch-stale-wake-sync"),
+        threadId,
+        ...key,
+        startedAt: started.startedAt,
+        watch: { ...started, headSha: "abc123" },
+        wake: {
+          messageId: wakeMessageId,
+          text: `Update on pull request #7 (${url}), which Houston is watching for you: checks failed.`,
+          notification: {
+            source: { kind: "monitor" },
+            outcome: "failed",
+            summary: "#7: checks failed",
+          },
+        },
+      });
+      const activeRun = (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+        (run) => run.userMessageId === activeMessageId,
+      );
+      assert.isDefined(activeRun);
+      const queuedWake = (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+        (run) => run.userMessageId === wakeMessageId,
+      );
+      assert.isDefined(queuedWake);
+      if (activeRun === undefined || queuedWake === undefined) return;
+      assert.equal(queuedWake.status, "queued");
+
+      yield* orchestrator.dispatch({
+        type: "thread.pull-request.watch",
+        commandId: CommandId.make("pr-watch-stale-wake-stop"),
+        threadId,
+        ...key,
+        watching: false,
+      });
+
+      const wakeStates = yield* Queue.unbounded<OrchestrationV2Run["status"]>();
+      const afterSequence = yield* orchestrator.getThreadEventSequence(threadId);
+      yield* eventSink.stream({ threadId, afterSequence }).pipe(
+        Stream.runForEach((stored) =>
+          stored.event.type === "run.updated" &&
+          stored.event.runId === queuedWake.id &&
+          stored.event.payload.status !== "queued"
+            ? Queue.offer(wakeStates, stored.event.payload.status)
+            : Effect.void,
+        ),
+        Effect.forkScoped,
+      );
+      yield* Effect.yieldNow;
+
+      const completedAt = yield* DateTime.now;
+      yield* eventSink.write({
+        events: [
+          {
+            id: EventId.make("pr-watch-stale-wake-active-completed"),
+            type: "run.updated",
+            threadId,
+            runId: activeRun.id,
+            ...(activeRun.rootNodeId === null ? {} : { nodeId: activeRun.rootNodeId }),
+            providerInstanceId: activeRun.providerInstanceId,
+            occurredAt: completedAt,
+            payload: { ...activeRun, status: "completed", completedAt },
+          },
+        ],
+      });
+
+      assert.equal(yield* Queue.take(wakeStates), "cancelled");
+      const projection = yield* orchestrator.getThreadProjection(threadId);
+      assert.equal(
+        projection.runs.find((run) => run.id === queuedWake.id)?.status,
+        "cancelled",
+      );
+      assert.equal(
+        projection.messages.find((message) => message.id === wakeMessageId)?.delivery?.state,
+        undefined,
+      );
+      assert.isFalse(projection.turnItems.some((item) => item.runId === queuedWake.id));
+    }),
+  );
+
   it.effect.each(["manual", "automatic"])("settling ends every pull request watch: %s", (mode) =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;

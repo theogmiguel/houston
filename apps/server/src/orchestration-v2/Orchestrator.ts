@@ -823,6 +823,26 @@ function withPullRequestWatch(
   return ended === undefined ? rest : { ...rest, endedWatch: ended };
 }
 
+/** A monitor wake is a pull request watch's message; it must not start once that watch or thread ended. */
+function isStalePullRequestWatchWake(
+  thread: OrchestrationV2AppThread,
+  message: Pick<OrchestrationV2ConversationMessage, "text" | "notification">,
+): boolean {
+  if (message.notification?.source.kind !== "monitor") return false;
+  if (
+    thread.archivedAt !== null ||
+    thread.deletedAt !== null ||
+    thread.settledOverride === "settled" ||
+    thread.settledAt !== null ||
+    isProviderNativeSubagentThread(thread)
+  )
+    return true;
+  // The server writes the watched pull request's URL into the wake; an ended watch no longer carries one.
+  return !threadPullRequestsOf(thread).some(
+    (link) => link.watch !== undefined && message.text.includes(link.url),
+  );
+}
+
 function legacyPullRequestLink(
   thread: OrchestrationV2AppThread,
   linked: ThreadLinkedPullRequest,
@@ -2239,6 +2259,63 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           commandType: "message.dispatch",
           cause: `Queued run ${queuedRun.id} is missing projection state.`,
         });
+      }
+
+      // The watch may end or the thread settle while its wake waits behind another run.
+      if (isStalePullRequestWatchWake(projection.thread, queuedMessage)) {
+        yield* writeSystemEvents([
+          {
+            type: "run.updated",
+            threadId,
+            runId: queuedRun.id,
+            ...(queuedRun.rootNodeId === null ? {} : { nodeId: queuedRun.rootNodeId }),
+            providerInstanceId: queuedRun.providerInstanceId,
+            occurredAt: now,
+            payload: {
+              ...queuedRun,
+              status: "cancelled",
+              queuePosition: null,
+              completedAt: now,
+            },
+          },
+          {
+            type: "run-attempt.updated",
+            threadId,
+            runId: queuedRun.id,
+            nodeId: rootNode.id,
+            providerInstanceId: queuedRun.providerInstanceId,
+            occurredAt: now,
+            payload: { ...attempt, status: "cancelled", completedAt: now },
+          },
+          {
+            type: "node.updated",
+            threadId,
+            runId: queuedRun.id,
+            nodeId: rootNode.id,
+            providerInstanceId: queuedRun.providerInstanceId,
+            occurredAt: now,
+            payload: { ...rootNode, status: "cancelled", completedAt: now },
+          },
+          ...(queuedMessage.delivery === undefined
+            ? []
+            : [
+                {
+                  type: "message.updated" as const,
+                  threadId,
+                  runId: queuedRun.id,
+                  ...(queuedRun.rootNodeId === null ? {} : { nodeId: queuedRun.rootNodeId }),
+                  providerInstanceId: queuedRun.providerInstanceId,
+                  occurredAt: now,
+                  payload: {
+                    ...queuedMessage,
+                    delivery: nextDelivery(queuedMessage.delivery, { type: "cancelled", at: now }),
+                    updatedAt: now,
+                  },
+                },
+              ]),
+        ]);
+        yield* startNextQueuedRun(threadId);
+        return;
       }
 
       const targetAdapter = yield* providerAdapters.get(queuedRun.providerInstanceId).pipe(
