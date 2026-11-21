@@ -33,13 +33,19 @@ import { chatTargetThreadRef } from "../../layout/layoutThreadRef";
 import { runInNewLayoutTab, useLayoutStore } from "../../layout/layoutStore";
 import { useThreadMembershipStore } from "../../layout/threadMembership";
 import {
-  createLayoutWorkspaceAction,
   deleteLayoutWorkspaceAction,
   hideLayoutWorkspaceAction,
   pinLayoutWorkspaceAction,
   renameLayoutWorkspaceAction,
   reorderLayoutWorkspaceAction,
 } from "../../layout/layoutWorkspaceActions";
+import { WORKSPACE_NAME_MAX_CHARS } from "../../layout/layoutWorkspaces";
+import {
+  finishNewWorkspaceNaming,
+  startNewWorkspaceAction,
+  undoNewWorkspace,
+  useNewWorkspaceNamingStore,
+} from "../../layout/newWorkspaceNaming";
 import { useLayoutTabLabel } from "../../layout/useLayoutTabLabel";
 import { nextRailTargetIndex } from "../../threads/rail";
 import {
@@ -167,12 +173,15 @@ import {
   SIDEBAR_GROUP_CHEVRON_EXPANDED_CLS,
   SIDEBAR_GROUP_COUNT_CLS,
   SIDEBAR_GROUP_EMPTY_CLS,
+  SIDEBAR_GROUP_EDITOR_CLS,
+  SIDEBAR_GROUP_EDITOR_LINE_CLS,
   SIDEBAR_GROUP_HEADING_CLS,
+  SIDEBAR_GROUP_HEADING_ROW_EDITING_CLS,
+  SIDEBAR_GROUP_RENAME_MESSAGE_CLS,
   SIDEBAR_GROUP_HEADING_DROP_CLS,
   SIDEBAR_GROUP_SECTION_DROP_CLS,
   SIDEBAR_GROUP_HEADING_ROW_CLS,
   SIDEBAR_GROUP_LABEL_BUTTON_CLS,
-  SIDEBAR_GROUP_RENAME_CLS,
   SIDEBAR_NEEDS_YOU_DOT_CLS,
   SIDEBAR_NEEDS_YOU_HEADING_CLS,
   SIDEBAR_NEEDS_YOU_HEADING_GLYPH_CLS,
@@ -187,6 +196,12 @@ import {
   sidebarGroupNameCls,
   type SidebarMenuOptions,
 } from "../ui/sidebar-sections";
+import {
+  hasInlineEditMessage,
+  InlineEditInput,
+  InlineEditMessage,
+  useInlineEdit,
+} from "../ui/inline-edit-field";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
@@ -278,7 +293,7 @@ export function ThreadSidebar({
   const [search, setSearch] = useState("");
   const [searchIndex, setSearchIndex] = useState(0);
   const [selection, setSelection] = useState<ThreadSelection>(clearThreadSelection);
-  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
+  const namingWorkspaceId = useNewWorkspaceNamingStore((state) => state.workspaceId);
   const [rowOrder] = useState(createSidebarRowOrderMemory);
   const collapsedWorkspaces = useCollapsedKeys(COLLAPSED_WORKSPACES_STORAGE_KEY);
   const dragging = useThreadDragSource();
@@ -933,13 +948,9 @@ export function ThreadSidebar({
     reorderLayoutWorkspaceAction(draggedId, targetId, side),
   );
 
-  const startCreatingWorkspace = () => setCreatingWorkspace(true);
-  const createWorkspace = (name: string): string | null => {
-    const refusal = createLayoutWorkspaceAction(name);
-    if (refusal !== null) return refusal;
-    // A new workspace opens a ready draft, so it is ready to start a thread in.
-    openNewThreadInWorkspace(useLayoutStore.getState().layout.focusedWorkspaceId);
-    return null;
+  const startCreatingWorkspace = () => {
+    const refusal = startNewWorkspaceAction();
+    if (refusal !== null) explain(t("Cannot create a workspace"), refusal);
   };
 
   const renderGroup = (section: SidebarWorkspaceSection, index: number) => (
@@ -948,6 +959,7 @@ export function ThreadSidebar({
       section={section}
       query={query}
       open={layout.focusedWorkspaceId === section.workspaceId}
+      naming={namingWorkspaceId === section.workspaceId}
       // A search opens every group so its matches show.
       collapsed={!searching && collapsedWorkspaces.collapsed.has(section.workspaceId)}
       onToggleCollapsed={() => collapsedWorkspaces.toggle(section.workspaceId)}
@@ -1144,12 +1156,6 @@ export function ThreadSidebar({
                     }
                   />
                   <div className="flex flex-col gap-px">
-                    {creatingWorkspace ? (
-                      <NewWorkspaceField
-                        onCreate={createWorkspace}
-                        onDone={() => setCreatingWorkspace(false)}
-                      />
-                    ) : null}
                     {sections.map(renderGroup)}
                     {searching ? <SidebarContentResults results={contentResults} /> : null}
                     {searching &&
@@ -1496,61 +1502,46 @@ export function SidebarAddProjectButton({ sectionAction = false }: { sectionActi
   );
 }
 
-/** A name field for a new workspace; Enter creates it, Escape or an empty blur cancels. */
-function NewWorkspaceField({
-  onCreate,
-  onDone,
+/** The workspace heading while its name is edited: the chevron stays, the name becomes a field. */
+function WorkspaceNameEditor({
+  initialName,
+  collapsed,
+  label,
+  hint,
+  onCommit,
+  onCancel,
 }: {
-  onCreate: (name: string) => string | null;
-  onDone: () => void;
+  initialName: string;
+  collapsed: boolean;
+  label: string;
+  hint?: string | undefined;
+  onCommit: (name: string) => string | null;
+  onCancel: () => void;
 }) {
-  const t = useT();
-  const [name, setName] = useState("");
-  const [refusal, setRefusal] = useState<string | null>(null);
-  const submit = () => {
-    const trimmed = name.trim();
-    if (trimmed.length === 0) {
-      onDone();
-      return;
-    }
-    const result = onCreate(trimmed);
-    if (result === null) {
-      onDone();
-      return;
-    }
-    setRefusal(result);
-  };
+  const edit = useInlineEdit({
+    initialValue: initialName,
+    onCommit,
+    onCancel,
+    maxChars: WORKSPACE_NAME_MAX_CHARS,
+  });
   return (
-    <div className="flex flex-col gap-1 px-1 py-1">
-      <input
-        autoFocus
-        value={name}
-        placeholder={t("Workspace name")}
-        aria-label={t("New workspace name")}
-        aria-invalid={refusal !== null}
-        onChange={(event) => {
-          setName(event.target.value);
-          setRefusal(null);
-        }}
-        onBlur={() => {
-          if (refusal === null) submit();
-          else onDone();
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === "Escape") event.preventDefault();
-          if (event.key === "Enter") submit();
-          if (event.key === "Escape") {
-            event.stopPropagation();
-            onDone();
-          }
-        }}
-        className={SIDEBAR_GROUP_RENAME_CLS}
-      />
-      {refusal === null ? null : (
-        <span role="alert" className="px-1 text-2xs text-destructive-foreground">
-          {refusal}
+    <div className={SIDEBAR_GROUP_EDITOR_CLS}>
+      <div className={cn(SIDEBAR_GROUP_HEADING_CLS, SIDEBAR_GROUP_EDITOR_LINE_CLS)}>
+        <span aria-hidden className={SIDEBAR_GROUP_CHEVRON_BUTTON_CLS}>
+          <ChevronRightIcon
+            className={cn(
+              SIDEBAR_GROUP_CHEVRON_CLS,
+              !collapsed && SIDEBAR_GROUP_CHEVRON_EXPANDED_CLS,
+            )}
+          />
         </span>
-      )}
+        <InlineEditInput edit={edit} label={label} scale="heading" />
+      </div>
+      {hasInlineEditMessage(edit, hint) ? (
+        <div className={SIDEBAR_GROUP_RENAME_MESSAGE_CLS}>
+          <InlineEditMessage edit={edit} hint={hint} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1683,11 +1674,14 @@ export function SidebarWorkspaceGroup({
   workspaceMoveFor,
   handleNewThread,
   onDeleteWorkspace,
+  naming = false,
 }: {
   section: SidebarWorkspaceSection;
   query: string;
   /** Whether the layout's focus is in this workspace. */
   open: boolean;
+  /** The workspace was just created and its heading asks for a name; Escape takes it back. */
+  naming?: boolean;
   collapsed: boolean;
   onToggleCollapsed: () => void;
   previousWorkspaceId: string | null;
@@ -1728,8 +1722,8 @@ export function SidebarWorkspaceGroup({
 }) {
   const t = useT();
   const { workspaceId, name: workspaceName, threads } = section;
-  const [renaming, setRenaming] = useState(false);
-  const [draftName, setDraftName] = useState(workspaceName);
+  const [renamingByUser, setRenaming] = useState(false);
+  const renaming = renamingByUser || naming;
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const newThreadShortcut = shortcutLabelForCommand(keybindings, "chat.new");
   const dropTarget = useThreadDropTarget();
@@ -1777,15 +1771,23 @@ export function SidebarWorkspaceGroup({
   const readyThreads = threads.filter(
     (thread) => resolveThreadRowState(thread, nowIso) === "ready",
   );
-  const startRenaming = () => {
-    setDraftName(workspaceName);
-    setRenaming(true);
-  };
-  const finishRenaming = () => {
+  const startRenaming = () => setRenaming(true);
+  const commitName = (name: string): string | null => {
+    if (name !== workspaceName) {
+      const refusal = renameLayoutWorkspaceAction(workspaceId, name);
+      if (refusal !== null) return refusal;
+    }
     setRenaming(false);
-    if (draftName.trim() === workspaceName) return;
-    const refusal = renameLayoutWorkspaceAction(workspaceId, draftName);
-    if (refusal !== null) explain(t("Could not rename workspace"), refusal);
+    if (naming) {
+      finishNewWorkspaceNaming();
+      // A named workspace opens a ready draft, so it is ready to start a thread in.
+      onCreateThread(workspaceId);
+    }
+    return null;
+  };
+  const cancelName = () => {
+    setRenaming(false);
+    if (naming) undoNewWorkspace(workspaceId);
   };
   const createThread = () => onCreateThread(workspaceId);
   const focusWorkspaceFromHeading = () => {
@@ -1887,6 +1889,7 @@ export function SidebarWorkspaceGroup({
         data-reorder-side={reorderTarget ?? undefined}
         className={cn(
           SIDEBAR_GROUP_HEADING_ROW_CLS,
+          renaming && SIDEBAR_GROUP_HEADING_ROW_EDITING_CLS,
           reorderHighlight && SIDEBAR_GROUP_HEADING_DROP_CLS,
         )}
         onPointerDown={(event) => {
@@ -1900,22 +1903,13 @@ export function SidebarWorkspaceGroup({
         }}
       >
         {renaming ? (
-          <input
-            autoFocus
-            value={draftName}
-            aria-label={t("Rename workspace {name}", { name: workspaceName })}
-            onChange={(event) => setDraftName(event.target.value)}
-            onBlur={finishRenaming}
-            onKeyDown={(event) => {
-              // The key's default would click the heading that replaces the input.
-              if (event.key === "Enter" || event.key === "Escape") event.preventDefault();
-              if (event.key === "Enter") event.currentTarget.blur();
-              if (event.key === "Escape") {
-                setDraftName(workspaceName);
-                setRenaming(false);
-              }
-            }}
-            className={SIDEBAR_GROUP_RENAME_CLS}
+          <WorkspaceNameEditor
+            initialName={workspaceName}
+            collapsed={collapsed}
+            label={t("Rename workspace {name}", { name: workspaceName })}
+            hint={naming ? t("Enter saves · Esc undoes") : undefined}
+            onCommit={commitName}
+            onCancel={cancelName}
           />
         ) : (
           <div

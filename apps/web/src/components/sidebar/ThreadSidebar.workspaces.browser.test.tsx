@@ -386,13 +386,12 @@ describe("workspace group", () => {
     expect(listLayoutWorkspaces(useLayoutStore.getState().layout)[0]?.name).toBe("Review");
   });
 
-  it("refuses a rename over the name limit, naming the limit and the length", async () => {
+  it("refuses a rename over the name limit inline, naming the limit and the length, and keeps the text", async () => {
     using _session = session();
     const layout = layoutOf([{ name: "One", chats: ["thread-1"] }]);
     useLayoutStore.setState({ layout });
     const [first] = listLayoutWorkspaces(layout);
     const tooLong = "x".repeat(WORKSPACE_NAME_MAX_CHARS + 1);
-    const add = vi.spyOn(toastManager, "add");
     await using screen = await render(
       group(workspace({ workspaceId: first!.id, name: "One" }), [thread({ id: "thread-1" })]),
     );
@@ -404,11 +403,42 @@ describe("workspace group", () => {
     await userEvent.keyboard("{Enter}");
 
     expect(listLayoutWorkspaces(useLayoutStore.getState().layout)[0]?.name).toBe("One");
-    expect(add).toHaveBeenCalledWith(
-      expect.objectContaining({
-        description: expect.stringContaining(String(WORKSPACE_NAME_MAX_CHARS)),
-      }),
+    const alert = screen.getByRole("alert");
+    await expect.element(alert).toBeVisible();
+    expect(alert.element().textContent).toContain(String(WORKSPACE_NAME_MAX_CHARS));
+    expect(alert.element().textContent).toContain(String(WORKSPACE_NAME_MAX_CHARS + 1));
+    expect((input.element() as HTMLInputElement).value).toBe(tooLong);
+  });
+
+  it("keeps the chevron and the rows below in place while the name is edited", async () => {
+    using _session = session();
+    const layout = layoutOf([{ name: "Grid 1", chats: ["thread-c"] }]);
+    useLayoutStore.setState({ layout });
+    const id = listLayoutWorkspaces(layout)[0]!.id;
+    await using screen = await render(
+      group(workspace({ workspaceId: id, name: "Grid 1" }), [thread({ id: "thread-c" })]),
     );
+    const chevronLeft = () =>
+      screen.container.querySelector(`[data-workspace-key="${id}"] svg`)!.getBoundingClientRect()
+        .left;
+    const nameLeft = nameButtonFor(screen, id)
+      .querySelector("[data-workspace-name]")!
+      .getBoundingClientRect().left;
+    const before = chevronLeft();
+    const rowTop = () =>
+      screen.container.querySelector("[data-card-open]")!.getBoundingClientRect().top;
+    const rowTopBefore = rowTop();
+
+    headingFor(screen, id).focus();
+    await userEvent.keyboard("{F2}");
+    const input = screen.getByRole("textbox", { name: "Rename workspace Grid 1" });
+    await expect.element(input).toHaveFocus();
+
+    expect(chevronLeft()).toBe(before);
+    expect(rowTop()).toBe(rowTopBefore);
+    const box = input.element().getBoundingClientRect();
+    // The field's padding is given back, so its text starts where the name did.
+    expect(Math.abs(box.left + 4 - nameLeft)).toBeLessThanOrEqual(1);
   });
 
   it("opens the workspace menu on right-click and pins from it", async () => {

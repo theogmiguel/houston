@@ -41,12 +41,6 @@ export const ROW_DRAFT_CROSS_CLS =
 
 export const ROW_BACK_DISMISS_CLS = `cursor-pointer rounded-(--r-badge) outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`;
 
-export const ROW_TITLE_INPUT_CLS =
-  "border border-input bg-background text-xs text-foreground outline-none focus-visible:border-ring";
-export const ROW_TITLE_INPUT_INVALID_CLS =
-  "border-error-foreground focus-visible:border-error-foreground";
-export const ROW_TITLE_MESSAGE_CLS = "text-2xs text-error-foreground";
-
 /**
  * Scroll margins of a thread row, so scrolling it into view leaves it clear of the sticky project
  * heading above (32px plus its border) and of the 24px fade above the footer.

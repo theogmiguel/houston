@@ -560,7 +560,10 @@ export function ThreadCard({
               </span>
             </span>
           </div>
-          <div data-thread-title-line="" className="flex h-5 min-w-0 items-center">
+          <div
+            data-thread-title-line=""
+            className={cn("flex h-5 min-w-0 items-center", renaming && "h-auto items-start")}
+          >
             {renaming ? (
               <ThreadTitleInput
                 title={thread.title}

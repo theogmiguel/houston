@@ -2,7 +2,7 @@ import { ArrowLeftIcon, ChevronDownIcon, EllipsisIcon, SquareMenuIcon } from "lu
 import type { ReactNode, RefObject } from "react";
 
 import { Button } from "../components/ui/button";
-import { ThreadRenameInput } from "../components/ui/thread-rename-input";
+import { InlineEditField } from "../components/ui/inline-edit-field";
 import {
   PHONE_TABS_CHEVRON_CLS,
   PHONE_TABS_COUNT_CLS,
@@ -25,8 +25,6 @@ export function PhoneThreadBar({
   onOpenTabs,
   tabsTriggerRef,
   renaming,
-  renameValue,
-  onChangeRename,
   onCommitRename,
   onCancelRename,
   detailsOpen,
@@ -44,9 +42,8 @@ export function PhoneThreadBar({
   onOpenTabs?: (() => void) | undefined;
   tabsTriggerRef?: RefObject<HTMLButtonElement | null> | undefined;
   renaming: boolean;
-  renameValue: string;
-  onChangeRename: (value: string) => void;
-  onCommitRename: () => void;
+  /** Saves a new title, already trimmed and not empty. */
+  onCommitRename: (title: string) => void;
   onCancelRename: () => void;
   detailsOpen: boolean;
   onToggleDetails?: (() => void) | undefined;
@@ -84,10 +81,14 @@ export function PhoneThreadBar({
       </Button>
       {renaming ? (
         <div className="flex min-w-0 flex-1 items-center">
-          <ThreadRenameInput
-            value={renameValue}
-            onChange={onChangeRename}
-            onCommit={onCommitRename}
+          <InlineEditField
+            initialValue={title}
+            label="Thread title"
+            scale="bar"
+            onCommit={(next) => {
+              onCommitRename(next);
+              return null;
+            }}
             onCancel={onCancelRename}
           />
         </div>

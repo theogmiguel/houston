@@ -72,6 +72,16 @@ function nameRefusal(name: string): string | null {
     : null;
 }
 
+/** The name a new workspace starts with: the next number after those listed that no name uses. */
+export function nextDefaultWorkspaceName(state: LayoutState): string {
+  const taken = new Set(
+    state.workspaces.map((workspace) => workspace.name?.trim().toLowerCase()).filter(Boolean),
+  );
+  let number = listLayoutWorkspaces(state).length + 1;
+  while (taken.has(`workspace ${number}`)) number += 1;
+  return `Workspace ${number}`;
+}
+
 /** Go to the empty workspace at the bottom of the stack and name it. It stays after its last tab closes. */
 export function createLayoutWorkspaceNamed(state: LayoutState, name: string): WorkspaceResult {
   const refusal = nameRefusal(name);

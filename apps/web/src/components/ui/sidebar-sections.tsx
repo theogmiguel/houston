@@ -150,8 +150,13 @@ export const SIDEBAR_EMPTY_ACTION_CLS =
 export const SIDEBAR_GROUP_ACTION_CLS =
   "inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label opacity-0 transition-opacity duration-(--motion-feedback) ease-standard hover:bg-(--sel) hover:text-foreground group-hover/workspace:opacity-100 group-has-focus-visible/workspace:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
-export const SIDEBAR_GROUP_RENAME_CLS =
-  "h-6 min-w-0 flex-1 rounded-(--r-ctl) border border-input bg-background px-1.5 text-xs font-normal text-foreground outline-none focus:border-ring focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+/** A heading row grows while its name is edited, so the hint or refusal fits under the field. */
+export const SIDEBAR_GROUP_HEADING_ROW_EDITING_CLS = "h-auto min-h-6";
+export const SIDEBAR_GROUP_EDITOR_CLS = "flex min-w-0 flex-1 flex-col";
+export const SIDEBAR_GROUP_EDITOR_LINE_CLS = "h-6 cursor-default";
+
+/** The hint or refusal under a heading being renamed, starting under the name past the chevron. */
+export const SIDEBAR_GROUP_RENAME_MESSAGE_CLS = "pr-2 pb-1 pl-7.5";
 
 export const SIDEBAR_SECTION_ACTION_CLS =
   "-my-1.5 inline-grid size-6 shrink-0 cursor-pointer place-items-center rounded-(--r-ctl) text-secondary-label transition-colors duration-(--motion-feedback) ease-standard outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
