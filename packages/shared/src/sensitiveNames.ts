@@ -1,8 +1,6 @@
-// Credential-named query and body parameters masked wherever their text leaves the
-// process: the local trace file, the console, exported log records, and HTTP spans.
-// Kept in one list so a new OAuth or token name cannot be missed in one redactor
-// while the others keep leaking it. Matching is case-insensitive everywhere the
-// list is applied.
+// Credential-named query and body parameters masked wherever their text leaves the process.
+// One shared list keeps the trace, HTTP-span and credential-text redactors from drifting apart.
+// Matching is case-insensitive wherever the list is applied.
 export const SENSITIVE_QUERY_PARAM_NAMES = [
   "wsTicket",
   "dpop",

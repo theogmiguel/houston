@@ -403,7 +403,8 @@ function spanToTraceRecord(span: SerializableSpan): EffectTraceRecord {
   };
 }
 
-const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const REGEXP_SPECIAL_CHARS = /[.*+?^${}()|[\]\\]/g;
+const escapeRegExp = (text: string) => text.replace(REGEXP_SPECIAL_CHARS, "\\$&");
 
 // WebSocket tickets, DPoP proofs, and OAuth parameters ride in URL queries, bodies and JSON
 // fragments and stay valid after the request. `name=value` covers a URL, query string or

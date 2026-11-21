@@ -10,6 +10,14 @@ const QUOTES = /^['"]|['"]$/g;
 const WINDOWS_PATH_SEPARATOR = /[\\/]/;
 const WINDOWS_DRIVE = /^[A-Za-z]:/;
 const COMMENT = /#.*$/;
+const WINDOWS_PATH_SPLIT = /\\+/;
+const POSIX_PATH_SPLIT = /\/+/;
+const EXE_SUFFIX = /\.exe$/;
+const TRAILING_SEPARATORS = /[\\/]+$/g;
+const EDGE_SEPARATORS = /^[\\/]+|[\\/]+$/g;
+const LINE_BREAK = /\r?\n/;
+const HAS_EXTENSION = /\.[A-Za-z0-9]+$/;
+const TRAILING_SLASHES = /\/+$/g;
 
 const POSIX_SHELLS = [
   "/bin/bash",
@@ -51,22 +59,22 @@ export function normalizeShellCommand(
 function basename(shell: string, platform: NodeJS.Platform): string {
   const normalized =
     platform === "win32" ? shell.replaceAll("/", "\\") : shell.replaceAll("\\", "/");
-  const parts = normalized.split(platform === "win32" ? /\\+/ : /\/+/).filter(Boolean);
+  const parts = normalized
+    .split(platform === "win32" ? WINDOWS_PATH_SPLIT : POSIX_PATH_SPLIT)
+    .filter(Boolean);
   return parts.at(-1) ?? normalized;
 }
 
 function shellLabel(shell: string, platform: NodeJS.Platform): string {
-  const name = basename(shell, platform)
-    .toLowerCase()
-    .replace(/\.exe$/, "");
+  const name = basename(shell, platform).toLowerCase().replace(EXE_SUFFIX, "");
   return POSIX_LABELS[name] ?? name;
 }
 
 function joinWindowsPath(...parts: ReadonlyArray<string>): string {
   return parts
     .map((part, index) => {
-      if (index === 0) return part.replace(/[\\/]+$/g, "");
-      return part.replace(/^[\\/]+|[\\/]+$/g, "");
+      if (index === 0) return part.replace(TRAILING_SEPARATORS, "");
+      return part.replace(EDGE_SEPARATORS, "");
     })
     .filter((part) => part.length > 0)
     .join("\\");
@@ -78,7 +86,7 @@ function windowsSystemRoot(env: NodeJS.ProcessEnv): string {
 
 export function parseShellList(contents: string): ReadonlyArray<string> {
   const shells: string[] = [];
-  for (const line of contents.split(/\r?\n/)) {
+  for (const line of contents.split(LINE_BREAK)) {
     const value = line.replace(COMMENT, "").trim();
     if (value.length === 0 || !value.startsWith("/")) continue;
     shells.push(value);
@@ -196,13 +204,13 @@ export const resolveShellExecutable = Effect.fn("terminalShells.resolveShellExec
   }
 
   const extensions =
-    platform === "win32" && !/\.[A-Za-z0-9]+$/.test(command) ? windowsExtensions(env) : [""];
+    platform === "win32" && !HAS_EXTENSION.test(command) ? windowsExtensions(env) : [""];
   for (const entry of pathEntries(env, platform)) {
     for (const extension of extensions) {
       const candidate =
         platform === "win32"
           ? joinWindowsPath(entry, `${command}${extension}`)
-          : `${entry.replace(/\/+$/g, "")}/${command}`;
+          : `${entry.replace(TRAILING_SLASHES, "")}/${command}`;
       if (yield* isExecutableFile(fs, platform, candidate)) return candidate;
     }
   }

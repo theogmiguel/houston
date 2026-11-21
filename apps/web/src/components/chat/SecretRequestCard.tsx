@@ -38,7 +38,6 @@ export function SecretRequestCard(props: {
   readonly item: SecretRequestItem;
   readonly visibility: OrchestrationV2ProjectedTurnItem["visibility"];
 }) {
-  const t = useT();
   const { item } = props;
   const display = secretRequestDisplay(item, props.visibility);
   if (display.kind === "answered" || display.kind === "pending-elsewhere") {

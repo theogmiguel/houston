@@ -37,6 +37,9 @@ import * as ServerSettingsModule from "./serverSettings.ts";
 import * as ManagedPolicy from "./policy/ManagedPolicy.ts";
 import { resolveProviderInstanceTerminalEnvironment } from "./terminal/Manager.ts";
 
+// oxlint-disable-next-line houston/no-global-process-runtime -- the fixtures create real files, so they follow the host platform.
+const HOST_PLATFORM = process.platform;
+
 const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 const decodeServerSettingsJson = Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettings));
 const decodeServerSettingsPatch = Schema.decodeUnknownEffect(ServerSettingsPatch);
@@ -2776,7 +2779,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         const directory = yield* fs.makeTempDirectoryScoped({ prefix: "houston-terminal-shell-" });
         const missingShell = path.join(
           directory,
-          process.platform === "win32" ? "missing-shell.exe" : "missing-shell",
+          HOST_PLATFORM === "win32" ? "missing-shell.exe" : "missing-shell",
         );
         const refused = yield* service
           .updateSettings({ terminalShell: missingShell })
@@ -2787,10 +2790,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
 
         const shellPath = path.join(
           directory,
-          process.platform === "win32" ? "saved-shell.exe" : "saved-shell",
+          HOST_PLATFORM === "win32" ? "saved-shell.exe" : "saved-shell",
         );
         yield* fs.writeFileString(shellPath, "");
-        if (process.platform !== "win32") {
+        if (HOST_PLATFORM !== "win32") {
           yield* fs.chmod(shellPath, 0o755);
         }
         const saved = yield* service.updateSettings({ terminalShell: shellPath });

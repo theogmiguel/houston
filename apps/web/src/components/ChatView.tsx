@@ -1987,6 +1987,7 @@ export default function ChatView(props: ChatViewProps) {
     ) {
       return;
     }
+    // oxlint-disable-next-line react/set-state-in-effect -- the pending Stop belongs to one run; it ends when the server's run does, which no event handler observes
     setInterruptRequestThreadKey(null);
   }, [activeThreadKey, interruptRequestThreadKey, runtimeActive, serverStopPending]);
   const onInterrupt = async () => {

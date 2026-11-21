@@ -1,5 +1,5 @@
 import { DEFAULT_CLIENT_SETTINGS } from "@houston-app/contracts/settings";
-import { afterEach, expect, it } from "vite-plus/test";
+import { expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
 import "~/index.css";
@@ -9,13 +9,11 @@ import { TooltipProvider } from "../ui/tooltip";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 
-function useLanguage(language: string) {
+/** Sets the interface language for one test and restores the defaults on dispose. */
+function setLanguage(language: string): Disposable {
   __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, language });
+  return { [Symbol.dispose]: () => __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS) };
 }
-
-afterEach(() => {
-  __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
-});
 
 function renderSend(hasSendableContent: boolean) {
   return render(
@@ -132,13 +130,13 @@ it("sends one interrupt when the Stop control is not pending", async () => {
 });
 
 it("keeps the composer send action in English when the language is English", async () => {
-  useLanguage("en");
+  using _language = setLanguage("en");
   await using _screen = await renderSend(true);
   await expect.element(page.getByRole("button", { name: "Submit message" })).toBeVisible();
 });
 
 it("renders the composer send action in Brazilian Portuguese", async () => {
-  useLanguage("pt-BR");
+  using _language = setLanguage("pt-BR");
   await using _screen = await renderSend(true);
   await expect.element(page.getByRole("button", { name: "Enviar mensagem" })).toBeVisible();
 });

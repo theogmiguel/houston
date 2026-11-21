@@ -135,7 +135,7 @@ export function UsageRetentionSettings() {
                       variant="caption"
                       tone="muted"
                       aria-hidden="true"
-                      className="self-center pr-2"
+                      className="self-center me-2"
                     >
                       {t("days")}
                     </Text>

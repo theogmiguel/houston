@@ -802,8 +802,10 @@ function toAuthAccessStreamEvent(
   }
 }
 
+const isPendingDeviceAccessError = Schema.is(HoustonAccessPendingDeviceError);
+
 const toPendingDeviceAccessError = (cause: unknown): HoustonAccessPendingDeviceError =>
-  Schema.is(HoustonAccessPendingDeviceError)(cause)
+  isPendingDeviceAccessError(cause)
     ? cause
     : new HoustonAccessPendingDeviceError({
         reason: "unavailable",
@@ -2851,14 +2853,13 @@ export const layerWsRpc = (
         [WS_METHODS.serverGetStorageCleanupReport]: () => storageCleanup.reports,
         [WS_METHODS.serverGetDatabaseStorage]: () => databaseStorage.status,
         [WS_METHODS.houstonDatabaseReclaim]: () => databaseStorage.reclaimNow,
-        [WS_METHODS.houstonTerminalShells]: () =>
-          Effect.gen(function* () {
-            return yield* HoustonTerminalShells.detectTerminalShells({
-              fs: yield* FileSystem.FileSystem,
-              platform: yield* HostProcess.Platform,
-              env: yield* HostProcess.Environment,
-            });
-          }),
+        [WS_METHODS.houstonTerminalShells]: Effect.fn("ws.houstonTerminalShells")(function* () {
+          return yield* HoustonTerminalShells.detectTerminalShells({
+            fs: yield* FileSystem.FileSystem,
+            platform: yield* HostProcess.Platform,
+            env: yield* HostProcess.Environment,
+          });
+        }),
         [WS_METHODS.peerLinksList]: (_input) =>
           peerLinks.list.pipe(Effect.map((links) => ({ links }))),
         [WS_METHODS.peerLinksLink]: (input) => peerLinks.link(input),

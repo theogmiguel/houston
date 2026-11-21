@@ -42,6 +42,9 @@ import * as TerminalManager from "./Manager.ts";
 import { terminalOutputStream } from "./OutputProtocol.ts";
 import * as PtyAdapter from "@houston-app/shared/PtyAdapter";
 
+// oxlint-disable-next-line houston/no-global-process-runtime -- the fixtures create real files, so they follow the host platform.
+const HOST_PLATFORM = process.platform;
+
 vi.mock("effect/SynchronizedRef", async (importOriginal) => {
   const original = await importOriginal<typeof SynchronizedRef>();
   return { ...original, make: vi.fn(original.make) };
@@ -1585,9 +1588,9 @@ it.layer(
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const directory = yield* fs.makeTempDirectoryScoped({ prefix: "houston-shell-" });
-      const shellPath = path.join(directory, process.platform === "win32" ? `${name}.exe` : name);
+      const shellPath = path.join(directory, HOST_PLATFORM === "win32" ? `${name}.exe` : name);
       yield* fs.writeFileString(shellPath, "");
-      if (process.platform !== "win32") {
+      if (HOST_PLATFORM !== "win32") {
         yield* fs.chmod(shellPath, 0o755);
       }
       return shellPath;
@@ -1614,7 +1617,7 @@ it.layer(
       const directory = yield* fs.makeTempDirectoryScoped({ prefix: "houston-shell-" });
       const missingShell = path.join(
         directory,
-        process.platform === "win32" ? "missing-shell.exe" : "missing-shell",
+        HOST_PLATFORM === "win32" ? "missing-shell.exe" : "missing-shell",
       );
       const { manager, ptyAdapter } = yield* createManager(5, {
         readConfiguredShell: () => Effect.succeed(missingShell),
