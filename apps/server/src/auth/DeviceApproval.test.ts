@@ -5,13 +5,16 @@ import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   authScopeResponse,
+  ServerSettingsError,
 } from "@houston-app/contracts";
 import { expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -46,6 +49,30 @@ const layerEnvironmentAuth = (requireApprovalForNewDevices: boolean) =>
     Layer.provide(ServerEnvironment.layerIdentity),
     Layer.provide(layerServerConfig),
   );
+
+// Settings that cannot be read must not open the gate: pairing then waits for the owner.
+const layerUnreadableSettings = Layer.effect(
+  ServerSettings.ServerSettingsService,
+  Effect.map(ServerSettings.ServerSettingsService, (service) => ({
+    ...service,
+    getSettings: Effect.fail(
+      new ServerSettingsError({
+        settingsPath: "<memory>",
+        operation: "normalize",
+        cause: "the settings file could not be read",
+      }),
+    ),
+  })),
+).pipe(Layer.provide(ServerSettings.layerTest({ requireApprovalForNewDevices: false })));
+
+const layerEnvironmentAuthUnreadableSettings = EnvironmentAuth.layer.pipe(
+  Layer.provide(ManagedPolicy.layerTest()),
+  Layer.provideMerge(layerUnreadableSettings),
+  Layer.provideMerge(SqlitePersistence.layerMemory),
+  Layer.provide(ServerSecretStore.layer),
+  Layer.provide(ServerEnvironment.layerIdentity),
+  Layer.provide(layerServerConfig),
+);
 
 const makeCookieRequest = (
   cookieName: string,
@@ -91,6 +118,18 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))("device a
         (yield* serverAuth.listClientSessions(session.sessionId)).map((client) => client.scopes),
       ).toEqual([[AuthOrchestrationReadScope, AuthOrchestrationOperateScope]]);
     }).pipe(Effect.provide(layerEnvironmentAuth(false))),
+  );
+
+  it.effect("holds a new device pending when the setting cannot be read", () =>
+    Effect.gen(function* () {
+      const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const sessions = yield* SessionStore.SessionStore;
+      const paired = yield* pairDevice(serverAuth);
+      const session = yield* sessions.verify(paired.sessionToken);
+
+      expect(session.scopes).toEqual([]);
+      expect(yield* serverAuth.listPendingDevices()).toHaveLength(1);
+    }).pipe(Effect.provide(layerEnvironmentAuthUnreadableSettings)),
   );
 
   it.effect("holds a new device pending with no scope and names it in the refusal", () =>
@@ -143,6 +182,48 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))("device a
           (client) => client.scopes,
         ),
       ).toEqual([[AuthOrchestrationReadScope]]);
+    }).pipe(Effect.provide(layerEnvironmentAuth(true))),
+  );
+
+  it.effect("keeps the pending state in a Houston table and leaves auth_sessions as it was", () =>
+    Effect.gen(function* () {
+      const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const sql = yield* SqlClient.SqlClient;
+      yield* pairDevice(serverAuth);
+
+      const columns = (yield* sql<{ readonly name: string }>`PRAGMA table_info(auth_sessions)`).map(
+        (column) => column.name,
+      );
+      expect(columns.filter((name) => name.startsWith("pending_"))).toEqual([]);
+      const held = yield* sql<{ readonly count: number }>`
+        SELECT COUNT(*) AS count FROM houston_pending_device_approvals
+      `;
+      expect(held[0]?.count).toBe(1);
+
+      const [pending] = yield* serverAuth.listPendingDevices();
+      yield* serverAuth.approvePendingDevice(pending!.sessionId);
+      const after = yield* sql<{ readonly count: number }>`
+        SELECT COUNT(*) AS count FROM houston_pending_device_approvals
+      `;
+      expect(after[0]?.count).toBe(0);
+    }).pipe(Effect.provide(layerEnvironmentAuth(true))),
+  );
+
+  it.effect("ends a connected pending device's session when the owner approves it", () =>
+    Effect.gen(function* () {
+      const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const sessions = yield* SessionStore.SessionStore;
+      const paired = yield* pairDevice(serverAuth);
+      const verified = yield* sessions.verify(paired.sessionToken);
+      const waiting = yield* sessions.awaitInvalidation(verified.sessionId).pipe(Effect.forkChild);
+      // Let the wait subscribe before the owner decides.
+      for (let tick = 0; tick < 20; tick += 1) yield* Effect.yieldNow;
+
+      const [pending] = yield* serverAuth.listPendingDevices();
+      yield* serverAuth.approvePendingDevice(pending!.sessionId);
+
+      // The socket closes so the device reconnects holding the scopes it now has.
+      yield* Fiber.join(waiting);
     }).pipe(Effect.provide(layerEnvironmentAuth(true))),
   );
 

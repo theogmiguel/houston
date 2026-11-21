@@ -1365,14 +1365,19 @@ const NotionPagesAsTaskIssues = Effect.gen(function* () {
   `;
 });
 
-// A paired device whose owner must approve it holds no scope until approved; these columns
-// carry the grant, how it paired and its deadline so a restart keeps the wait.
+// A paired device whose owner must approve it holds no scope until approved. Its grant, how it
+// paired and its deadline live here, keyed by session id, so upstream's auth_sessions stays as
+// upstream's migrations define it. A session is pending exactly while it has a row.
 const PendingDeviceApprovals = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
-  yield* sql`ALTER TABLE auth_sessions ADD COLUMN pending_approval INTEGER NOT NULL DEFAULT 0`;
-  yield* sql`ALTER TABLE auth_sessions ADD COLUMN pending_granted_scopes TEXT`;
-  yield* sql`ALTER TABLE auth_sessions ADD COLUMN pending_paired_via TEXT`;
-  yield* sql`ALTER TABLE auth_sessions ADD COLUMN pending_approval_expires_at TEXT`;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_pending_device_approvals (
+      auth_session_id TEXT PRIMARY KEY NOT NULL,
+      granted_scopes TEXT NOT NULL,
+      paired_via TEXT NOT NULL,
+      approval_expires_at TEXT NOT NULL
+    )
+  `;
 });
 
 const houstonMigrationEntries = [
@@ -1403,6 +1408,11 @@ const houstonMigrationEntries = [
   [27, "NotionPagesAsTaskIssues", NotionPagesAsTaskIssues],
   [28, "PendingDeviceApprovals", PendingDeviceApprovals],
 ] as const;
+
+/** Every Houston migration id this build knows, for callers that must not run beside an older schema. */
+export const HOUSTON_BUILD_MIGRATION_IDS: ReadonlyArray<number> = houstonMigrationEntries.map(
+  ([id]) => id,
+);
 
 // Ids land in merge order, so a database can record a higher id before a lower one; every
 // unrecorded id runs, ascending, each in its own transaction with its history row.

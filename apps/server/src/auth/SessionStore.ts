@@ -1265,13 +1265,28 @@ const make = Effect.gen(function* () {
         const nextRemoval = Effect.gen(function* () {
           while (true) {
             const change = yield* PubSub.take(subscription);
-            if (change.type === "clientRemoved" && chain.includes(change.sessionId)) return;
+            if (
+              (change.type === "clientRemoved" || change.type === "pendingDeviceRemoved") &&
+              chain.includes(change.sessionId)
+            ) {
+              return;
+            }
           }
         });
         let current = original.value;
         while (true) {
           const rows = yield* Effect.forEach(chain, readRow);
           if (rows.some((row) => Option.isNone(row) || row.value.revokedAt !== null)) return;
+          // A device approved while connected reconnects, so its socket carries the scopes it now holds.
+          const first = rows[0];
+          if (
+            original.value.pendingApproval !== null &&
+            first !== undefined &&
+            Option.isSome(first) &&
+            first.value.pendingApproval === null
+          ) {
+            return;
+          }
           const now = yield* DateTime.now;
           const remaining = current.expiresAt.epochMilliseconds - now.epochMilliseconds;
           if (remaining > 0) {

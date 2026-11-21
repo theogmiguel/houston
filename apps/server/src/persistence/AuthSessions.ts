@@ -268,11 +268,7 @@ export const make = Effect.gen(function* () {
           client_browser,
           issued_at,
           expires_at,
-          revoked_at,
-          pending_approval,
-          pending_granted_scopes,
-          pending_paired_via,
-          pending_approval_expires_at
+          revoked_at
         )
         VALUES (
           ${input.sessionId},
@@ -287,11 +283,7 @@ export const make = Effect.gen(function* () {
           ${input.client.browser},
           ${input.issuedAt},
           ${input.expiresAt},
-          NULL,
-          ${input.pendingApproval === undefined ? 0 : 1},
-          ${input.pendingApproval === undefined ? null : JSON.stringify(input.pendingApproval.grantedScopes)},
-          ${input.pendingApproval?.pairedVia ?? null},
-          ${input.pendingApproval?.expiresAt ?? null}
+          NULL
         )
         ${ignoreExisting ? sql`ON CONFLICT(session_id) DO NOTHING` : sql``}
       `,
@@ -299,30 +291,59 @@ export const make = Effect.gen(function* () {
   const createSessionRow = insertSessionRow(false);
   const createSessionRowIfAbsent = insertSessionRow(true);
 
+  // A pending device's grant lives in Houston's own table; upstream's auth_sessions has no such columns.
+  const insertPendingRow = SqlSchema.void({
+    Request: CreateAuthSessionInput,
+    execute: (input) =>
+      input.pendingApproval === undefined
+        ? sql`SELECT 1`
+        : sql`
+          INSERT OR IGNORE INTO houston_pending_device_approvals (
+            auth_session_id,
+            granted_scopes,
+            paired_via,
+            approval_expires_at
+          )
+          VALUES (
+            ${input.sessionId},
+            ${JSON.stringify(input.pendingApproval.grantedScopes)},
+            ${input.pendingApproval.pairedVia},
+            ${input.pendingApproval.expiresAt}
+          )
+        `,
+  });
+  const insertPending = (input: CreateAuthSessionInput) =>
+    input.pendingApproval === undefined ? Effect.void : insertPendingRow(input);
+
+  const selectSessions = sql`
+    SELECT
+      session_id AS "sessionId",
+      subject AS "subject",
+      scopes AS "scopes",
+      method AS "method",
+      client_label AS "clientLabel",
+      client_ip_address AS "clientIpAddress",
+      client_user_agent AS "clientUserAgent",
+      client_device_type AS "clientDeviceType",
+      client_os AS "clientOs",
+      client_browser AS "clientBrowser",
+      issued_at AS "issuedAt",
+      expires_at AS "expiresAt",
+      last_connected_at AS "lastConnectedAt",
+      revoked_at AS "revokedAt",
+      granted_scopes AS "pendingApproval",
+      paired_via AS "pendingPairedVia",
+      approval_expires_at AS "pendingApprovalExpiresAt"
+    FROM auth_sessions
+    LEFT JOIN houston_pending_device_approvals ON auth_session_id = session_id
+  `;
+
   const getSessionRowById = SqlSchema.findOneOption({
     Request: GetAuthSessionByIdInput,
     Result: AuthSessionRawDbRow,
     execute: ({ sessionId }) =>
       sql`
-        SELECT
-          session_id AS "sessionId",
-          subject AS "subject",
-          scopes AS "scopes",
-          method AS "method",
-          client_label AS "clientLabel",
-          client_ip_address AS "clientIpAddress",
-          client_user_agent AS "clientUserAgent",
-          client_device_type AS "clientDeviceType",
-          client_os AS "clientOs",
-          client_browser AS "clientBrowser",
-          issued_at AS "issuedAt",
-          expires_at AS "expiresAt",
-          last_connected_at AS "lastConnectedAt",
-          revoked_at AS "revokedAt",
-          pending_granted_scopes AS "pendingApproval",
-          pending_paired_via AS "pendingPairedVia",
-          pending_approval_expires_at AS "pendingApprovalExpiresAt"
-        FROM auth_sessions
+        ${selectSessions}
         WHERE session_id = ${sessionId}
       `,
   });
@@ -351,27 +372,9 @@ export const make = Effect.gen(function* () {
     Result: AuthSessionRawDbRow,
     execute: ({ now, connectedSessionIds = [] }) =>
       sql`
-        SELECT
-          session_id AS "sessionId",
-          subject AS "subject",
-          scopes AS "scopes",
-          method AS "method",
-          client_label AS "clientLabel",
-          client_ip_address AS "clientIpAddress",
-          client_user_agent AS "clientUserAgent",
-          client_device_type AS "clientDeviceType",
-          client_os AS "clientOs",
-          client_browser AS "clientBrowser",
-          issued_at AS "issuedAt",
-          expires_at AS "expiresAt",
-          last_connected_at AS "lastConnectedAt",
-          revoked_at AS "revokedAt",
-          pending_granted_scopes AS "pendingApproval",
-          pending_paired_via AS "pendingPairedVia",
-          pending_approval_expires_at AS "pendingApprovalExpiresAt"
-        FROM auth_sessions
+        ${selectSessions}
         WHERE revoked_at IS NULL
-          AND pending_approval = 0
+          AND auth_session_id IS NULL
           AND (expires_at > ${now} OR ${sql.in("session_id", connectedSessionIds)})
         ORDER BY issued_at DESC, session_id DESC
       `,
@@ -419,96 +422,83 @@ export const make = Effect.gen(function* () {
     Result: AuthSessionRawDbRow,
     execute: ({ now }) =>
       sql`
-        SELECT
-          session_id AS "sessionId",
-          subject AS "subject",
-          scopes AS "scopes",
-          method AS "method",
-          client_label AS "clientLabel",
-          client_ip_address AS "clientIpAddress",
-          client_user_agent AS "clientUserAgent",
-          client_device_type AS "clientDeviceType",
-          client_os AS "clientOs",
-          client_browser AS "clientBrowser",
-          issued_at AS "issuedAt",
-          expires_at AS "expiresAt",
-          last_connected_at AS "lastConnectedAt",
-          revoked_at AS "revokedAt",
-          pending_granted_scopes AS "pendingApproval",
-          pending_paired_via AS "pendingPairedVia",
-          pending_approval_expires_at AS "pendingApprovalExpiresAt"
-        FROM auth_sessions
+        ${selectSessions}
         WHERE revoked_at IS NULL
-          AND pending_approval = 1
-          AND pending_approval_expires_at > ${now}
+          AND auth_session_id IS NOT NULL
+          AND approval_expires_at > ${now}
         ORDER BY issued_at DESC, session_id DESC
       `,
   });
 
-  const approvePendingSessionRow = SqlSchema.findOneOption({
+  // The grant becomes the session's scopes only for a pending, unrevoked, unexpired device.
+  const grantPendingScopes = SqlSchema.findAll({
     Request: ApprovePendingAuthSessionInput,
-    Result: AuthSessionRawDbRow,
+    Result: Schema.Struct({ sessionId: AuthSessionId }),
     execute: ({ sessionId, now }) =>
       sql`
         UPDATE auth_sessions
-        SET scopes = pending_granted_scopes,
-            pending_approval = 0,
-            pending_granted_scopes = NULL,
-            pending_paired_via = NULL,
-            pending_approval_expires_at = NULL
+        SET scopes = (
+          SELECT granted_scopes FROM houston_pending_device_approvals
+          WHERE auth_session_id = auth_sessions.session_id
+        )
         WHERE session_id = ${sessionId}
-          AND pending_approval = 1
           AND revoked_at IS NULL
-          AND pending_approval_expires_at > ${now}
-        RETURNING
-          session_id AS "sessionId",
-          subject AS "subject",
-          scopes AS "scopes",
-          method AS "method",
-          client_label AS "clientLabel",
-          client_ip_address AS "clientIpAddress",
-          client_user_agent AS "clientUserAgent",
-          client_device_type AS "clientDeviceType",
-          client_os AS "clientOs",
-          client_browser AS "clientBrowser",
-          issued_at AS "issuedAt",
-          expires_at AS "expiresAt",
-          last_connected_at AS "lastConnectedAt",
-          revoked_at AS "revokedAt",
-          pending_granted_scopes AS "pendingApproval",
-          pending_paired_via AS "pendingPairedVia",
-          pending_approval_expires_at AS "pendingApprovalExpiresAt"
+          AND EXISTS (
+            SELECT 1 FROM houston_pending_device_approvals
+            WHERE auth_session_id = auth_sessions.session_id
+              AND approval_expires_at > ${now}
+          )
+        RETURNING session_id AS "sessionId"
       `,
   });
 
-  const expirePendingSessionRows = SqlSchema.findAll({
+  const deletePendingRow = SqlSchema.void({
+    Request: GetAuthSessionByIdInput,
+    execute: ({ sessionId }) =>
+      sql`DELETE FROM houston_pending_device_approvals WHERE auth_session_id = ${sessionId}`,
+  });
+
+  const deletePendingRowsExcept = SqlSchema.void({
+    Request: RevokeOtherAuthSessionsInput,
+    execute: ({ currentSessionId }) =>
+      sql`DELETE FROM houston_pending_device_approvals WHERE auth_session_id <> ${currentSessionId}`,
+  });
+
+  const revokeExpiredPendingSessions = SqlSchema.findAll({
     Request: ExpirePendingAuthSessionsInput,
     Result: Schema.Struct({ sessionId: AuthSessionId }),
     execute: ({ now }) =>
       sql`
         UPDATE auth_sessions
-        SET revoked_at = ${now},
-            pending_approval = 0,
-            pending_granted_scopes = NULL,
-            pending_paired_via = NULL,
-            pending_approval_expires_at = NULL
-        WHERE pending_approval = 1
-          AND revoked_at IS NULL
-          AND pending_approval_expires_at <= ${now}
+        SET revoked_at = ${now}
+        WHERE revoked_at IS NULL
+          AND EXISTS (
+            SELECT 1 FROM houston_pending_device_approvals
+            WHERE auth_session_id = auth_sessions.session_id
+              AND approval_expires_at <= ${now}
+          )
         RETURNING session_id AS "sessionId"
       `,
   });
 
+  const deleteExpiredPendingRows = SqlSchema.void({
+    Request: ExpirePendingAuthSessionsInput,
+    execute: ({ now }) =>
+      sql`DELETE FROM houston_pending_device_approvals WHERE approval_expires_at <= ${now}`,
+  });
+
   const create: AuthSessionRepository["Service"]["create"] = (input) =>
-    createSessionRow(input).pipe(
-      Effect.mapError(
-        toPersistenceSqlOrDecodeError(
-          "AuthSessionRepository.create:query",
-          "AuthSessionRepository.create:encodeRequest",
-          { sessionId: input.sessionId },
+    sql
+      .withTransaction(createSessionRow(input).pipe(Effect.andThen(insertPending(input))))
+      .pipe(
+        Effect.mapError(
+          toPersistenceSqlOrDecodeError(
+            "AuthSessionRepository.create:query",
+            "AuthSessionRepository.create:encodeRequest",
+            { sessionId: input.sessionId },
+          ),
         ),
-      ),
-    );
+      );
 
   const createReplacingActive: AuthSessionRepository["Service"]["createReplacingActive"] = (
     input,
@@ -518,6 +508,7 @@ export const make = Effect.gen(function* () {
         revokeActiveSessionsForReplacement(input).pipe(
           Effect.flatMap((revokedRows) =>
             createSessionRow(input.session).pipe(
+              Effect.andThen(insertPending(input.session)),
               Effect.as(revokedRows.map((row) => row.sessionId)),
             ),
           ),
@@ -534,15 +525,17 @@ export const make = Effect.gen(function* () {
       );
 
   const createIfAbsent: AuthSessionRepository["Service"]["createIfAbsent"] = (input) =>
-    createSessionRowIfAbsent(input).pipe(
-      Effect.mapError(
-        toPersistenceSqlOrDecodeError(
-          "AuthSessionRepository.createIfAbsent:query",
-          "AuthSessionRepository.createIfAbsent:encodeRequest",
-          { sessionId: input.sessionId },
+    sql
+      .withTransaction(createSessionRowIfAbsent(input).pipe(Effect.andThen(insertPending(input))))
+      .pipe(
+        Effect.mapError(
+          toPersistenceSqlOrDecodeError(
+            "AuthSessionRepository.createIfAbsent:query",
+            "AuthSessionRepository.createIfAbsent:encodeRequest",
+            { sessionId: input.sessionId },
+          ),
         ),
-      ),
-    );
+      );
 
   const getById: AuthSessionRepository["Service"]["getById"] = (input) =>
     getSessionRowById(input).pipe(
@@ -598,28 +591,38 @@ export const make = Effect.gen(function* () {
     );
 
   const revoke: AuthSessionRepository["Service"]["revoke"] = (input) =>
-    revokeSessionRows(input).pipe(
-      Effect.mapError(
-        toPersistenceSqlOrDecodeError(
-          "AuthSessionRepository.revoke:query",
-          "AuthSessionRepository.revoke:decodeRows",
-          { sessionId: input.sessionId },
+    sql
+      .withTransaction(
+        revokeSessionRows(input).pipe(
+          Effect.tap(() => deletePendingRow({ sessionId: input.sessionId })),
         ),
-      ),
-      Effect.map((rows) => rows.length > 0),
-    );
+      )
+      .pipe(
+        Effect.mapError(
+          toPersistenceSqlOrDecodeError(
+            "AuthSessionRepository.revoke:query",
+            "AuthSessionRepository.revoke:decodeRows",
+            { sessionId: input.sessionId },
+          ),
+        ),
+        Effect.map((rows) => rows.length > 0),
+      );
 
   const revokeAllExcept: AuthSessionRepository["Service"]["revokeAllExcept"] = (input) =>
-    revokeOtherSessionRows(input).pipe(
-      Effect.mapError(
-        toPersistenceSqlOrDecodeError(
-          "AuthSessionRepository.revokeAllExcept:query",
-          "AuthSessionRepository.revokeAllExcept:decodeRows",
-          { currentSessionId: input.currentSessionId },
+    sql
+      .withTransaction(
+        revokeOtherSessionRows(input).pipe(Effect.tap(() => deletePendingRowsExcept(input))),
+      )
+      .pipe(
+        Effect.mapError(
+          toPersistenceSqlOrDecodeError(
+            "AuthSessionRepository.revokeAllExcept:query",
+            "AuthSessionRepository.revokeAllExcept:decodeRows",
+            { currentSessionId: input.currentSessionId },
+          ),
         ),
-      ),
-      Effect.map((rows) => rows.map((row) => row.sessionId)),
-    );
+        Effect.map((rows) => rows.map((row) => row.sessionId)),
+      );
 
   const setLastConnectedAt: AuthSessionRepository["Service"]["setLastConnectedAt"] = (input) =>
     setLastConnectedAtRow(input).pipe(
@@ -658,42 +661,55 @@ export const make = Effect.gen(function* () {
     );
 
   const approvePending: AuthSessionRepository["Service"]["approvePending"] = (input) =>
-    approvePendingSessionRow(input).pipe(
-      Effect.mapError(
-        toPersistenceSqlOrDecodeError(
-          "AuthSessionRepository.approvePending:query",
-          "AuthSessionRepository.approvePending:decodeRow",
-          { sessionId: input.sessionId },
-        ),
-      ),
-      Effect.flatMap((rowOption) =>
-        Option.match(rowOption, {
-          onNone: () => Effect.succeedNone,
-          onSome: (row) =>
-            decodeAuthSessionDbRow(row).pipe(
-              Effect.mapError((cause) =>
-                PersistenceDecodeError.fromSchemaError(
-                  "AuthSessionRepository.approvePending:decodeRow",
-                  cause,
-                  { sessionId: row.sessionId },
-                ),
-              ),
-              Effect.map((decodedRow) => Option.some(toAuthSessionRecord(decodedRow))),
-            ),
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const granted = yield* grantPendingScopes(input);
+          if (granted.length === 0) return Option.none();
+          yield* deletePendingRow({ sessionId: input.sessionId });
+          return yield* getSessionRowById({ sessionId: input.sessionId });
         }),
-      ),
-    );
+      )
+      .pipe(
+        Effect.mapError(
+          toPersistenceSqlOrDecodeError(
+            "AuthSessionRepository.approvePending:query",
+            "AuthSessionRepository.approvePending:decodeRow",
+            { sessionId: input.sessionId },
+          ),
+        ),
+        Effect.flatMap((rowOption) =>
+          Option.match(rowOption, {
+            onNone: () => Effect.succeedNone,
+            onSome: (row) =>
+              decodeAuthSessionDbRow(row).pipe(
+                Effect.mapError((cause) =>
+                  PersistenceDecodeError.fromSchemaError(
+                    "AuthSessionRepository.approvePending:decodeRow",
+                    cause,
+                    { sessionId: row.sessionId },
+                  ),
+                ),
+                Effect.map((decodedRow) => Option.some(toAuthSessionRecord(decodedRow))),
+              ),
+          }),
+        ),
+      );
 
   const expirePending: AuthSessionRepository["Service"]["expirePending"] = (input) =>
-    expirePendingSessionRows(input).pipe(
-      Effect.mapError(
-        toPersistenceSqlOrDecodeError(
-          "AuthSessionRepository.expirePending:query",
-          "AuthSessionRepository.expirePending:decodeRows",
+    sql
+      .withTransaction(
+        revokeExpiredPendingSessions(input).pipe(Effect.tap(() => deleteExpiredPendingRows(input))),
+      )
+      .pipe(
+        Effect.mapError(
+          toPersistenceSqlOrDecodeError(
+            "AuthSessionRepository.expirePending:query",
+            "AuthSessionRepository.expirePending:decodeRows",
+          ),
         ),
-      ),
-      Effect.map((rows) => rows.map((row) => row.sessionId)),
-    );
+        Effect.map((rows) => rows.map((row) => row.sessionId)),
+      );
 
   return {
     create,

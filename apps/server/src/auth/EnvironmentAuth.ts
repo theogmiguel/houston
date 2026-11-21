@@ -774,9 +774,10 @@ export const make = Effect.gen(function* () {
   const requireApprovalForNewDevices = Effect.gen(function* () {
     const settingsService = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
     if (Option.isNone(settingsService)) return false;
+    // Unreadable settings hold the device for its owner rather than open the gate it guards.
     return yield* settingsService.value.getSettings.pipe(
       Effect.map((settings) => settings.requireApprovalForNewDevices),
-      Effect.orElseSucceed(() => false),
+      Effect.orElseSucceed(() => true),
     );
   });
 
