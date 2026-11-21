@@ -147,6 +147,10 @@ const serviceLayer = (input: {
     Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer)),
   );
 
+it("binds every forward to loopback only", () => {
+  expect(DesktopPortForwarding.PORT_FORWARD_BIND_HOST).toBe("127.0.0.1");
+});
+
 it.live("refuses every forward while the setting is off", () =>
   Effect.gen(function* () {
     const forwarding = yield* DesktopPortForwarding.DesktopPortForwarding;

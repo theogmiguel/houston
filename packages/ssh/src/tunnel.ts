@@ -1356,10 +1356,12 @@ const startSshTunnel = Effect.fn("ssh/tunnel.startSshTunnel")(function* (input: 
   return tunnelEntry;
 });
 
+const SSH_LOCAL_BIND_FAILURE = /bind \[?[^\]]*\]?:?\d*:?\s*address already in use/iu;
+
 /** ssh reports a taken local port on stderr and exits; the next candidate may work. */
 export function isSshLocalForwardBindFailure(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /bind \[?[^\]]*\]?:?\d*:?\s*address already in use/iu.test(message);
+  return SSH_LOCAL_BIND_FAILURE.test(message);
 }
 
 const startSshPortForward = Effect.fn("ssh/tunnel.startSshPortForward")(function* (input: {
