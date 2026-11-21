@@ -1,7 +1,7 @@
 import * as NodePlatformCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
-  AuthEnvironmentScope,
+  AuthGrantScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   authScopeResponse,
@@ -59,7 +59,7 @@ const makeCookieRequest = (
   >[0];
 
 const pairDevice = (serverAuth: EnvironmentAuth.EnvironmentAuth["Service"], input?: {
-  readonly scopes?: ReadonlyArray<AuthEnvironmentScope>;
+  readonly scopes?: ReadonlyArray<AuthGrantScope>;
   readonly label?: string;
 }) =>
   Effect.gen(function* () {
