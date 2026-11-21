@@ -81,6 +81,10 @@ approval. It holds no permission at all: every request and every WebSocket metho
 refused with a message naming the device, this host and the setting. It cannot list clients,
 approve itself or approve another device.
 
+The pairing link printed when the server starts and the desktop app's own link are not subject
+to approval. They belong to the person running the host, who would otherwise have no way to
+approve their first device.
+
 The host owner sees the device's name, when it paired, how it paired (link or code) and when its
 approval expires, with **Approve** and **Deny**. The owner also gets an in-app notification when a
 device starts waiting. Approving gives the device exactly the permissions the link or code
