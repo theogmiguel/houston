@@ -573,9 +573,12 @@ export const PendingDeviceList = memo(function PendingDeviceList({
 }: PendingDeviceListProps) {
   const t = useT();
   const nowMs = useNowSecond();
+  const waiting = pendingDevices.filter(
+    (device) => new Date(DateTime.formatIso(device.expiresAt)).getTime() > nowMs,
+  );
   return (
     <>
-      {pendingDevices.map((device) => (
+      {waiting.map((device) => (
         <SettingsRow
           key={device.sessionId}
           title={device.deviceName}
