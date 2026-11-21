@@ -304,6 +304,8 @@ export function PreviewView({
           : needsLoopbackForward(threadRef.environmentId)
             ? await forwardLoopbackUrl(threadRef.environmentId, next)
             : resolveDiscoveredServerUrl(threadRef.environmentId, next);
+      // A refused forward was already reported; opening the address anyway would show this machine's own port.
+      if (resolved === null) return;
       if (await navigateToResolvedUrl(resolved)) {
         recordVisitForThread(threadRef, next);
       }

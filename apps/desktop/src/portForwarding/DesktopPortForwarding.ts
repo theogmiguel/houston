@@ -228,6 +228,21 @@ const make = Effect.gen(function* () {
     yield* publish;
   });
 
+  // A dropped ssh connection leaves nothing listening behind its record, so the list must say so.
+  const markForwardFailed = Effect.fn("desktop.portForwarding.markForwardFailed")(function* (
+    id: string,
+    error: string,
+  ) {
+    yield* Ref.update(forwards, (current) => {
+      const entry = current.get(id);
+      if (entry === undefined) return current;
+      const next = new Map(current);
+      next.set(id, { ...entry, record: { ...entry.record, state: "failed", error } });
+      return next;
+    });
+    yield* publish;
+  });
+
   const recordConnectionLimit = (id: string) =>
     recordForwardError(
       id,
@@ -312,6 +327,11 @@ const make = Effect.gen(function* () {
           target: input.target,
           remotePort: input.remotePort,
           localPort: candidate,
+          onClosed: (error) =>
+            markForwardFailed(
+              input.entry.record.id,
+              `The SSH connection for this forward ended: ${errorMessage(error)}`,
+            ),
         })
         .pipe(Effect.provideService(Scope.Scope, input.entry.scope), Effect.result);
       if (result._tag === "Success") return candidate;

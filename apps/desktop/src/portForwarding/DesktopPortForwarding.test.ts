@@ -184,6 +184,44 @@ it.live("forwards through an SSH connection and stops on request", () =>
   }).pipe(Effect.scoped),
 );
 
+it.live("marks an SSH forward failed when its connection drops", () =>
+  Effect.gen(function* () {
+    let drop: ((error: Error) => Effect.Effect<void>) | undefined;
+    const ssh = Layer.mock(DesktopSshEnvironment.DesktopSshEnvironment, {
+      forwardPort: (input: {
+        readonly localPort: number;
+        readonly onClosed?: (error: Error) => Effect.Effect<void>;
+      }) =>
+        Effect.sync(() => {
+          drop = input.onClosed;
+          return { localPort: input.localPort, stop: Effect.void };
+        }),
+    });
+    const layer = DesktopPortForwarding.layer.pipe(
+      Layer.provide(settingsLayer(true)),
+      Layer.provide(catalogLayer(sshCatalog())),
+      Layer.provide(ssh),
+      Layer.provide(transportLayer({ echoPort: 1, seen: [] })),
+      Layer.provide(windowLayer),
+      Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer)),
+    );
+    yield* Effect.gen(function* () {
+      const forwarding = yield* DesktopPortForwarding.DesktopPortForwarding;
+      const forward = yield* forwarding.start({
+        environmentId: environmentId("env-ssh"),
+        remotePort: 5432,
+      });
+      expect(forward.state).toBe("active");
+      expect(drop).toBeDefined();
+
+      yield* drop!(new Error("Connection reset by peer"));
+      const [held] = yield* forwarding.list;
+      expect(held?.state).toBe("failed");
+      expect(held?.error).toContain("Connection reset by peer");
+    }).pipe(Effect.provide(layer));
+  }).pipe(Effect.scoped),
+);
+
 it.live("chooses the next free local port and binds loopback only", () =>
   Effect.scoped(
     Effect.gen(function* () {

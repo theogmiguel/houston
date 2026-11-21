@@ -1,4 +1,5 @@
 import type { EnvironmentId } from "@houston-app/contracts";
+import { isLoopbackHost } from "@houston-app/shared/preview";
 
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { isDesktopHost } from "~/env";
@@ -20,18 +21,24 @@ export function needsLoopbackForward(environmentId: EnvironmentId): boolean {
   return isDesktopHost && window.hostBridge !== undefined && isRemoteEnvironment(environmentId);
 }
 
+const DEFAULT_PORTS: Readonly<Record<string, number>> = { "http:": 80, "https:": 443 };
+
 /**
  * Starts or reuses this device's forward for a loopback URL in a remote
- * environment and returns the local URL. A failure returns the original URL
- * so a directly reachable service can still open.
+ * environment and returns the local URL. An address that is not loopback is
+ * returned as written. A failed forward returns null: the loopback address
+ * would otherwise open this machine's own service on that port.
  */
 export async function forwardLoopbackUrl(
   environmentId: EnvironmentId,
   rawUrl: string,
-): Promise<string> {
+): Promise<string | null> {
   const parsed = URL.parse(rawUrl);
-  if (parsed === null || window.hostBridge === undefined) return rawUrl;
-  const port = Number.parseInt(parsed.port, 10);
+  if (parsed === null || window.hostBridge === undefined || !isLoopbackHost(parsed.hostname)) {
+    return rawUrl;
+  }
+  const port =
+    parsed.port === "" ? (DEFAULT_PORTS[parsed.protocol] ?? 0) : Number.parseInt(parsed.port, 10);
   if (!Number.isInteger(port) || port <= 0) return rawUrl;
   try {
     const forward = await window.hostBridge.startPortForward({ environmentId, remotePort: port });
@@ -44,6 +51,6 @@ export async function forwardLoopbackUrl(
         description: error instanceof Error ? error.message : String(error),
       }),
     );
-    return rawUrl;
+    return null;
   }
 }

@@ -149,6 +149,8 @@ export interface SshEnvironmentManagerShape {
     readonly target: DesktopSshEnvironmentTarget;
     readonly remotePort: number;
     readonly localPort: number;
+    /** Runs when the ssh connection ends without the caller stopping the forward. */
+    readonly onClosed?: (error: SshCommandError) => Effect.Effect<void>;
   }) => Effect.Effect<
     { readonly localPort: number; readonly stop: Effect.Effect<void> },
     SshEnvironmentEffectError,
@@ -1368,6 +1370,7 @@ const startSshPortForward = Effect.fn("ssh/tunnel.startSshPortForward")(function
   readonly resolvedTarget: DesktopSshEnvironmentTarget;
   readonly remotePort: number;
   readonly localPort: number;
+  readonly onClosed?: (error: SshCommandError) => Effect.Effect<void>;
   readonly authOptions: SshAuth.SshAuthOptions;
   readonly scope: Scope.Closeable;
 }): Effect.fn.Return<
@@ -1425,6 +1428,17 @@ const startSshPortForward = Effect.fn("ssh/tunnel.startSshPortForward")(function
   ];
   const sshCommand = yield* resolveSshCommand;
   const command = [sshCommand, ...args];
+  // A listener already on this port is another program, never this forward. ssh would fail to bind,
+  // but the readiness poll below would take that program's listener for its own.
+  const net = yield* NetService.NetService;
+  if (yield* net.hasListenerOnHost(input.localPort, "127.0.0.1")) {
+    return yield* new SshCommandError({
+      command,
+      exitCode: null,
+      stderr: "",
+      message: `bind [127.0.0.1]:${input.localPort}: Address already in use`,
+    });
+  }
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const child = yield* spawner
     .spawn(
@@ -1486,7 +1500,6 @@ const startSshPortForward = Effect.fn("ssh/tunnel.startSshPortForward")(function
       ),
     ),
   );
-  const net = yield* NetService.NetService;
   const listening = Effect.gen(function* () {
     while (true) {
       if (yield* net.hasListenerOnHost(input.localPort, "127.0.0.1")) return;
@@ -1515,12 +1528,27 @@ const startSshPortForward = Effect.fn("ssh/tunnel.startSshPortForward")(function
             .pipe(Effect.ignoreCause),
     ),
   );
+  let stopping = false;
   yield* Scope.addFinalizer(
     scope,
-    child
-      .kill({ killSignal: "SIGTERM", forceKillAfter: TUNNEL_SHUTDOWN_TIMEOUT_MS })
-      .pipe(Effect.ignoreCause),
+    Effect.sync(() => {
+      stopping = true;
+    }).pipe(
+      Effect.andThen(
+        child
+          .kill({ killSignal: "SIGTERM", forceKillAfter: TUNNEL_SHUTDOWN_TIMEOUT_MS })
+          .pipe(Effect.ignoreCause),
+      ),
+    ),
   );
+  const onClosed = input.onClosed;
+  if (onClosed !== undefined) {
+    // The exit is a failure of `exitFailure`; one the caller did not ask for is reported.
+    yield* exitFailure.pipe(
+      Effect.catch((error) => (stopping ? Effect.void : onClosed(error))),
+      Effect.forkIn(scope),
+    );
+  }
   return { localPort: input.localPort };
 });
 
@@ -1981,6 +2009,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
           resolvedTarget,
           remotePort: input.remotePort,
           localPort: input.localPort,
+          ...(input.onClosed === undefined ? {} : { onClosed: input.onClosed }),
           authOptions,
           scope,
         }),

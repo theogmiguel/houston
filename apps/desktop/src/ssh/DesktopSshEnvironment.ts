@@ -69,6 +69,8 @@ export class DesktopSshEnvironment extends Context.Service<
       readonly target: DesktopSshEnvironmentTarget;
       readonly remotePort: number;
       readonly localPort: number;
+      /** Runs when the ssh connection ends without the caller stopping the forward. */
+      readonly onClosed?: (error: Error) => Effect.Effect<void>;
     }) => Effect.Effect<
       { readonly localPort: number; readonly stop: Effect.Effect<void> },
       DesktopSshEnvironmentOperationError,

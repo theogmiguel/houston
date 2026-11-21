@@ -1,4 +1,5 @@
 import type { DiscoveredLocalServer, ScopedThreadRef } from "@houston-app/contracts";
+import { AsyncResult } from "effect/reactivity";
 import {
   mapAtomCommandResult,
   type AtomCommandResult,
@@ -23,6 +24,10 @@ export async function openDiscoveredPort<E>(input: {
       : needsLoopbackForward(input.threadRef.environmentId)
         ? await forwardLoopbackUrl(input.threadRef.environmentId, input.port.url)
         : resolveDiscoveredServerUrl(input.threadRef.environmentId, input.port.url);
+  // A refused forward was already reported; opening the address anyway would show this machine's own port.
+  if (resolvedUrl === null) {
+    return AsyncResult.success<void, E | BrowserSettingsReadError>(undefined);
+  }
   const result = await openPreviewSession({
     openPreview: input.openPreview,
     threadRef: input.threadRef,
