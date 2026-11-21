@@ -2,6 +2,7 @@ import type { EnvironmentId } from "@houston-app/contracts";
 import { type FormEvent, useState } from "react";
 
 import { useClientSettings } from "~/hooks/useSettings";
+import { isRemoteEnvironment } from "~/browser/remotePortForwarding";
 import { useT } from "~/i18n/useT";
 import { usePortForwards } from "~/state/portForwards";
 import { Button } from "../ui/button";
@@ -30,6 +31,9 @@ export function PortForwardingPanel(props: {
   const [busy, setBusy] = useState<string | null>(null);
   const available =
     typeof window !== "undefined" && window.hostBridge?.startPortForward !== undefined;
+  const remote = isRemoteEnvironment(props.environmentId);
+  // A local environment has no hop to forward; existing forwards stay visible wherever they started.
+  if (!remote && forwards.length === 0) return null;
 
   const report = (title: string, error: unknown) => {
     toastManager.add(

@@ -14,6 +14,10 @@ const mocks = vi.hoisted(() => ({
   stopped: [] as string[],
 }));
 
+vi.mock(import("~/browser/remotePortForwarding"), () => ({
+  isRemoteEnvironment: () => true,
+}));
+
 vi.mock(import("~/state/portForwards"), () => ({
   usePortForwards: () => mocks.forwards,
 }));

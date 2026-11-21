@@ -284,7 +284,7 @@ const make = Effect.gen(function* () {
                 yield* closeSocket(client, "The environment refused the forwarded connection.");
                 yield* recordForwardError(
                   input.entry.record.id,
-                  `A forwarded connection was refused; this environment holds at most ${PORT_FORWARDING_MAX_TUNNELS} tunnels at once.`,
+                  `A forwarded connection was refused. The environment may not support port forwarding, or it already holds ${PORT_FORWARDING_MAX_TUNNELS} tunnels.`,
                 );
                 return;
               }

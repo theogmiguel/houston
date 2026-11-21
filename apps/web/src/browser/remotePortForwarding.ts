@@ -5,14 +5,20 @@ import { isDesktopHost } from "~/env";
 import { readPreparedConnection } from "~/state/session";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 
-/** A saved environment that is not this machine, and so has a port to forward. */
-export function needsLoopbackForward(environmentId: EnvironmentId): boolean {
-  if (!isDesktopHost || window.hostBridge === undefined) return false;
+/** Whether this environment runs somewhere other than this machine. */
+export function isRemoteEnvironment(environmentId: EnvironmentId): boolean {
   const target = readPreparedConnection(environmentId)?.target;
   if (target === undefined) return false;
   return (
     target._tag === "SshConnectionTarget" ||
     (target._tag === "BearerConnectionTarget" && !isDesktopLocalConnectionTarget(target))
+  );
+}
+
+/** A saved environment that is not this machine, and so has a port to forward. */
+export function needsLoopbackForward(environmentId: EnvironmentId): boolean {
+  return (
+    isDesktopHost && window.hostBridge !== undefined && isRemoteEnvironment(environmentId)
   );
 }
 
