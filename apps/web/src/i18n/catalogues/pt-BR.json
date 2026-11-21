@@ -966,7 +966,7 @@
   "A tag must be a single line of text.": "Uma tag deve ter uma única linha de texto.",
   "A tag must be at most {max} characters; \"{tag}\" is {length}.": "Uma tag deve ter no máximo {max} caracteres; \"{tag}\" tem {length}.",
   "Amend last commit": "Alterar o último commit",
-  "Amending rewrites the most recent commit. It is refused once that commit is on the branch's upstream.": "Alterar reescreve o commit mais recente. Isso é recusado quando o commit já está no upstream da branch.",
+  "Amending rewrites the most recent commit. It is refused once that commit is on the branch's remote.": "Alterar reescreve o commit mais recente. Isso é recusado quando o commit já está na branch remota.",
   "An empty Git repository": "Um repositório Git vazio",
   "Auto balance": "Balancear automaticamente",
   "Branch {branch} is not merged. Delete it anyway? Commits only on this branch are lost.": "A branch {branch} não foi mesclada. Excluir mesmo assim? Commits que existem apenas nesta branch serão perdidos.",

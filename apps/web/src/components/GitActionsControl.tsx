@@ -1790,7 +1790,7 @@ export default function GitActionsControl({
             <DialogDescription>
               {isAmendDialog
                 ? t(
-                    "Amending rewrites the most recent commit. It is refused once that commit is on the branch's upstream.",
+                    "Amending rewrites the most recent commit. It is refused once that commit is on the branch's remote.",
                   )
                 : t(COMMIT_DIALOG_DESCRIPTION)}
             </DialogDescription>

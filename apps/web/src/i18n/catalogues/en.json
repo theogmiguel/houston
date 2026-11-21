@@ -966,7 +966,7 @@
   "A tag must be a single line of text.": "A tag must be a single line of text.",
   "A tag must be at most {max} characters; \"{tag}\" is {length}.": "A tag must be at most {max} characters; \"{tag}\" is {length}.",
   "Amend last commit": "Amend last commit",
-  "Amending rewrites the most recent commit. It is refused once that commit is on the branch's upstream.": "Amending rewrites the most recent commit. It is refused once that commit is on the branch's upstream.",
+  "Amending rewrites the most recent commit. It is refused once that commit is on the branch's remote.": "Amending rewrites the most recent commit. It is refused once that commit is on the branch's remote.",
   "An empty Git repository": "An empty Git repository",
   "Auto balance": "Auto balance",
   "Branch {branch} is not merged. Delete it anyway? Commits only on this branch are lost.": "Branch {branch} is not merged. Delete it anyway? Commits only on this branch are lost.",
