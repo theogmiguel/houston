@@ -9,7 +9,9 @@ import * as SqlSchema from "effect/sql/SqlSchema";
 
 import {
   AuthClientMetadataDeviceType,
+  AuthDevicePairingMethod,
   AuthEnvironmentScopes,
+  AuthGrantScopes,
   AuthSessionId,
   ServerAuthSessionMethod,
 } from "@houston-app/contracts";
@@ -31,6 +33,13 @@ export const AuthSessionClientMetadataRecord = Schema.Struct({
 });
 export type AuthSessionClientMetadataRecord = typeof AuthSessionClientMetadataRecord.Type;
 
+export const AuthSessionPendingApproval = Schema.Struct({
+  grantedScopes: AuthGrantScopes,
+  pairedVia: AuthDevicePairingMethod,
+  expiresAt: Schema.DateTimeUtcFromString,
+});
+export type AuthSessionPendingApproval = typeof AuthSessionPendingApproval.Type;
+
 export const AuthSessionRecord = Schema.Struct({
   sessionId: AuthSessionId,
   subject: Schema.String,
@@ -41,6 +50,7 @@ export const AuthSessionRecord = Schema.Struct({
   expiresAt: Schema.DateTimeUtcFromString,
   lastConnectedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
   revokedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
+  pendingApproval: Schema.NullOr(AuthSessionPendingApproval),
 });
 export type AuthSessionRecord = typeof AuthSessionRecord.Type;
 
@@ -52,6 +62,7 @@ export const CreateAuthSessionInput = Schema.Struct({
   client: AuthSessionClientMetadataRecord,
   issuedAt: Schema.DateTimeUtcFromString,
   expiresAt: Schema.DateTimeUtcFromString,
+  pendingApproval: Schema.optionalKey(AuthSessionPendingApproval),
 });
 export type CreateAuthSessionInput = typeof CreateAuthSessionInput.Type;
 
@@ -92,6 +103,22 @@ export const SetAuthSessionLastConnectedAtInput = Schema.Struct({
 });
 export type SetAuthSessionLastConnectedAtInput = typeof SetAuthSessionLastConnectedAtInput.Type;
 
+export const ListPendingAuthSessionsInput = Schema.Struct({
+  now: Schema.DateTimeUtcFromString,
+});
+export type ListPendingAuthSessionsInput = typeof ListPendingAuthSessionsInput.Type;
+
+export const ApprovePendingAuthSessionInput = Schema.Struct({
+  sessionId: AuthSessionId,
+  now: Schema.DateTimeUtcFromString,
+});
+export type ApprovePendingAuthSessionInput = typeof ApprovePendingAuthSessionInput.Type;
+
+export const ExpirePendingAuthSessionsInput = Schema.Struct({
+  now: Schema.DateTimeUtcFromString,
+});
+export type ExpirePendingAuthSessionsInput = typeof ExpirePendingAuthSessionsInput.Type;
+
 export class AuthSessionRepository extends Context.Service<
   AuthSessionRepository,
   {
@@ -119,6 +146,15 @@ export class AuthSessionRepository extends Context.Service<
     readonly setLastConnectedAt: (
       input: SetAuthSessionLastConnectedAtInput,
     ) => Effect.Effect<void, AuthSessionRepositoryError>;
+    readonly listPending: (
+      input: ListPendingAuthSessionsInput,
+    ) => Effect.Effect<ReadonlyArray<AuthSessionRecord>, AuthSessionRepositoryError>;
+    readonly approvePending: (
+      input: ApprovePendingAuthSessionInput,
+    ) => Effect.Effect<Option.Option<AuthSessionRecord>, AuthSessionRepositoryError>;
+    readonly expirePending: (
+      input: ExpirePendingAuthSessionsInput,
+    ) => Effect.Effect<ReadonlyArray<AuthSessionId>, AuthSessionRepositoryError>;
   }
 >()("@houston-app/cli/persistence/AuthSessions/AuthSessionRepository") {}
 
@@ -137,6 +173,9 @@ const AuthSessionDbRow = Schema.Struct({
   expiresAt: Schema.DateTimeUtcFromString,
   lastConnectedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
   revokedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
+  pendingApproval: Schema.NullOr(Schema.fromJsonString(AuthGrantScopes)),
+  pendingPairedVia: Schema.NullOr(AuthDevicePairingMethod),
+  pendingApprovalExpiresAt: Schema.NullOr(Schema.DateTimeUtcFromString),
 });
 
 const AuthSessionRawDbRow = Schema.Struct({
@@ -154,6 +193,9 @@ const AuthSessionRawDbRow = Schema.Struct({
   expiresAt: Schema.Unknown,
   lastConnectedAt: Schema.Unknown,
   revokedAt: Schema.Unknown,
+  pendingApproval: Schema.Unknown,
+  pendingPairedVia: Schema.Unknown,
+  pendingApprovalExpiresAt: Schema.Unknown,
 });
 
 const decodeAuthSessionDbRow = Schema.decodeUnknownEffect(AuthSessionDbRow);
@@ -176,6 +218,16 @@ function toAuthSessionRecord(row: typeof AuthSessionDbRow.Type): AuthSessionReco
     expiresAt: row.expiresAt,
     lastConnectedAt: row.lastConnectedAt,
     revokedAt: row.revokedAt,
+    pendingApproval:
+      row.pendingApproval === null ||
+      row.pendingPairedVia === null ||
+      row.pendingApprovalExpiresAt === null
+        ? null
+        : {
+            grantedScopes: row.pendingApproval,
+            pairedVia: row.pendingPairedVia,
+            expiresAt: row.pendingApprovalExpiresAt,
+          },
   };
 }
 
@@ -216,7 +268,11 @@ export const make = Effect.gen(function* () {
           client_browser,
           issued_at,
           expires_at,
-          revoked_at
+          revoked_at,
+          pending_approval,
+          pending_granted_scopes,
+          pending_paired_via,
+          pending_approval_expires_at
         )
         VALUES (
           ${input.sessionId},
@@ -231,7 +287,11 @@ export const make = Effect.gen(function* () {
           ${input.client.browser},
           ${input.issuedAt},
           ${input.expiresAt},
-          NULL
+          NULL,
+          ${input.pendingApproval === undefined ? 0 : 1},
+          ${input.pendingApproval === undefined ? null : JSON.stringify(input.pendingApproval.grantedScopes)},
+          ${input.pendingApproval?.pairedVia ?? null},
+          ${input.pendingApproval?.expiresAt ?? null}
         )
         ${ignoreExisting ? sql`ON CONFLICT(session_id) DO NOTHING` : sql``}
       `,
@@ -258,7 +318,10 @@ export const make = Effect.gen(function* () {
           issued_at AS "issuedAt",
           expires_at AS "expiresAt",
           last_connected_at AS "lastConnectedAt",
-          revoked_at AS "revokedAt"
+          revoked_at AS "revokedAt",
+          pending_granted_scopes AS "pendingApproval",
+          pending_paired_via AS "pendingPairedVia",
+          pending_approval_expires_at AS "pendingApprovalExpiresAt"
         FROM auth_sessions
         WHERE session_id = ${sessionId}
       `,
@@ -302,9 +365,13 @@ export const make = Effect.gen(function* () {
           issued_at AS "issuedAt",
           expires_at AS "expiresAt",
           last_connected_at AS "lastConnectedAt",
-          revoked_at AS "revokedAt"
+          revoked_at AS "revokedAt",
+          pending_granted_scopes AS "pendingApproval",
+          pending_paired_via AS "pendingPairedVia",
+          pending_approval_expires_at AS "pendingApprovalExpiresAt"
         FROM auth_sessions
         WHERE revoked_at IS NULL
+          AND pending_approval = 0
           AND (expires_at > ${now} OR ${sql.in("session_id", connectedSessionIds)})
         ORDER BY issued_at DESC, session_id DESC
       `,
@@ -343,6 +410,91 @@ export const make = Effect.gen(function* () {
         SET revoked_at = ${revokedAt}
         WHERE session_id <> ${currentSessionId}
           AND revoked_at IS NULL
+        RETURNING session_id AS "sessionId"
+      `,
+  });
+
+  const listPendingSessionRows = SqlSchema.findAll({
+    Request: ListPendingAuthSessionsInput,
+    Result: AuthSessionRawDbRow,
+    execute: ({ now }) =>
+      sql`
+        SELECT
+          session_id AS "sessionId",
+          subject AS "subject",
+          scopes AS "scopes",
+          method AS "method",
+          client_label AS "clientLabel",
+          client_ip_address AS "clientIpAddress",
+          client_user_agent AS "clientUserAgent",
+          client_device_type AS "clientDeviceType",
+          client_os AS "clientOs",
+          client_browser AS "clientBrowser",
+          issued_at AS "issuedAt",
+          expires_at AS "expiresAt",
+          last_connected_at AS "lastConnectedAt",
+          revoked_at AS "revokedAt",
+          pending_granted_scopes AS "pendingApproval",
+          pending_paired_via AS "pendingPairedVia",
+          pending_approval_expires_at AS "pendingApprovalExpiresAt"
+        FROM auth_sessions
+        WHERE revoked_at IS NULL
+          AND pending_approval = 1
+          AND pending_approval_expires_at > ${now}
+        ORDER BY issued_at DESC, session_id DESC
+      `,
+  });
+
+  const approvePendingSessionRow = SqlSchema.findOneOption({
+    Request: ApprovePendingAuthSessionInput,
+    Result: AuthSessionRawDbRow,
+    execute: ({ sessionId, now }) =>
+      sql`
+        UPDATE auth_sessions
+        SET scopes = pending_granted_scopes,
+            pending_approval = 0,
+            pending_granted_scopes = NULL,
+            pending_paired_via = NULL,
+            pending_approval_expires_at = NULL
+        WHERE session_id = ${sessionId}
+          AND pending_approval = 1
+          AND revoked_at IS NULL
+          AND pending_approval_expires_at > ${now}
+        RETURNING
+          session_id AS "sessionId",
+          subject AS "subject",
+          scopes AS "scopes",
+          method AS "method",
+          client_label AS "clientLabel",
+          client_ip_address AS "clientIpAddress",
+          client_user_agent AS "clientUserAgent",
+          client_device_type AS "clientDeviceType",
+          client_os AS "clientOs",
+          client_browser AS "clientBrowser",
+          issued_at AS "issuedAt",
+          expires_at AS "expiresAt",
+          last_connected_at AS "lastConnectedAt",
+          revoked_at AS "revokedAt",
+          pending_granted_scopes AS "pendingApproval",
+          pending_paired_via AS "pendingPairedVia",
+          pending_approval_expires_at AS "pendingApprovalExpiresAt"
+      `,
+  });
+
+  const expirePendingSessionRows = SqlSchema.findAll({
+    Request: ExpirePendingAuthSessionsInput,
+    Result: Schema.Struct({ sessionId: AuthSessionId }),
+    execute: ({ now }) =>
+      sql`
+        UPDATE auth_sessions
+        SET revoked_at = ${now},
+            pending_approval = 0,
+            pending_granted_scopes = NULL,
+            pending_paired_via = NULL,
+            pending_approval_expires_at = NULL
+        WHERE pending_approval = 1
+          AND revoked_at IS NULL
+          AND pending_approval_expires_at <= ${now}
         RETURNING session_id AS "sessionId"
       `,
   });
@@ -480,6 +632,69 @@ export const make = Effect.gen(function* () {
       ),
     );
 
+  const listPending: AuthSessionRepository["Service"]["listPending"] = (input) =>
+    listPendingSessionRows(input).pipe(
+      NodeSqliteClient.readOnly,
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "AuthSessionRepository.listPending:query",
+          "AuthSessionRepository.listPending:decodeRows",
+        ),
+      ),
+      Effect.flatMap((rows) =>
+        Effect.forEach(rows, (row) =>
+          decodeAuthSessionDbRow(row).pipe(
+            Effect.mapError((cause) =>
+              PersistenceDecodeError.fromSchemaError(
+                "AuthSessionRepository.listPending:decodeRows",
+                cause,
+                { sessionId: row.sessionId },
+              ),
+            ),
+            Effect.map(toAuthSessionRecord),
+          ),
+        ),
+      ),
+    );
+
+  const approvePending: AuthSessionRepository["Service"]["approvePending"] = (input) =>
+    approvePendingSessionRow(input).pipe(
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "AuthSessionRepository.approvePending:query",
+          "AuthSessionRepository.approvePending:decodeRow",
+          { sessionId: input.sessionId },
+        ),
+      ),
+      Effect.flatMap((rowOption) =>
+        Option.match(rowOption, {
+          onNone: () => Effect.succeedNone,
+          onSome: (row) =>
+            decodeAuthSessionDbRow(row).pipe(
+              Effect.mapError((cause) =>
+                PersistenceDecodeError.fromSchemaError(
+                  "AuthSessionRepository.approvePending:decodeRow",
+                  cause,
+                  { sessionId: row.sessionId },
+                ),
+              ),
+              Effect.map((decodedRow) => Option.some(toAuthSessionRecord(decodedRow))),
+            ),
+        }),
+      ),
+    );
+
+  const expirePending: AuthSessionRepository["Service"]["expirePending"] = (input) =>
+    expirePendingSessionRows(input).pipe(
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "AuthSessionRepository.expirePending:query",
+          "AuthSessionRepository.expirePending:decodeRows",
+        ),
+      ),
+      Effect.map((rows) => rows.map((row) => row.sessionId)),
+    );
+
   return {
     create,
     createReplacingActive,
@@ -489,6 +704,9 @@ export const make = Effect.gen(function* () {
     revoke,
     revokeAllExcept,
     setLastConnectedAt,
+    listPending,
+    approvePending,
+    expirePending,
   } satisfies AuthSessionRepository["Service"];
 });
 

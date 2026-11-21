@@ -1365,6 +1365,16 @@ const NotionPagesAsTaskIssues = Effect.gen(function* () {
   `;
 });
 
+// A paired device whose owner must approve it holds no scope until approved; these columns
+// carry the grant, how it paired and its deadline so a restart keeps the wait.
+const PendingDeviceApprovals = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`ALTER TABLE auth_sessions ADD COLUMN pending_approval INTEGER NOT NULL DEFAULT 0`;
+  yield* sql`ALTER TABLE auth_sessions ADD COLUMN pending_granted_scopes TEXT`;
+  yield* sql`ALTER TABLE auth_sessions ADD COLUMN pending_paired_via TEXT`;
+  yield* sql`ALTER TABLE auth_sessions ADD COLUMN pending_approval_expires_at TEXT`;
+});
+
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
@@ -1391,6 +1401,7 @@ const houstonMigrationEntries = [
   [25, "GitHubIssuesAsTaskIssues", GitHubIssuesAsTaskIssues],
   [26, "IssueTrackerBindingProperties", IssueTrackerBindingProperties],
   [27, "NotionPagesAsTaskIssues", NotionPagesAsTaskIssues],
+  [28, "PendingDeviceApprovals", PendingDeviceApprovals],
 ] as const;
 
 // Ids land in merge order, so a database can record a higher id before a lower one; every
