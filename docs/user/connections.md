@@ -30,8 +30,8 @@ this machine's credentials.
 A thread can run a dev server or another TCP service in a remote environment and reach it from
 this machine. Open the **Browser** tab and use **Forwarded ports**, or open a thread's details
 and use **Servers**, enter the remote port and choose **Forward**. Opening a loopback server
-that a thread in a remote environment started also forwards its port and opens
-`http://localhost:<local port>`.
+that a thread in a remote environment started also forwards its port and opens it at
+`http://127.0.0.1:<local port>`.
 
 The list shows every forward this machine holds: the environment, the remote port, the local
 port, its state and any error, with a **Stop** control. Each forward binds `127.0.0.1` only.
