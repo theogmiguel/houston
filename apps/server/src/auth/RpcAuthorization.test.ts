@@ -1,9 +1,12 @@
 import {
+  AuthAccessReadScope,
+  AuthAccessWriteScope,
   AuthEnvironmentMaintainScope,
   AuthDiagnosticsReadScope,
   AuthFilesystemReadScope,
   AuthProvidersManageScope,
   AuthSettingsWriteScope,
+  AuthSessionId,
   DEFAULT_SERVER_SETTINGS,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -492,5 +495,53 @@ it.effect("refuses every method while a device waits for approval, naming it", (
     expect(error.message).toContain("Living room iPad");
     expect(error.message).toContain("Require approval for new devices");
     expect(handled).toBe(false);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("a pending device has neither the read nor the write scope for approvals", () =>
+  Effect.gen(function* () {
+    const tested = [
+      WS_METHODS.houstonAccessListPendingDevices,
+      WS_METHODS.houstonAccessApprovePendingDevice,
+    ] as const;
+    const group = WsRpcGroup.omit(
+      ...[...WsRpcGroup.requests.keys()].filter(
+        (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, (typeof tested)[number]> =>
+          !(tested as ReadonlyArray<string>).includes(tag),
+      ),
+    );
+    const handled: Array<string> = [];
+    const client = yield* RpcTest.makeClient(group).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          group.toLayerHandler(WS_METHODS.houstonAccessListPendingDevices, () =>
+            Effect.sync(() => {
+              handled.push("list");
+              return [];
+            }),
+          ),
+          group.toLayerHandler(WS_METHODS.houstonAccessApprovePendingDevice, ({ sessionId }) =>
+            Effect.sync(() => {
+              handled.push("approve");
+              return { sessionId, approved: true as const };
+            }),
+          ),
+          RpcAuthorization.layer([]),
+        ),
+      ),
+    );
+
+    expect(
+      (yield* client[WS_METHODS.houstonAccessListPendingDevices]({}).pipe(Effect.flip))
+        .requiredPermission,
+    ).toBe(AuthAccessReadScope);
+    expect(
+      (
+        yield* client[WS_METHODS.houstonAccessApprovePendingDevice]({
+          sessionId: AuthSessionId.make("pending-device"),
+        }).pipe(Effect.flip)
+      ).requiredPermission,
+    ).toBe(AuthAccessWriteScope);
+    expect(handled).toEqual([]);
   }).pipe(Effect.scoped),
 );
