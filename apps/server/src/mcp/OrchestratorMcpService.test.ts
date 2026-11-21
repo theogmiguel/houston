@@ -89,10 +89,27 @@ describe("OrchestratorMcpService", () => {
       const taskId = NodeId.make("node:mcp-ack-task");
       const resultTransferId = ContextTransferId.make("transfer:mcp-ack-result");
       const acknowledgementCommandIds = yield* Ref.make<ReadonlyArray<string>>([]);
+      const acknowledgementCommands = yield* Ref.make<
+        ReadonlyArray<{ readonly observedByRunId?: unknown }>
+      >([]);
       const acknowledgementAttempts = yield* Ref.make(0);
+      const activeParentRunId = RunId.make("run:mcp-ack-parent-active");
       const parentProjection = {
         thread: { id: parentThreadId },
-        runs: [],
+        runs: [
+          {
+            id: RunId.make("run:mcp-ack-parent-finished"),
+            ordinal: 1,
+            status: "completed",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+          },
+          {
+            id: activeParentRunId,
+            ordinal: 2,
+            status: "running",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+          },
+        ],
         contextTransfers: [
           {
             id: resultTransferId,
@@ -155,41 +172,54 @@ describe("OrchestratorMcpService", () => {
         NodeServices.layer,
         NodeCrypto.layer,
         Layer.mock(ThreadManagementService.ThreadManagementService)({
-          getThreadRecords: (threadId) =>
-            Effect.sync(() => {
-              if (threadId !== parentThreadId) {
-                return hasNestedWork
-                  ? {
-                      ...childProjection,
-                      subagents: [
-                        { ...parentProjection.subagents[0]!, status: "running" as const },
-                      ],
-                    }
-                  : childProjection;
-              }
-              const snapshot = hasNestedWork
-                ? {
-                    ...parentProjection,
-                    contextTransfers: [],
-                    subagents: parentProjection.subagents.map((task) => ({
-                      ...task,
-                      result: null,
-                      status: "running" as const,
-                    })),
+          getThreadRecords: (threadId, fields, filter) =>
+            threadId === parentThreadId &&
+            (fields as ReadonlyArray<string>).includes("runs") &&
+            (fields as ReadonlyArray<string>).includes("contextTransfers") &&
+            (filter?.runStatuses === undefined ||
+              filter.contextTransferTypes === undefined ||
+              filter.contextTransferSourceThreadIds?.[0] !== childThreadId)
+              ? Effect.die(new Error("the parent task read records it does not use"))
+              : Effect.sync(() => {
+                  if (threadId !== parentThreadId) {
+                    return hasNestedWork
+                      ? {
+                          ...childProjection,
+                          subagents: [
+                            { ...parentProjection.subagents[0]!, status: "running" as const },
+                          ],
+                        }
+                      : childProjection;
                   }
-                : parentProjection;
-              if (settleAfterTaskRead) {
-                settleAfterTaskRead = false;
-                hasNestedWork = false;
-              }
-              return snapshot;
-            }),
+                  const snapshot = hasNestedWork
+                    ? {
+                        ...parentProjection,
+                        contextTransfers: [],
+                        subagents: parentProjection.subagents.map((task) => ({
+                          ...task,
+                          result: null,
+                          status: "running" as const,
+                        })),
+                      }
+                    : parentProjection;
+                  if (settleAfterTaskRead) {
+                    settleAfterTaskRead = false;
+                    hasNestedWork = false;
+                  }
+                  return snapshot;
+                }),
           delegatedTaskResultPending: () => Effect.succeed(false),
           dispatch: (command) =>
             Ref.update(acknowledgementCommandIds, (commandIds) => [
               ...commandIds,
               String(command.commandId),
             ]).pipe(
+              Effect.andThen(
+                Ref.update(acknowledgementCommands, (commands) => [
+                  ...commands,
+                  command as { readonly observedByRunId?: unknown },
+                ]),
+              ),
               Effect.andThen(Ref.updateAndGet(acknowledgementAttempts, (count) => count + 1)),
               Effect.flatMap((attempt) =>
                 attempt === 1
@@ -245,6 +275,112 @@ describe("OrchestratorMcpService", () => {
         const commandIds = yield* Ref.get(acknowledgementCommandIds);
         assert.equal(commandIds.length, 2);
         assert.notEqual(commandIds[0], commandIds[1]);
+        const commands = yield* Ref.get(acknowledgementCommands);
+        assert.deepEqual(
+          commands.map((command) => command.observedByRunId),
+          [activeParentRunId, activeParentRunId],
+        );
+      }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(layerDependencies))));
+    }),
+  );
+
+  it.effect("acknowledges a remote task from its parent's active run alone", () =>
+    Effect.gen(function* () {
+      const parentThreadId = ThreadId.make("thread:mcp-remote-ack-parent");
+      const taskId = NodeId.make("node:mcp-remote-ack-task");
+      const activeRunId = RunId.make("run:mcp-remote-ack-active");
+      const commands = yield* Ref.make<ReadonlyArray<{ readonly observedByRunId?: unknown }>>([]);
+      const parentProjection = {
+        thread: { id: parentThreadId },
+        runs: [
+          ...Array.from({ length: 40 }, (_, index) => ({
+            id: RunId.make(`run:mcp-remote-ack-finished-${index}`),
+            ordinal: index + 1,
+            status: "completed",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+          })),
+          {
+            id: activeRunId,
+            ordinal: 41,
+            status: "running",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+          },
+        ],
+        contextTransfers: [],
+        subagents: [
+          {
+            id: taskId,
+            threadId: parentThreadId,
+            origin: "app_owned",
+            childThreadId: null,
+            remoteChild: {
+              environmentId: EnvironmentId.make("environment:mcp-remote-ack-child"),
+              threadId: ThreadId.make("thread:mcp-remote-ack-child"),
+              label: "Remote child",
+            },
+            driver: "codex",
+            model: "gpt-5.6-terra",
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            status: "completed",
+            result: "remote result",
+            completionDelivery: { state: "pending" },
+          },
+        ],
+      } as unknown as OrchestrationV2ThreadProjection;
+      const layerDependencies = Layer.mergeAll(
+        NodeServices.layer,
+        NodeCrypto.layer,
+        Layer.mock(ThreadManagementService.ThreadManagementService)({
+          getThreadRecords: (threadId, fields, filter) =>
+            threadId === parentThreadId &&
+            fields.length === 1 &&
+            (fields as ReadonlyArray<string>)[0] === "runs" &&
+            filter?.runStatuses === undefined
+              ? Effect.die(new Error("the remote task read every run of the parent thread"))
+              : Effect.succeed(parentProjection),
+          dispatch: (command) =>
+            Ref.update(commands, (current) => [
+              ...current,
+              command as { readonly observedByRunId?: unknown },
+            ]).pipe(Effect.as({} as never)),
+        }),
+        ServerSettings.layerTest(),
+        Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
+        Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({
+          list: () => Effect.succeed([]),
+        }),
+        Layer.mock(ProjectService.ProjectService)({}),
+        Layer.mock(SecretRequests.SecretRequests)({}),
+        Layer.mock(RemoteDelegation.RemoteDelegation)({}),
+        Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+      );
+      const scope: McpInvocationScope = {
+        environmentId: EnvironmentId.make("environment:mcp-remote-ack"),
+        requestNamespace: "provider-session:mcp-remote-ack",
+        thread: {
+          threadId: parentThreadId,
+          providerSessionId: "provider-session:mcp-remote-ack",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+        },
+        client: undefined,
+        capabilities: new Set(["orchestration"]),
+        issuedAt: 1,
+      };
+      yield* Effect.gen(function* () {
+        const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+        const result = yield* service.taskStatus(scope, taskId);
+        assert.equal(result.status, "completed");
+        assert.equal(result.summary, "remote result");
+        assert.equal(result.childThreadId, null);
+        assert.equal(
+          result.link,
+          "<houston-thread://v2/environment:mcp-remote-ack-child/thread:mcp-remote-ack-child>",
+        );
+        const dispatched = yield* Ref.get(commands);
+        assert.deepEqual(
+          dispatched.map((command) => command.observedByRunId),
+          [activeRunId],
+        );
       }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(layerDependencies))));
     }),
   );
@@ -532,6 +668,125 @@ describe("OrchestratorMcpService", () => {
           .pipe(Effect.flip);
         assert.equal(error.code, "task_not_cancellable");
         assert.deepEqual(yield* Ref.get(dispatched), []);
+      }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(layerDependencies))));
+    }),
+  );
+
+  it.effect("cancelling a task reads only the child's queued runs", () =>
+    Effect.gen(function* () {
+      const parentThreadId = ThreadId.make("thread:mcp-cancel-queued-parent");
+      const childThreadId = ThreadId.make("thread:mcp-cancel-queued-child");
+      const taskId = NodeId.make("node:mcp-cancel-queued-task");
+      const childRunId = RunId.make("run:mcp-cancel-queued-child-active");
+      const queuedRunId = RunId.make("run:mcp-cancel-queued-child-queued");
+      const dispatched = yield* Ref.make<ReadonlyArray<OrchestrationV2ServerCommand>>([]);
+      const parentProjection = {
+        thread: { id: parentThreadId, runtimeMode: "full-access", interactionMode: "default" },
+        runs: [],
+        contextTransfers: [],
+        subagents: [
+          {
+            id: taskId,
+            threadId: parentThreadId,
+            origin: "app_owned",
+            childThreadId,
+            driver: "codex",
+            model: "gpt-5.6-terra",
+            result: null,
+            completionDelivery: { state: "pending" },
+          },
+        ],
+      } as unknown as OrchestrationV2ThreadProjection;
+      const childProjection = {
+        thread: { id: childThreadId, title: "Child" },
+        runs: [
+          ...Array.from({ length: 40 }, (_, index) => ({
+            id: RunId.make(`run:mcp-cancel-queued-finished-${index}`),
+            ordinal: index + 1,
+            status: "completed",
+            startedAt: DateTime.makeUnsafe("2026-10-03T10:00:00Z"),
+            completedAt: DateTime.makeUnsafe("2026-10-03T10:10:00Z"),
+          })),
+          {
+            id: childRunId,
+            ordinal: 41,
+            status: "running",
+            delegatedTaskId: taskId,
+            startedAt: DateTime.makeUnsafe("2026-10-03T10:00:00Z"),
+            completedAt: null,
+          },
+          {
+            id: queuedRunId,
+            ordinal: 42,
+            status: "queued",
+            delegatedTaskId: taskId,
+            startedAt: null,
+            completedAt: null,
+          },
+        ],
+        contextTransfers: [],
+        messages: [],
+        subagents: [],
+        providerThreads: [],
+        runtimeRequests: [],
+        turnItems: [],
+      } as unknown as OrchestrationV2ThreadProjection;
+      const layerDependencies = Layer.mergeAll(
+        NodeServices.layer,
+        NodeCrypto.layer,
+        Layer.mock(ThreadManagementService.ThreadManagementService)({
+          getThreadRecords: (threadId, fields, filter) =>
+            threadId === childThreadId &&
+            fields.length === 1 &&
+            (fields as ReadonlyArray<string>)[0] === "runs" &&
+            filter?.runStatuses === undefined
+              ? Effect.die(new Error("cancelling a task read every run of the child thread"))
+              : Effect.succeed(threadId === parentThreadId ? parentProjection : childProjection),
+          getThreadShell: (threadId) => Effect.succeed(liveThreadShell(threadId)),
+          listAppOwnedChildThreadIds: () => Effect.succeed([]),
+          delegatedTaskResultPending: () => Effect.succeed(false),
+          stopDelegatedTasks: () => Effect.void,
+          dispatch: (command) =>
+            Ref.update(dispatched, (commands) => [...commands, command]).pipe(
+              Effect.as({} as never),
+            ),
+        }),
+        ServerSettings.layerTest(),
+        Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
+        Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({
+          list: () => Effect.succeed([]),
+        }),
+        Layer.mock(ProjectService.ProjectService)({}),
+        Layer.mock(SecretRequests.SecretRequests)({}),
+        Layer.mock(RemoteDelegation.RemoteDelegation)({}),
+        Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+      );
+      const scope: McpInvocationScope = {
+        environmentId: EnvironmentId.make("environment:mcp-cancel-queued"),
+        requestNamespace: "provider-session:mcp-cancel-queued",
+        thread: {
+          threadId: parentThreadId,
+          providerSessionId: "provider-session:mcp-cancel-queued",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+        },
+        client: undefined,
+        capabilities: new Set(["orchestration"]),
+        issuedAt: 1,
+      };
+      yield* Effect.gen(function* () {
+        const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+        const result = yield* service.cancelTask(scope, {
+          taskId,
+          clientRequestId: "cancel-queued-task",
+        });
+        assert.equal(result.status, "cancel_requested");
+        const commands = yield* Ref.get(dispatched);
+        assert.deepEqual(
+          commands.flatMap((command) =>
+            command.type === "queued-run.cancel" ? [command.runId] : [],
+          ),
+          [queuedRunId],
+        );
       }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(layerDependencies))));
     }),
   );
