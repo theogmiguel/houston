@@ -24,6 +24,7 @@ import { formatProviderSkillDisplayName } from "@houston-app/shared/inlineSkills
 import type { ComposerTrigger } from "../../composer-logic";
 import type { DraftId } from "../../composerDraftStore";
 import { basenameOfPath } from "../../pierre-icons";
+import { useT } from "../../i18n/useT";
 import {
   getProviderSkillsForSlashMenu,
   getProviderSlashCommandsForSlashMenu,
@@ -107,6 +108,7 @@ export function useComposerMenuItems({
     readonly modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>;
   };
 }) {
+  const t = useT();
   // Thread mentions rank by recency as of when the composer mounted.
   const [now] = useState(() => Date.now());
   const composerTriggerKind = composerTrigger?.kind ?? null;
@@ -242,7 +244,7 @@ export function useComposerMenuItems({
         claudeInChrome: selectedProvider === "claudeAgent",
         resumeAvailable: activeProjectId !== null,
         freshSessionAvailable,
-      });
+      }).map((item) => ({ ...item, description: t(item.description) }));
       const slashMenuSkills = getProviderSkillsForSlashMenu(
         selectedProviderSkills,
         showSkillsInSlashMenu,
@@ -256,7 +258,7 @@ export function useComposerMenuItems({
         provider: selectedProvider,
         command,
         label: `/${command.name}`,
-        description: command.description ?? command.input?.hint ?? "Run provider command",
+        description: command.description ?? command.input?.hint ?? t("Run provider command"),
       }));
       const query = composerTrigger.query.trim().toLowerCase();
       const skillItems = slashMenuSkills.map((skill) => ({
@@ -268,7 +270,7 @@ export function useComposerMenuItems({
         description:
           skill.shortDescription ??
           skill.description ??
-          (skill.scope ? `${skill.scope} skill` : ""),
+          (skill.scope ? t("{scope} skill", { scope: skill.scope }) : ""),
       }));
       // Houston's `/clear` replaces the provider's, which would clear a session Houston still treats as live.
       const visibleProviderSlashCommandItems = providerSlashCommandItems.filter(
@@ -292,7 +294,7 @@ export function useComposerMenuItems({
         description:
           skill.shortDescription ??
           skill.description ??
-          (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
+          (skill.scope ? t("{scope} skill", { scope: skill.scope }) : t("Run provider skill")),
       }));
     }
     if (
@@ -371,25 +373,25 @@ export function useComposerMenuItems({
         exactPullRequestLookup.isPending));
   const emptyState = (() => {
     if (composerTriggerKind === "skill") {
-      return "No skills found. Try / to browse provider commands.";
+      return t("No skills found. Try / to browse provider commands.");
     }
     if (composerTriggerKind === "pull-request") {
       if (pullRequestProjectId === null || pullRequestRepository === null) {
-        return "Pull requests are not available for this project.";
+        return t("Pull requests are not available for this project.");
       }
       if (
         pullRequestLookup.error !== null ||
         pullRequestLookup.data?.errors.some((error) => error.projectId === pullRequestProjectId)
       ) {
-        return "Pull requests could not be read for this project.";
+        return t("Pull requests could not be read for this project.");
       }
       return composerTrigger?.query
-        ? `No pull request matches ${composerTrigger.query}.`
-        : "No pull requests found in this repository.";
+        ? t("No pull request matches {query}.", { query: composerTrigger.query })
+        : t("No pull requests found in this repository.");
     }
     return composerTriggerKind === "path"
-      ? "No matching files or folders."
-      : "No matching command.";
+      ? t("No matching files or folders.")
+      : t("No matching command.");
   })();
 
   return { items, isLoading, emptyState };

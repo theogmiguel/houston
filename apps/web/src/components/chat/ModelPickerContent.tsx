@@ -38,6 +38,7 @@ import { rankModelPickerSearch } from "@houston-app/client-runtime/model-search"
 import { Combobox, ComboboxEmpty, ComboboxItem, ComboboxListVirtualized } from "../ui/combobox";
 import { ModelEsque } from "./providerIconUtils";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
+import { useT } from "../../i18n/useT";
 import { registerModelPickerContent } from "../../modelPickerVisibility";
 import { primaryServerKeybindingsAtom } from "../../state/server";
 import {
@@ -208,6 +209,7 @@ function ModelPickerProviderNotices({
   onRequestClose: (() => void) | undefined;
   onOpenProviderSetup: ((instanceId: ProviderInstanceId) => void) | undefined;
 }) {
+  const t = useT();
   const navigate = useNavigate();
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   return (
@@ -226,7 +228,9 @@ function ModelPickerProviderNotices({
                   onOpenProviderSetup?.(entry.instanceId);
                 }}
               >
-                {setupEntries.length > 1 ? `Set up ${entry.displayName}` : "Open provider setup"}
+                {setupEntries.length > 1
+                  ? t("Set up {name}", { name: entry.displayName })
+                  : t("Open provider setup")}
               </InlineButton>
             </div>
           ))}
@@ -403,6 +407,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   /** Right at the end of the search text moves into the popup's effort panel. */
   onFocusEffort?: () => void;
 }) {
+  const t = useT();
   const {
     searchInputRef,
     keybindings: providedKeybindings,
@@ -840,7 +845,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       setSearchQuery("");
       handleSelectInstance(next);
       announce(
-        next === "favorites" ? "Favorites" : (entryByInstanceId.get(next)?.displayName ?? next),
+        next === "favorites" ? t("Favorites") : (entryByInstanceId.get(next)?.displayName ?? next),
         "model-picker",
       );
       return;
@@ -865,7 +870,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     const name = flatModels.find(
       (item) => item.slug === selectedSlug && item.instanceId === model.instanceId,
     )?.name;
-    announce(`Model: ${name ?? selectedSlug}`, "model-picker");
+    announce(t("Model: {name}", { name: name ?? selectedSlug }), "model-picker");
   };
 
   return (
@@ -937,7 +942,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                   ? {
                       disabledInstanceIds: lockedDisabledInstanceIds,
                       getDisabledInstanceTooltip: (entry: ProviderInstanceEntry) =>
-                        `${entry.displayName} is unavailable in this thread. Start a new thread to switch providers.`,
+                        t(
+                          "{name} is unavailable in this thread. Start a new thread to switch providers.",
+                          { name: entry.displayName },
+                        ),
                     }
                   : {})}
               />
@@ -952,7 +960,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                 <SearchIcon aria-hidden="true" className="size-3.25 shrink-0" />
                 <ComboboxPrimitive.Input
                   ref={searchInputRef}
-                  placeholder="Search models…"
+                  placeholder={t("Search models…")}
                   className={cn(
                     "min-w-0 flex-1 bg-transparent p-0 text-(--t1) text-xs outline-none placeholder:text-(--houston)",
                     props.phone ? "h-full" : "h-5 leading-5",
@@ -1052,7 +1060,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                           )}
                         >
                           <span className="truncate">
-                            {legacySection.isExpanded ? "Show less" : "Show more"} ·{" "}
+                            {legacySection.isExpanded ? t("Show less") : t("Show more")} ·{" "}
                             {legacySection.legacyModels.length}
                           </span>
                         </div>
@@ -1101,15 +1109,15 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                 }}
               />
               {onToggleModel ? (
-                <p className={MODEL_PICKER_HINT_CLS}>Shift-click adds a model</p>
+                <p className={MODEL_PICKER_HINT_CLS}>{t("Shift-click adds a model")}</p>
               ) : null}
               <ModelPickerProviderNotices
                 setupEntries={providerSetupEntries}
                 updateRequiredNotices={updateRequiredNotices}
                 emptyLabel={
                   selectedInstanceId === "favorites" && !isSearching
-                    ? "No favorites yet"
-                    : "No models found"
+                    ? t("No favorites yet")
+                    : t("No models found")
                 }
                 onRequestClose={onRequestClose}
                 onOpenProviderSetup={onOpenProviderSetup}

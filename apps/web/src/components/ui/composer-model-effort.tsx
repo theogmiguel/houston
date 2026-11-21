@@ -7,6 +7,7 @@ import {
 import type { ProviderOptionDescriptor, RuntimeMode } from "@houston-app/contracts";
 import type { EffortDisplay } from "@houston-app/contracts/settings";
 import { WorkflowIcon } from "lucide-react";
+import { useT } from "~/i18n/useT";
 import {
   createContext,
   type KeyboardEvent,
@@ -314,6 +315,7 @@ function moveBetweenRows(event: KeyboardEvent<HTMLElement>) {
 }
 
 function EffortLevels(props: { traits: TraitsSelectionInput; phone: boolean }) {
+  const t = useT();
   const traits = useTraitsSelection(props.traits);
   const selectedModel = props.traits.models.find((model) => model.slug === props.traits.model);
   const modelName = selectedModel ? getDisplayModelName(selectedModel) : null;
@@ -356,7 +358,7 @@ function EffortLevels(props: { traits: TraitsSelectionInput; phone: boolean }) {
           {([true, false] as const).map((value) => (
             <ColumnRow
               key={String(value)}
-              label={value ? "On" : "Off"}
+              label={value ? t("On") : t("Off")}
               selected={(control.descriptor.currentValue === true) === value}
               level={isEffort}
               segment={!props.phone}
@@ -376,7 +378,7 @@ function EffortLevels(props: { traits: TraitsSelectionInput; phone: boolean }) {
         {...(props.phone ? {} : { detail: groupDetail })}
         note={
           locked ? (
-            <span className="text-(--houston) text-xs">{ULTRATHINK_IN_BODY_NOTE}</span>
+            <span className="text-(--houston) text-xs">{t(ULTRATHINK_IN_BODY_NOTE)}</span>
           ) : undefined
         }
       >
@@ -408,23 +410,28 @@ const REASONING_LABEL = "Reasoning";
 
 /** The docked panel's reasoning header with nothing to choose beneath it. */
 function NoReasoningRow(props: { modelName: string | null }) {
+  const t = useT();
   return (
-    <SegmentedGroup label={REASONING_LABEL} detail={props.modelName}>
+    <SegmentedGroup label={t(REASONING_LABEL)} detail={props.modelName}>
       <span className="flex h-7 flex-1 items-center px-2.5 text-(--houston) text-xs">
-        No effort levels
+        {t("No effort levels")}
       </span>
     </SegmentedGroup>
   );
 }
 
 function NoEffortRow() {
+  const t = useT();
   return (
-    <div className="flex h-6 items-center ps-15 text-(--houston) text-xs">No effort levels</div>
+    <div className="flex h-6 items-center ps-15 text-(--houston) text-xs">
+      {t("No effort levels")}
+    </div>
   );
 }
 
 /** Codex service tiers and Claude's Fast mode, as one more row of the panel. */
 function SpeedGroup(props: { traits: TraitsSelectionInput }) {
+  const t = useT();
   const traits = useTraitsSelection(props.traits);
   const { speedSelect, fastToggle } = splitSpeed(
     props.traits.provider,
@@ -435,12 +442,14 @@ function SpeedGroup(props: { traits: TraitsSelectionInput }) {
   const bolt = (label: string) =>
     label === "Fast" || label === "Ultrafast" ? <FastBolt ultra={label === "Ultrafast"} /> : null;
   return (
-    <OptionGroup label={speedSelect?.label ?? fastToggle?.label ?? "Speed"}>
+    <OptionGroup
+      label={speedSelect?.label !== undefined ? t(speedSelect.label) : fastToggle?.label !== undefined ? t(fastToggle.label) : t("Speed")}
+    >
       {speedSelect
         ? selectableProviderOptionChoices(speedSelect).map((option) => (
             <ColumnRow
               key={option.id}
-              label={option.label}
+              label={t(option.label)}
               icon={bolt(option.label)}
               selected={option.id === traits.selectValue(speedSelect)}
               description={option.description}
@@ -452,7 +461,7 @@ function SpeedGroup(props: { traits: TraitsSelectionInput }) {
           ? ([false, true] as const).map((value) => (
               <ColumnRow
                 key={String(value)}
-                label={value ? "Fast" : "Standard"}
+                label={value ? t("Fast") : t("Standard")}
                 icon={value ? bolt("Fast") : null}
                 selected={(fastToggle.currentValue === true) === value}
                 level={false}
@@ -469,6 +478,7 @@ export function ComposerEffortPanel(props: {
   traits: TraitsSelectionInput | null;
   phone?: boolean;
 }) {
+  const t = useT();
   const phone = props.phone === true;
   return (
     <EffortPhoneContext value={phone}>
@@ -484,8 +494,8 @@ export function ComposerEffortPanel(props: {
           </>
         ) : phone ? (
           <div className="flex items-start gap-1">
-            <span className={GROUP_LABEL}>Effort</span>
-            <span className="pt-1.5 text-(--houston) text-xs">No effort levels</span>
+            <span className={GROUP_LABEL}>{t("Effort")}</span>
+            <span className="pt-1.5 text-(--houston) text-xs">{t("No effort levels")}</span>
           </div>
         ) : (
           <NoReasoningRow modelName={null} />
@@ -516,6 +526,7 @@ const FOOTER_SEGMENT = cn(PICKER_SEGMENT_CLS, PICKER_CHIP_SEGMENT_CLS);
  * per tier, a bolt on the fast ones.
  */
 function SpeedControl(props: { traits: TraitsSelectionInput }) {
+  const t = useT();
   const traits = useTraitsSelection(props.traits);
   const { speedSelect, fastToggle } = splitSpeed(
     props.traits.provider,
@@ -534,7 +545,7 @@ function SpeedControl(props: { traits: TraitsSelectionInput }) {
   }> = speedSelect
     ? selectableProviderOptionChoices(speedSelect).map((option) => ({
         key: option.id,
-        label: option.label,
+        label: t(option.label),
         selected: option.id === traits.selectValue(speedSelect),
         description: option.description,
         onPick: () => traits.changeSelect(speedSelect, option.id),
@@ -542,7 +553,7 @@ function SpeedControl(props: { traits: TraitsSelectionInput }) {
     : fastToggle
       ? ([false, true] as const).map((value) => ({
           key: String(value),
-          label: value ? "Fast" : "Standard",
+          label: value ? t("Fast") : t("Standard"),
           selected: (fastToggle.currentValue === true) === value,
           onPick: () => traits.changeBoolean(fastToggle.id, value),
         }))
@@ -550,7 +561,13 @@ function SpeedControl(props: { traits: TraitsSelectionInput }) {
   return (
     <div
       role="radiogroup"
-      aria-label={speedSelect?.label ?? fastToggle?.label ?? "Speed"}
+      aria-label={
+        speedSelect?.label !== undefined
+          ? t(speedSelect.label)
+          : fastToggle?.label !== undefined
+            ? t(fastToggle.label)
+            : t("Speed")
+      }
       className={PICKER_CHIP_TRACK_CLS}
       onKeyDown={moveBetweenPermissionSegments('[role="radio"]')}
     >
@@ -610,6 +627,7 @@ function PermissionsChip(props: {
   runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
+  const t = useT();
   const current =
     props.runtimeModeOptions.find((option) => option.mode === props.runtimeMode) ??
     supervisedRuntimeModeOption;
@@ -618,18 +636,18 @@ function PermissionsChip(props: {
     <div data-composer-permissions className={PICKER_CHIP_TRACK_CLS}>
       <Menu>
         <MenuTrigger
-          aria-label={`Permissions: ${current.label}`}
+          aria-label={t("Permissions: {label}", { label: t(current.label) })}
           className={FOOTER_SEGMENT}
           render={<button type="button" />}
         >
           <CurrentIcon aria-hidden="true" className="size-3.5" />
-          <span data-composer-permissions-label>{current.label}</span>
+          <span data-composer-permissions-label>{t(current.label)}</span>
         </MenuTrigger>
         {/* The popup keeps the composer's layer mark but not its focus return: closing the menu
             leaves focus on the chip, inside the picker. */}
         <MenuPopup align="start" side="top" {...composerFloatingLayerProps}>
           <MenuRadioGroup
-            aria-label="Permissions"
+            aria-label={t("Permissions")}
             value={props.runtimeMode}
             onValueChange={(value: RuntimeMode) => {
               if (value !== props.runtimeMode) props.onRuntimeModeChange(value);
@@ -642,16 +660,18 @@ function PermissionsChip(props: {
                   key={option.mode}
                   value={option.mode}
                   disabled={option.disabledReason !== undefined}
-                  label={option.label}
+                  label={t(option.label)}
                   closeOnClick
                   className="min-h-10 py-1"
                 >
                   <span className="flex items-center gap-2.5">
                     <OptionIcon aria-hidden="true" className="size-4 text-muted-foreground" />
                     <span className="flex min-w-0 flex-1 flex-col leading-snug">
-                      <span>{option.label}</span>
+                      <span>{t(option.label)}</span>
                       <span className="text-muted-foreground text-xs">
-                        {option.disabledReason ?? option.description}
+                        {option.disabledReason !== undefined
+                          ? t(option.disabledReason)
+                          : t(option.description)}
                       </span>
                     </span>
                     <MenuRadioItemIndicator />

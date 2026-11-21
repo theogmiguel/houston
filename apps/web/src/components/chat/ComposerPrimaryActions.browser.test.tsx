@@ -1,11 +1,21 @@
-import { expect, it } from "vite-plus/test";
+import { DEFAULT_CLIENT_SETTINGS } from "@houston-app/contracts/settings";
+import { afterEach, expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
 import "~/index.css";
 
 import { render } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
+import { __setClientSettingsForTests } from "~/hooks/useSettings";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
+
+function useLanguage(language: string) {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, language });
+}
+
+afterEach(() => {
+  __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+});
 
 function renderSend(hasSendableContent: boolean) {
   return render(
@@ -119,4 +129,16 @@ it("sends one interrupt when the Stop control is not pending", async () => {
   });
   await page.getByRole("button", { name: "Stop generation · Running" }).click();
   expect(interrupts).toBe(1);
+});
+
+it("keeps the composer send action in English when the language is English", async () => {
+  useLanguage("en");
+  await using _screen = await renderSend(true);
+  await expect.element(page.getByRole("button", { name: "Submit message" })).toBeVisible();
+});
+
+it("renders the composer send action in Brazilian Portuguese", async () => {
+  useLanguage("pt-BR");
+  await using _screen = await renderSend(true);
+  await expect.element(page.getByRole("button", { name: "Enviar mensagem" })).toBeVisible();
 });
