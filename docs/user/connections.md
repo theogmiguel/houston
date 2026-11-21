@@ -21,6 +21,31 @@ save an environment instead of writing it unencrypted. Environments saved by an 
 version are moved into the encrypted file the first time the desktop app reads them, and the
 older keychain entry is removed.
 
+### Port forwarding
+
+A thread can run a dev server or another TCP service in a remote environment and reach it from
+this machine. Open the **Browser** tab and use **Forwarded ports**, or open a thread's details
+and use **Servers**, enter the remote port and choose **Forward**. Opening a loopback server
+that a thread in a remote environment started also forwards its port and opens
+`http://localhost:<local port>`.
+
+The list shows every forward this machine holds: the environment, the remote port, the local
+port, its state and any error, with a **Stop** control. Each forward binds `127.0.0.1` only.
+When the remote port is already taken locally, Houston picks the next free port in a bounded
+window and shows the actual local port; it never reuses or stops the process holding it.
+
+Nothing is forwarded without a user action for that port. An SSH environment forwards over
+the SSH connection Houston already keeps; a linked environment forwards over its authenticated
+connection, where the environment's server dials the service on its own loopback. A linked
+environment holds up to 8 simultaneous connections per forward. This device holds up to 8
+forwards per environment and 16 in all; a refused forward names the limit and the port it
+requested. Both limits and the per-connection limit are errors you can read in the list.
+
+**Settings ▸ Connections ▸ Port forwarding** turns the feature on and off and shows its current
+value. While it is off, nothing is forwarded, every existing forward stops, and the controls say
+why. Removing or disconnecting an environment stops its forwards, and quitting Houston stops
+them all. Linux and Windows support the feature.
+
 **Load balancing** chooses how new work is spread across environments by resources. **Pull
 request sharing** chooses which trusted environments may read or act on pull requests with
 this machine's credentials.

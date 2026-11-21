@@ -46,6 +46,13 @@ download, size or checksum check names the step that failed.
 - The address bar labels HTTPS pages **Secure**, loopback pages **Local**, and other pages
   **Not secure**. The label describes the connection, not the page's trustworthiness.
 - On Linux the start page lists loopback servers started by threads in the project.
+- The start page also lists **Forwarded ports** for remote environments, with the environment,
+  remote and local port, state and a **Stop** control. Opening a loopback server that a thread
+  in a remote environment started forwards its port and opens it at `http://localhost:<local
+  port>`; the forward appears in the same list. A taken local port falls back to the next free
+  one, and only `127.0.0.1` is bound. **Settings ▸ Connections ▸ Port forwarding** turns the
+  feature off, which stops every forward; removing or disconnecting the environment, or quitting
+  Houston, does the same. Up to 8 ports per environment and 16 in all can be forwarded at once.
 - **Full screen** expands the page; `Esc` returns to the panel.
 - Browser tabs and their URLs are remembered per project. **Settings ▸ Browser** sets
   profiles, viewport, zoom, appearance, link target, search engine and whether agents may
