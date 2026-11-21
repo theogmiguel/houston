@@ -3,6 +3,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 
 export type WorkspaceFileDragRule =
+  | "workspace-root-too-broad"
   | "workspace-root-missing"
   | "outside-workspace"
   | "missing"
@@ -36,6 +37,14 @@ export async function resolveWorkspaceFileForDrag(input: {
 }): Promise<string> {
   const requestedPath = input.path;
   const workspaceRoot = NodePath.resolve(input.workspaceRoot);
+  // The renderer names the root, so a root that spans the whole filesystem would make containment meaningless.
+  if (NodePath.parse(workspaceRoot).root === workspaceRoot) {
+    throw new WorkspaceFileDragError(
+      input.path,
+      "workspace-root-too-broad",
+      `Cannot drag "${input.path}": the workspace root "${input.workspaceRoot}" is a filesystem root.`,
+    );
+  }
   const candidate = NodePath.isAbsolute(requestedPath)
     ? NodePath.resolve(requestedPath)
     : NodePath.resolve(workspaceRoot, requestedPath);

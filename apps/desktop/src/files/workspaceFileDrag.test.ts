@@ -80,6 +80,14 @@ describe("resolveWorkspaceFileForDrag", () => {
     await expectRefusal({ path: "src", workspaceRoot: root }, "not-a-file");
   });
 
+  it("refuses a filesystem root as the workspace root", async () => {
+    const filesystemRoot = NodePath.parse(root).root;
+    await expectRefusal(
+      { path: NodePath.join(filesystemRoot, "etc", "hosts"), workspaceRoot: filesystemRoot },
+      "workspace-root-too-broad",
+    );
+  });
+
   it("refuses a missing workspace root", async () => {
     await expectRefusal(
       { path: "src/main.ts", workspaceRoot: NodePath.join(root, "gone") },
