@@ -68,6 +68,43 @@ export const isPrivateNetworkAddress = (address: string): boolean => {
  * private: a cloud VM or a router port forward hands public clients to a
  * private local address.
  */
+/** At most one line per address per minute; the sweep runs on connection events. */
+export const PRIVATE_NETWORK_REJECTION_LOG_INTERVAL_MS = 60_000;
+// A flood of distinct source addresses must not grow this table without bound.
+export const PRIVATE_NETWORK_REJECTION_LOG_MAX_ADDRESSES = 1_024;
+
+export const makePrivateNetworkRejectionLogger = (options?: {
+  readonly now?: () => number;
+  readonly log?: (remoteAddress: string) => void;
+}): ((remoteAddress: string | undefined) => void) => {
+  const now = options?.now ?? Date.now;
+  const log =
+    options?.log ??
+    ((remoteAddress: string) =>
+      Effect.runFork(
+        Effect.logWarning("Closed a connection outside the private network.", {
+          remoteAddress,
+          reason: "the connection is not loopback, LAN or tailnet at both ends",
+        }),
+      ));
+  const lastLoggedAt = new Map<string, number>();
+  return (remoteAddress) => {
+    const address = remoteAddress ?? "unknown";
+    const at = now();
+    const last = lastLoggedAt.get(address);
+    if (last !== undefined && at - last < PRIVATE_NETWORK_REJECTION_LOG_INTERVAL_MS) return;
+    if (
+      !lastLoggedAt.has(address) &&
+      lastLoggedAt.size >= PRIVATE_NETWORK_REJECTION_LOG_MAX_ADDRESSES
+    ) {
+      const oldest = lastLoggedAt.keys().next().value;
+      if (oldest !== undefined) lastLoggedAt.delete(oldest);
+    }
+    lastLoggedAt.set(address, at);
+    log(address);
+  };
+};
+
 export const acceptsPrivateNetworkConnection = (socket: {
   readonly localAddress?: string | undefined;
   readonly remoteAddress?: string | undefined;

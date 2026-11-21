@@ -31,6 +31,7 @@ import {
   type AuthEnvironmentScope,
   type ScheduledTaskListResult,
   AuthSessionId,
+  HoustonAccessPendingDeviceError,
   ClientConnectionMethod,
   ClientDeviceType,
   ClientOs,
@@ -228,6 +229,7 @@ import * as HoustonLayoutWorkspaces from "./houston/layoutWorkspaces.ts";
 import * as HoustonSlackService from "./houston/slack/Service.ts";
 import * as HoustonSlackV1Import from "./houston/slack/V1Import.ts";
 import * as HoustonMergeQueueService from "./houston/mergeQueue/Service.ts";
+import * as HoustonTerminalShells from "./houston/terminalShells.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
 import { threadWorkspaceRoot } from "./project/threadWorkspaceRoot.ts";
@@ -284,6 +286,7 @@ import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
 import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
 import * as SessionStore from "./auth/SessionStore.ts";
 import { failEnvironmentAuthInvalid, failEnvironmentInternal } from "./auth/http.ts";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import { isNetworkPath } from "@houston-app/shared/path";
 import {
   SOCKET_FRAME_PARTS_QUERY_PARAM,
@@ -782,8 +785,32 @@ function toAuthAccessStreamEvent(
         type: "clientRemoved",
         payload: { sessionId: change.sessionId },
       };
+    case "pendingDeviceUpserted":
+      return {
+        version: 1,
+        revision,
+        type: "pendingDeviceUpserted",
+        payload: change.pendingDevice,
+      };
+    case "pendingDeviceRemoved":
+      return {
+        version: 1,
+        revision,
+        type: "pendingDeviceRemoved",
+        payload: { sessionId: change.sessionId },
+      };
   }
 }
+
+const isPendingDeviceAccessError = Schema.is(HoustonAccessPendingDeviceError);
+
+const toPendingDeviceAccessError = (cause: unknown): HoustonAccessPendingDeviceError =>
+  isPendingDeviceAccessError(cause)
+    ? cause
+    : new HoustonAccessPendingDeviceError({
+        reason: "unavailable",
+        message: "Could not read or update devices waiting for approval.",
+      });
 
 const isClientSurface = Schema.is(ClientSurface);
 const isClientConnectionMethod = Schema.is(ClientConnectionMethod);
@@ -1996,6 +2023,7 @@ export const layerWsRpc = (
         Effect.all({
           pairingLinks: serverAuth.listPairingLinks(),
           clientSessions: serverAuth.listClientSessions(currentSessionId),
+          pendingDevices: serverAuth.listPendingDevices(),
         }).pipe(
           Effect.mapError(
             (error) =>
@@ -2825,6 +2853,13 @@ export const layerWsRpc = (
         [WS_METHODS.serverGetStorageCleanupReport]: () => storageCleanup.reports,
         [WS_METHODS.serverGetDatabaseStorage]: () => databaseStorage.status,
         [WS_METHODS.houstonDatabaseReclaim]: () => databaseStorage.reclaimNow,
+        [WS_METHODS.houstonTerminalShells]: Effect.fn("ws.houstonTerminalShells")(function* () {
+          return yield* HoustonTerminalShells.detectTerminalShells({
+            fs: yield* FileSystem.FileSystem,
+            platform: yield* HostProcess.Platform,
+            env: yield* HostProcess.Environment,
+          });
+        }),
         [WS_METHODS.peerLinksList]: (_input) =>
           peerLinks.list.pipe(Effect.map((links) => ({ links }))),
         [WS_METHODS.peerLinksLink]: (input) => peerLinks.link(input),
@@ -3704,6 +3739,38 @@ export const layerWsRpc = (
               return Stream.concat(rpcInitialItems(snapshotEvents), liveEvents);
             }),
           ),
+        [WS_METHODS.houstonAccessListPendingDevices]: (_input) =>
+          serverAuth.listPendingDevices().pipe(Effect.mapError(toPendingDeviceAccessError)),
+        [WS_METHODS.houstonAccessApprovePendingDevice]: (input) =>
+          serverAuth.approvePendingDevice(input.sessionId).pipe(
+            Effect.mapError(toPendingDeviceAccessError),
+            Effect.flatMap((approved) =>
+              approved
+                ? Effect.succeed({ sessionId: input.sessionId, approved: true as const })
+                : Effect.fail(
+                    new HoustonAccessPendingDeviceError({
+                      reason: "not_found",
+                      message:
+                        "That device is no longer waiting for approval; it may have expired or already been decided.",
+                    }),
+                  ),
+            ),
+          ),
+        [WS_METHODS.houstonAccessDenyPendingDevice]: (input) =>
+          serverAuth.denyPendingDevice(input.sessionId).pipe(
+            Effect.mapError(toPendingDeviceAccessError),
+            Effect.flatMap((denied) =>
+              denied
+                ? Effect.succeed({ sessionId: input.sessionId, approved: false as const })
+                : Effect.fail(
+                    new HoustonAccessPendingDeviceError({
+                      reason: "not_found",
+                      message:
+                        "That device is no longer waiting for approval; it may have expired or already been decided.",
+                    }),
+                  ),
+            ),
+          ),
         [WS_METHODS.subscribeAuthAccess]: (_input) =>
           Stream.unwrap(
             Effect.gen(function* () {
@@ -3811,7 +3878,7 @@ export const layer = Layer.unwrap(
             Effect.provideService(RpcServer.Protocol, withOutputWindow(protocol)),
             Effect.provide(
               Layer.merge(
-                RpcAuthorization.layer(session.scopes),
+                RpcAuthorization.layer(session.scopes, undefined, session.pendingApproval),
                 makeRpcInstrumentationLayer({ clientKind: clientAnalyticsProps.surface }),
               ),
             ),

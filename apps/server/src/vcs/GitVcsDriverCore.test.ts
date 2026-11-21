@@ -562,6 +562,67 @@ it.effect.each(["branch", "detached", "nested", "aliased-root", "aliased-nested"
     ).pipe(Effect.provide(layerTest)),
 );
 
+it.effect.each(["success", "failure"] as const)(
+  "refreshes a new worktree's index once through confined Git when refresh %s",
+  (outcome) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const calls: Array<{ readonly args: ReadonlyArray<string>; readonly cwd?: string }> = [];
+        const spawner = ChildProcessSpawner.make((command) => {
+          if (!ChildProcess.isStandardCommand(command)) return delegate.spawn(command);
+          const args = command.args.map(String);
+          calls.push({
+            args,
+            ...(command.options.cwd === undefined ? {} : { cwd: command.options.cwd }),
+          });
+          if (
+            outcome === "failure" &&
+            args.length === 3 &&
+            args[0] === "update-index" &&
+            args[1] === "-q" &&
+            args[2] === "--refresh"
+          ) {
+            return Effect.succeed(makeFailedHandle("fatal: index refresh failed"));
+          }
+          return delegate.spawn(command);
+        });
+        const driver = yield* makeGitVcsDriverCore().pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        );
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const path = yield* Path.Path;
+        const worktreePath = path.join(yield* makeTmpDir("git-worktrees-"), "refresh");
+
+        const created = yield* driver.createWorktree({
+          cwd,
+          path: worktreePath,
+          refName: initialBranch,
+          newRefName: `feature/refresh-${outcome}`,
+        });
+
+        assert.equal(created.worktree.path, worktreePath);
+        const refresh = calls.find(
+          ({ args }) =>
+            args.length === 3 &&
+            args[0] === "update-index" &&
+            args[1] === "-q" &&
+            args[2] === "--refresh",
+        );
+        assert.isDefined(refresh);
+        assert.equal(
+          NodeFS.realpathSync.native(refresh!.cwd!),
+          NodeFS.realpathSync.native(worktreePath),
+        );
+        assert.equal(
+          calls.filter(({ args }) => args[0] === "update-index" && args[2] === "--refresh").length,
+          1,
+        );
+      }),
+    ).pipe(Effect.provide(layerTest)),
+);
+
 it.effect.each(["bare", "unborn"] as const)(
   "invalidates a %s repository after worktree creation",
   (state) =>

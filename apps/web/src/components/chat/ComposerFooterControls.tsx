@@ -9,6 +9,7 @@ import { BotIcon, CheckIcon, PencilRulerIcon } from "lucide-react";
 import { type ComponentProps, type KeyboardEvent, memo, useId, useRef, useState } from "react";
 
 import { cn } from "~/lib/utils";
+import { useT } from "~/i18n/useT";
 
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
@@ -52,6 +53,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
+  const t = useT();
   const size = props.size ?? "sm";
   const accessDisplay = props.accessDisplay ?? "label";
   const boardControlClassName = size === "sm" ? "h-6! gap-1! px-1.5! text-xs!" : undefined;
@@ -66,8 +68,8 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
   // The composer's toggle shows only while plan mode is on; /plan and Shift+Tab enter it from
   // the default. The phone sheet keeps it in both modes.
   const interactionModeTooltip = planActive
-    ? "Plan mode. Click to return to normal build mode"
-    : "Default mode. Click to enter plan mode";
+    ? t("Plan mode. Click to return to normal build mode")
+    : t("Default mode. Click to enter plan mode");
   const interactionModeToggle =
     props.showInteractionModeToggle && (planActive || props.alwaysShowInteractionModeToggle) ? (
       <Tooltip>
@@ -101,7 +103,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
             data-composer-control-label
             className={size === "xs" ? "sr-only" : "sr-only sm:not-sr-only"}
           >
-            {planActive ? "Plan" : "Build"}
+            {planActive ? t("Plan") : t("Build")}
           </span>
         </TooltipTrigger>
         <TooltipPopup side="top">{interactionModeTooltip}</TooltipPopup>
@@ -109,7 +111,10 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
     ) : null;
 
   // The chip opens the same Permissions toggle used in the model picker and the overflow menu.
-  const permissionsTooltip = `Permissions: ${runtimeModeOption.label}. ${runtimeModeOption.description}`;
+  const permissionsTooltip = t("Permissions: {label}. {description}", {
+    label: t(runtimeModeOption.label),
+    description: t(runtimeModeOption.description),
+  });
   const permissionsChip = (
     <Menu
       open={open}
@@ -129,7 +134,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
                   size={size}
                   // Mirrors the effort chip's trailing pe-1 so both gaps around the bars match.
                   className={cn("ps-1.5", boardControlClassName)}
-                  aria-label={`Permissions: ${runtimeModeOption.label}`}
+                  aria-label={t("Permissions: {label}", { label: t(runtimeModeOption.label) })}
                 />
               }
             />
@@ -145,7 +150,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
             data-composer-control-label
             className={accessDisplay === "icon" ? "sr-only" : undefined}
           >
-            {runtimeModeOption.label}
+            {t(runtimeModeOption.label)}
           </span>
         </TooltipTrigger>
         <TooltipPopup side="top">{permissionsTooltip}</TooltipPopup>
@@ -193,6 +198,7 @@ export function ComposerPermissionsSection(props: {
   runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
+  const t = useT();
   // Hover or keyboard focus previews a mode's name and description before a pick.
   const [previewMode, setPreviewMode] = useState<RuntimeMode | null>(null);
   const shownMode = previewMode ?? props.runtimeMode;
@@ -202,9 +208,9 @@ export function ComposerPermissionsSection(props: {
   const descriptionId = useId();
   return (
     <div data-composer-permissions className="grid w-72 gap-1.5 px-2 py-1.5">
-      <div className="font-medium text-muted-foreground text-xs">Permissions</div>
+      <div className="font-medium text-muted-foreground text-xs">{t("Permissions")}</div>
       <MenuPrimitive.RadioGroup
-        aria-label="Permissions"
+        aria-label={t("Permissions")}
         value={props.runtimeMode}
         onValueChange={(value: RuntimeMode) => {
           if (value !== props.runtimeMode) props.onRuntimeModeChange(value);
@@ -220,8 +226,8 @@ export function ComposerPermissionsSection(props: {
               key={option.mode}
               value={option.mode}
               disabled={option.disabledReason !== undefined}
-              label={option.label}
-              aria-label={option.label}
+              label={t(option.label)}
+              aria-label={t(option.label)}
               aria-describedby={`${descriptionId}-${option.mode}`}
               closeOnClick
               onPointerEnter={() => setPreviewMode(option.mode)}
@@ -241,7 +247,7 @@ export function ComposerPermissionsSection(props: {
       {/* Static per-mode descriptions for screen readers; the preview below is visual only. */}
       {props.runtimeModeOptions.map((option) => (
         <span key={option.mode} id={`${descriptionId}-${option.mode}`} className="sr-only">
-          {option.disabledReason ?? option.description}
+          {option.disabledReason !== undefined ? t(option.disabledReason) : t(option.description)}
         </span>
       ))}
       <div className="px-2 pt-0.5 pb-1.5 text-xs leading-4" aria-hidden="true">
@@ -252,9 +258,11 @@ export function ComposerPermissionsSection(props: {
               : "text-muted-foreground"
           }
         >
-          {shown.label}.
+          {t(shown.label)}.
         </span>{" "}
-        <span className="text-muted-foreground">{shown.disabledReason ?? shown.description}</span>
+        <span className="text-muted-foreground">
+          {shown.disabledReason !== undefined ? t(shown.disabledReason) : t(shown.description)}
+        </span>
       </div>
     </div>
   );
@@ -270,6 +278,7 @@ export function ComposerPermissionsPicker(props: {
   /** The phone sheet: full-width 44px rows on the 16px gutter. */
   phone?: boolean;
 }) {
+  const t = useT();
   return (
     <div
       data-composer-permissions
@@ -281,9 +290,9 @@ export function ComposerPermissionsPicker(props: {
           props.phone && "px-4 pt-1",
         )}
       >
-        Permissions
+        {t("Permissions")}
       </div>
-      <div role="radiogroup" aria-label="Permissions" className="grid gap-0.5">
+      <div role="radiogroup" aria-label={t("Permissions")} className="grid gap-0.5">
         {props.runtimeModeOptions.map((option) => {
           const OptionIcon = option.icon;
           const checked = option.mode === props.runtimeMode;
@@ -307,7 +316,7 @@ export function ComposerPermissionsPicker(props: {
                 aria-hidden="true"
                 className={props.phone ? PHONE_SHEET_ROW_ICON_CLS : "size-3.5 shrink-0"}
               />
-              <span className="min-w-0 flex-1 truncate text-sm">{option.label}</span>
+              <span className="min-w-0 flex-1 truncate text-sm">{t(option.label)}</span>
               {props.phone && checked ? (
                 <CheckIcon aria-hidden="true" className={PHONE_SHEET_ROW_CHECK_CLS} />
               ) : null}
@@ -336,6 +345,8 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
   /** The running thread's status word, such as "Waiting" while it is blocked on the user. */
   runningStateLabel?: string | null;
   canInterrupt: boolean;
+  /** A Stop request or the server's own stopping state keeps the Stop control pending. */
+  interruptPending?: boolean;
   followUpBehavior: "queue" | "steer";
   canSteer: boolean;
   alternateShortcutLabel: string | null;
@@ -388,6 +399,7 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
         runningStartedAt={props.runningStartedAt ?? null}
         runningStateLabel={props.runningStateLabel ?? null}
         canInterrupt={props.canInterrupt}
+        interruptPending={props.interruptPending ?? false}
         followUpBehavior={props.followUpBehavior}
         canSteer={props.canSteer}
         alternateShortcutLabel={props.alternateShortcutLabel}

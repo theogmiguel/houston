@@ -9,11 +9,12 @@ import { Atom } from "effect/reactivity";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import { subscribe } from "../rpc/client.ts";
-import { createEnvironmentSubscriptionAtomFamily } from "./runtime.ts";
+import { createEnvironmentRpcCommand, createEnvironmentSubscriptionAtomFamily } from "./runtime.ts";
 
 export const EMPTY_AUTH_ACCESS_SNAPSHOT: AuthAccessSnapshot = {
   pairingLinks: [],
   clientSessions: [],
+  pendingDevices: [],
 };
 
 function upsertByKey<A>(
@@ -58,6 +59,22 @@ export function applyAuthAccessStreamEvent(
           (value) => value.sessionId !== event.payload.sessionId,
         ),
       };
+    case "pendingDeviceUpserted":
+      return {
+        ...current,
+        pendingDevices: upsertByKey(
+          current.pendingDevices,
+          event.payload,
+          (value) => value.sessionId,
+        ),
+      };
+    case "pendingDeviceRemoved":
+      return {
+        ...current,
+        pendingDevices: current.pendingDevices.filter(
+          (value) => value.sessionId !== event.payload.sessionId,
+        ),
+      };
   }
 }
 
@@ -85,6 +102,18 @@ export function createAuthEnvironmentAtoms<R, E>(
         subscribe(WS_METHODS.subscribeAuthAccess, {}).pipe(
           Stream.mapAccum(() => EMPTY_AUTH_ACCESS_SNAPSHOT, projectAuthAccessSnapshot),
         ),
+    }),
+    listPendingDevices: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:list-pending-devices",
+      tag: WS_METHODS.houstonAccessListPendingDevices,
+    }),
+    approvePendingDevice: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:approve-pending-device",
+      tag: WS_METHODS.houstonAccessApprovePendingDevice,
+    }),
+    denyPendingDevice: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:deny-pending-device",
+      tag: WS_METHODS.houstonAccessDenyPendingDevice,
     }),
   };
 }

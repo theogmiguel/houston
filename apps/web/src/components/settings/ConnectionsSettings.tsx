@@ -6,8 +6,10 @@ import {
   AuthAccessReadScope,
   AuthAccessWriteScope,
   AuthEnvironmentMaintainScope,
+  AuthSettingsWriteScope,
   type AuthClientSession,
   type AuthPairingLink,
+  type AuthPendingDevice,
   type AuthPairingCredentialResult,
   type AdvertisedEndpoint,
   type DesktopServerExposureState,
@@ -41,6 +43,7 @@ import { useIsPhone } from "../../mobile/usePhone";
 import { LinkedEnvironmentsSettings } from "./LinkedEnvironmentsSettings";
 import { usePeerLinkHosts } from "~/state/peerLinks";
 import { LoadBalancingSettings } from "./LoadBalancingSettings";
+import { PortForwardingSetting } from "./PortForwardingSetting";
 import { PullRequestRoutingSettings } from "./PullRequestRoutingSettings";
 import { Input } from "../ui/input";
 import {
@@ -123,6 +126,8 @@ import {
   AuthorizedClientsHeaderAction,
   PairDeviceSection,
   PairingClientsList,
+  PendingDeviceList,
+  RequireDeviceApprovalSetting,
 } from "./AuthorizedClientsSettings";
 import { ITEM_ROW_CLASSNAME } from "./itemRows";
 import { SavedBackendListRow } from "./SavedEnvironmentRows";
@@ -157,6 +162,12 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
   const peerLinkHosts = usePeerLinkHosts();
   const removeEnvironment = useAtomCommand(environmentCatalog.remove, { reportFailure: false });
   const setEnvironmentEnabled = useAtomCommand(environmentCatalog.setEnabled, {
+    reportFailure: false,
+  });
+  const approvePendingDevice = useAtomCommand(authEnvironment.approvePendingDevice, {
+    reportFailure: false,
+  });
+  const denyPendingDevice = useAtomCommand(authEnvironment.denyPendingDevice, {
     reportFailure: false,
   });
   const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
@@ -231,6 +242,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     string | null
   >(null);
   const [isRevokingOtherDesktopClients, setIsRevokingOtherDesktopClients] = useState(false);
+  const [decidingPendingDeviceId, setDecidingPendingDeviceId] = useState<string | null>(null);
   const [addBackendDialogOpen, setAddBackendDialogOpen] = useState(false);
   const [routeTarget, setRouteTarget] = useState<EnvironmentPresentation | null>(null);
   const [savedBackendError, setSavedBackendError] = useState<string | null>(null);
@@ -280,6 +292,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
   );
   const canReadAccess = useEnvironmentScope(primaryEnvironmentId, AuthAccessReadScope);
   const canWriteAccess = useEnvironmentScope(primaryEnvironmentId, AuthAccessWriteScope);
+  const canChangeSettings = useEnvironmentScope(primaryEnvironmentId, AuthSettingsWriteScope);
   const canMaintain = useEnvironmentScope(primaryEnvironmentId, AuthEnvironmentMaintainScope);
   const canManageLocalBackend = !isLocalEnvironmentDisabled() && canMaintain;
   const showsAccess = view === "access";
@@ -330,6 +343,10 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
       ),
     );
   })();
+  const desktopPendingDevices: ReadonlyArray<AuthPendingDevice> =
+    authAccessChanges.data?.type === "snapshot"
+      ? (authAccessChanges.data.payload.pendingDevices ?? [])
+      : [];
   const isLocalBackendNetworkAccessible = hostBridge
     ? desktopServerExposureState?.mode === "network-accessible"
     : currentAuthPolicy === "remote-reachable";
@@ -542,6 +559,45 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
       );
     }
     setIsRevokingOtherDesktopClients(false);
+  };
+
+  const handleDecidePendingDevice = async (
+    sessionId: AuthPendingDevice["sessionId"],
+    approve: boolean,
+  ) => {
+    if (
+      primaryEnvironmentId === null ||
+      !readEnvironmentScope(primaryEnvironmentId, AuthAccessWriteScope)
+    )
+      return;
+    setDecidingPendingDeviceId(sessionId);
+    setDesktopAccessManagementMutationError(null);
+    const settled = await settlePromise(async () => {
+      const result = await (approve
+        ? approvePendingDevice({ environmentId: primaryEnvironmentId, input: { sessionId } })
+        : denyPendingDevice({ environmentId: primaryEnvironmentId, input: { sessionId } }));
+      if (result._tag === "Failure") {
+        throw squashAtomCommandFailure(result);
+      }
+    });
+    if (settled._tag === "Failure") {
+      const error = Cause.squash(settled.cause);
+      const message =
+        error instanceof Error
+          ? error.message
+          : approve
+            ? "Failed to approve the device."
+            : "Failed to deny the device.";
+      setDesktopAccessManagementMutationError(message);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: approve ? "Could not approve device" : "Could not deny device",
+          description: message,
+        }),
+      );
+    }
+    setDecidingPendingDeviceId(null);
   };
 
   const handleSetSavedBackendEnabled = async (environmentId: EnvironmentId, enabled: boolean) => {
@@ -1051,6 +1107,12 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
 
           {canReadAccess || canWriteAccess ? (
             <SettingsSection id="authorized-clients" title="Authorized clients">
+              {primaryEnvironmentId !== null ? (
+                <RequireDeviceApprovalSetting
+                  environmentId={primaryEnvironmentId}
+                  canChange={canChangeSettings && canWriteAccess}
+                />
+              ) : null}
               <ScrollArea
                 scrollFade
                 chainVerticalScroll
@@ -1059,6 +1121,15 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
               >
                 {canReadAccess ? (
                   <>
+                    {desktopPendingDevices.length > 0 ? (
+                      <PendingDeviceList
+                        pendingDevices={desktopPendingDevices}
+                        decidingSessionId={decidingPendingDeviceId}
+                        canDecide={canWriteAccess}
+                        onApprove={(sessionId) => void handleDecidePendingDevice(sessionId, true)}
+                        onDeny={(sessionId) => void handleDecidePendingDevice(sessionId, false)}
+                      />
+                    ) : null}
                     {renderAuthorizedClients({ showPairingLinks: false })}
                     {visibleDesktopPairingLinks.length > 0 ? (
                       <PairingClientsList
@@ -1079,6 +1150,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
                     ) : null}
                     {visibleDesktopPairingLinks.length === 0 &&
                     desktopClientSessions.length === 0 &&
+                    desktopPendingDevices.length === 0 &&
                     !isLoadingDesktopAccessManagement ? (
                       <div className={ITEM_ROW_CLASSNAME}>
                         <p className="text-xs text-muted-foreground/60">
@@ -1402,13 +1474,21 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     />
   );
 
-  if (showsAccess) return <SettingsPageContainer>{primarySettings}</SettingsPageContainer>;
+  if (showsAccess) {
+    return (
+      <SettingsPageContainer>
+        {primarySettings}
+        <PortForwardingSetting />
+      </SettingsPageContainer>
+    );
+  }
 
   return (
     <SettingsPageContainer>
       <SettingsSection id="this-app" title="Local environment">
         <LocalEnvironmentSetting />
       </SettingsSection>
+      <PortForwardingSetting />
       <SettingsSection
         {...searchableSetting("remote-environments")}
         title="Environments"

@@ -1,6 +1,7 @@
 import type {
   AuthBrowserSessionResult,
   AuthClientMetadata,
+  AuthDevicePairingMethod,
   AuthEnvironmentScope,
   AuthGrantScope,
   AuthPairingCredentialResult,
@@ -215,6 +216,7 @@ function readEnvironmentHttpErrorStatus(error: EnvironmentHttpCommonErrorType): 
       return 401;
     case "EnvironmentScopeRequiredError":
     case "EnvironmentOperationForbiddenError":
+    case "EnvironmentDeviceApprovalPendingError":
       return 403;
     case "EnvironmentResourceNotFoundError":
       return 404;
@@ -223,12 +225,19 @@ function readEnvironmentHttpErrorStatus(error: EnvironmentHttpCommonErrorType): 
   }
 }
 
-async function exchangeBootstrapCredential(credential: string): Promise<AuthBrowserSessionResult> {
+async function exchangeBootstrapCredential(
+  credential: string,
+  pairedVia?: AuthDevicePairingMethod,
+): Promise<AuthBrowserSessionResult> {
   return retryTransientBootstrap(async () => {
     try {
       return await runPrimaryHttp(
         PrimaryEnvironmentHttpClient.pipe(
-          Effect.flatMap((client) => client.auth.browserSession({ payload: { credential } })),
+          Effect.flatMap((client) =>
+            client.auth.browserSession({
+              payload: { credential, ...(pairedVia !== undefined ? { pairedVia } : {}) },
+            }),
+          ),
         ),
       );
     } catch (error) {
@@ -393,7 +402,10 @@ async function bootstrapServerAuth(urlCredential: string | null): Promise<Server
   }
 }
 
-export async function submitServerAuthCredential(credential: string): Promise<void> {
+export async function submitServerAuthCredential(
+  credential: string,
+  pairedVia?: "pairing-link" | "pairing-code",
+): Promise<AuthBrowserSessionResult["approvalPending"] | null> {
   const trimmedCredential = credential.trim();
   if (!trimmedCredential) {
     throw new PrimaryEnvironmentPairingCredentialRequiredError({
@@ -402,12 +414,16 @@ export async function submitServerAuthCredential(credential: string): Promise<vo
   }
 
   resolvedAuthenticatedGateState = null;
-  await exchangeBootstrapCredential(trimmedCredential);
-  await waitForAuthenticatedSessionAfterBootstrap();
-  resolvedAuthenticatedGateState = { status: "authenticated" };
+  const result = await exchangeBootstrapCredential(trimmedCredential, pairedVia);
   bootstrapPromise = null;
   explicitPairingRequested = false;
   stripPairingTokenFromUrl();
+  if (result.approvalPending !== undefined) {
+    return result.approvalPending;
+  }
+  await waitForAuthenticatedSessionAfterBootstrap();
+  resolvedAuthenticatedGateState = { status: "authenticated" };
+  return null;
 }
 
 export async function createServerPairingCredential(input?: {

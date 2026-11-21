@@ -1,4 +1,5 @@
 import {
+  effectiveUsageRetentionDays,
   type ProviderInstanceConfig,
   ProviderInstanceId,
   USAGE_CONTRACT_VERSION,
@@ -70,7 +71,7 @@ const RATES_REFRESH_FLOOR_MS = 60 * 1000;
 const MTIME_SLACK_MS = 36 * 60 * 60 * 1000;
 const MAX_HOURLY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-const CACHE_RETENTION_DAYS = 92;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const TRANSCRIPT_READ_CONCURRENCY = 4;
 
@@ -710,7 +711,11 @@ export const make = Effect.gen(function* () {
     const windowStartMs =
       (hourlyWindow?.sinceTimeMs ?? DateTime.toEpochMillis(windowStart.value)) - MTIME_SLACK_MS;
 
-    const retentionCutoffMs = startedAtMs - CACHE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    const retentionCutoffMs =
+      startedAtMs - effectiveUsageRetentionDays(settings.usageRetentionDays) * DAY_MS;
+    // Shortening retention drops saved records here, before the scan can use or rewrite them.
+    const pruned = pruneScanCache(fileCache, retentionCutoffMs);
+    if (pruned > 0) cacheDirty = true;
 
     const [, scannedDirs] = yield* Effect.all(
       [
@@ -870,9 +875,6 @@ export const make = Effect.gen(function* () {
         ...(refreshing ? { refreshing } : {}),
       });
     }
-
-    const pruned = pruneScanCache(fileCache, retentionCutoffMs);
-    if (pruned > 0) cacheDirty = true;
 
     const aggregated = aggregator.finish();
     const readAt = yield* DateTime.now;

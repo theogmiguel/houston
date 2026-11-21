@@ -5,6 +5,7 @@ import { createContext, useContext, type MouseEvent as ReactMouseEvent } from "r
 
 import { nextProjectFilterKeys } from "../../threads/projectFilter";
 import { cn } from "../../lib/utils";
+import { useT } from "~/i18n/useT";
 import {
   projectGroupsSpanEnvironments,
   type SidebarProjectSnapshot,
@@ -51,12 +52,15 @@ export function ProjectFilterPicker({
   onChange: (keys: string[]) => void;
   onOpenSettings: (group: SidebarProjectSnapshot) => void;
 }) {
+  const t = useT();
   const showEnvironments = projectGroupsSpanEnvironments(groups);
   const filtered = activeKeys.length > 0;
   const chosenNames = groups
     .filter((group) => activeKeys.includes(group.projectKey))
     .map((group) => group.displayName);
-  const label = filtered ? `Filter by project: ${chosenNames.join(", ")}` : "Filter by project";
+  const label = filtered
+    ? t("Filter by project: {projects}", { projects: chosenNames.join(", ") })
+    : t("Filter by project");
   const choose = (key: string | null, event: ReactMouseEvent) => {
     onChange(nextProjectFilterKeys(activeKeys, key, event.shiftKey));
   };
@@ -99,7 +103,7 @@ export function ProjectFilterPicker({
           onClick={(event) => choose(null, event)}
         >
           <FolderIcon aria-hidden className="size-3.5" />
-          <span className="min-w-0 flex-1 truncate">All projects</span>
+          <span className="min-w-0 flex-1 truncate">{t("All projects")}</span>
           {filtered ? null : <CheckIcon aria-hidden className="size-3.5" />}
         </MenuItem>
         <MenuSeparator />

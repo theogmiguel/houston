@@ -138,6 +138,7 @@ import {
 } from "./TimelineAssistantRows";
 import { V2EventTimelineRow } from "./TimelineV2EventRow";
 import { startTimelinePositionRestore } from "./useTimelinePositionRestore";
+import { useT } from "~/i18n/useT";
 import {
   attachTimelineViewport,
   nextListOpening,
@@ -435,6 +436,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   topFadeEnabled = false,
   historyControls,
 }: MessagesTimelineProps) {
+  const t = useT();
   const listIdentityKey = displayThreadKey ?? routeThreadKey;
   // Snapshot restore positions on identity changes; ongoing scroll writes must not move them.
   // Find open at the opening is part of the snapshot: opening find later
@@ -1151,16 +1153,19 @@ const ConversationTimeline = memo(function ConversationTimeline({
       <div className="messages-timeline-row-frame">
         <div className="chat-content-lane pt-1 sm:pt-2">
           <TimelineSystemDivider
-            label="Context from"
+            label={t("Context from")}
             detail={
               sideChatLink.environmentLabel === undefined
                 ? sideChatLink.title
-                : `${sideChatLink.title} on ${sideChatLink.environmentLabel}`
+                : t("{title} on {environment}", {
+                    title: sideChatLink.title,
+                    environment: sideChatLink.environmentLabel,
+                  })
             }
             icon={MessagesSquareIcon}
             {...(sideChatLink.open === undefined
               ? {}
-              : { actionLabel: "Open parent thread", onAction: sideChatLink.open })}
+              : { actionLabel: t("Open parent thread"), onAction: sideChatLink.open })}
           />
         </div>
       </div>
@@ -1348,8 +1353,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
         >
           <PanelEmptyState
             icon={<MessageSquareIcon />}
-            title="No messages yet"
-            description="Send a message to start the conversation."
+            title={t("No messages yet")}
+            description={t("Send a message to start the conversation.")}
           />
         </div>
       </>
@@ -1445,6 +1450,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
 });
 
 function TimelineHistoryControl(props: MessagesTimelineHistoryControls) {
+  const t = useT();
   if (!props.hasMoreHistory && props.error === null) {
     return null;
   }
@@ -1455,13 +1461,13 @@ function TimelineHistoryControl(props: MessagesTimelineHistoryControls) {
           <button
             type="button"
             disabled={props.loading}
-            aria-label="Load earlier turns"
+            aria-label={t("Load earlier turns")}
             onClick={() => props.onLoadEarlier()}
             className="flex w-full cursor-pointer items-center gap-3 py-1.5 text-muted-foreground text-xs hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-default"
           >
             <span aria-hidden="true" className="h-px flex-1 bg-border/70" />
             <span className="shrink-0">
-              {props.loading ? "Loading earlier turns…" : "Load earlier turns"}
+              {props.loading ? t("Loading earlier turns…") : t("Load earlier turns")}
             </span>
             <span aria-hidden="true" className="h-px flex-1 bg-border/70" />
           </button>
@@ -1695,8 +1701,9 @@ function useDeferredWorkLoading(
 }
 
 function WorkHistorySkeleton() {
+  const t = useT();
   return (
-    <div role="status" aria-label="Loading work history" className="space-y-2 px-1 pb-1 pt-3">
+    <div role="status" aria-label={t("Loading work history")} className="space-y-2 px-1 pb-1 pt-3">
       {[0, 1, 2].map((index) => (
         <div key={index} className="flex items-center gap-2" aria-hidden="true">
           <Skeleton className="size-3 shrink-0" />

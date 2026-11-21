@@ -79,8 +79,15 @@ import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
 import {
   AuthAccessStreamError,
   AuthAccessStreamEvent,
+  AuthPendingDevice,
   EnvironmentAuthorizationError,
 } from "./auth.ts";
+import {
+  HoustonAccessDecidePendingDeviceInput,
+  HoustonAccessListPendingDevicesInput,
+  HoustonAccessPendingDeviceDecision,
+  HoustonAccessPendingDeviceError,
+} from "./houston/access.ts";
 import { ClientActivityReportInput } from "./background.ts";
 import {
   FilesystemGetMetadataInput,
@@ -181,6 +188,7 @@ import {
   HoustonDatabaseReclaimError,
   HoustonDatabaseReclaimResult,
 } from "./houston/databaseReclaim.ts";
+import { TerminalShells } from "./houston/terminalShells.ts";
 import {
   HoustonReviewAnchorLinesInput,
   HoustonReviewAnchorMapResult,
@@ -658,6 +666,7 @@ export const WS_METHODS = {
   houstonTasksSettingsGet: "houston.tasks.settings.get",
   houstonTasksSettingsSet: "houston.tasks.settings.set",
   houstonDatabaseReclaim: "houston.database.reclaim",
+  houstonTerminalShells: "houston.terminal.shells",
   houstonTasksImportV1Status: "houston.tasks.importV1.status",
   houstonTasksImportV1Run: "houston.tasks.importV1.run",
   houstonTasksStart: "houston.tasks.start",
@@ -861,6 +870,9 @@ export const WS_METHODS = {
   subscribeServerConfig: "subscribeServerConfig",
   subscribeServerLifecycle: "subscribeServerLifecycle",
   subscribeAuthAccess: "subscribeAuthAccess",
+  houstonAccessListPendingDevices: "houston.access.listPendingDevices",
+  houstonAccessApprovePendingDevice: "houston.access.approvePendingDevice",
+  houstonAccessDenyPendingDevice: "houston.access.denyPendingDevice",
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
 } as const;
 
@@ -1051,6 +1063,12 @@ const WsHoustonDatabaseReclaimRpc = Rpc.make(WS_METHODS.houstonDatabaseReclaim, 
   payload: Schema.Struct({}),
   success: HoustonDatabaseReclaimResult,
   error: Schema.Union([HoustonDatabaseReclaimError, EnvironmentAuthorizationError]),
+});
+
+const WsHoustonTerminalShellsRpc = Rpc.make(WS_METHODS.houstonTerminalShells, {
+  payload: Schema.Struct({}),
+  success: TerminalShells,
+  error: EnvironmentAuthorizationError,
 });
 
 const WsServerGetDatabaseStorageRpc = Rpc.make(WS_METHODS.serverGetDatabaseStorage, {
@@ -2850,6 +2868,27 @@ const WsSubscribeAuthAccessRpc = Rpc.make(WS_METHODS.subscribeAuthAccess, {
   stream: true,
 });
 
+const WsHoustonAccessListPendingDevicesRpc = Rpc.make(WS_METHODS.houstonAccessListPendingDevices, {
+  payload: HoustonAccessListPendingDevicesInput,
+  success: Schema.Array(AuthPendingDevice),
+  error: Schema.Union([HoustonAccessPendingDeviceError, EnvironmentAuthorizationError]),
+});
+
+const WsHoustonAccessApprovePendingDeviceRpc = Rpc.make(
+  WS_METHODS.houstonAccessApprovePendingDevice,
+  {
+    payload: HoustonAccessDecidePendingDeviceInput,
+    success: HoustonAccessPendingDeviceDecision,
+    error: Schema.Union([HoustonAccessPendingDeviceError, EnvironmentAuthorizationError]),
+  },
+);
+
+const WsHoustonAccessDenyPendingDeviceRpc = Rpc.make(WS_METHODS.houstonAccessDenyPendingDevice, {
+  payload: HoustonAccessDecidePendingDeviceInput,
+  success: HoustonAccessPendingDeviceDecision,
+  error: Schema.Union([HoustonAccessPendingDeviceError, EnvironmentAuthorizationError]),
+});
+
 const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeResourceTelemetry, {
   payload: Schema.Struct({}),
   success: ResourceTelemetrySnapshot,
@@ -3066,6 +3105,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonTasksSettingsGetRpc,
   WsHoustonTasksSettingsSetRpc,
   WsHoustonDatabaseReclaimRpc,
+  WsHoustonTerminalShellsRpc,
   WsHoustonTasksImportV1StatusRpc,
   WsHoustonTasksImportV1RunRpc,
   WsHoustonTasksStartRpc,
@@ -3143,6 +3183,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,
   WsSubscribeAuthAccessRpc,
+  WsHoustonAccessListPendingDevicesRpc,
+  WsHoustonAccessApprovePendingDeviceRpc,
+  WsHoustonAccessDenyPendingDeviceRpc,
   WsSubscribeResourceTelemetryRpc,
   WsOrchestrationV2DispatchCommandRpc,
   WsOrchestrationV2GetWorkflowScriptRpc,

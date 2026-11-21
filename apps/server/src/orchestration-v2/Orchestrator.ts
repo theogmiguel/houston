@@ -12,6 +12,7 @@ import {
 import { canonicalizeGitCafePullRequestUrl } from "@houston-app/source-control-definitions/registry";
 import { threadIssueKeysEqual } from "@houston-app/contracts";
 import { threadPullRequestsOf } from "../sourceControl/threadPullRequests.ts";
+import { PULL_REQUEST_WATCH_WAKE_MESSAGE_PREFIX } from "./pullRequestWatch.ts";
 import {
   normalizeThreadPullRequestKey,
   visibleThreadPullRequests,
@@ -823,6 +824,39 @@ function withPullRequestWatch(
   return ended === undefined ? rest : { ...rest, endedWatch: ended };
 }
 
+/** Whether `text` names `url` itself, not a longer pull request number that starts with it. */
+function namesPullRequestUrl(text: string, url: string): boolean {
+  let from = 0;
+  while (true) {
+    const at = text.indexOf(url, from);
+    if (at === -1) return false;
+    const next = text.charCodeAt(at + url.length);
+    if (Number.isNaN(next) || next < 48 || next > 57) return true;
+    from = at + 1;
+  }
+}
+
+/** A pull request watch's wake must not start once that watch or thread ended; other notifications are left alone. */
+export function isStalePullRequestWatchWake(
+  thread: OrchestrationV2AppThread,
+  message: Pick<OrchestrationV2ConversationMessage, "id" | "text" | "notification">,
+): boolean {
+  if (!message.id.startsWith(PULL_REQUEST_WATCH_WAKE_MESSAGE_PREFIX)) return false;
+  const links = threadPullRequestsOf(thread);
+  if (
+    thread.archivedAt !== null ||
+    thread.deletedAt !== null ||
+    thread.settledOverride === "settled" ||
+    thread.settledAt !== null ||
+    isProviderNativeSubagentThread(thread)
+  )
+    return true;
+  // The server writes the watched pull request's URL into the wake; an ended watch no longer carries one.
+  return !links.some(
+    (link) => link.watch !== undefined && namesPullRequestUrl(message.text, link.url),
+  );
+}
+
 function legacyPullRequestLink(
   thread: OrchestrationV2AppThread,
   linked: ThreadLinkedPullRequest,
@@ -1042,8 +1076,12 @@ function usageLimitHoldsQueue(
     }
   }
   return (
-    usageLimitBlockedRun(projection.runs, projection.turnItems, latestSession?.lastError ?? null)
-      ?.providerInstanceId === providerInstanceId
+    usageLimitBlockedRun(
+      projection.runs,
+      projection.turnItems,
+      latestSession?.lastError ?? null,
+      providerInstanceId,
+    )?.providerInstanceId === providerInstanceId
   );
 }
 
@@ -2055,6 +2093,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     );
   });
 
+  // A stale wake cancels itself and then lets the next queued run start; the ref keeps the
+  // recursive call out of the function's own type inference.
+  const startNextQueuedRunRef = yield* Ref.make<(threadId: ThreadId) => Effect.Effect<void, Error>>(
+    () => Effect.void,
+  );
   const startNextQueuedRun = Effect.fn("Orchestrator.startNextQueuedRun")(
     function* (
       threadId: ThreadId,
@@ -2239,6 +2282,72 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           commandType: "message.dispatch",
           cause: `Queued run ${queuedRun.id} is missing projection state.`,
         });
+      }
+
+      // The watch may end or the thread settle while its wake waits behind another run.
+      if (isStalePullRequestWatchWake(projection.thread, queuedMessage)) {
+        yield* writeSystemEvents([
+          {
+            type: "run.updated",
+            threadId,
+            runId: queuedRun.id,
+            ...(queuedRun.rootNodeId === null ? {} : { nodeId: queuedRun.rootNodeId }),
+            providerInstanceId: queuedRun.providerInstanceId,
+            occurredAt: now,
+            payload: {
+              ...queuedRun,
+              status: "cancelled",
+              queuePosition: null,
+              completedAt: now,
+            },
+          },
+          {
+            type: "run-attempt.updated",
+            threadId,
+            runId: queuedRun.id,
+            nodeId: rootNode.id,
+            providerInstanceId: queuedRun.providerInstanceId,
+            occurredAt: now,
+            payload: { ...attempt, status: "cancelled", completedAt: now },
+          },
+          {
+            type: "node.updated",
+            threadId,
+            runId: queuedRun.id,
+            nodeId: rootNode.id,
+            providerInstanceId: queuedRun.providerInstanceId,
+            occurredAt: now,
+            payload: { ...rootNode, status: "cancelled", completedAt: now },
+          },
+          ...(queuedMessage.delivery === undefined
+            ? []
+            : [
+                {
+                  type: "message.updated" as const,
+                  threadId,
+                  runId: queuedRun.id,
+                  ...(queuedRun.rootNodeId === null ? {} : { nodeId: queuedRun.rootNodeId }),
+                  providerInstanceId: queuedRun.providerInstanceId,
+                  occurredAt: now,
+                  payload: {
+                    ...queuedMessage,
+                    delivery: nextDelivery(queuedMessage.delivery, { type: "cancelled", at: now }),
+                    updatedAt: now,
+                  },
+                },
+              ]),
+        ]);
+        yield* (yield* Ref.get(startNextQueuedRunRef))(threadId).pipe(
+          Effect.mapError(
+            (cause) =>
+              new OrchestratorDispatchError({
+                commandId,
+                commandType: "message.dispatch",
+                cause,
+              }),
+          ),
+        );
+        return;
       }
 
       const targetAdapter = yield* providerAdapters.get(queuedRun.providerInstanceId).pipe(
@@ -2896,6 +3005,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         Effect.catch((cause) => failQueuedRunStart(threadId, cause, options?.queuedRunId)),
       ),
   );
+  yield* Ref.set(startNextQueuedRunRef, (threadId) => startNextQueuedRun(threadId));
 
   // Under load a resumed provider can time out before taking the prompt; the restart still owes the turn.
   const retryContinuationStart = Effect.fn("Orchestrator.retryContinuationStart")(function* (

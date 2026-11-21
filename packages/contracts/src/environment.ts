@@ -118,6 +118,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   modelCatalogRefresh: Schema.optionalKey(Schema.Boolean),
   usagePriceOverrides: Schema.optionalKey(Schema.Boolean),
   usageModelAliases: Schema.optionalKey(Schema.Boolean),
+  /** Honors `usageRetentionDays`; absent servers keep their fixed cache window. */
+  usageHistoryRetention: Schema.optionalKey(Schema.Boolean),
   threadPinning: Schema.optionalKey(Schema.Boolean),
   threadPinReorder: Schema.optionalKey(Schema.Boolean),
   threadActiveReorder: Schema.optionalKey(Schema.Boolean),

@@ -92,6 +92,7 @@ import { ServerBrowserSurface, type ServerBrowserHandle } from "~/browser/Server
 import { cn } from "~/lib/utils";
 import { useBrowserSurfaceStore } from "~/browser/browserSurfaceStore";
 import { usePreviewSession } from "./usePreviewSession";
+import { forwardLoopbackUrl, needsLoopbackForward } from "~/browser/remotePortForwarding";
 import { ZoomIndicator } from "./ZoomIndicator";
 import { AgentBrowserCursor } from "./AgentBrowserCursor";
 import {
@@ -300,7 +301,11 @@ export function PreviewView({
       const resolved =
         isServerTab || !previewBridge
           ? normalizePreviewUrl(next)
-          : resolveDiscoveredServerUrl(threadRef.environmentId, next);
+          : needsLoopbackForward(threadRef.environmentId)
+            ? await forwardLoopbackUrl(threadRef.environmentId, next)
+            : resolveDiscoveredServerUrl(threadRef.environmentId, next);
+      // A refused forward was already reported; opening the address anyway would show this machine's own port.
+      if (resolved === null) return;
       if (await navigateToResolvedUrl(resolved)) {
         recordVisitForThread(threadRef, next);
       }

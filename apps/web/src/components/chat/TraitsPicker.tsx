@@ -49,6 +49,7 @@ import { formatCompactContextWindowTokens } from "../../lib/contextWindow";
 import { shortcutLabelForCommand } from "../../keybindings";
 import { shortEffortLabel, traitsSplitTriggerClassName, type TraitsSplitPart } from "./modelTraits";
 import { cn } from "~/lib/utils";
+import { useT } from "~/i18n/useT";
 import { Badge } from "../ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ComposerControl, ComposerControlIcon, type ComposerControlSize } from "./ComposerControl";
@@ -528,6 +529,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
   size = "sm",
   ...persistence
 }: TraitsMenuContentProps & TraitsPersistence) {
+  const t = useT();
   const modelSelection =
     instanceId && model ? { instanceId, model, options: modelOptions ?? [] } : null;
   const setProviderModelOptions = useComposerDraftStore((store) => store.setProviderModelOptions);
@@ -715,15 +717,13 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
       ) : null}
 
       {ultrathinkInBodyText ? (
-        <div className="px-2 pb-1.5 text-(--houston) text-xs">
-          Your prompt contains &quot;ultrathink&quot; in the text. Remove it to change this option.
-        </div>
+        <div className="px-2 pb-1.5 text-(--houston) text-xs">{t(ULTRATHINK_IN_BODY_NOTE)}</div>
       ) : null}
 
       {fastModeDescriptor ? (
         <TraitsToggleRow
           icon={<ZapIcon className="size-3.5" />}
-          label="Fast mode"
+          label={t("Fast mode")}
           checked={fastModeDescriptor.currentValue === true}
           onCheckedChange={(checked) =>
             updateDescriptors(
@@ -736,7 +736,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
       {contextWindowDescriptor ? (
         <TraitsValueRow
           icon={<ChartNoAxesColumnIcon className="size-3.5" />}
-          label="Context window"
+          label={t("Context window")}
           value={getProviderOptionCurrentLabel(
             contextWindowDescriptor,
             modelSelection,
@@ -748,7 +748,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
       ) : contextWindowTokens !== null ? (
         <TraitsReadOnlyRow
           icon={<ChartNoAxesColumnIcon className="size-3.5" />}
-          label="Context window"
+          label={t("Context window")}
           value={formatCompactContextWindowTokens(contextWindowTokens) ?? ""}
         />
       ) : null}
@@ -756,7 +756,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
       {showUltrathinkToggle ? (
         <TraitsToggleRow
           icon={<ZapIcon className="size-3.5" />}
-          label="Ultrathink"
+          label={t("Ultrathink")}
           checked={ultrathinkPromptControlled}
           disabled={ultrathinkInBodyText}
           onCheckedChange={toggleUltrathink}
@@ -861,6 +861,7 @@ export const TraitsPicker = memo(function TraitsPicker({
     /** Draws this trigger as the right half of the model/traits split control. */
     split?: TraitsSplitPart;
   }) {
+  const t = useT();
   const composerFloatingLayerProps = useComposerMenuProps();
   const [isMenuOpen, setIsMenuOpen] = useComposerMenuState(hidden || disabled);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -904,7 +905,13 @@ export const TraitsPicker = memo(function TraitsPicker({
   const isCodexStyle = provider === "codex";
   // In the composer the glyph has no word, so the tooltip and label name the control.
   const triggerDescription = isComposerOwned
-    ? [`Effort: ${triggerLabel}`, speedLabel, extraMenuHint].filter(Boolean).join(" · ")
+    ? [
+        t("Effort: {label}", { label: triggerLabel }),
+        speedLabel ? t(speedLabel) : null,
+        extraMenuHint ? t(extraMenuHint) : extraMenuHint,
+      ]
+        .filter(Boolean)
+        .join(" · ")
     : triggerLabel;
   const effortGlyph =
     isComposerOwned && primarySelectDescriptor && isReasoningSelect(primarySelectDescriptor)
@@ -1053,7 +1060,7 @@ export const TraitsPicker = memo(function TraitsPicker({
               data-composer-traits-extra
               className="[&_[data-composer-permissions]>div:first-child]:hidden"
             >
-              <TraitsSectionHeader label="Permissions" shortcut={permissionsShortcut} />
+              <TraitsSectionHeader label={t("Permissions")} shortcut={permissionsShortcut} />
               {extraMenuContent}
             </div>
           </>

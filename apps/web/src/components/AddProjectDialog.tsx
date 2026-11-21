@@ -13,6 +13,7 @@ import { useEnvironmentQuery } from "../state/query";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { remoteProjectSourceIcon } from "../sourceControlPresentation";
+import { useT } from "~/i18n/useT";
 import {
   AddProjectDialogView,
   type AddProjectDialogAction,
@@ -47,6 +48,7 @@ export function AddProjectDialogHost() {
 }
 
 function AddProjectDialog() {
+  const t = useT();
   const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const connected = environments.filter((environment) =>
@@ -90,22 +92,22 @@ function AddProjectDialog() {
     {
       id: "open-folder",
       icon: <FolderOpenIcon aria-hidden />,
-      heading: "Open folder",
-      description: "A project already on this computer",
+      heading: t("Open folder"),
+      description: t("A project already on this computer"),
       onSelect: () => startFlow({ action: "open-folder" }),
     },
     {
       id: "clone",
       icon: <GitForkIcon aria-hidden />,
-      heading: "Clone repository",
-      description: "From a Git URL",
+      heading: t("Clone repository"),
+      description: t("From a Git URL"),
       onSelect: () => startFlow({ action: "clone" }),
     },
     {
       id: "new-project",
       icon: <FolderPlusIcon aria-hidden />,
-      heading: "New project",
-      description: "An empty Git repository",
+      heading: t("New project"),
+      description: t("An empty Git repository"),
       onSelect: () => startFlow({ action: "new-project" }),
     },
   ];

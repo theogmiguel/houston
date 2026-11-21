@@ -3,7 +3,7 @@ import { isMacPlatform } from "@houston-app/shared/keybindings";
 import { type CxOptions, cx } from "class-variance-authority";
 import * as Hex from "effect/encoding/Hex";
 import { extendTailwindMerge } from "tailwind-merge";
-import { DraftId } from "../composerDraftStore";
+import { DraftId } from "../composerDraftId";
 
 // The default LRU holds 500 class lists (up to twice that). A few thousand keep a long thread
 // view's lists across renders and thread opens. Its two generations keep up to 10,000 entries of

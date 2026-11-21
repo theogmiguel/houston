@@ -29,6 +29,7 @@ import {
   type ProviderInstanceId,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
+  type TerminalShellFallback,
   type ThreadId,
 } from "@houston-app/contracts";
 import { getTerminalLabel } from "@houston-app/shared/terminalLabels";
@@ -121,6 +122,16 @@ function writeSystemMessage(
   terminal.write(`\r\n[terminal] ${message}\r\n`);
 }
 
+function writeShellFallbackMessage(
+  terminal: Pick<GhosttyTerminalSurface, "write">,
+  fallback: TerminalShellFallback,
+): void {
+  writeSystemMessage(
+    terminal,
+    `Saved shell "${fallback.requested}" is unavailable; this terminal started with "${fallback.used}".`,
+  );
+}
+
 export function writeTerminalOutputUpdate(
   terminal: Pick<GhosttyTerminalSurface, "resetAndWrite" | "write">,
   update: TerminalOutputUpdate,
@@ -159,14 +170,17 @@ export function synchronizeTerminalOutput(
 /** Writes what changed between two session notifications: new output, then a new error. */
 export function synchronizeTerminalSession(
   terminal: Parameters<typeof synchronizeTerminalOutput>[0],
-  previous: Pick<TerminalSessionState, "output" | "version" | "error">,
-  session: Pick<TerminalSessionState, "output" | "version" | "error">,
+  previous: Pick<TerminalSessionState, "output" | "version" | "error" | "shellFallback">,
+  session: Pick<TerminalSessionState, "output" | "version" | "error" | "shellFallback">,
   cursor: TerminalOutputCursor,
 ): TerminalOutputCursor {
   const nextCursor =
     session.version === previous.version && session.output === previous.output
       ? cursor
       : synchronizeTerminalOutput(terminal, session, cursor);
+  if (session.shellFallback !== null && session.shellFallback !== previous.shellFallback) {
+    writeShellFallbackMessage(terminal, session.shellFallback);
+  }
   // An attach failure can change only the error, keeping the last buffer.
   if (session.error !== null && session.error !== previous.error) {
     writeSystemMessage(terminal, session.error);
@@ -707,6 +721,8 @@ function TerminalSessionViewport({
       }
       outputCursorRef.current = initialOutput.cursor;
       if (latestSession.error !== null) writeSystemMessage(terminal, latestSession.error);
+      if (latestSession.shellFallback !== null)
+        writeShellFallbackMessage(terminal, latestSession.shellFallback);
       synchronizedStatusRef.current = "closed";
       synchronizeTerminalStatus(terminal, latestSession.status, latestSession.version);
       // Read and subscribe in one synchronous step so no output lands between them.

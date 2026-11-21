@@ -231,11 +231,23 @@ function makeHarness(options: HarnessOptions = {}) {
         folderForThread: () => Effect.succeedNone,
       }),
   );
+  // A launch reads the new run and the thread's window; a whole-projection read decodes
+  // every run of the thread, so every launch test fails if one returns.
+  const layerLaunchThreadManagement = Layer.effect(
+    ThreadManagement.ThreadManagementService,
+    Effect.map(ThreadManagement.ThreadManagementService, (threads) => ({
+      ...threads,
+      getThreadProjection: (threadId: ThreadId) =>
+        Effect.die(new Error(`a launch read the whole projection of thread ${threadId}`)),
+      getThreadSnapshot: (threadId: ThreadId) =>
+        Effect.die(new Error(`a launch read the whole snapshot of thread ${threadId}`)),
+    })),
+  ).pipe(Layer.provide(layerThreadManagement));
   const layerLaunch = ThreadLaunch.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
         layerExternalServices,
-        layerThreadManagement,
+        layerLaunchThreadManagement,
         layerReceipts,
         IdAllocator.layer,
       ),

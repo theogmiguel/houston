@@ -1,3 +1,4 @@
+import { resolveDesktopLocale, translateDesktop } from "../i18n/translate.ts";
 import type {
   DesktopTrayPayload,
   DesktopTraySession,
@@ -67,10 +68,6 @@ export function agentLabel(kind: string): string {
   return first === undefined ? "Agent" : first.toUpperCase() + kind.slice(1);
 }
 
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
-}
-
 function isLive(session: DesktopTraySession): boolean {
   return session.status !== "done" && session.status !== "error";
 }
@@ -89,32 +86,52 @@ function unknownCount(payload: DesktopTrayPayload): number {
     .length;
 }
 
+function trayText(
+  payload: DesktopTrayPayload,
+  source: string,
+  params?: Readonly<Record<string, string | number>>,
+): string {
+  return translateDesktop(resolveDesktopLocale(payload.language), source, params);
+}
+
 export function headerText(payload: DesktopTrayPayload): string {
   if (payload.connection === "failed") {
-    return "Houston · daemon not running";
+    return trayText(payload, "Houston · daemon not running");
   }
   if (payload.connection !== "ready") {
-    return "Houston · disconnected";
+    return trayText(payload, "Houston · disconnected");
   }
   const liveCount = payload.sessions.filter(isLive).length;
   if (liveCount === 0) {
-    return "Houston · idle";
+    return trayText(payload, "Houston · idle");
   }
   const parts: string[] = [];
   const running = runningCount(payload);
   if (running > 0) {
-    parts.push(`${plural(running, "agent")} running`);
+    parts.push(
+      running === 1
+        ? trayText(payload, "{count} agent running", { count: running })
+        : trayText(payload, "{count} agents running", { count: running }),
+    );
   }
   const attention = attentionCount(payload);
   if (attention > 0) {
-    parts.push(attention === 1 ? "1 needs input" : `${attention} need input`);
+    parts.push(
+      attention === 1
+        ? trayText(payload, "1 needs input")
+        : trayText(payload, "{count} need input", { count: attention }),
+    );
   }
   const unknown = unknownCount(payload);
   if (unknown > 0) {
-    parts.push(`${unknown} status unknown`);
+    parts.push(trayText(payload, "{count} status unknown", { count: unknown }));
   }
   if (parts.length === 0) {
-    parts.push(`${plural(liveCount, "agent")} idle`);
+    parts.push(
+      liveCount === 1
+        ? trayText(payload, "{count} agent idle", { count: liveCount })
+        : trayText(payload, "{count} agents idle", { count: liveCount }),
+    );
   }
   return `Houston · ${parts.join(" · ")}`;
 }
@@ -133,7 +150,10 @@ export function sessionLabel(session: DesktopTraySession): string {
   return `${statusGlyph(session.status)} ${agentLabel(session.agent)} · ${session.title}`;
 }
 
-function agentsSubmenu(sessions: readonly DesktopTraySession[]): readonly TrayItem[] {
+function agentsSubmenu(
+  sessions: readonly DesktopTraySession[],
+  payload: DesktopTrayPayload,
+): readonly TrayItem[] {
   const order: string[] = [];
   const groups = new Map<string, DesktopTraySession[]>();
   for (const session of sessions) {
@@ -159,7 +179,12 @@ function agentsSubmenu(sessions: readonly DesktopTraySession[]): readonly TrayIt
       items.push({ type: "session", id: session.id, label: sessionLabel(session) });
     }
     if (panes.length > GROUP_ROW_CAP) {
-      items.push({ type: "overflow", label: `+${panes.length - GROUP_ROW_CAP} more in Houston` });
+      items.push({
+        type: "overflow",
+        label: trayText(payload, "+{count} more in Houston", {
+          count: panes.length - GROUP_ROW_CAP,
+        }),
+      });
     }
   });
   return items;
@@ -181,12 +206,18 @@ export function menuModel(payload: DesktopTrayPayload): readonly TrayItem[] {
   if (attention.length > ATTENTION_ROW_CAP) {
     items.push({
       type: "overflow",
-      label: `+${attention.length - ATTENTION_ROW_CAP} more waiting, in Agents`,
+      label: trayText(payload, "+{count} more waiting, in Agents", {
+        count: attention.length - ATTENTION_ROW_CAP,
+      }),
     });
   }
 
   if (live.length > 0) {
-    items.push({ type: "submenu", label: `Agents (${live.length})`, items: agentsSubmenu(live) });
+    items.push({
+      type: "submenu",
+      label: trayText(payload, "Agents ({count})", { count: live.length }),
+      items: agentsSubmenu(live, payload),
+    });
     items.push({ type: "separator" });
   }
 

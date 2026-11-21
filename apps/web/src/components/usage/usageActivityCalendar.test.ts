@@ -15,6 +15,21 @@ describe("usage activity calendar", () => {
     expect(addUsageDay("2026-02-28", 1)).toBe("2026-03-01");
   });
 
+  it("ends on the selected day and never reaches past the supported maximum", () => {
+    expect(usageActivityWindow("2026-10-31", 30)).toEqual({
+      sinceDay: "2026-10-02",
+      untilDay: "2026-10-31",
+    });
+    expect(usageActivityWindow("2026-10-31", 365)).toEqual({
+      sinceDay: "2025-11-01",
+      untilDay: "2026-10-31",
+    });
+    expect(usageActivityWindow("2026-10-31", 400)).toEqual({
+      sinceDay: "2025-11-01",
+      untilDay: "2026-10-31",
+    });
+  });
+
   it("pads the first week and groups the grid into seven-day columns", () => {
     const calendar = buildUsageActivityCalendar("2026-01-01", "2026-01-14", []);
     // 2026-01-01 is a Thursday, so four Sunday-first pads lead the first week.

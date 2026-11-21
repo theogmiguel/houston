@@ -1,6 +1,7 @@
 import { type ReactNode, use } from "react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
+import { useT } from "~/i18n/useT";
 import {
   RESTART_NOTE_LIST_CLS,
   RESTART_NOTE_TIME_CLS,
@@ -139,6 +140,7 @@ export function RestartNoteTrigger({
   className?: string;
   prefix?: string;
 }) {
+  const t = useT();
   const timestampFormat = (use(TimelineRowCtx) as { timestampFormat?: TimestampFormat } | null)
     ?.timestampFormat;
   return (
@@ -159,8 +161,8 @@ export function RestartNoteTrigger({
       <TooltipPopup>
         <span className={RESTART_NOTE_TITLE_CLS}>
           {note.restarts.length === 1
-            ? "Restarted once"
-            : `Restarted ${note.restarts.length} times`}
+            ? t("Restarted once")
+            : t("Restarted {count} times", { count: note.restarts.length })}
         </span>
         <ul className={RESTART_NOTE_LIST_CLS}>
           {note.restarts.map((restart) => (

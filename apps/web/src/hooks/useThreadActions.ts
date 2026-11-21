@@ -69,6 +69,8 @@ import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { getClientSettings, useClientSettings } from "./useSettings";
+import { translateCurrent } from "~/i18n/locale";
+import type { Translate } from "~/i18n/useT";
 import * as ThreadUndo from "@houston-app/client-runtime/state/thread-undo";
 import { showThreadUndoNotice } from "./showThreadUndoNotice";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -183,6 +185,7 @@ export class ThreadActiveReorderUnsupportedError extends Schema.TaggedError<Thre
 async function requestThreadUnpinConfirmation(input: {
   enabled: boolean;
   title: string;
+  translate: Translate;
   confirm: ((message: string) => Promise<boolean>) | null;
 }) {
   const { confirm } = input;
@@ -193,8 +196,8 @@ async function requestThreadUnpinConfirmation(input: {
   return settlePromise(() =>
     confirm(
       [
-        `Unpin thread "${input.title}"?`,
-        "This will move the thread out of your pinned section.",
+        input.translate('Unpin thread "{title}"?', { title: input.title }),
+        input.translate("This will move the thread out of your pinned section."),
       ].join("\n"),
     ),
   );
@@ -289,6 +292,7 @@ function threadOperationFailure(target: ScopedThreadRef) {
 }
 
 export function useThreadActions() {
+  const t: Translate = translateCurrent;
   const archiveThreadMutation = useOrchestrationCommand(threadEnvironment.archive, {
     reportFailure: false,
   });
@@ -438,7 +442,7 @@ export function useThreadActions() {
       action: "Archived",
       claim: action,
       undo: () => unarchiveThread(threadRef, { navigate: shouldNavigateToDraft }),
-      failureTitle: "Failed to undo archive",
+      failureTitle: t("Failed to undo archive"),
     });
 
     if (shouldNavigateToDraft && router.state.location.href === requestingRouteHref) {
@@ -545,10 +549,10 @@ export function useThreadActions() {
       const confirmationResult = await settlePromise(() =>
         localApi.dialogs.confirm(
           [
-            "This thread is the only one linked to this worktree:",
+            t("This thread is the only one linked to this worktree:"),
             displayWorktreePath ?? orphanedWorktreePath,
             "",
-            "Delete the worktree too?",
+            t("Delete the worktree too?"),
           ].join("\n"),
           { variant: "destructive" },
         ),
@@ -628,7 +632,7 @@ export function useThreadActions() {
       : AsyncResult.failure(
           Cause.fail(
             new EnvironmentAuthorizationError({
-              message: "This connection can no longer remove worktrees.",
+              message: t("This connection can no longer remove worktrees."),
               requiredScope: AuthSourceControlWriteScope,
             }),
           ),
@@ -649,7 +653,7 @@ export function useThreadActions() {
     if (cleanupFailure) {
       const removalFailed = removeResult._tag === "Failure";
       const error = squashAtomCommandFailure(cleanupFailure);
-      const message = error instanceof Error ? error.message : "An error occurred.";
+      const message = error instanceof Error ? error.message : t("An error occurred.");
       console.error("Worktree cleanup failed after thread deletion", {
         threadId: threadRef.threadId,
         projectCwd: threadProject.workspaceRoot,
@@ -660,10 +664,13 @@ export function useThreadActions() {
         stackedThreadToast({
           type: "error",
           title: removalFailed
-            ? "Failed to delete worktree"
-            : "Worktree deleted, but Git status refresh failed",
+            ? t("Failed to delete worktree")
+            : t("Worktree deleted, but Git status refresh failed"),
           description: removalFailed
-            ? `Could not remove ${displayWorktreePath ?? orphanedWorktreePath}. ${message}`
+            ? t("Could not remove {path}. {message}", {
+                path: displayWorktreePath ?? orphanedWorktreePath,
+                message,
+              })
             : message,
         }),
       );
@@ -819,7 +826,7 @@ export function useThreadActions() {
       action: "Closed",
       claim: action,
       undo: () => runUndoPlan(target, undoPlan),
-      failureTitle: "Failed to undo close",
+      failureTitle: t("Failed to undo close"),
     });
     return result;
   };
@@ -831,7 +838,8 @@ export function useThreadActions() {
     const resolved = resolveThreadTarget(target);
     const confirmationResult = await requestThreadUnpinConfirmation({
       enabled: confirmThreadUnpin,
-      title: resolved?.thread.title ?? "this thread",
+      title: resolved?.thread.title ?? t("this thread"),
+      translate: t,
       confirm: localApi ? (message) => localApi.dialogs.confirm(message) : null,
     });
     if (confirmationResult._tag === "Failure") {
@@ -968,12 +976,12 @@ export function useThreadActions() {
     const resolved = resolveThreadTarget(target);
 
     if (confirmThreadDelete && localApi) {
-      const title = resolved?.thread.title ?? "this thread";
+      const title = resolved?.thread.title ?? t("this thread");
       const confirmationResult = await settlePromise(() =>
         localApi.dialogs.confirm(
           [
-            `Delete thread "${title}"?`,
-            "This permanently clears conversation history for this thread.",
+            t('Delete thread "{title}"?', { title }),
+            t("This permanently clears conversation history for this thread."),
           ].join("\n"),
           { variant: "destructive" },
         ),

@@ -16,6 +16,7 @@ import { startHostFreezeToasts } from "./components/HostFreezeToastCoordinator";
 import { startAppLayoutSync } from "./layout/layoutSyncRuntime";
 import { startKeybindingsUpdateToasts } from "./components/KeybindingsUpdateToast";
 import { startLegacyThreadMigrationToast } from "./components/LegacyThreadMigrationToast";
+import { startPendingDeviceNotices } from "./components/PendingDeviceNotice";
 import { startPermissionUpdateNotices } from "./components/PermissionUpdateNotice";
 import { startAgentOpenedPreviews } from "./components/preview/agentOpenedPreviews";
 import { startMainAppLocationTracking } from "./components/sidebar/mainAppLocation";
@@ -236,7 +237,11 @@ export function startAppServices(): AppRouter {
   const quickComposerWindow = isQuickComposerWindow();
   if (!quickComposerWindow) {
     startThreadNotifications(appAtomRegistry, router);
-    startTraySync(appAtomRegistry, router);
+    startPendingDeviceNotices(router);
+    startTraySync(appAtomRegistry, router, {
+      language: () => getClientSettings().language,
+      subscribeLanguage: subscribeClientSettings,
+    });
     startGuideRunNotifications(appAtomRegistry, router);
     if (isDesktopHost) startDesktopUpdateLaunchNotice();
   }

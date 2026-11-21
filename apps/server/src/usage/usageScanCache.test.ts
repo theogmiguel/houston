@@ -3,6 +3,7 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   decodeScanCache,
   makeScanCacheWriter,
+  pruneScanCache,
   type CachedFile,
   type ScanCache,
 } from "./usageScanCache.ts";
@@ -323,5 +324,18 @@ describe("scan cache round trip", () => {
 
     const restored = decodeScanCache(JSON.parse(JSON.stringify(poisoned)), TEST_FORMAT_MAP);
     expect(restored.has("/a.jsonl")).toBe(false);
+  });
+});
+
+describe("scan cache retention", () => {
+  it("keeps a file written exactly at the cutoff and removes the one just before it", () => {
+    const cutoffMs = 1_786_000_000_000;
+    const cache = cacheWith([
+      ["/boundary.jsonl", cutoffMs, [record()]],
+      ["/older.jsonl", cutoffMs - 1, [record()]],
+    ]);
+
+    expect(pruneScanCache(cache, cutoffMs)).toBe(1);
+    expect([...cache.keys()]).toEqual(["/boundary.jsonl"]);
   });
 });

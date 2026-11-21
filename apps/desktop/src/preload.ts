@@ -81,6 +81,7 @@ contextBridge.exposeInMainWorld("hostBridge", {
   getRelayTelemetryEnabled: () =>
     ipcRenderer.sendSync(IpcChannels.GET_RELAY_TELEMETRY_ENABLED_CHANNEL) === true,
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
+  startFileDrag: (input) => ipcRenderer.invoke(IpcChannels.START_FILE_DRAG_CHANNEL, input),
   getClientPlatform: () => clientPlatform,
   logDebug: (source, message, payload) =>
     ipcRenderer.invoke(IpcChannels.LOG_DEBUG_CHANNEL, { source, message, payload }),
@@ -239,6 +240,19 @@ contextBridge.exposeInMainWorld("hostBridge", {
   },
   resolveSshPasswordPrompt: (requestId, password) =>
     ipcRenderer.invoke(IpcChannels.RESOLVE_SSH_PASSWORD_PROMPT_CHANNEL, { requestId, password }),
+  startPortForward: (input) => ipcRenderer.invoke(IpcChannels.START_PORT_FORWARD_CHANNEL, input),
+  stopPortForward: (input) => ipcRenderer.invoke(IpcChannels.STOP_PORT_FORWARD_CHANNEL, input),
+  listPortForwards: () => ipcRenderer.invoke(IpcChannels.LIST_PORT_FORWARDS_CHANNEL),
+  onPortForwardsChanged: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, forwards: unknown) => {
+      if (!Array.isArray(forwards)) return;
+      listener(forwards as Parameters<typeof listener>[0]);
+    };
+    ipcRenderer.on(IpcChannels.PORT_FORWARDS_CHANGED_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.PORT_FORWARDS_CHANGED_CHANNEL, wrappedListener);
+    };
+  },
   getServerExposureState: () => ipcRenderer.invoke(IpcChannels.GET_SERVER_EXPOSURE_STATE_CHANNEL),
   setServerExposureMode: (mode) =>
     ipcRenderer.invoke(IpcChannels.SET_SERVER_EXPOSURE_MODE_CHANNEL, mode),

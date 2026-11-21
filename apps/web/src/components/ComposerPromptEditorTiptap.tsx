@@ -111,6 +111,7 @@ import {
   markAsClipboardEdit,
 } from "~/composer-undo-grouping";
 import { collectInlineContextIds } from "~/lib/composerContextReferences";
+import { filePillDragHandlers } from "~/lib/filePillDrag";
 import { resolveDiffThemeName } from "~/lib/diffRendering";
 import { cn, isMacPlatform } from "~/lib/utils";
 import { basenameOfPath } from "~/pierre-icons";
@@ -271,6 +272,7 @@ const ComposerMentionExtension = Node.create({
 function ComposerMentionNodeView({ node }: NodeViewProps) {
   const actions = use(ComposerContextActionsContext);
   const path = (node.attrs.path as string) ?? "";
+  const drag = filePillDragHandlers({ path, workspaceRoot: actions.cwd });
   const chip = (
     <ContextChip
       kind={documentChipKindForFileName(path) ?? "mention"}
@@ -281,6 +283,7 @@ function ComposerMentionNodeView({ node }: NodeViewProps) {
       contentEditable={false}
       spellCheck={false}
       data-composer-mention-chip="true"
+      {...drag}
     >
       <FileTagChipContent
         path={path}

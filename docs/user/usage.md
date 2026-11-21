@@ -7,6 +7,19 @@ Choose **24 hours**, **7 days**, **30 days** or **90 days**, and switch between 
 **Tokens** and **Limits**. The provider filter hides providers you do not want to see.
 **Refresh** reads the current window again.
 
+## History retention
+
+**History retention** in **Settings ▸ Agents ▸ Usage** sets how many days Houston keeps saved
+Usage records for transcripts a provider has since removed. The range is 1 to 365 days;
+**Keep all available history** uses the supported maximum of 365 days, and **Reset** restores
+the default of 365 days. The control shows the value currently in effect.
+
+Shortening the window deletes older saved records on the next Usage refresh. Houston asks for
+confirmation before applying a shorter window because deleted records cannot be recovered.
+Lengthening the window affects later refreshes only: it does not restore records already deleted
+and never invents usage that a provider no longer keeps. This setting does not delete provider
+transcripts.
+
 ## What it counts
 
 Houston reads the usage records the providers already keep on this machine. Prompt text,
@@ -42,6 +55,6 @@ and the thread's own banner.
 ## Breakdowns
 
 The breakdown groups usage by model or by time, with tokens, cost and share. The year view
-keeps daily totals for up to 365 local calendar days; its colour always represents daily
-cost, even when another metric is selected. Select a day to filter the breakdown; clear the
-day to return to the whole window.
+keeps daily totals for up to 365 local calendar days and follows the history retention window
+when that is shorter; its colour always represents daily cost, even when another metric is
+selected. Select a day to filter the breakdown; clear the day to return to the whole window.

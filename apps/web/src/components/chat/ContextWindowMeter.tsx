@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { Button } from "../ui/button";
+import { useT } from "~/i18n/useT";
 import { Input } from "../ui/input";
 import { InputGroup } from "../ui/input-group";
 import { type ContextWindowSnapshot, formatContextWindowTokens } from "~/lib/contextWindow";
@@ -32,6 +33,7 @@ export function ContextWindowMeter(props: {
   compactDisabled?: boolean | undefined;
   compactDisabledReason?: string | null | undefined;
 }) {
+  const t = useT();
   const { usage, modelDisplayName, onCompact, compactDisabled, compactDisabledReason } = props;
   const [instructions, setInstructions] = useState("");
   const usedPercentage = formatPercentage(usage.usedPercentage);
@@ -61,8 +63,10 @@ export function ContextWindowMeter(props: {
             variant="ghost-muted"
             aria-label={
               usage.maxTokens !== null && usedPercentage
-                ? `Context window ${usedPercentage} used`
-                : `Context window ${formatContextWindowTokens(usage.usedTokens)} tokens used`
+                ? t("Context window {percentage} used", { percentage: usedPercentage })
+                : t("Context window {tokens} tokens used", {
+                    tokens: formatContextWindowTokens(usage.usedTokens),
+                  })
             }
           >
             <span
@@ -139,7 +143,7 @@ export function ContextWindowMeter(props: {
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={Math.round(normalizedPercentage)}
-              aria-label="Context window usage"
+              aria-label={t("Context window usage")}
             >
               <div
                 className="h-full origin-left rounded-full transition-[transform,background-color] duration-(--motion-value) ease-standard"
@@ -152,7 +156,7 @@ export function ContextWindowMeter(props: {
           ) : null}
           {showTotalProcessed ? (
             <div className="flex items-center justify-between gap-3 text-2xs leading-4">
-              <span className="text-secondary-label">Total processed</span>
+              <span className="text-secondary-label">{t("Total processed")}</span>
               <span className="font-medium tabular-nums text-secondary-label">
                 {formatContextWindowTokens(totalProcessedTokens)}
               </span>
@@ -160,7 +164,7 @@ export function ContextWindowMeter(props: {
           ) : null}
           {usage.cost != null ? (
             <div className="flex items-center justify-between gap-3 text-2xs leading-4">
-              <span className="text-secondary-label">Cost</span>
+              <span className="text-secondary-label">{t("Cost")}</span>
               <span className="font-medium tabular-nums text-secondary-label">
                 {formatContextWindowCost(usage.cost)}
               </span>
@@ -177,8 +181,8 @@ export function ContextWindowMeter(props: {
                 <Input
                   nativeInput
                   size="compact"
-                  aria-label="What to keep"
-                  placeholder="What to keep (optional)"
+                  aria-label={t("What to keep")}
+                  placeholder={t("What to keep (optional)")}
                   value={instructions}
                   disabled={compactDisabled}
                   onChange={(event) => setInstructions(event.target.value)}

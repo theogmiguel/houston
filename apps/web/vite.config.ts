@@ -94,6 +94,7 @@ const unitTestProject = {
     setupFiles: [
       "../../packages/shared/src/testing/longTempDir.ts",
       "../../packages/shared/src/testing/providerEnv.ts",
+      "./test/i18nSetup.ts",
     ],
   },
 } satisfies TestProjectInlineConfiguration;

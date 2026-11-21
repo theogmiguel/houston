@@ -54,6 +54,7 @@ import {
   skillPopoverDescription,
 } from "./SkillInlineText";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
+import { filePillDragHandlers } from "~/lib/filePillDrag";
 import {
   buildReviewCommentRenderablePatch,
   formatReviewCommentFence,
@@ -67,6 +68,10 @@ function UserMessageMentionChip(props: {
   copyMarkdown: string;
 }) {
   const ctx = use(TimelineRowCtx);
+  const drag = filePillDragHandlers({
+    path: props.record.path,
+    workspaceRoot: ctx.workspaceRoot,
+  });
   return (
     <Tooltip>
       <TooltipTrigger
@@ -80,6 +85,7 @@ function UserMessageMentionChip(props: {
               if (ctx.threadRef)
                 useRightPanelStore.getState().openFile(ctx.threadRef, props.record.path);
             }}
+            {...drag}
           >
             <WorkspaceEntryIcon
               path={props.record.path}

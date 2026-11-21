@@ -2,6 +2,7 @@ import { RunId } from "@houston-app/contracts";
 import type { TimestampFormat } from "@houston-app/contracts/settings";
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import { translate } from "~/i18n/translate";
 import { usageLimitRecoveryBannerItem } from "./UsageLimitRecoveryBanner";
 
 const stoppedAt = new Date(2026, 9, 20, 12, 0);
@@ -17,6 +18,7 @@ function bannerDescription(resetAt: Date, timestampFormat: TimestampFormat) {
     snoozedUntil: null,
     recovery: null,
     timestampFormat,
+    translate: (source, params) => translate("en", source, params),
     onChange: async () => {},
   }).description;
 }

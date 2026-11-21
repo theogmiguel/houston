@@ -7,6 +7,7 @@ import {
   ContextTransferId,
   ProviderDriverKind,
   ProviderInstanceId,
+  ProviderThreadId,
   RunId,
   ThreadId,
 } from "@houston-app/contracts";
@@ -145,6 +146,33 @@ describe("latestProviderTurnTokenUsage", () => {
   it("replaces inherited usage with the fork's own report", () => {
     const tokenUsage = { usedTokens: 42_000, updatedAt: "2026-10-19T12:10:00.000Z" };
     expect(latestProviderTurnTokenUsage([{ tokenUsage }], forkProjection())).toEqual(tokenUsage);
+  });
+
+  it("ignores usage from a provider thread that is no longer active", () => {
+    const previousUsage = { usedTokens: 300_000, updatedAt: "2026-06-20T14:00:00.000Z" };
+    const currentUsage = { usedTokens: 12_000, updatedAt: "2026-06-20T13:00:00.000Z" };
+    const latest = latestProviderTurnTokenUsage(
+      [
+        { providerThreadId: ProviderThreadId.make("provider-old"), tokenUsage: previousUsage },
+        { providerThreadId: ProviderThreadId.make("provider-new"), tokenUsage: currentUsage },
+      ],
+      null,
+      null,
+      ProviderThreadId.make("provider-new"),
+    );
+    expect(latest).toEqual(currentUsage);
+  });
+
+  it("reports no usage after a clear starts a provider thread with no turns", () => {
+    const previousUsage = { usedTokens: 300_000, updatedAt: "2026-06-20T14:00:00.000Z" };
+    expect(
+      latestProviderTurnTokenUsage(
+        [{ providerThreadId: ProviderThreadId.make("provider-old"), tokenUsage: previousUsage }],
+        null,
+        null,
+        "provider-new",
+      ),
+    ).toBeNull();
   });
 
   it.each([0, 42_000])(

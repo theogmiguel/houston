@@ -47,6 +47,7 @@ import {
   annotateEnvironmentRequest,
   failEnvironmentScopeRequired,
   failEnvironmentAuthInvalid,
+  failEnvironmentDeviceApprovalPending,
   failEnvironmentInternal,
 } from "./auth/http.ts";
 import * as ExportRedaction from "./houston/observability/ExportRedaction.ts";
@@ -315,6 +316,9 @@ const authenticateRawRouteWithScope =
           EnvironmentAuth.serverAuthCredentialReason(error),
           EnvironmentAuth.serverAuthDpopFailureReason(error),
         ),
+      ),
+      Effect.catchIf(EnvironmentAuth.isServerAuthDeviceApprovalPendingError, (error) =>
+        failEnvironmentDeviceApprovalPending(error.notice),
       ),
       Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>
         failEnvironmentInternal("internal_error", error),

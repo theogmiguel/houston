@@ -42,6 +42,9 @@ import * as TerminalManager from "./Manager.ts";
 import { terminalOutputStream } from "./OutputProtocol.ts";
 import * as PtyAdapter from "@houston-app/shared/PtyAdapter";
 
+// oxlint-disable-next-line houston/no-global-process-runtime -- the fixtures create real files, so they follow the host platform.
+const HOST_PLATFORM = process.platform;
+
 vi.mock("effect/SynchronizedRef", async (importOriginal) => {
   const original = await importOriginal<typeof SynchronizedRef>();
   return { ...original, make: vi.fn(original.make) };
@@ -220,6 +223,7 @@ const historyLogPath = (logsDir: string, threadId = "thread-1") =>
 
 interface CreateManagerOptions {
   shellResolver?: () => string;
+  readConfiguredShell?: () => Effect.Effect<string>;
   env?: NodeJS.ProcessEnv;
   subprocessInspector?: (terminalPid: number) => Effect.Effect<{
     readonly hasRunningSubprocess: boolean;
@@ -276,6 +280,9 @@ const createManager = (
           ? { historyByteLimit: options.historyByteLimit }
           : {}),
         ...(options.shellResolver !== undefined ? { shellResolver: options.shellResolver } : {}),
+        ...(options.readConfiguredShell !== undefined
+          ? { readConfiguredShell: options.readConfiguredShell }
+          : {}),
         ...(options.env !== undefined ? { env: options.env } : {}),
         ...(options.subprocessInspector !== undefined
           ? { subprocessInspector: options.subprocessInspector }
@@ -1573,6 +1580,73 @@ it.layer(
             .some((input) => input.shell !== "/definitely/missing-shell"),
         ).toBe(true);
       }
+    }),
+  );
+
+  const createShellFile = (name: string) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "houston-shell-" });
+      const shellPath = path.join(directory, HOST_PLATFORM === "win32" ? `${name}.exe` : name);
+      yield* fs.writeFileString(shellPath, "");
+      if (HOST_PLATFORM !== "win32") {
+        yield* fs.chmod(shellPath, 0o755);
+      }
+      return shellPath;
+    });
+
+  it.effect("starts new terminals with the saved executable shell", () =>
+    Effect.gen(function* () {
+      const shellPath = yield* createShellFile("custom-shell");
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        readConfiguredShell: () => Effect.succeed(shellPath),
+      });
+
+      const snapshot = yield* manager.open(openInput());
+
+      expect(snapshot.shellFallback).toBeUndefined();
+      expect(ptyAdapter.spawnInputs[0]?.shell).toBe(shellPath);
+    }),
+  );
+
+  it.effect("falls back to the default shell and reports a saved shell that disappeared", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "houston-shell-" });
+      const missingShell = path.join(
+        directory,
+        HOST_PLATFORM === "win32" ? "missing-shell.exe" : "missing-shell",
+      );
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        readConfiguredShell: () => Effect.succeed(missingShell),
+      });
+
+      const snapshot = yield* manager.open(openInput());
+
+      expect(snapshot.shellFallback).toEqual({
+        requested: missingShell,
+        used: expect.any(String),
+      });
+      expect(ptyAdapter.spawnInputs[0]?.shell).not.toBe(missingShell);
+    }),
+  );
+
+  it.effect("leaves terminals already open on their shell when the setting changes", () =>
+    Effect.gen(function* () {
+      const firstShell = yield* createShellFile("first-shell");
+      const secondShell = yield* createShellFile("second-shell");
+      let savedShell = firstShell;
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        readConfiguredShell: () => Effect.succeed(savedShell),
+      });
+
+      yield* manager.open(openInput({ terminalId: "term-1" }));
+      savedShell = secondShell;
+      yield* manager.open(openInput({ terminalId: "term-2" }));
+
+      expect(ptyAdapter.spawnInputs.map((input) => input.shell)).toEqual([firstShell, secondShell]);
     }),
   );
 

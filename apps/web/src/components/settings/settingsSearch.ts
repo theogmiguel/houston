@@ -566,6 +566,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["timestamp clock locale system browser os 12 hour 24 hour"],
   },
   {
+    id: "terminal-shell",
+    title: "Shell",
+    to: "/settings/general",
+    searchTerms: ["terminal interactive shell bash zsh fish powershell cmd git bash path"],
+  },
+  {
     id: "response-streaming",
     title: "Response streaming",
     to: "/settings/threads",
@@ -951,6 +957,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "usage-history-retention",
+    title: "Usage history retention",
+    to: "/settings/usage",
+    targetId: "usage-history-retention",
+    searchTerms: ["usage history retention days purge delete older records year keep all"],
+  },
+  {
     id: "usage-providers",
     title: "Usage providers",
     to: "/settings/providers",
@@ -1206,6 +1219,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "connections-environment",
     searchTerms: ["expose backend remote pairing local machine interfaces host restart"],
     localBackendManagementOnly: true,
+  },
+  {
+    id: "require-device-approval",
+    title: "Require approval for new devices",
+    to: "/settings/access",
+    targetId: "authorized-clients",
+    searchTerms: [
+      "pending approve deny new device pair pairing link code wait authorized clients approval",
+    ],
   },
   {
     id: "tailscale-https",

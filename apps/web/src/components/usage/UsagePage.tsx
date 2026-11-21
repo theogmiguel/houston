@@ -4,8 +4,11 @@ import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
 import {
+  effectiveUsageRetentionDays,
   ProviderDriverKind,
   USAGE_CONTRACT_VERSION,
+  USAGE_RETENTION_DEFAULT_DAYS,
+  USAGE_RETENTION_MAX_DAYS,
   type EnvironmentId,
   type UsageProviderKind,
   type UsageSummaryInput,
@@ -90,6 +93,7 @@ import { UsageProviderChart } from "./UsageProviderChart";
 import { UsageModelDialog } from "./UsageModelDialog";
 import { UsageShareBar } from "./UsageShareBar";
 import { UsageModelRow } from "./UsageModelRow";
+import { UsageRetentionSettings } from "./UsageRetentionSettings";
 import { UsageModelCards } from "~/mobile/UsageModelCards";
 import { PhonePageBar } from "~/mobile/PhonePageBar";
 import { USAGE_MODEL_EMPTY_CLS } from "../ui/usage-model-recipes";
@@ -240,6 +244,15 @@ export function UsagePage({ embedded = false }: { readonly embedded?: boolean } 
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);
   const presentationsWithProviders = useAtomValue(
     environmentPresentations.presentationsWithProvidersAtom,
+  );
+  const retentionDays = Math.min(
+    USAGE_RETENTION_MAX_DAYS,
+    ...selectedEnvironments.map((environment) =>
+      effectiveUsageRetentionDays(
+        presentations.get(environment.environmentId)?.serverConfig?.settings.usageRetentionDays ??
+          USAGE_RETENTION_DEFAULT_DAYS,
+      ),
+    ),
   );
   const cursorAccessEnvironments = hiddenProviders.has("cursor")
     ? []
@@ -518,6 +531,7 @@ export function UsagePage({ embedded = false }: { readonly embedded?: boolean } 
           hour12={hour12}
           days={days}
           hours={hours}
+          retentionDays={retentionDays}
           showingKept={showingKept}
           metric={metric === "tokens" ? "tokens" : "cost"}
           selectedEnvironments={selectedEnvironments}
@@ -582,6 +596,7 @@ export function UsagePage({ embedded = false }: { readonly embedded?: boolean } 
         <div data-usage-body="" className="flex min-w-0 flex-col gap-7">
           {body}
         </div>
+        <UsageRetentionSettings />
         {dialogs}
       </div>
     );
@@ -628,6 +643,7 @@ function UsageOverview({
   hour12,
   days,
   hours,
+  retentionDays,
   showingKept,
   metric,
   selectedEnvironments,
@@ -645,6 +661,7 @@ function UsageOverview({
   readonly hour12: boolean;
   readonly days: readonly string[];
   readonly hours: readonly string[];
+  readonly retentionDays: number;
   readonly showingKept: boolean;
   readonly metric: "tokens" | "cost";
   readonly selectedEnvironments: readonly EnvironmentUsageStatus[];
@@ -840,6 +857,7 @@ function UsageOverview({
       <UsageActivity
         timeZone={shownWindow.timeZone}
         untilDay={shownWindow.untilDay}
+        retentionDays={retentionDays}
         selectedEnvironmentIds={selectedEnvironmentIds}
         hiddenProviders={hiddenProviders}
       />

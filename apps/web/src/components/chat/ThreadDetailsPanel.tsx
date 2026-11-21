@@ -30,6 +30,7 @@ import { resolveThreadDetailsVisibility, THREAD_DETAILS_ITEMS } from "./threadDe
 import { useClientSettings } from "../../hooks/useSettings";
 import { ThreadDetailsRowButton, ThreadDetailsRowContent } from "../ui/thread-details-row";
 import { Menu, MenuPopup } from "../ui/menu";
+import { useT } from "~/i18n/useT";
 
 const GitActionsControl = memo(BaseGitActionsControl);
 
@@ -87,6 +88,7 @@ interface ThreadDetailsPanelProps extends Pick<
 }
 
 export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
+  const t = useT();
   const visible = useClientSettings(resolveThreadDetailsVisibility);
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const fileScripts = useHoustonProjectFileScripts(
@@ -171,7 +173,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
               {show.environment || show.openIn || show.scripts ? (
                 <ThreadDetailsSection
                   headingId="thread-details-workspace-heading"
-                  title="Workspace"
+                  title={t("Workspace")}
                   showHeading={false}
                   separated={false}
                 >
@@ -221,7 +223,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
               {props.gitCwd && (show.branch || show.git) ? (
                 <ThreadDetailsSection
                   headingId="thread-details-version-control-heading"
-                  title="Version control"
+                  title={t("Version control")}
                   showHeading={false}
                 >
                   <div className="flex flex-col">
@@ -269,7 +271,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
 
               {props.onOpenFiles === undefined ? null : (
                 <ThreadDetailsRowButton onClick={props.onOpenFiles}>
-                  <ThreadDetailsRowContent icon={<FolderTree aria-hidden />} label="Files" />
+                  <ThreadDetailsRowContent icon={<FolderTree aria-hidden />} label={t("Files")} />
                 </ThreadDetailsRowButton>
               )}
 

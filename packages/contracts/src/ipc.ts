@@ -15,6 +15,11 @@ import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import { type ClientSettings, type QuitConfirmationMode, SnapShotShortcut } from "./settings.ts";
 import type { EditorId } from "./editor.ts";
 import { KeybindingShortcut, type PreviewForwardedShortcut } from "./keybindings.ts";
+import type {
+  PortForward,
+  PortForwardStartInput,
+  PortForwardStopInput,
+} from "./houston/portForwarding.ts";
 
 import type {
   DesktopAppActivationRequest,
@@ -1095,6 +1100,8 @@ export interface DesktopTraySession {
 export interface DesktopTrayPayload {
   readonly connection: DesktopTrayConnection;
   readonly sessions: ReadonlyArray<DesktopTraySession>;
+  /** The interface language, so the host can draw its native menu in the same one. */
+  readonly language?: string;
 }
 
 export interface DesktopTrayState {
@@ -1113,10 +1120,23 @@ export interface DesktopQuickComposerShortcutStatus {
   readonly reason: string | null;
 }
 
+/** A file reference the renderer shows and the host may hand to the OS file manager. */
+export interface DesktopFileDragInput {
+  readonly path: string;
+  readonly workspaceRoot: string;
+}
+
+export const DesktopFileDragInputSchema = Schema.Struct({
+  path: Schema.String.check(Schema.isNonEmpty()),
+  workspaceRoot: Schema.String.check(Schema.isNonEmpty()),
+});
+
 export interface HostBridge {
   getAppBranding: () => DesktopAppBranding | null;
   getRelayTelemetryEnabled: () => boolean;
   getPathForFile: (file: File) => string;
+  /** Starts a native drag that carries an existing workspace file to the OS file manager. */
+  startFileDrag: (input: DesktopFileDragInput) => Promise<void>;
   getClientPlatform: () => string;
   /**
    * Appends one diagnostic record to the host's debug log. Sources and messages are
@@ -1215,6 +1235,11 @@ export interface HostBridge {
   fetchSshSessionState: (httpBaseUrl: string, bearerToken: string) => Promise<AuthSessionState>;
   onSshPasswordPrompt: (listener: (request: DesktopSshPasswordPromptRequest) => void) => () => void;
   resolveSshPasswordPrompt: (requestId: string, password: string | null) => Promise<void>;
+  /** Forwards one remote loopback port to a local loopback port; a user action per port. */
+  startPortForward: (input: PortForwardStartInput) => Promise<PortForward>;
+  stopPortForward: (input: PortForwardStopInput) => Promise<void>;
+  listPortForwards: () => Promise<readonly PortForward[]>;
+  onPortForwardsChanged: (listener: (forwards: readonly PortForward[]) => void) => () => void;
   getServerExposureState: () => Promise<DesktopServerExposureState>;
   setServerExposureMode: (mode: DesktopServerExposureMode) => Promise<DesktopServerExposureState>;
   setTailscaleServeEnabled: (input: {

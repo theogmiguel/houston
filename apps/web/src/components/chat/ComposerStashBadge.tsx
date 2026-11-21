@@ -2,6 +2,7 @@ import { BookmarkIcon } from "lucide-react";
 import { memo } from "react";
 
 import { cn } from "~/lib/utils";
+import { useT } from "~/i18n/useT";
 
 export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
   count: number;
@@ -10,6 +11,7 @@ export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
   pulseKey: number;
   onToggleMenu: () => void;
 }) {
+  const t = useT();
   if (props.count === 0) return null;
   const pulsed = props.pulseKey > 0;
 
@@ -17,7 +19,7 @@ export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
     <button
       type="button"
       data-prompt-stash-badge="true"
-      aria-label={`Stashed prompts: ${props.count}. Open stash.`}
+      aria-label={t("Stashed prompts: {count}. Open stash.", { count: props.count })}
       aria-expanded={props.menuOpen}
       className={cn(
         "inline-flex h-6 shrink-0 cursor-pointer items-center gap-1.25 rounded-(--r-pill) bg-muted px-2 text-xs text-secondary-foreground outline-none transition-colors focus-visible:outline-2 focus-visible:outline-ring",
@@ -31,7 +33,7 @@ export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
       onClick={props.onToggleMenu}
     >
       <BookmarkIcon className="size-3.25" aria-hidden />
-      <span>Stash</span>
+      <span>{t("Stash")}</span>
       <span
         // Remounting the count per stash restarts its CSS pulse; no timer has to end it.
         key={props.pulseKey}

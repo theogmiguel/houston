@@ -1,6 +1,8 @@
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
 import { ComposerContextLabel } from "./ComposerContextLabel";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
+import { threadRuntimeIsActive } from "@houston-app/client-runtime/state/shell";
+import { useT } from "~/i18n/useT";
 import { resolveThreadCurrentPullRequestLink } from "@houston-app/client-runtime/thread-pull-requests";
 import { useRightPanelStore } from "../rightPanelStore";
 import { scopeProjectRef, scopeThreadRef } from "@houston-app/client-runtime/environment";
@@ -50,6 +52,7 @@ import {
   resolveBranchTriggerLabel,
   resolveBranchToolbarPrBranch,
   resolveBranchSelectionTarget,
+  resolveBranchSwitchBlockedReason,
   resolveBranchToolbarValue,
   resolveDraftEnvModeAfterBranchChange,
   resolveEffectiveEnvMode,
@@ -63,10 +66,12 @@ import {
   useLinkedThreadPullRequest,
 } from "./ThreadStatusIndicators";
 
+import { Badge } from "./ui/badge";
 import { ComboboxItem, ComboboxTrigger } from "./ui/combobox";
 import { ComposerControl } from "./chat/ComposerControl";
 import { MiddleTruncate } from "./ui/middle-truncate";
 import { BranchPicker, BranchPickerRefItem } from "./BranchPicker";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 
 export interface BranchToolbarBranchSelectorHandle {
@@ -118,10 +123,10 @@ export function BranchToolbarBranchSelector({
   onCheckoutPullRequestRequest,
   onComposerFocusRequest,
 }: BranchToolbarBranchSelectorProps) {
+  const t = useT();
   const composerFloatingLayerProps = useComposerMenuProps();
   const canWriteSourceControl = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
-  const stopThreadSession = useAtomCommand(threadEnvironment.stopSession, "thread session stop");
   const updateThreadMetadata = useAtomCommand(
     threadEnvironment.updateMetadata,
     "thread metadata update",
@@ -164,8 +169,14 @@ export function BranchToolbarBranchSelector({
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const branchCwd = activeWorktreePath ?? activeProjectCwd;
   const hasServerThread = serverThread !== null;
+  const turnActive = threadRuntimeIsActive(serverSession);
+  const branchSwitchBlockedReasonSource = resolveBranchSwitchBlockedReason({
+    isTurnActive: turnActive,
+  });
+  const branchSwitchBlockedReason =
+    branchSwitchBlockedReasonSource === null ? null : t(branchSwitchBlockedReasonSource);
   const canUpdateThreadBranch = !hasServerThread || canOperateThread;
-  const canChangeThreadBranch = canWriteSourceControl && canUpdateThreadBranch;
+  const canChangeThreadBranch = canWriteSourceControl && canUpdateThreadBranch && !turnActive;
   const effectiveEnvMode =
     effectiveEnvModeOverride ??
     resolveEffectiveEnvMode({
@@ -185,12 +196,6 @@ export function BranchToolbarBranchSelector({
       (hasServerThread && !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope))
     )
       return;
-    if (serverSession && worktreePath !== activeWorktreePath) {
-      void stopThreadSession({
-        environmentId,
-        input: { threadId: activeThreadId },
-      });
-    }
     if (hasServerThread) {
       void (automatic ? updateEmptyThreadMetadata : updateThreadMetadata)({
         environmentId,
@@ -385,7 +390,14 @@ export function BranchToolbarBranchSelector({
   };
 
   const selectBranch = (refName: VcsRef) => {
-    if (!canUpdateThreadBranch || !branchCwd || !activeProjectCwd || isBranchActionPending) return;
+    if (
+      turnActive ||
+      !canUpdateThreadBranch ||
+      !branchCwd ||
+      !activeProjectCwd ||
+      isBranchActionPending
+    )
+      return;
 
     if (isSelectingWorktreeBase) {
       setThreadBranch(refName.name, null);
@@ -446,7 +458,7 @@ export function BranchToolbarBranchSelector({
   };
 
   const createRef = (rawName: string) => {
-    if (!canChangeThreadBranch) return;
+    if (!canChangeThreadBranch || turnActive) return;
     const name = sanitizeNewRefName(rawName);
     if (!branchCwd || !name || isBranchActionPending) return;
 
@@ -510,6 +522,7 @@ export function BranchToolbarBranchSelector({
   ]);
 
   const handleOpenChange = (open: boolean) => {
+    if (open && branchSwitchBlockedReason !== null) return;
     setIsBranchMenuOpen(open);
     if (open && !isBranchMenuOpen && branchCwd !== null) {
       void refreshStatus({ environmentId, input: { cwd: branchCwd, localOnly: true } });
@@ -523,11 +536,11 @@ export function BranchToolbarBranchSelector({
     ref,
     () => ({
       open: () => {
-        if (isInitialBranchesLoadPending || isBranchActionPending) return;
+        if (isInitialBranchesLoadPending || isBranchActionPending || turnActive) return;
         handleOpenChange(true);
       },
     }),
-    [handleOpenChange, isBranchActionPending, isInitialBranchesLoadPending],
+    [handleOpenChange, isBranchActionPending, isInitialBranchesLoadPending, turnActive],
   );
 
   const triggerLabel = resolveBranchTriggerLabel({
@@ -649,6 +662,43 @@ export function BranchToolbarBranchSelector({
     );
   }
 
+  const branchTrigger = (
+    <ComboboxTrigger
+      render={
+        displayMode === "panel" ? (
+          <ThreadDetailsControl part="select" />
+        ) : (
+          <ComposerControl size="xs" />
+        )
+      }
+      className="min-w-0 flex-1 max-w-full active:scale-100"
+      disabled={
+        isInitialBranchesLoadPending || isBranchActionPending || branchSwitchBlockedReason !== null
+      }
+    >
+      <GitBranchIcon
+        className={cn(
+          "size-3 shrink-0",
+          displayMode === "panel" && THREAD_DETAILS_PANEL_ICON_CLASS,
+        )}
+      />
+      <ComposerContextLabel displayMode={displayMode}>
+        <span className="font-mono">
+          <MiddleTruncate
+            value={triggerLabel}
+            variant={displayMode === "panel" ? "cap-aligned" : "default"}
+            className="w-full"
+          />
+        </span>
+      </ComposerContextLabel>
+      {branchSwitchBlockedReason === null ? null : (
+        <Badge size="sm" variant="outline" data-branch-switch-blocked="true">
+          {t("Turn running")}
+        </Badge>
+      )}
+    </ComboboxTrigger>
+  );
+
   return (
     <BranchPicker
       items={branchPickerItems}
@@ -715,33 +765,16 @@ export function BranchToolbarBranchSelector({
             }}
             onContextMenu={(event) => handleBranchContextMenu(event, resolvedActiveBranch)}
           >
-            <ComboboxTrigger
-              render={
-                displayMode === "panel" ? (
-                  <ThreadDetailsControl part="select" />
-                ) : (
-                  <ComposerControl size="xs" />
-                )
-              }
-              className="min-w-0 flex-1 max-w-full active:scale-100"
-              disabled={isInitialBranchesLoadPending || isBranchActionPending}
-            >
-              <GitBranchIcon
-                className={cn(
-                  "size-3 shrink-0",
-                  displayMode === "panel" && THREAD_DETAILS_PANEL_ICON_CLASS,
-                )}
-              />
-              <ComposerContextLabel displayMode={displayMode}>
-                <span className="font-mono">
-                  <MiddleTruncate
-                    value={triggerLabel}
-                    variant={displayMode === "panel" ? "cap-aligned" : "default"}
-                    className="w-full"
-                  />
-                </span>
-              </ComposerContextLabel>
-            </ComboboxTrigger>
+            {branchSwitchBlockedReason === null ? (
+              branchTrigger
+            ) : (
+              <Tooltip>
+                <TooltipTrigger render={<span className="flex min-w-0 flex-1" />}>
+                  {branchTrigger}
+                </TooltipTrigger>
+                <TooltipPopup side="top">{branchSwitchBlockedReason}</TooltipPopup>
+              </Tooltip>
+            )}
           </span>
         )}
         {displayMode === "panel" && prNumber !== undefined && prUrl !== undefined ? (

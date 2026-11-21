@@ -8,6 +8,8 @@ import {
   withMessageContext,
   deriveAvailableRevertTurnCounts,
   deriveWorkspaceMutationId,
+  resolveInterruptPending,
+  shouldClearInterruptRequest,
 } from "./ChatView.logic";
 import { recallCheckoutIsRepo, rememberCheckoutIsRepo } from "./ChatView.logic";
 import { ProviderDriverKind, type ServerProvider } from "@houston-app/contracts";
@@ -1297,5 +1299,78 @@ describe("deriveWorkspaceMutationId", () => {
     expect(deriveWorkspaceMutationId([item("reply", "assistant_message", "completed")], null)).toBe(
       null,
     );
+  });
+});
+
+describe("interrupt request pending state", () => {
+  const threadKey = "environment-local:thread-1";
+
+  it("stays pending while the requested thread is active", () => {
+    expect(
+      resolveInterruptPending({
+        requestedThreadKey: threadKey,
+        activeThreadKey: threadKey,
+        serverStopPending: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("shows the server's stopping state even before a click is recorded", () => {
+    expect(
+      resolveInterruptPending({
+        requestedThreadKey: null,
+        activeThreadKey: threadKey,
+        serverStopPending: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("ignores a request recorded for another thread", () => {
+    expect(
+      resolveInterruptPending({
+        requestedThreadKey: "environment-local:thread-2",
+        activeThreadKey: threadKey,
+        serverStopPending: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("clears once the run settles and the server reports no pending stop", () => {
+    const requestedThreadKey = threadKey;
+    expect(
+      shouldClearInterruptRequest({
+        requestedThreadKey,
+        activeThreadKey: threadKey,
+        serverStopPending: false,
+        runtimeActive: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldClearInterruptRequest({
+        requestedThreadKey,
+        activeThreadKey: threadKey,
+        serverStopPending: true,
+        runtimeActive: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldClearInterruptRequest({
+        requestedThreadKey,
+        activeThreadKey: threadKey,
+        serverStopPending: false,
+        runtimeActive: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("clears when the view moves to another thread", () => {
+    expect(
+      shouldClearInterruptRequest({
+        requestedThreadKey: threadKey,
+        activeThreadKey: "environment-local:thread-2",
+        serverStopPending: false,
+        runtimeActive: false,
+      }),
+    ).toBe(true);
   });
 });

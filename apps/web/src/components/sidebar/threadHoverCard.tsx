@@ -30,6 +30,7 @@ import { vcsEnvironment } from "../../state/vcs";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { useClientSettings } from "../../hooks/useSettings";
+import { useT } from "~/i18n/useT";
 
 function Line({ icon, children, warn }: { icon: ReactNode; children: ReactNode; warn?: boolean }) {
   return (
@@ -62,6 +63,7 @@ export function ThreadHoverCard({
   branchName: string | null;
   nowMs: number;
 }) {
+  const t = useT();
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const { environments } = useEnvironments();
   const terminalIds = useThreadRunningTerminalIds({
@@ -106,9 +108,9 @@ export function ThreadHoverCard({
         <Line icon={<ServerIcon />}>{details.environment}</Line>
       )}
       <Line icon={details.checkout === "worktree" ? <FolderGit2Icon /> : <GitBranchIcon />}>
-        {shownBranch ?? "no branch"}
+        {shownBranch ?? t("no branch")}
         <span className={HOVER_CARD_MUTED_CLS}>
-          {details.checkout === "worktree" ? " · worktree" : " · local checkout"}
+          {details.checkout === "worktree" ? t(" · worktree") : t(" · local checkout")}
         </span>
       </Line>
       {details.branchWarning === null ? null : (
@@ -117,22 +119,27 @@ export function ThreadHoverCard({
         </Line>
       )}
       <Line icon={<CpuIcon />}>
-        {[details.provider, details.model].filter((part) => part !== null).join(" · ") || "model"}
+        {[details.provider, details.model].filter((part) => part !== null).join(" · ") ||
+          t("model")}
       </Line>
       {details.handoffs.length === 0 ? null : (
-        <Line icon={<RepeatIcon />}>Handed off: {details.handoffs.join(" → ")}</Line>
+        <Line icon={<RepeatIcon />}>
+          {t("Handed off: {handoffs}", { handoffs: details.handoffs.join(" → ") })}
+        </Line>
       )}
       {details.terminalCount === 0 ? null : (
         <Line icon={<SquareTerminalIcon />}>
           {details.terminalCount === 1
-            ? "1 terminal process"
-            : `${details.terminalCount} terminal processes`}
+            ? t("1 terminal process")
+            : t("{count} terminal processes", { count: details.terminalCount })}
         </Line>
       )}
       {details.problem === null ? null : (
         <Line icon={<AlertTriangleIcon />} warn>
           {details.problem.kind === "limit"
-            ? `Usage limit reached. Resets ${formatUpcomingTimestamp(details.problem.resetAt, timestampFormat)}`
+            ? t("Usage limit reached. Resets {time}", {
+                time: formatUpcomingTimestamp(details.problem.resetAt, timestampFormat),
+              })
             : details.problem.text}
         </Line>
       )}
@@ -146,7 +153,9 @@ export function ThreadHoverCard({
         </Line>
       ))}
       {details.morePullRequests === 0 ? null : (
-        <span className={`pl-4.5 ${HOVER_CARD_MUTED_CLS}`}>+{details.morePullRequests} more</span>
+        <span className={`pl-4.5 ${HOVER_CARD_MUTED_CLS}`}>
+          {t("+{count} more", { count: details.morePullRequests })}
+        </span>
       )}
     </div>
   );

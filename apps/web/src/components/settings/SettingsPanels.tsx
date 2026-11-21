@@ -115,6 +115,7 @@ import { searchableSetting } from "./settingsSearch";
 import { BackgroundActivitySettingsRow, GitFetchIntervalRow } from "./BackgroundActivitySettings";
 import { PullRequestLinksOpenInAppSetting } from "./IntegrationsSettings";
 import { StorageCleanupSections } from "./StorageSettings";
+import { TerminalShellSetting } from "./TerminalShellSetting";
 
 const SIDEBAR_PROJECT_SORT_ORDER_LABELS: Record<SidebarProjectSortOrder, string> = {
   updated_at: "Last user message",
@@ -977,6 +978,10 @@ export function GeneralSettingsPanel() {
             </Select>
           }
         />
+      </SettingsSection>
+
+      <SettingsSection id="terminal" title="Terminal">
+        <TerminalShellSetting />
       </SettingsSection>
     </SettingsPageContainer>
   );

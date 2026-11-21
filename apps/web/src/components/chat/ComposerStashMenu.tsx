@@ -4,6 +4,8 @@ import { assistantCitationsToPlainText } from "@houston-app/shared/assistantCita
 
 import { formatShortcutLabel } from "~/keybindings";
 import { cn } from "~/lib/utils";
+import { useT } from "~/i18n/useT";
+import type { Translate } from "~/i18n/useT";
 import { RelativeTime } from "../RelativeTime";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
@@ -17,7 +19,7 @@ function missingImageCount(entry: PromptStashEntry): number {
   return entry.droppedImageNames.length + (entry.unreadableImageNames?.length ?? 0);
 }
 
-function stashEntrySnippet(entry: PromptStashEntry): string {
+function stashEntrySnippet(entry: PromptStashEntry, t: Translate): string {
   const trimmed = assistantCitationsToPlainText(entry.prompt).trim().replace(/\s+/g, " ");
   if (trimmed.length > 0) {
     return trimmed.length > SNIPPET_MAX_CHARS ? `${trimmed.slice(0, SNIPPET_MAX_CHARS)}…` : trimmed;
@@ -26,10 +28,13 @@ function stashEntrySnippet(entry: PromptStashEntry): string {
   const fileCount = entry.files?.length ?? 0;
   const attachmentCount = imageCount + fileCount;
   if (attachmentCount === 0) {
-    return "(empty)";
+    return t("(empty)");
   }
-  const label = imageCount > 0 && fileCount > 0 ? "attachment" : fileCount > 0 ? "file" : "image";
-  return `(${attachmentCount} ${label}${attachmentCount === 1 ? "" : "s"})`;
+  const label =
+    imageCount > 0 && fileCount > 0 ? t("attachment") : fileCount > 0 ? t("file") : t("image");
+  return attachmentCount === 1
+    ? t("({count} {label})", { count: attachmentCount, label })
+    : t("({count} {label}s)", { count: attachmentCount, label });
 }
 
 /** Window capture gives the open menu priority over composer key handlers. */
@@ -41,6 +46,7 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
   onDelete: (entry: PromptStashEntry) => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const { entries, stashShortcutLabel, composerFormRef, onRestore, onDelete, onClose } = props;
   const [highlightedId, setHighlightedId] = useState<string | null>(entries[0]?.id ?? null);
 
@@ -146,12 +152,12 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
       )}
     >
       <div className="flex h-7.5 items-center ps-2 pe-1 text-xs font-semibold text-muted-foreground">
-        <span>Stashed prompts</span>
+        <span>{t("Stashed prompts")}</span>
         <span className="flex-1" />
         <Button
           variant="ghost-muted"
           size="icon-sm"
-          aria-label="Close stash"
+          aria-label={t("Close stash")}
           onPointerDown={(event) => event.preventDefault()}
           onClick={onClose}
         >
@@ -159,12 +165,14 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
         </Button>
       </div>
       <ScrollArea radius="none" scrollFade className="h-auto max-h-[min(24rem,40dvh)]">
-        <ul role="list" aria-label="Stashed prompts" className="grid gap-px">
+        <ul role="list" aria-label={t("Stashed prompts")} className="grid gap-px">
           {entries.length === 0 ? (
             <li className="flex min-h-8.5 items-center rounded-(--r-ctl) px-2 py-1.5 text-xs text-muted-foreground">
-              Nothing stashed yet.
+              {t("Nothing stashed yet.")}
               {stashShortcutLabel
-                ? ` Press ${stashShortcutLabel} with a prompt in the composer to stash it.`
+                ? ` ${t("Press {shortcut} with a prompt in the composer to stash it.", {
+                    shortcut: stashShortcutLabel,
+                  })}`
                 : null}
             </li>
           ) : (
@@ -192,22 +200,26 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
                     type="button"
                     className="min-w-0 flex-1 cursor-pointer truncate text-left text-foreground outline-none before:absolute before:inset-0 before:rounded-(--r-ctl) focus-visible:before:outline-2 focus-visible:before:-outline-offset-2 focus-visible:before:outline-ring"
                     data-stash-restore={entry.id}
-                    aria-label={`Restore stashed prompt: ${stashEntrySnippet(entry)}`}
+                    aria-label={t("Restore stashed prompt: {prompt}", {
+                      prompt: stashEntrySnippet(entry, t),
+                    })}
                     onPointerDown={(event) => event.preventDefault()}
                     onClick={() => onRestore(entry)}
                   >
-                    {stashEntrySnippet(entry)}
+                    {stashEntrySnippet(entry, t)}
                   </button>
                   <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
                     {entry.pendingImageCount ? (
                       <span>
-                        saving {entry.pendingImageCount} image
-                        {entry.pendingImageCount === 1 ? "" : "s"}…
+                        {entry.pendingImageCount === 1
+                          ? t("saving {count} image…", { count: entry.pendingImageCount })
+                          : t("saving {count} images…", { count: entry.pendingImageCount })}
                       </span>
                     ) : droppedCount > 0 ? (
                       <span className="text-warning-foreground">
-                        {droppedCount} image
-                        {droppedCount === 1 ? "" : "s"} dropped
+                        {droppedCount === 1
+                          ? t("{count} image dropped", { count: droppedCount })
+                          : t("{count} images dropped", { count: droppedCount })}
                       </span>
                     ) : null}
                     {imageCount > 0 ? (
@@ -233,7 +245,7 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
                         variant="ghost-muted"
                         size="icon-sm"
                         className="relative z-10"
-                        aria-label="Delete stashed prompt"
+                        aria-label={t("Delete stashed prompt")}
                         onPointerDown={(event) => event.preventDefault()}
                         onClick={() => onDelete(entry)}
                       >
@@ -248,10 +260,10 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
         </ul>
       </ScrollArea>
       <div className="mt-0.75 flex items-center gap-1.5 border-t border-border px-2 pt-2 pb-1.5 text-2xs text-muted-foreground">
-        <Kbd>↑↓</Kbd> choose
-        <Kbd>Enter</Kbd> restore
-        <Kbd>{deleteShortcutLabel}</Kbd> delete
-        <Kbd>Esc</Kbd> close
+        <Kbd>↑↓</Kbd> {t("choose")}
+        <Kbd>Enter</Kbd> {t("restore")}
+        <Kbd>{deleteShortcutLabel}</Kbd> {t("delete")}
+        <Kbd>Esc</Kbd> {t("close")}
       </div>
     </div>
   );

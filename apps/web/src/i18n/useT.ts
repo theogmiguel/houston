@@ -1,11 +1,13 @@
-import { useClientSettings } from "../hooks/useSettings";
-import { resolveLocale, translate, type Locale, type TranslationParams } from "./translate";
+import { useSyncExternalStore } from "react";
+
+import { getActiveLocale, subscribeActiveLocale } from "./locale";
+import { translate, type Locale, type TranslationParams } from "./translate";
 
 export type Translate = (source: string, params?: TranslationParams) => string;
 
 /** The active locale, following the saved language setting. */
 export function useLocale(): Locale {
-  return useClientSettings((settings) => resolveLocale(settings.language));
+  return useSyncExternalStore(subscribeActiveLocale, getActiveLocale, getActiveLocale);
 }
 
 /** A `t()` bound to the saved language. */

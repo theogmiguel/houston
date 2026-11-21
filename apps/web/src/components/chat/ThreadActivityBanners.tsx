@@ -34,6 +34,7 @@ import { Button, InlineButton } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 import type { ThreadNowItem } from "./ThreadNow";
+import type { Translate } from "~/i18n/useT";
 import { THREAD_NOW_DETAIL_ACTIVITY_CLS } from "../ui/thread-now-recipes";
 
 export function extensionStatusBannerItem(
@@ -54,7 +55,9 @@ export function childInputNowItem(input: {
   readonly parentAwaitingUser: boolean;
   // A task delegated to a linked environment lives there, not where the parent runs.
   readonly onOpenThread: (threadId: ThreadId, environmentId: EnvironmentId) => void;
+  readonly translate?: Translate;
 }): (ThreadNowItem & { readonly waitingLabel: string }) | null {
+  const t = input.translate ?? ((source: string) => source);
   const { childThreadInputs, onOpenThread } = input;
   const first = childThreadInputs[0];
   if (!first || input.parentAwaitingUser) return null;
@@ -64,8 +67,8 @@ export function childInputNowItem(input: {
     icon: <ThreadStateGlyph state="needs" className="text-(--warn-ink)" />,
     title: childThreadInputsTitle(childThreadInputs),
     waitingLabel: childThreadInputs.every((child) => child.lineage.sideChat === true)
-      ? "Side chat waiting"
-      : "Subagent waiting",
+      ? t("Side chat waiting")
+      : t("Subagent waiting"),
     description: childThreadInputs.map((child, index) => (
       <Fragment key={child.id}>
         {index > 0 ? " " : null}
@@ -79,7 +82,7 @@ export function childInputNowItem(input: {
     )),
     actions: (
       <InlineButton onClick={() => onOpenThread(first.id, first.environmentId)}>
-        {first.hasPendingApprovals ? "Open approval" : "Open question"}
+        {first.hasPendingApprovals ? t("Open approval") : t("Open question")}
       </InlineButton>
     ),
   };
@@ -91,7 +94,9 @@ export function goalNowItem(input: {
   readonly goal: OrchestrationV2ProviderGoal;
   readonly isWorking: boolean;
   readonly onSendCommand: (text: string, failureMessage: string) => Promise<void>;
+  readonly translate?: Translate;
 }): ThreadNowItem {
+  const t = input.translate ?? ((source: string) => source);
   const { isWorking, onSendCommand } = input;
   const presentation = presentProviderGoal(input.goal, isWorking);
   return {
@@ -110,7 +115,7 @@ export function goalNowItem(input: {
             <InlineButton
               onClick={() => void onSendCommand("/goal resume", "Failed to resume goal.")}
             >
-              Resume
+              {t("Resume")}
             </InlineButton>
             <span aria-hidden>·</span>
           </>
@@ -119,7 +124,7 @@ export function goalNowItem(input: {
           tone="muted"
           onClick={() => void onSendCommand("/goal clear", "Failed to clear goal.")}
         >
-          Clear
+          {t("Clear")}
         </InlineButton>
       </>
     ),
@@ -133,7 +138,9 @@ export function runStopNowItem(input: {
   readonly canForceStop: boolean;
   readonly forceStopping: boolean;
   readonly onForceStop: () => void;
+  readonly translate?: Translate;
 }): ThreadNowItem {
+  const t = input.translate ?? ((source: string) => source);
   const unresponsive = input.stop.state === "unresponsive";
   const requestedAtMs = Date.parse(input.stop.requestedAt);
   return {
@@ -143,9 +150,9 @@ export function runStopNowItem(input: {
     ) : (
       <CircleStopIcon />
     ),
-    title: unresponsive ? "Agent not responding to Stop" : "Stopping",
+    title: unresponsive ? t("Agent not responding to Stop") : t("Stopping"),
     description: unresponsive
-      ? "It may be short on memory. Force stop kills its processes."
+      ? t("It may be short on memory. Force stop kills its processes.")
       : undefined,
     actions: (
       <>
@@ -158,7 +165,7 @@ export function runStopNowItem(input: {
         />
         {unresponsive && input.canForceStop ? (
           <InlineButton disabled={input.forceStopping} onClick={input.onForceStop}>
-            {input.forceStopping ? "Force stopping..." : "Force stop"}
+            {input.forceStopping ? t("Force stopping...") : t("Force stop")}
           </InlineButton>
         ) : null}
       </>
@@ -177,7 +184,9 @@ export function backgroundWorkNowItem(input: {
   readonly stopping: boolean;
   readonly onStop: () => Promise<void>;
   readonly onOpenThread: (threadId: ThreadId) => void;
+  readonly translate?: Translate;
 }): ThreadNowItem | null {
+  const t = input.translate ?? ((source: string) => source);
   const { onOpenThread } = input;
   const presentation = presentPendingBackgroundWork(input.tasks);
   if (presentation === null) return null;
@@ -196,7 +205,7 @@ export function backgroundWorkNowItem(input: {
   });
   const [only] = rows.length === 1 ? rows : [];
   const isCommand = (row: (typeof rows)[number]) => row.task.kind !== "subagent";
-  const verb = presentation.waiting ? "Waiting on" : "Running";
+  const verb = presentation.waiting ? t("Waiting on") : t("Running");
   const onlyThreadId = only?.childThreadId;
   const startedAtMs = only?.startedAtMs ?? null;
   return {
@@ -228,7 +237,7 @@ export function backgroundWorkNowItem(input: {
               ) : null}
             </span>
           )),
-          detailsLabel: `Show details: ${presentation.title}`,
+          detailsLabel: t("Show details: {title}", { title: presentation.title }),
         }),
     spaced: true,
     actions: (
@@ -244,11 +253,11 @@ export function backgroundWorkNowItem(input: {
         )}
         {onlyThreadId === undefined ? null : (
           <InlineButton tone="muted" onClick={() => onOpenThread(onlyThreadId)}>
-            Open
+            {t("Open")}
           </InlineButton>
         )}
         <InlineButton disabled={input.stopDisabled} onClick={() => void input.onStop()}>
-          {input.stopping ? "Stopping..." : "Stop"}
+          {input.stopping ? t("Stopping...") : t("Stop")}
         </InlineButton>
       </>
     ),
@@ -263,7 +272,9 @@ export function branchMismatchBannerItem(input: {
   readonly restoring: boolean;
   readonly onRestore: () => void;
   readonly onDismiss: () => void;
+  readonly translate?: Translate;
 }): ComposerBannerStackItem {
+  const t = input.translate ?? ((source: string) => source);
   const { mismatch } = input;
   return {
     id: `branch-mismatch:${input.mismatchKey}`,
@@ -271,7 +282,9 @@ export function branchMismatchBannerItem(input: {
     icon: <GitBranchIcon />,
     title: (
       <span className="flex min-w-0 items-baseline gap-1.5">
-        <span className="shrink-0 font-normal text-muted-foreground">Branch changed from</span>
+        <span className="shrink-0 font-normal text-muted-foreground">
+          {t("Branch changed from")}
+        </span>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -281,18 +294,20 @@ export function branchMismatchBannerItem(input: {
             }
           />
           <TooltipPopup side="top">
-            This thread last ran on {mismatch.threadBranch}. Sending will continue on{" "}
-            {mismatch.currentBranch}.
+            {t("This thread last ran on {branch}. Sending will continue on {current}.", {
+              branch: mismatch.threadBranch,
+              current: mismatch.currentBranch,
+            })}
           </TooltipPopup>
         </Tooltip>
       </span>
     ),
     actions: (
       <Button size="xs" variant="ghost" disabled={input.restoreDisabled} onClick={input.onRestore}>
-        {input.restoring ? "Restoring..." : "Restore branch"}
+        {input.restoring ? t("Restoring...") : t("Restore branch")}
       </Button>
     ),
-    dismissLabel: "Dismiss branch change notice",
+    dismissLabel: t("Dismiss branch change notice"),
     onDismiss: input.onDismiss,
   };
 }

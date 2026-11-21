@@ -53,6 +53,7 @@ import { makeProviderFailure } from "@houston-app/provider-core/server/failure";
 import { randomUuidV4 } from "@houston-app/provider-core/server/randomUuid";
 import { DispatchModeLimit } from "./DispatchModeLimit.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
+import { THREAD_HISTORY_SNAPSHOT_ROW_LIMIT } from "./threadHistoryPaging.ts";
 
 export type ThreadLaunchWorkspaceStrategy =
   | { readonly type: "root"; readonly branch?: string | undefined }
@@ -1029,7 +1030,16 @@ const make = Effect.gen(function* () {
         }
 
         const projection = yield* threads
-          .getThreadProjection(threadId)
+          .getThreadSnapshotWindow(threadId, {
+            rowLimit: THREAD_HISTORY_SNAPSHOT_ROW_LIMIT,
+          })
+          .pipe(
+            Effect.map((snapshot) => snapshot.projection),
+            Effect.mapError(mapError(input, "create-thread", threadId)),
+          );
+        // A window holds active provider threads; an imported native session is not loaded yet.
+        const { providerThreads } = yield* threads
+          .getThreadRecords(threadId, ["providerThreads"])
           .pipe(Effect.mapError(mapError(input, "create-thread", threadId)));
         const runIsPreparing =
           runId !== null &&
@@ -1074,7 +1084,7 @@ const make = Effect.gen(function* () {
 
         return {
           threadId,
-          projection,
+          projection: { ...projection, providerThreads },
           // An attempt that failed after claiming the thread recorded nothing, so
           // only a repeat of the final write counts as resumed.
           resumed:

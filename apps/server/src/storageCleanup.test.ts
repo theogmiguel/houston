@@ -2280,6 +2280,48 @@ describe("storage cleanup reports and local file policies", () => {
       }),
     ),
   );
+  it.live("skips a worktree path below a regular file", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const { service, fs, config, setThreads } = yield* cleanupFixture();
+        const blocker = `${config.worktreesDir}/blocker`;
+        yield* fs.writeFileString(blocker, "not a directory\n");
+        setThreads([shell({ branch: "feature", worktreePath: `${blocker}/worktree` })]);
+        const report = yield* service.runNow;
+        expect(report.counts.failed).toBe(0);
+        expect(report.entries.filter((entry) => entry.outcome === "failed")).toEqual([]);
+      }),
+    ),
+  );
+  it.live("keeps a worktree whose file listing exceeds the inspection limit", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const git = yield* GitVcsDriver.GitVcsDriver;
+        const truncated = {
+          ...git,
+          execute: (input: Parameters<typeof git.execute>[0]) =>
+            git
+              .execute(input)
+              .pipe(
+                Effect.map((result) =>
+                  input.args.includes("ls-files") ? { ...result, stdoutTruncated: true } : result,
+                ),
+              ),
+        };
+        const { service } = yield* cleanupFixture({
+          ...DEFAULT_SERVER_SETTINGS.storageCleanup,
+          worktreeAfterDays: 8,
+          worktreeOnDelete: true,
+          worktreeKeepWhen: "any-local-files",
+        }).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, truncated));
+        const report = yield* service.runNow;
+        expect(report.entries[0]).toMatchObject({
+          outcome: "kept",
+          reason: "Ignored files exceed the inspection limit",
+        });
+      }),
+    ),
+  );
   it.live("compares the checked-out branch without a full status", () =>
     runCleanupTest(
       Effect.gen(function* () {

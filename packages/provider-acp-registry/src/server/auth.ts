@@ -20,7 +20,11 @@ import * as EffectAcpErrors from "effect-acp/errors";
 
 import * as PtyAdapter from "@houston-app/shared/PtyAdapter";
 import * as ProviderAuthFlow from "@houston-app/provider-core/server/providerAuthFlow";
-import { normalizeAcpRegistryAuthMethods, normalizeAcpRegistryWebUrl } from "./probe.ts";
+import {
+  deleteTemporaryAcpSession,
+  normalizeAcpRegistryAuthMethods,
+  normalizeAcpRegistryWebUrl,
+} from "./probe.ts";
 import * as AcpRegistrySupport from "./AcpRegistrySupport.ts";
 import * as AcpRegistryRuntimeCoordinator from "./AcpRegistryRuntimeCoordinator.ts";
 import * as AcpSessionRuntime from "@houston-app/provider-acp/server/AcpSessionRuntime";
@@ -47,7 +51,7 @@ export const formatFailureDetail = (detail: string, cause?: unknown): string => 
 
 type Runtime = Pick<
   AcpSessionRuntime.AcpSessionRuntime["Service"],
-  "initialize" | "authenticate" | "start" | "handleElicitation" | "logout"
+  "initialize" | "authenticate" | "start" | "handleElicitation" | "logout" | "deleteSession"
 >;
 
 export const makeAcpRegistryAuth = Effect.fn("makeAcpRegistryAuth")(function* (options: {
@@ -309,7 +313,7 @@ export const makeAcpRegistryAuth = Effect.fn("makeAcpRegistryAuth")(function* (o
           // the ACP process reads the credentials its login command persisted.
           const verifiedRuntime = yield* makeRuntime(resolved.spawn);
           yield* context.verifying;
-          yield* verifiedRuntime
+          const verified = yield* verifiedRuntime
             .start()
             .pipe(
               Effect.mapError((cause) =>
@@ -320,6 +324,11 @@ export const makeAcpRegistryAuth = Effect.fn("makeAcpRegistryAuth")(function* (o
                 ),
               ),
             );
+          yield* deleteTemporaryAcpSession({
+            runtime: verifiedRuntime,
+            started: verified,
+            instanceId: options.instanceId,
+          });
         } else {
           if (method.type === undefined || method.type === "agent") {
             if (!runtime.authenticate)
@@ -335,13 +344,18 @@ export const makeAcpRegistryAuth = Effect.fn("makeAcpRegistryAuth")(function* (o
           // Legacy env_var methods use the secret-backed environment fields in
           // provider settings. Never send their ID to authenticate.
           yield* context.verifying;
-          yield* runtime
+          const verified = yield* runtime
             .start()
             .pipe(
               Effect.mapError((cause) =>
                 failure("verify", "The provider could not create a session after sign-in.", cause),
               ),
             );
+          yield* deleteTemporaryAcpSession({
+            runtime,
+            started: verified,
+            instanceId: options.instanceId,
+          });
         }
       }),
     );

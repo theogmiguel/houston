@@ -94,6 +94,7 @@ import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterReg
 import {
   subagentResultForRun,
   delegatedTaskProgress,
+  runInterruptedByNativeSubagent,
 } from "@houston-app/provider-core/server/subagentProjection";
 import {
   DispatchModeLimit,
@@ -1102,10 +1103,15 @@ const make = Effect.gen(function* () {
     );
 
   // Task waits read on every wake of a parent that may hold thousands of
-  // tasks, so they read only the task they watch and what its status needs.
-  const loadTaskParent = (threadId: ThreadId) =>
+  // tasks, so they read only its active runs and the result transfers from
+  // the child they watch.
+  const loadTaskParent = (threadId: ThreadId, childThreadId: ThreadId) =>
     threadManagement
-      .getThreadRecords(threadId, ["runs", "contextTransfers"])
+      .getThreadRecords(threadId, ["runs", "contextTransfers"], {
+        runStatuses: ThreadManagementService.ACTIVE_RUN_STATUSES,
+        contextTransferTypes: ["subagent_result"],
+        contextTransferSourceThreadIds: [childThreadId],
+      })
       .pipe(
         Effect.mapError((error) =>
           failure(
@@ -1498,7 +1504,7 @@ const make = Effect.gen(function* () {
     if (task.childThreadId === null) {
       return yield* readRemoteTask(scope, task, waitTimedOut, acknowledgeTerminal);
     }
-    const parentProjection = yield* loadTaskParent(scope.thread.threadId);
+    const parentProjection = yield* loadTaskParent(scope.thread.threadId, task.childThreadId);
     const childControls = yield* threadManagement
       .getThreadRecords(
         task.childThreadId,
@@ -1556,6 +1562,11 @@ const make = Effect.gen(function* () {
         .pipe(Effect.mapError(threadManagementFailure)));
     const workState =
       task.result !== null ? "result_available" : heldForRestart ? "working" : taskWorkState;
+    const resultRun = taskResultRun ?? childRun;
+    const effectiveResultRun =
+      resultRun !== undefined && runInterruptedByNativeSubagent(resultRun, childControls.subagents)
+        ? { ...resultRun, status: "interrupted" as const }
+        : resultRun;
     const status =
       task.result !== null
         ? taskStatusForRun(
@@ -1567,15 +1578,15 @@ const make = Effect.gen(function* () {
               : childRun,
           )
         : workState === "result_available"
-          ? taskStatusForRun(taskResultRun ?? childRun)
-          : taskStatusForRun(taskResultRun ?? childRun) === "queued"
+          ? taskStatusForRun(effectiveResultRun)
+          : taskStatusForRun(effectiveResultRun) === "queued"
             ? "queued"
             : "running";
     const derivedResult =
       task.result !== null
         ? task.result
-        : taskResultRun !== undefined && isTerminalTaskStatus(status)
-          ? subagentResultForRun(childProjection, taskResultRun).text
+        : effectiveResultRun !== undefined && isTerminalTaskStatus(status)
+          ? subagentResultForRun(childProjection, effectiveResultRun).text
           : null;
     const resultTransfers = parentProjection.contextTransfers.filter(
       (transfer) =>
@@ -1741,7 +1752,9 @@ const make = Effect.gen(function* () {
     ) {
       const parentThreadId = scope.thread.threadId;
       const parentProjection = yield* threadManagement
-        .getThreadRecords(parentThreadId, ["runs"])
+        .getThreadRecords(parentThreadId, ["runs"], {
+          runStatuses: ThreadManagementService.ACTIVE_RUN_STATUSES,
+        })
         .pipe(
           Effect.mapError((error) =>
             failure(
@@ -2735,7 +2748,7 @@ const make = Effect.gen(function* () {
             ),
           );
         const stopped = yield* threadManagement
-          .getThreadRecords(childThreadId, ["runs"])
+          .getThreadRecords(childThreadId, ["runs"], { runStatuses: ["queued"] })
           .pipe(Effect.mapError(threadManagementFailure));
         for (const run of stopped.runs) {
           if (
@@ -2816,7 +2829,9 @@ const make = Effect.gen(function* () {
           status: cancelled ? "cancelled" : current.status,
         } satisfies OrchestratorMcpTaskCancelResult;
       }
-      const child = yield* loadThreadRecords(childThreadId, ["runs"]);
+      const child = yield* loadThreadRecords(childThreadId, ["runs"], {
+        runStatuses: [...ThreadManagementService.ACTIVE_RUN_STATUSES, "queued"],
+      });
       if (
         current.workState !== "waiting_for_children" &&
         ThreadManagementService.latestActiveRun(child) === undefined &&

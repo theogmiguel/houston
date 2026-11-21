@@ -22,6 +22,7 @@ import {
 } from "@houston-app/contracts";
 import type { EffortDisplay } from "@houston-app/contracts/settings";
 import { cn } from "~/lib/utils";
+import { useT } from "~/i18n/useT";
 import { resolveComposerTraitsInput } from "./composerProviderState";
 import { getTraitsSectionVisibility } from "./TraitsPicker";
 import {
@@ -94,6 +95,7 @@ export function ComposerControlsBar(props: {
   modelPickerIconClassName: string | undefined;
   getModelDisabledReason: ChatComposerProps["getModelDisabledReason"];
 }) {
+  const t = useT();
   const {
     environmentId,
     routeKind,
@@ -302,7 +304,7 @@ export function ComposerControlsBar(props: {
       className="h-6! shrink-0 gap-1.5! px-1.5! text-(--warn)! text-xs!"
     >
       <CircleAlertIcon className="size-4" />
-      {providerSetupInstanceId ? "Open provider settings" : "No provider available"}
+      {providerSetupInstanceId ? t("Open provider settings") : t("No provider available")}
     </ComposerControl>
   ) : (
     <>

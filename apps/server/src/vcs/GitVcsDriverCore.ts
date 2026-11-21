@@ -4904,6 +4904,21 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       yield* progress.onWorktreeClaimed(worktreePath);
     }
 
+    // A fresh index leaves checkout mtimes stale, so every later status re-hashes the tree.
+    yield* runGit(
+      "GitVcsDriver.createWorktree.refreshIndex",
+      worktreePath,
+      ["update-index", "-q", "--refresh"],
+      { env: confinedGitEnv(process.env, hostPlatform) },
+    ).pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning("worktree index refresh failed; status will re-hash it", {
+          worktreePath,
+          cause,
+        }),
+      ),
+    );
+
     // worktree add leaves submodules empty, potentially omitting project skills, tools or source.
     const hasSubmodules = yield* fileSystem
       .exists(path.join(worktreePath, ".gitmodules"))

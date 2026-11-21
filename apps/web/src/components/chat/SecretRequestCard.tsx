@@ -31,6 +31,7 @@ import { SecretSourceSelect } from "../settings/SecretSourceInput";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { WorkLogRow } from "./WorkLog";
+import { useT } from "~/i18n/useT";
 
 export function SecretRequestCard(props: {
   readonly environmentId: EnvironmentId;
@@ -71,6 +72,7 @@ function PendingSecretRequestForm(props: {
   readonly environmentId: EnvironmentId;
   readonly item: SecretRequestItem;
 }) {
+  const t = useT();
   const { item } = props;
   const inputId = useId();
   const errorId = useId();
@@ -148,7 +150,7 @@ function PendingSecretRequestForm(props: {
           <ExpandableText
             text={item.reason}
             className="text-sm text-muted-foreground"
-            expandLabel="Show more"
+            expandLabel={t("Show more")}
           />
         ) : null}
       </div>

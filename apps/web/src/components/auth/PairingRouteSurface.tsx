@@ -1,5 +1,5 @@
 import { Alert, AlertDescription } from "../ui/alert";
-import type { AuthSessionState } from "@houston-app/contracts";
+import type { AuthPendingApprovalNotice, AuthSessionState } from "@houston-app/contracts";
 import { squashAtomCommandFailure } from "@houston-app/client-runtime/state/runtime";
 import React, { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
 
@@ -14,6 +14,7 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { StandalonePage, StandalonePageHeader } from "../ui/standalone-page";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { useT } from "../../i18n/useT";
 
 export function PairingPendingSurface() {
   return (
@@ -35,25 +36,34 @@ export function PairingRouteSurface({
   initialErrorMessage?: string;
   onAuthenticated: () => void;
 }) {
+  const t = useT();
   const [autoPairToken] = useState(peekPairingTokenFromUrl);
   const [credential, setCredential] = useState(autoPairToken ?? "");
   const [errorMessage, setErrorMessage] = useState(initialErrorMessage ?? "");
+  const [pendingApproval, setPendingApproval] = useState<AuthPendingApprovalNotice | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const autoSubmitAttemptedRef = useRef(false);
 
-  const submitCredential = async (nextCredential: string) => {
+  const submitCredential = async (
+    nextCredential: string,
+    pairedVia: "pairing-link" | "pairing-code",
+  ) => {
     setIsSubmitting(true);
     setErrorMessage("");
 
-    const submitError = await submitServerAuthCredential(nextCredential).then(
-      () => null,
-      (error) => errorMessageFromUnknown(error),
+    const submitted = await submitServerAuthCredential(nextCredential, pairedVia).then(
+      (approval) => ({ approval, error: null }),
+      (error) => ({ approval: null, error: errorMessageFromUnknown(error) }),
     );
 
     setIsSubmitting(false);
 
-    if (submitError) {
-      setErrorMessage(submitError);
+    if (submitted.error !== null) {
+      setErrorMessage(submitted.error);
+      return;
+    }
+    if (submitted.approval != null) {
+      setPendingApproval(submitted.approval);
       return;
     }
 
@@ -64,11 +74,11 @@ export function PairingRouteSurface({
 
   const handleSubmit = async (event?: React.SubmitEvent<HTMLFormElement>) => {
     event?.preventDefault();
-    await submitCredential(credential);
+    await submitCredential(credential, "pairing-code");
   };
 
   const autoSubmit = useEffectEvent((token: string) => {
-    void submitCredential(token);
+    void submitCredential(token, "pairing-link");
   });
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- strips the pairing token from the URL and submits it once when the route carries one
@@ -81,6 +91,31 @@ export function PairingRouteSurface({
     stripPairingTokenFromUrl();
     autoSubmit(autoPairToken);
   }, [autoPairToken]);
+
+  if (pendingApproval !== null) {
+    return (
+      <StandalonePage>
+        <StandalonePageHeader
+          title={t("Waiting for approval")}
+          description={t(
+            "This device is waiting for approval on {host}. Ask the owner to approve it under Settings → Connections → Sharing & access → Require approval for new devices.",
+            { host: pendingApproval.hostLabel },
+          )}
+        />
+        <p>
+          {t(
+            "{device} has no access until it is approved. If it is not approved within {hours} hours, it expires and must pair again.",
+            { device: pendingApproval.deviceName, hours: pendingApproval.limitHours },
+          )}
+        </p>
+        <div className="mt-6 flex flex-wrap gap-2">
+          <Button size="sm" onClick={() => window.location.reload()}>
+            {t("Check again")}
+          </Button>
+        </div>
+      </StandalonePage>
+    );
+  }
 
   return (
     <StandalonePage>

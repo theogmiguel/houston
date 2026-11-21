@@ -3195,3 +3195,24 @@ describe("MessagesTimeline reply to a response", () => {
     expect(screen.text()).not.toContain("houston-citation");
   });
 });
+
+describe("MessagesTimeline language", () => {
+  it("shows the empty state in English by default", async () => {
+    __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+    await using _screen = await renderTimeline([]);
+    await expect.element(page.getByText("No messages yet", { exact: true })).toBeVisible();
+  });
+
+  it("shows the empty state in Brazilian Portuguese", async () => {
+    __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, language: "pt-BR" });
+    try {
+      await using _screen = await renderTimeline([]);
+      await expect.element(page.getByText("Nenhuma mensagem ainda", { exact: true })).toBeVisible();
+      await expect
+        .element(page.getByText("Envie uma mensagem para iniciar a conversa."))
+        .toBeVisible();
+    } finally {
+      __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+    }
+  });
+});

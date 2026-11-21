@@ -43,6 +43,7 @@ import { mergePathEntries } from "@houston-app/shared/shell";
 
 import { acpRegistryManagedBinaryDirectories } from "@houston-app/provider-acp-registry/server";
 import { getTerminalLabel } from "@houston-app/shared/terminalLabels";
+import { checkTerminalShell, normalizeShellCommand } from "../houston/terminalShells.ts";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Context from "effect/Context";
@@ -81,8 +82,6 @@ import * as PtyAdapter from "@houston-app/shared/PtyAdapter";
 
 const PATH_SEPARATOR = /[\\/]/;
 const SLASH = /\//;
-const WHITESPACE_RUN = /\s+/g;
-const NORMALIZE_SHELL_COMMAND_PATTERN = /^['"]|['"]$/g;
 const PARTS_PATTERN = /\\+/;
 const SLASH_RUN = /\/+/;
 const TRAILING_PATH_SEPARATORS = /[\\/]+$/g;
@@ -325,6 +324,7 @@ interface TerminalSessionState {
   rows: number;
   process: PtyAdapter.PtyProcess | null;
   shell: string | null;
+  shellFallback: { requested: string; used: string } | null;
   unsubscribeData: (() => void) | null;
   unsubscribeExit: (() => void) | null;
   hasRunningSubprocess: boolean;
@@ -426,6 +426,7 @@ function snapshot(session: TerminalSessionState): TerminalSessionSnapshot {
     sequence: session.eventSequence,
     cols: session.cols,
     rows: session.rows,
+    ...(session.shellFallback === null ? {} : { shellFallback: session.shellFallback }),
   };
 }
 
@@ -542,23 +543,6 @@ function defaultShellResolver(platform: NodeJS.Platform, env: NodeJS.ProcessEnv)
   return env.SHELL ?? "bash";
 }
 
-function normalizeShellCommand(
-  value: string | undefined,
-  platform: NodeJS.Platform,
-): string | null {
-  if (!value) return null;
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return null;
-
-  if (platform === "win32") {
-    return trimmed;
-  }
-
-  const firstToken = trimmed.split(WHITESPACE_RUN)[0]?.trim();
-  if (!firstToken) return null;
-  return firstToken.replace(NORMALIZE_SHELL_COMMAND_PATTERN, "");
-}
-
 function basenameForPlatform(command: string, platform: NodeJS.Platform): string {
   const normalized =
     platform === "win32" ? command.replaceAll("/", "\\") : command.replaceAll("\\", "/");
@@ -633,9 +617,10 @@ function resolveShellCandidates(
   shellResolver: () => string,
   platform: NodeJS.Platform,
   env: NodeJS.ProcessEnv,
+  configuredShell?: string,
 ): ShellCandidate[] {
   const requested = shellCandidateFromCommand(
-    normalizeShellCommand(shellResolver(), platform),
+    normalizeShellCommand(configuredShell ?? shellResolver(), platform),
     platform,
   );
 
@@ -1427,6 +1412,7 @@ interface TerminalManagerOptions {
   historyByteLimit?: number;
   ptyAdapter: PtyAdapter.PtyAdapter["Service"];
   shellResolver?: () => string;
+  readConfiguredShell?: () => Effect.Effect<string>;
   env?: NodeJS.ProcessEnv;
   managedBinaryCacheDir?: string;
   managedBinaryToolsDir?: string;
@@ -1518,6 +1504,11 @@ export const make = Effect.fn("TerminalManager.make")(function* () {
   return yield* makeWithOptions({
     logsDir: terminalLogsDir,
     ptyAdapter,
+    readConfiguredShell: () =>
+      serverSettings.getSettings.pipe(
+        Effect.map((settings) => settings.terminalShell),
+        Effect.orElseSucceed(() => ""),
+      ),
     processTable: nativeTelemetry.processTable.pipe(
       Effect.mapError(
         (cause) => new TerminalSubprocessCheckError({ cause, command: "resource-monitor" }),
@@ -1548,6 +1539,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   // Inherit the full environment minus createTerminalSpawnEnv's blocklist; allowlists silently drop user tooling variables.
   const baseEnv = options.env ?? process.env;
   const shellResolver = options.shellResolver ?? (() => defaultShellResolver(platform, baseEnv));
+  const readConfiguredShell = options.readConfiguredShell ?? (() => Effect.succeed(""));
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const resolveLaunchInputEnvironment = Effect.fn("terminal.resolveLaunchInputEnvironment")(
     function* <Input extends TerminalOpenInput | TerminalAttachInput>(
@@ -2441,6 +2433,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     yield* modifyManagerState((state) => {
       session.status = "starting";
       session.shell = null;
+      session.shellFallback = null;
       session.cwd = input.cwd;
       session.worktreePath = input.worktreePath ?? null;
       session.cols = input.cols;
@@ -2463,7 +2456,20 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       increment(terminalSessionsTotal, { lifecycle: eventType }).pipe(
         Effect.andThen(
           Effect.gen(function* () {
-            const shellCandidates = resolveShellCandidates(shellResolver, platform, baseEnv);
+            const configuredShell = (yield* readConfiguredShell()).trim();
+            const configured =
+              configuredShell.length === 0
+                ? null
+                : yield* checkTerminalShell(
+                    { fs: fileSystem, platform, env: baseEnv },
+                    configuredShell,
+                  );
+            const shellCandidates = resolveShellCandidates(
+              shellResolver,
+              platform,
+              baseEnv,
+              configured?.available === true ? configured.shell : undefined,
+            );
             const terminalEnv = createTerminalSpawnEnv(
               baseEnv,
               session.runtimeEnv,
@@ -2505,6 +2511,13 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
             const spawnResult = yield* trySpawn(shellCandidates, terminalEnv, session);
             ptyProcess = spawnResult.process;
             startedShell = spawnResult.shellLabel;
+            const shellFallback =
+              configuredShell.length > 0 &&
+              (configured === null ||
+                !configured.available ||
+                configured.shell !== spawnResult.shell)
+                ? { requested: configuredShell, used: spawnResult.shellLabel }
+                : null;
 
             const processPid = ptyProcess.pid;
             let eventsActivated = false;
@@ -2516,6 +2529,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
             yield* modifyManagerState((state) => {
               session.process = ptyProcess;
               session.shell = spawnResult.shell;
+              session.shellFallback = shellFallback;
               session.pid = processPid;
               session.status = "running";
               // onExit may replay an exit immediately; accept it before subscribing.
@@ -2893,6 +2907,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         rows,
         process: null,
         shell: null,
+        shellFallback: null,
         unsubscribeData: null,
         unsubscribeExit: null,
         hasRunningSubprocess: false,

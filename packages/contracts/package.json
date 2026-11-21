@@ -59,9 +59,21 @@
       "types": "./src/houston/slack.ts",
       "import": "./src/houston/slack.ts"
     },
+    "./houston/portForwarding": {
+      "types": "./src/houston/portForwarding.ts",
+      "import": "./src/houston/portForwarding.ts"
+    },
+    "./houston/access": {
+      "types": "./src/houston/access.ts",
+      "import": "./src/houston/access.ts"
+    },
     "./houston/observability": {
       "types": "./src/houston/observability.ts",
       "import": "./src/houston/observability.ts"
+    },
+    "./houston/terminalShells": {
+      "types": "./src/houston/terminalShells.ts",
+      "import": "./src/houston/terminalShells.ts"
     }
   },
   "scripts": {

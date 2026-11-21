@@ -30,6 +30,7 @@ import {
 } from "../ui/quick-composer";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { quickComposerEnterSubmits, quickComposerHint } from "./quickComposerKeys";
+import { useT } from "~/i18n/useT";
 import type {
   QuickComposerImage,
   QuickComposerProjectOption,
@@ -53,6 +54,7 @@ export function QuickComposerView({
   onSubmit,
   onClose,
 }: QuickComposerViewProps) {
+  const t = useT();
   const [projectKey, setProjectKey] = useState(initialProjectKey ?? projects[0]?.key ?? "");
   const [prompt, setPrompt] = useState("");
   const sendShortcut = useClientSettings((settings) => settings.sendShortcut);
@@ -187,12 +189,12 @@ export function QuickComposerView({
       }}
     >
       <div className="flex items-center justify-between gap-2">
-        <QuickComposerLabel>New thread</QuickComposerLabel>
+        <QuickComposerLabel>{t("New thread")}</QuickComposerLabel>
         <Button
           type="button"
           size="micro"
           variant="ghost"
-          aria-label="Close quick composer"
+          aria-label={t("Close quick composer")}
           onClick={onClose}
         >
           Esc
@@ -207,8 +209,8 @@ export function QuickComposerView({
             setProjectKey(value);
           }}
         >
-          <SelectTrigger size="compact" className="min-w-0 flex-1" aria-label="Project">
-            <SelectValue placeholder="Choose a project" />
+          <SelectTrigger size="compact" className="min-w-0 flex-1" aria-label={t("Project")}>
+            <SelectValue placeholder={t("Choose a project")} />
           </SelectTrigger>
           <SelectContent alignItemWithTrigger={false} matchTriggerWidth>
             {projects.map((option) => (
@@ -222,14 +224,14 @@ export function QuickComposerView({
 
       <QuickComposerEditorFrame onKeyDownCapture={onEditorKeyDown}>
         <ComposerPromptEditorTiptap
-          ariaLabel="Thread prompt"
+          ariaLabel={t("Thread prompt")}
           editorRef={editorRef}
           value={prompt}
           cursor={cursor}
           contextRecords={EMPTY_COMPOSER_CONTEXT_RECORDS}
           skills={[]}
           disabled={submitting}
-          placeholder={DEFAULT_COMPOSER_PLACEHOLDER}
+          placeholder={t(DEFAULT_COMPOSER_PLACEHOLDER)}
           onChange={(nextValue, nextCursor) => {
             setPrompt(nextValue);
             setCursor(nextCursor);
@@ -242,7 +244,7 @@ export function QuickComposerView({
               <QuickComposerImageTile key={image.id}>
                 <QuickComposerImageThumb src={image.previewUrl} alt={image.name} />
                 <QuickComposerImageRemove
-                  aria-label={`Remove ${image.name}`}
+                  aria-label={t("Remove {name}", { name: image.name })}
                   onClick={() => removeImage(image.id)}
                 >
                   ×
@@ -256,9 +258,9 @@ export function QuickComposerView({
       {error !== null ? <QuickComposerAlert>{error}</QuickComposerAlert> : null}
 
       <QuickComposerFooter>
-        <QuickComposerHint>{quickComposerHint(sendShortcut)}</QuickComposerHint>
+        <QuickComposerHint>{t(quickComposerHint(sendShortcut))}</QuickComposerHint>
         <Button type="button" size="sm" disabled={!canSubmit} onClick={() => void submit()}>
-          {submitting ? "Starting…" : "Start thread"}
+          {submitting ? t("Starting…") : t("Start thread")}
         </Button>
       </QuickComposerFooter>
     </QuickComposerPanel>

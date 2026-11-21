@@ -47,6 +47,7 @@ import {
 } from "@houston-app/client-runtime/state/runtime";
 import { useUiStateStore } from "../../uiStateStore";
 import { useThreadOpen } from "../../threads/threadOpenContext";
+import { useT } from "~/i18n/useT";
 import { type ChatMessage } from "../../types";
 import { AlarmClockIcon, CheckCircle2Icon } from "lucide-react";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -139,6 +140,7 @@ interface ThreadLifecycleInput {
  * banners, opening related threads, and standalone slash commands.
  */
 export function useThreadLifecycle(input: ThreadLifecycleInput) {
+  const t = useT();
   const {
     environmentId,
     routeThreadKey,
@@ -487,7 +489,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
     }
     const shell = readThreadShell(threadRef);
     if (shell === null ? !shellOmitsChildren && isEnvironmentLive() : shell.deletedAt != null) {
-      toastManager.add({ type: "info", title: "This thread is no longer available" });
+      toastManager.add({ type: "info", title: t("This thread is no longer available") });
       return;
     }
     if (activeThreadRef && openSideChatTab(activeThreadRef, shell)) return;
@@ -501,6 +503,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
       activePendingApproval || activePendingUserInput || activeThreadShell?.hasPendingUserInput,
     ),
     onOpenThread: onOpenRelatedThreadStable,
+    translate: t,
   });
 
   const sendStandaloneCommand = async (text: string, failureMessage: string) => {
@@ -572,6 +575,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
           goal: activeGoal,
           isWorking,
           onSendCommand: sendStandaloneCommandStable,
+          translate: t,
         })
       : null;
 
@@ -589,6 +593,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
           canForceStop: forceStop.canForceStop,
           forceStopping: forceStop.stoppingThreadId === activeThread.id,
           onForceStop: () => void forceStop.forceStopThread(activeThread.id, runStop.runId),
+          translate: t,
         })
       : null;
   const backgroundWorkNow = activeThread
@@ -600,6 +605,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
         stopping: isStoppingBackgroundWork,
         onStop: handleStopBackgroundWorkStable,
         onOpenThread: onOpenRelatedThreadStable,
+        translate: t,
       })
     : null;
   // The relative times read the clock; nowMinute re-renders them on the minute.

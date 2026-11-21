@@ -16,6 +16,7 @@ import { useThreadHasUnsentDraft } from "../../composerDraftStore";
 import { formatDiffCounts } from "../../threads/sidebarModel";
 import { discardComposerDraft } from "../../lib/discardComposerDraft";
 import { cn } from "../../lib/utils";
+import { useT } from "~/i18n/useT";
 import { useEnvironmentMachines, usePrimaryEnvironmentId } from "../../state/environments";
 import { useProject } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
@@ -67,15 +68,16 @@ export function ThreadCheckoutMark({
 }: {
   thread: Pick<EnvironmentThreadShell, "id" | "branch" | "worktreePath">;
 }) {
+  const t = useT();
   const worktreePath = thread.worktreePath?.trim();
   if (!worktreePath) {
     return (
-      <span role="img" aria-label="Local checkout" className="inline-flex shrink-0">
+      <span role="img" aria-label={t("Local checkout")} className="inline-flex shrink-0">
         <GitBranchIcon aria-hidden className="size-3.5" />
       </span>
     );
   }
-  const label = `Worktree: ${formatWorktreePathForDisplay(worktreePath)}`;
+  const label = t("Worktree: {path}", { path: formatWorktreePathForDisplay(worktreePath) });
   return (
     <Tooltip>
       <TooltipTrigger
@@ -97,14 +99,15 @@ export function ThreadCheckoutMark({
 
 /** The machine icon of a thread that runs on another machine; nothing for a local thread. */
 export function ThreadRemoteItem({ thread }: { thread: EnvironmentThreadShell }) {
+  const t = useT();
   const machines = useEnvironmentMachines();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   if (primaryEnvironmentId === null || thread.environmentId === primaryEnvironmentId) return null;
   return (
-    <RowMetaItem label="Runs on another machine">
+    <RowMetaItem label={t("Runs on another machine")}>
       <span
         role="img"
-        aria-label="Runs on another machine"
+        aria-label={t("Runs on another machine")}
         data-thread-remote=""
         className="inline-flex shrink-0 items-center"
       >
@@ -126,11 +129,12 @@ export function ThreadDraftItem({
   thread: EnvironmentThreadShell;
   focused: boolean;
 }) {
+  const t = useT();
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
   const hasDraft = useThreadHasUnsentDraft(threadRef) && !focused;
   if (!hasDraft) return null;
   return (
-    <RowMetaItem label="Unsent draft">
+    <RowMetaItem label={t("Unsent draft")}>
       <DraftMark threadRef={threadRef} title={thread.title} />
     </RowMetaItem>
   );
@@ -146,12 +150,13 @@ export function ThreadDiffCounts({
   rowRef: RefObject<HTMLElement | null>;
   focused: boolean;
 }) {
+  const t = useT();
   const diff = useThreadDiffTotals(thread, rowRef, focused);
   if (diff === null) return null;
   return (
     <span
       role="img"
-      aria-label={`Uncommitted changes ${formatDiffCounts(diff)}`}
+      aria-label={t("Uncommitted changes {counts}", { counts: formatDiffCounts(diff) })}
       data-thread-diff=""
       className={`shrink-0 ${ROW_DIFF_COUNTS_CLS}`}
     >
@@ -170,13 +175,14 @@ export function ThreadTerminalItem({
   /** Opens the thread, where the button reveals its terminal. */
   onActivate: () => void;
 }) {
+  const t = useT();
   const terminalIds = useThreadRunningTerminalIds({
     environmentId: thread.environmentId,
     threadId: thread.id,
   });
   if (terminalIds.length === 0) return null;
   return (
-    <RowMetaItem label={terminalIds.length === 1 ? "Terminal running" : "Terminals running"}>
+    <RowMetaItem label={terminalIds.length === 1 ? t("Terminal running") : t("Terminals running")}>
       <ThreadTerminalStatusButton
         threadRef={scopeThreadRef(thread.environmentId, thread.id)}
         terminalIds={terminalIds}
@@ -194,13 +200,14 @@ function DraftMark({
   threadRef: ReturnType<typeof scopeThreadRef>;
   title: string;
 }) {
+  const t = useT();
   return (
     <Tooltip>
       <TooltipTrigger
         render={
           <button
             type="button"
-            aria-label={`Discard draft in ${title}`}
+            aria-label={t("Discard draft in {title}", { title })}
             data-thread-draft=""
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {

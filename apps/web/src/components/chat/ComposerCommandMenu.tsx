@@ -34,6 +34,7 @@ import { memo, useLayoutEffect, useRef, useState } from "react";
 
 import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
 import { cn } from "~/lib/utils";
+import type { Translate } from "~/i18n/useT";
 import { observeResize } from "~/lib/observeResize";
 import {
   Command,
@@ -127,10 +128,12 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
   isLoading: boolean;
   triggerKind: ComposerTriggerKind | null;
   emptyStateText?: string;
+  translate?: Translate;
   activeItemId: string | null;
   onHighlightedItemChange: (itemId: string | null) => void;
   onSelect: (item: ComposerCommandItem) => void;
 }) {
+  const t = props.translate ?? ((source: string) => source);
   const listRef = useRef<HTMLDivElement>(null);
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- scrolls the highlighted menu item's DOM node into view
@@ -179,14 +182,14 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
             <CommandList
               id={props.listId}
               aria-label={
-                props.triggerKind ? LISTBOX_LABEL_BY_TRIGGER[props.triggerKind] : undefined
+                props.triggerKind ? t(LISTBOX_LABEL_BY_TRIGGER[props.triggerKind]) : undefined
               }
               className="max-h-72 min-h-0 scroll-pb-6"
             >
               {sections ? (
                 sections.map((section) => (
                   <CommandGroup key={section.id}>
-                    <CommandGroupLabel>{section.title}</CommandGroupLabel>
+                    <CommandGroupLabel>{t(section.title)}</CommandGroupLabel>
                     {section.items.map(renderItem)}
                   </CommandGroup>
                 ))
@@ -201,16 +204,17 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
             <p className="text-(--houston) text-xs">
               {props.isLoading
                 ? props.triggerKind === "skill" || props.triggerKind === "slash-command"
-                  ? "Searching workspace skills..."
+                  ? t("Searching workspace skills...")
                   : props.triggerKind === "pull-request"
-                    ? "Finding pull request..."
-                    : "Searching workspace files..."
-                : (props.emptyStateText ??
-                  (props.triggerKind === "skill"
-                    ? "No skills found. Try / to browse provider commands."
+                    ? t("Finding pull request...")
+                    : t("Searching workspace files...")
+                : props.emptyStateText !== undefined
+                  ? t(props.emptyStateText)
+                  : props.triggerKind === "skill"
+                    ? t("No skills found. Try / to browse provider commands.")
                     : props.triggerKind === "path"
-                      ? "No matching files or folders."
-                      : "No matching command."))}
+                      ? t("No matching files or folders.")
+                      : t("No matching command.")}
             </p>
           </div>
         )}
@@ -435,9 +439,10 @@ const SKILL_SOURCE_LABEL_BY_KIND: Record<ProviderSkillSourceKind, string> = {
 };
 
 function SkillSourceBadge(props: { kind: ProviderSkillSourceKind }) {
+  const t = (source: string) => source;
   return (
     <span className="col-start-3 row-span-2 row-start-1 self-center rounded-(--r-badge) border border-(--line-strong) px-1 font-semibold text-(--houston) text-3xs leading-4">
-      {SKILL_SOURCE_LABEL_BY_KIND[props.kind]}
+      {t(SKILL_SOURCE_LABEL_BY_KIND[props.kind])}
     </span>
   );
 }

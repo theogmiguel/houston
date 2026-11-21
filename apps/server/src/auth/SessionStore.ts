@@ -4,7 +4,10 @@ import {
   AuthEnvironmentScopes,
   type AuthClientMetadata,
   type AuthClientSession,
+  type AuthDevicePairingMethod,
   type AuthEnvironmentScope,
+  type AuthGrantScope,
+  type AuthPendingDevice,
   AuthWebSocketTicketUse,
   RuntimeMode,
   type ServerAuthSessionMethod,
@@ -60,6 +63,12 @@ export interface VerifiedSession {
   readonly runtimeModeCeiling?: RuntimeMode;
   /** An MCP client that is another Houston environment's peer link. */
   readonly peerLink?: true;
+  /** A paired device with no scope until its owner decides; carries the exact grant to apply. */
+  readonly pendingApproval?: {
+    readonly grantedScopes: ReadonlyArray<AuthGrantScope>;
+    readonly pairedVia: AuthDevicePairingMethod;
+    readonly expiresAt: DateTime.Utc;
+  };
 }
 
 export interface VerifiedWebSocketTicket extends VerifiedSession {
@@ -73,6 +82,14 @@ export type SessionCredentialChange =
     }
   | {
       readonly type: "clientRemoved";
+      readonly sessionId: AuthSessionId;
+    }
+  | {
+      readonly type: "pendingDeviceUpserted";
+      readonly pendingDevice: AuthPendingDevice;
+    }
+  | {
+      readonly type: "pendingDeviceRemoved";
       readonly sessionId: AuthSessionId;
     };
 
@@ -138,6 +155,19 @@ export class SessionTokenRevokedError extends Schema.TaggedError<SessionTokenRev
 ) {
   override get message(): string {
     return "Session token revoked.";
+  }
+}
+
+export class SessionPendingApprovalExpiredError extends Schema.TaggedError<SessionPendingApprovalExpiredError>()(
+  "SessionPendingApprovalExpiredError",
+  {
+    sessionId: AuthSessionId,
+    expiresAt: Schema.DateTimeUtc,
+    observedAt: Schema.DateTimeUtc,
+  },
+) {
+  override get message(): string {
+    return "The device's approval window expired; pair it again.";
   }
 }
 
@@ -238,6 +268,7 @@ export const SessionCredentialInvalidError = Schema.Union([
   SessionTokenExpiredError,
   UnknownSessionTokenError,
   SessionTokenRevokedError,
+  SessionPendingApprovalExpiredError,
   InvalidSessionExpirationClaimError,
   MalformedWebSocketTokenError,
   InvalidWebSocketTokenSignatureError,
@@ -384,6 +415,11 @@ export class SessionStore extends Context.Service<
       readonly peerLink?: boolean;
       readonly replaceActiveForSubjectAndMethod?: boolean;
       readonly replaceSessionId?: AuthSessionId;
+      readonly pendingApproval?: {
+        readonly grantedScopes: ReadonlyArray<AuthGrantScope>;
+        readonly pairedVia: AuthDevicePairingMethod;
+        readonly expiresAt: DateTime.DateTime;
+      };
     }) => Effect.Effect<IssuedSession, SessionCredentialInternalError>;
     readonly verify: (token: string) => Effect.Effect<VerifiedSession, SessionCredentialError>;
     readonly issueWebSocketToken: (
@@ -419,6 +455,16 @@ export class SessionStore extends Context.Service<
     readonly revokeAllExcept: (
       sessionId: AuthSessionId,
     ) => Effect.Effect<number, SessionCredentialInternalError>;
+    readonly listPendingDevices: () => Effect.Effect<
+      ReadonlyArray<AuthPendingDevice>,
+      SessionCredentialInternalError
+    >;
+    readonly approvePendingDevice: (
+      sessionId: AuthSessionId,
+    ) => Effect.Effect<boolean, SessionCredentialInternalError>;
+    readonly denyPendingDevice: (
+      sessionId: AuthSessionId,
+    ) => Effect.Effect<boolean, SessionCredentialInternalError>;
     readonly markConnected: (sessionId: AuthSessionId) => Effect.Effect<void, never>;
     readonly markDisconnected: (sessionId: AuthSessionId) => Effect.Effect<void, never>;
   }
@@ -462,6 +508,14 @@ function createDefaultClientMetadata(): AuthClientMetadata {
   return {
     deviceType: "unknown",
   };
+}
+
+/** The label Settings shows for a device: its name, then OS and browser, then its kind. */
+export function deviceDisplayName(client: AuthClientMetadata): string {
+  const name = client.label?.trim();
+  if (name !== undefined && name.length > 0) return name;
+  const environment = [client.os, client.browser].filter(Boolean).join(" · ");
+  return environment.length > 0 ? environment : client.deviceType;
 }
 
 function toClientMetadata(record: {
@@ -551,11 +605,46 @@ const make = Effect.gen(function* () {
       sessionId,
     }).pipe(Effect.asVoid);
 
+  const emitPendingDeviceUpserted = (pendingDevice: AuthPendingDevice) =>
+    PubSub.publish(changesPubSub, {
+      type: "pendingDeviceUpserted",
+      pendingDevice,
+    }).pipe(Effect.asVoid);
+
+  const emitPendingDeviceRemoved = (sessionId: AuthSessionId) =>
+    PubSub.publish(changesPubSub, {
+      type: "pendingDeviceRemoved",
+      sessionId,
+    }).pipe(Effect.asVoid);
+
+  const expirePendingDevices = Effect.fn("SessionStore.expirePendingDevices")(function* (
+    now: DateTime.Utc,
+  ) {
+    const expiredSessionIds = yield* authSessions.expirePending({ now });
+    if (expiredSessionIds.length === 0) return expiredSessionIds;
+    yield* Ref.update(connectedSessionsRef, (current) => {
+      const next = new Map(current);
+      for (const sessionId of expiredSessionIds) next.delete(sessionId);
+      return next;
+    });
+    yield* Effect.forEach(
+      expiredSessionIds,
+      (sessionId) =>
+        emitPendingDeviceRemoved(sessionId).pipe(Effect.andThen(emitRemoved(sessionId))),
+      { concurrency: "unbounded", discard: true },
+    );
+    return expiredSessionIds;
+  });
+
   const loadActiveSession = Effect.fn("SessionStore.loadActiveSession")(function* (
     sessionId: AuthSessionId,
   ) {
     const row = yield* authSessions.getById({ sessionId });
     if (Option.isNone(row) || row.value.revokedAt !== null) {
+      return Option.none<AuthClientSession>();
+    }
+
+    if (row.value.pendingApproval !== null) {
       return Option.none<AuthClientSession>();
     }
 
@@ -697,6 +786,15 @@ const make = Effect.gen(function* () {
         },
         issuedAt,
         expiresAt,
+        ...(input?.pendingApproval !== undefined
+          ? {
+              pendingApproval: {
+                grantedScopes: input.pendingApproval.grantedScopes,
+                pairedVia: input.pendingApproval.pairedVia,
+                expiresAt: DateTime.toUtc(input.pendingApproval.expiresAt),
+              },
+            }
+          : {}),
       } satisfies AuthSessions.CreateAuthSessionInput;
       const replacedSessionIds = yield* (
         input?.replaceSessionId !== undefined || input?.replaceActiveForSubjectAndMethod
@@ -723,19 +821,30 @@ const make = Effect.gen(function* () {
           discard: true,
         });
       }
-      yield* emitUpsert(
-        toAuthClientSession({
+      if (input?.pendingApproval !== undefined) {
+        yield* emitPendingDeviceUpserted({
           sessionId,
-          subject: claims.sub,
-          scopes: claims.scopes,
-          method: claims.method,
-          client,
-          issuedAt,
-          expiresAt,
-          lastConnectedAt: null,
-          connected: false,
-        }),
-      );
+          deviceName: deviceDisplayName(client),
+          pairedVia: input.pendingApproval.pairedVia,
+          pairedAt: issuedAt,
+          expiresAt: DateTime.toUtc(input.pendingApproval.expiresAt),
+          scopes: input.pendingApproval.grantedScopes,
+        });
+      } else {
+        yield* emitUpsert(
+          toAuthClientSession({
+            sessionId,
+            subject: claims.sub,
+            scopes: claims.scopes,
+            method: claims.method,
+            client,
+            issuedAt,
+            expiresAt,
+            lastConnectedAt: null,
+            connected: false,
+          }),
+        );
+      }
 
       return {
         sessionId,
@@ -833,6 +942,22 @@ const make = Effect.gen(function* () {
         });
       }
 
+      const pending = row.value.pendingApproval;
+      if (pending !== null) {
+        if (pending.expiresAt.epochMilliseconds <= observedAt.epochMilliseconds) {
+          yield* expirePendingDevices(observedAt).pipe(
+            Effect.mapError(
+              (cause) => new SessionCredentialVerificationError({ sessionId: claims.sid, cause }),
+            ),
+          );
+          return yield* new SessionPendingApprovalExpiredError({
+            sessionId: claims.sid,
+            expiresAt: pending.expiresAt,
+            observedAt,
+          });
+        }
+      }
+
       return {
         sessionId: claims.sid,
         token,
@@ -844,6 +969,7 @@ const make = Effect.gen(function* () {
         ...(claims.jkt ? { proofKeyThumbprint: claims.jkt } : {}),
         ...(claims.rtc ? { runtimeModeCeiling: claims.rtc } : {}),
         ...(claims.plk === 1 ? { peerLink: true as const } : {}),
+        ...(pending !== null ? { pendingApproval: pending } : {}),
       } satisfies VerifiedSession;
     },
   );
@@ -945,6 +1071,20 @@ const make = Effect.gen(function* () {
       });
     }
 
+    const pending = row.value.pendingApproval;
+    if (pending !== null && pending.expiresAt.epochMilliseconds <= observedAt.epochMilliseconds) {
+      yield* expirePendingDevices(observedAt).pipe(
+        Effect.mapError(
+          (cause) => new WebSocketTokenVerificationError({ sessionId: claims.sid, cause }),
+        ),
+      );
+      return yield* new SessionPendingApprovalExpiredError({
+        sessionId: claims.sid,
+        expiresAt: pending.expiresAt,
+        observedAt,
+      });
+    }
+
     return {
       sessionId: row.value.sessionId,
       token,
@@ -955,6 +1095,7 @@ const make = Effect.gen(function* () {
       scopes: row.value.scopes,
       ...(claims.aud ? { audience: claims.aud } : {}),
       ...(claims.jkt ? { proofKeyThumbprint: claims.jkt } : {}),
+      ...(pending !== null ? { pendingApproval: pending } : {}),
     } satisfies VerifiedWebSocketTicket;
   });
 
@@ -1039,6 +1180,66 @@ const make = Effect.gen(function* () {
     return revokedSessionIds.length;
   });
 
+  const listPendingDevices: SessionStore["Service"]["listPendingDevices"] = Effect.fn(
+    "SessionStore.listPendingDevices",
+  )(function* () {
+    const now = yield* DateTime.now;
+    yield* expirePendingDevices(now).pipe(
+      Effect.mapError((cause) => new ActiveSessionsListError({ cause })),
+    );
+    const rows = yield* authSessions
+      .listPending({ now })
+      .pipe(Effect.mapError((cause) => new ActiveSessionsListError({ cause })));
+    return rows.flatMap((row) => {
+      const pending = row.pendingApproval;
+      if (pending === null) return [];
+      return [
+        {
+          sessionId: row.sessionId,
+          deviceName: deviceDisplayName(toClientMetadata(row.client)),
+          pairedVia: pending.pairedVia,
+          pairedAt: row.issuedAt,
+          expiresAt: pending.expiresAt,
+          scopes: pending.grantedScopes,
+        } satisfies AuthPendingDevice,
+      ];
+    });
+  });
+
+  const approvePendingDevice: SessionStore["Service"]["approvePendingDevice"] = Effect.fn(
+    "SessionStore.approvePendingDevice",
+  )(function* (sessionId) {
+    const now = yield* DateTime.now;
+    const approved = yield* authSessions
+      .approvePending({ sessionId, now })
+      .pipe(Effect.mapError((cause) => new SessionRevocationError({ sessionId, cause })));
+    if (Option.isNone(approved)) return false;
+    yield* emitPendingDeviceRemoved(sessionId);
+    const session = yield* loadActiveSession(sessionId).pipe(
+      Effect.mapError((cause) => new SessionRevocationError({ sessionId, cause })),
+    );
+    if (Option.isSome(session)) yield* emitUpsert(session.value);
+    return true;
+  });
+
+  const denyPendingDevice: SessionStore["Service"]["denyPendingDevice"] = Effect.fn(
+    "SessionStore.denyPendingDevice",
+  )(function* (sessionId) {
+    const now = yield* DateTime.now;
+    const revoked = yield* authSessions
+      .revoke({ sessionId, revokedAt: now })
+      .pipe(Effect.mapError((cause) => new SessionRevocationError({ sessionId, cause })));
+    if (!revoked) return false;
+    yield* Ref.update(connectedSessionsRef, (current) => {
+      const next = new Map(current);
+      next.delete(sessionId);
+      return next;
+    });
+    yield* emitPendingDeviceRemoved(sessionId);
+    yield* emitRemoved(sessionId);
+    return true;
+  });
+
   const awaitInvalidation = Effect.fn(function* (
     sessionId: AuthSessionId,
     proofKeyThumbprint?: string,
@@ -1064,13 +1265,28 @@ const make = Effect.gen(function* () {
         const nextRemoval = Effect.gen(function* () {
           while (true) {
             const change = yield* PubSub.take(subscription);
-            if (change.type === "clientRemoved" && chain.includes(change.sessionId)) return;
+            if (
+              (change.type === "clientRemoved" || change.type === "pendingDeviceRemoved") &&
+              chain.includes(change.sessionId)
+            ) {
+              return;
+            }
           }
         });
         let current = original.value;
         while (true) {
           const rows = yield* Effect.forEach(chain, readRow);
           if (rows.some((row) => Option.isNone(row) || row.value.revokedAt !== null)) return;
+          // A device approved while connected reconnects, so its socket carries the scopes it now holds.
+          const first = rows[0];
+          if (
+            original.value.pendingApproval !== null &&
+            first !== undefined &&
+            Option.isSome(first) &&
+            first.value.pendingApproval === null
+          ) {
+            return;
+          }
           const now = yield* DateTime.now;
           const remaining = current.expiresAt.epochMilliseconds - now.epochMilliseconds;
           if (remaining > 0) {
@@ -1112,6 +1328,9 @@ const make = Effect.gen(function* () {
     },
     revoke,
     revokeAllExcept,
+    listPendingDevices,
+    approvePendingDevice,
+    denyPendingDevice,
     markConnected,
     markDisconnected,
   });

@@ -494,6 +494,21 @@ describe("secrets behind quoted json keys are redacted", () => {
     expect(tail).toContain('"password": "[redacted]"');
     expect(tail).toContain("'token': '[redacted]'");
   });
+
+  it("redacts OAuth codes and states the token suffix list would miss", () => {
+    const tail = reportTail(
+      Buffer.from(
+        [
+          "https://host/cb?code=oauth-code&state=oauth-state",
+          JSON.stringify({ code: "json-code", state: "json-state" }),
+        ].join("\n"),
+      ),
+    );
+    expect(tail).not.toContain("oauth-code");
+    expect(tail).not.toContain("oauth-state");
+    expect(tail).not.toContain("json-code");
+    expect(tail).not.toContain("json-state");
+  });
 });
 
 describe("a verification and a failure hold only for their head and base", () => {

@@ -1,3 +1,4 @@
+import { USAGE_RETENTION_MAX_DAYS } from "@houston-app/contracts";
 import type { DailyTotals } from "@houston-app/shared/usageMerge";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -6,12 +7,16 @@ export function addUsageDay(day: string, amount: number): string {
   return new Date(Date.parse(`${day}T00:00:00Z`) + amount * DAY_MS).toISOString().slice(0, 10);
 }
 
-/** The board's Activity calendar ends at the selected window's last day and spans one year. */
-export function usageActivityWindow(untilDay: string): {
+/** The board's Activity calendar ends at the selected window's last day and spans retained history. */
+export function usageActivityWindow(
+  untilDay: string,
+  retentionDays: number = USAGE_RETENTION_MAX_DAYS,
+): {
   readonly sinceDay: string;
   readonly untilDay: string;
 } {
-  return { sinceDay: addUsageDay(untilDay, -364), untilDay };
+  const days = Math.min(USAGE_RETENTION_MAX_DAYS, Math.max(1, Math.trunc(retentionDays)));
+  return { sinceDay: addUsageDay(untilDay, 1 - days), untilDay };
 }
 
 export type UsageActivityLevel = 0 | 1 | 2 | 3 | 4;

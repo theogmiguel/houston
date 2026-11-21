@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 
 import { logDebug } from "./methods/appDebug.ts";
+import { startFileDrag } from "./methods/fileDrag.ts";
 import { receiveProviderAuthCallback, cancelProviderAuthCallback } from "./methods/providerAuth.ts";
 import * as DesktopIpc from "./DesktopIpc.ts";
 import { installNotificationBadge } from "./methods/notificationBadge.ts";
@@ -16,6 +17,7 @@ import {
   setServerExposureMode,
   setTailscaleServeEnabled,
 } from "./methods/serverExposure.ts";
+import { listPortForwards, startPortForward, stopPortForward } from "./methods/portForwarding.ts";
 import {
   bootstrapSshBearerSession,
   disconnectSshEnvironment,
@@ -155,6 +157,9 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(bootstrapSshBearerSession);
   yield* ipc.handle(fetchSshSessionState);
   yield* ipc.handle(resolveSshPasswordPrompt);
+  yield* ipc.handle(startPortForward);
+  yield* ipc.handle(stopPortForward);
+  yield* ipc.handle(listPortForwards);
 
   yield* ipc.handle(getServerExposureState);
   yield* ipc.handle(setServerExposureMode);
@@ -182,6 +187,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(setTheme);
   yield* ipc.handle(showContextMenu);
   yield* ipc.handle(openExternal);
+  yield* ipc.handle(startFileDrag);
   yield* ipc.handle(receiveProviderAuthCallback);
   yield* ipc.handle(cancelProviderAuthCallback);
   yield* ipc.handle(openSystemSettings);

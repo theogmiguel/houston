@@ -3,6 +3,7 @@ import type {
   TerminalAttachStreamEvent,
   TerminalMetadataStreamEvent,
   TerminalSessionSnapshot,
+  TerminalShellFallback,
   TerminalSummary,
   ThreadId,
 } from "@houston-app/contracts";
@@ -37,6 +38,7 @@ export interface TerminalSessionState {
   readonly grid: TerminalGrid | null;
   readonly status: TerminalSessionSnapshot["status"] | "closed";
   readonly error: string | null;
+  readonly shellFallback: TerminalShellFallback | null;
   readonly hasRunningSubprocess: boolean;
   readonly updatedAt: string | null;
   readonly version: number;
@@ -48,6 +50,7 @@ export interface TerminalBufferState {
   readonly grid: TerminalGrid | null;
   readonly status: TerminalSessionSnapshot["status"] | "closed";
   readonly error: string | null;
+  readonly shellFallback: TerminalShellFallback | null;
   readonly updatedAt: string | null;
   readonly version: number;
   readonly lifecycleVersion: number;
@@ -77,6 +80,7 @@ export const EMPTY_TERMINAL_BUFFER_STATE = Object.freeze<TerminalBufferState>({
   grid: null,
   status: "closed",
   error: null,
+  shellFallback: null,
   updatedAt: null,
   version: 0,
   lifecycleVersion: 0,
@@ -88,6 +92,7 @@ export const EMPTY_TERMINAL_SESSION_STATE = Object.freeze<TerminalSessionState>(
   grid: null,
   status: "closed",
   error: null,
+  shellFallback: null,
   hasRunningSubprocess: false,
   updatedAt: null,
   version: 0,
@@ -117,6 +122,7 @@ function terminalBufferStateFromSnapshot(
     grid: nextGrid(current.grid, snapshot),
     status: snapshot.status,
     error: null,
+    shellFallback: snapshot.shellFallback ?? null,
     updatedAt: snapshot.updatedAt,
     version: current.version + 1,
     lifecycleVersion: current.lifecycleVersion,
@@ -149,6 +155,7 @@ export function combineTerminalSessionState(
     grid: buffer.grid,
     status: buffer.version > 0 ? buffer.status : (summary?.status ?? buffer.status),
     error: buffer.error,
+    shellFallback: buffer.shellFallback,
     hasRunningSubprocess: summary?.hasRunningSubprocess ?? false,
     updatedAt: latestTimestamp(summary?.updatedAt ?? null, buffer.updatedAt),
     version: buffer.version,

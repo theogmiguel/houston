@@ -1,3 +1,4 @@
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as HttpApiSchema from "effect/http-api/HttpApiSchema";
 
@@ -164,6 +165,30 @@ export const AuthAccessTokenType = "urn:ietf:params:oauth:token-type:access_toke
 export const AuthEnvironmentBootstrapTokenType =
   "urn:houston:params:oauth:token-type:environment-bootstrap" as const;
 
+export const AuthDevicePairingMethod = Schema.Literals(["pairing-link", "pairing-code", "unknown"]);
+export type AuthDevicePairingMethod = typeof AuthDevicePairingMethod.Type;
+
+/** A paired device the host has not approved yet. It holds no scope while pending. */
+export const AuthPendingDevice = Schema.Struct({
+  sessionId: AuthSessionId,
+  deviceName: TrimmedNonEmptyString,
+  pairedVia: AuthDevicePairingMethod,
+  pairedAt: Schema.DateTimeUtc,
+  expiresAt: Schema.DateTimeUtc,
+  /** What approval grants; never more than the link or code carried. */
+  scopes: AuthGrantScopes,
+});
+export type AuthPendingDevice = typeof AuthPendingDevice.Type;
+
+/** How a device that is waiting sees the wait: which host, which device, and how long. */
+export const AuthPendingApprovalNotice = Schema.Struct({
+  deviceName: TrimmedNonEmptyString,
+  hostLabel: TrimmedNonEmptyString,
+  expiresAt: Schema.DateTimeUtc,
+  limitHours: Schema.Number,
+});
+export type AuthPendingApprovalNotice = typeof AuthPendingApprovalNotice.Type;
+
 export const ServerAuthDescriptor = Schema.Struct({
   policy: ServerAuthPolicy,
   bootstrapMethods: Schema.Array(ServerAuthBootstrapMethod),
@@ -176,6 +201,8 @@ export type ServerAuthDescriptor = typeof ServerAuthDescriptor.Type;
 
 export const AuthBrowserSessionRequest = Schema.Struct({
   credential: TrimmedNonEmptyString,
+  /** How the browser got the credential, for the pending-device row. Older clients omit it. */
+  pairedVia: Schema.optionalKey(AuthDevicePairingMethod),
 });
 export type AuthBrowserSessionRequest = typeof AuthBrowserSessionRequest.Type;
 
@@ -184,6 +211,8 @@ export const AuthBrowserSessionResult = Schema.Struct({
   ...authScopeResponseFields,
   sessionMethod: ServerAuthSessionMethod,
   expiresAt: Schema.DateTimeUtc,
+  /** Present while the device waits for its owner's approval; it holds no scope. */
+  approvalPending: Schema.optionalKey(AuthPendingApprovalNotice),
 });
 export type AuthBrowserSessionResult = typeof AuthBrowserSessionResult.Type;
 
@@ -350,6 +379,9 @@ export type AuthClientSession = typeof AuthClientSession.Type;
 export const AuthAccessSnapshot = Schema.Struct({
   pairingLinks: Schema.Array(AuthPairingLink),
   clientSessions: Schema.Array(AuthClientSession),
+  pendingDevices: Schema.Array(AuthPendingDevice).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
 });
 export type AuthAccessSnapshot = typeof AuthAccessSnapshot.Type;
 
@@ -415,12 +447,34 @@ export const AuthAccessStreamClientRemovedEvent = Schema.Struct({
 });
 export type AuthAccessStreamClientRemovedEvent = typeof AuthAccessStreamClientRemovedEvent.Type;
 
+export const AuthAccessStreamPendingDeviceUpsertedEvent = Schema.Struct({
+  version: Schema.Literal(1),
+  revision: Schema.Number,
+  type: Schema.Literal("pendingDeviceUpserted"),
+  payload: AuthPendingDevice,
+});
+export type AuthAccessStreamPendingDeviceUpsertedEvent =
+  typeof AuthAccessStreamPendingDeviceUpsertedEvent.Type;
+
+export const AuthAccessStreamPendingDeviceRemovedEvent = Schema.Struct({
+  version: Schema.Literal(1),
+  revision: Schema.Number,
+  type: Schema.Literal("pendingDeviceRemoved"),
+  payload: Schema.Struct({
+    sessionId: AuthSessionId,
+  }),
+});
+export type AuthAccessStreamPendingDeviceRemovedEvent =
+  typeof AuthAccessStreamPendingDeviceRemovedEvent.Type;
+
 export const AuthAccessStreamEvent = Schema.Union([
   AuthAccessStreamSnapshotEvent,
   AuthAccessStreamPairingLinkUpsertedEvent,
   AuthAccessStreamPairingLinkRemovedEvent,
   AuthAccessStreamClientUpsertedEvent,
   AuthAccessStreamClientRemovedEvent,
+  AuthAccessStreamPendingDeviceUpsertedEvent,
+  AuthAccessStreamPendingDeviceRemovedEvent,
 ]);
 export type AuthAccessStreamEvent = typeof AuthAccessStreamEvent.Type;
 
@@ -449,6 +503,8 @@ export const AuthSessionState = Schema.Struct({
   permissions: authScopeResponseFields.permissions,
   sessionMethod: Schema.optionalKey(ServerAuthSessionMethod),
   expiresAt: Schema.optionalKey(Schema.DateTimeUtc),
+  /** Present while the device waits for its owner's approval; it holds no scope. */
+  approvalPending: Schema.optionalKey(AuthPendingApprovalNotice),
 });
 export type AuthSessionState = typeof AuthSessionState.Type;
 

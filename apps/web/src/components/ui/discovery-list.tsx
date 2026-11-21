@@ -24,6 +24,34 @@ export function DiscoveryIntro({
   );
 }
 
+export function DiscoveryStaticRow({ children }: { readonly children: ReactNode }) {
+  return <div className="flex items-center gap-3 px-3 py-2.5 text-sm">{children}</div>;
+}
+
+export function DiscoveryRowText({
+  primary,
+  secondary,
+  tertiary,
+}: {
+  readonly primary: ReactNode;
+  readonly secondary: ReactNode;
+  readonly tertiary?: ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 flex-1 flex-col">
+      <span className="truncate text-sm font-medium text-foreground">{primary}</span>
+      <span className="truncate text-xs text-muted-foreground">{secondary}</span>
+      {tertiary === undefined ? null : (
+        <span className="truncate text-xs text-muted-foreground">{tertiary}</span>
+      )}
+    </div>
+  );
+}
+
+export function DiscoveryHint({ children }: { readonly children: ReactNode }) {
+  return <p className="px-1 text-xs text-muted-foreground">{children}</p>;
+}
+
 export function DiscoveryListRow({
   icon,
   title,

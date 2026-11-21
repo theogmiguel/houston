@@ -9,6 +9,8 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
 import * as Result from "effect/Result";
+import * as Exit from "effect/Exit";
+import * as Scope from "effect/Scope";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
@@ -60,6 +62,42 @@ const makeRunningProcess = (onKill: () => void) => {
     getOutputFd: () => Stream.empty,
     unref: Effect.succeed(Effect.void),
   });
+};
+
+/** A running process the test can end from outside, as when the ssh connection drops. */
+const makeExitableProcess = () => {
+  let finish: ((exitCode: ChildProcessSpawner.ExitCode) => void) | null = null;
+  let exited: ChildProcessSpawner.ExitCode | null = null;
+  const handle = ChildProcessSpawner.makeHandle({
+    pid: ChildProcessSpawner.ProcessId(124),
+    stdout: Stream.empty,
+    stderr: Stream.empty,
+    all: Stream.empty,
+    exitCode: Effect.callback<ChildProcessSpawner.ExitCode>((resume) => {
+      // Like a real process, an exit that already happened is still delivered to a late watcher.
+      if (exited !== null) {
+        resume(Effect.succeed(exited));
+        return Effect.void;
+      }
+      finish = (exitCode) => resume(Effect.succeed(exitCode));
+      return Effect.sync(() => {
+        finish = null;
+      });
+    }),
+    isRunning: Effect.succeed(true),
+    kill: () => Effect.sync(() => finish?.(ChildProcessSpawner.ExitCode(143))),
+    stdin: Sink.drain,
+    getInputFd: () => Sink.drain,
+    getOutputFd: () => Stream.empty,
+    unref: Effect.succeed(Effect.void),
+  });
+  return {
+    handle,
+    exit: (code: number) => {
+      exited = ChildProcessSpawner.ExitCode(code);
+      finish?.(exited);
+    },
+  };
 };
 
 const testHttpClient = HttpClient.make((request) =>
@@ -457,3 +495,163 @@ describe("ssh tunnel scripts", () => {
 // desktop app with network access on) listens on *:<port>. Linux refuses that
 // bind unless both sockets set SO_REUSEPORT, so on Linux the preload adds it to
 // the picker's probe and the holder sets it too.
+
+describe("ssh port forwarding", () => {
+  it.live("forwards the remote loopback port over its own ssh connection", () =>
+    Effect.gen(function* () {
+      let killed = false;
+      let sshListening = false;
+      const commands: Array<ReadonlyArray<string>> = [];
+      const spawner = ChildProcessSpawner.make((command) => {
+        const args = commandArgs(command);
+        commands.push(args);
+        if (args.includes("-G")) return Effect.succeed(makeSuccessfulProcess(""));
+        sshListening = true;
+        return Effect.succeed(
+          makeRunningProcess(() => {
+            killed = true;
+          }),
+        );
+      });
+      const net = NetService.NetService.of({
+        ...testNetService,
+        hasListenerOnHost: () => Effect.sync(() => sshListening),
+      });
+      const layer = Layer.mergeAll(
+        NodeServices.layer,
+        NodeCrypto.layer,
+        Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        Layer.succeed(HttpClient.HttpClient, hangingHttpClient),
+        Layer.succeed(NetService.NetService, net),
+        SshAuth.SshPasswordPrompt.disabledLayer,
+        SshTunnel.SshEnvironmentManager.layer(),
+      );
+      yield* Effect.gen(function* () {
+        const manager = yield* SshTunnel.SshEnvironmentManager;
+        const scope = yield* Scope.make();
+        const forward = yield* manager
+          .forwardPort({
+            target: {
+              alias: "devbox",
+              hostname: "devbox.example.com",
+              username: "julius",
+              port: 2222,
+            },
+            remotePort: 5432,
+            localPort: 15_432,
+          })
+          .pipe(Effect.provideService(Scope.Scope, scope));
+
+        assert.equal(forward.localPort, 15_432);
+        const args = commands.at(-1) ?? [];
+        assert.equal(args[args.indexOf("-L") + 1], "127.0.0.1:15432:127.0.0.1:5432");
+        assert.isTrue(args.includes("ExitOnForwardFailure=yes"));
+
+        yield* Scope.close(scope, Exit.void);
+        assert.isTrue(killed);
+      }).pipe(Effect.provide(layer), Effect.scoped);
+    }),
+  );
+
+  it.live("refuses a local port another program already listens on without starting ssh", () =>
+    Effect.gen(function* () {
+      const commands: Array<ReadonlyArray<string>> = [];
+      const spawner = ChildProcessSpawner.make((command) => {
+        const args = commandArgs(command);
+        commands.push(args);
+        return Effect.succeed(makeSuccessfulProcess(""));
+      });
+      const net = NetService.NetService.of({
+        ...testNetService,
+        hasListenerOnHost: () => Effect.succeed(true),
+      });
+      const layer = Layer.mergeAll(
+        NodeServices.layer,
+        NodeCrypto.layer,
+        Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        Layer.succeed(HttpClient.HttpClient, hangingHttpClient),
+        Layer.succeed(NetService.NetService, net),
+        SshAuth.SshPasswordPrompt.disabledLayer,
+        SshTunnel.SshEnvironmentManager.layer(),
+      );
+      yield* Effect.gen(function* () {
+        const manager = yield* SshTunnel.SshEnvironmentManager;
+        const failure = yield* manager
+          .forwardPort({
+            target: { alias: "devbox", hostname: "devbox.example.com", username: null, port: null },
+            remotePort: 3000,
+            localPort: 3000,
+          })
+          .pipe(Effect.flip);
+
+        assert.isTrue(SshTunnel.isSshLocalForwardBindFailure(failure));
+        assert.isFalse(
+          commands.some((args) => args.includes("-L")),
+          "ssh was started anyway",
+        );
+      }).pipe(Effect.provide(layer), Effect.scoped);
+    }),
+  );
+
+  it.live("tells the caller when the ssh connection ends on its own, not when it is stopped", () =>
+    Effect.gen(function* () {
+      const exitable = makeExitableProcess();
+      let sshListening = false;
+      const spawner = ChildProcessSpawner.make((command) => {
+        const args = commandArgs(command);
+        if (args.includes("-G")) return Effect.succeed(makeSuccessfulProcess(""));
+        sshListening = true;
+        return Effect.succeed(exitable.handle);
+      });
+      const net = NetService.NetService.of({
+        ...testNetService,
+        hasListenerOnHost: () => Effect.sync(() => sshListening),
+      });
+      const layer = Layer.mergeAll(
+        NodeServices.layer,
+        NodeCrypto.layer,
+        Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        Layer.succeed(HttpClient.HttpClient, hangingHttpClient),
+        Layer.succeed(NetService.NetService, net),
+        SshAuth.SshPasswordPrompt.disabledLayer,
+        SshTunnel.SshEnvironmentManager.layer(),
+      );
+      yield* Effect.gen(function* () {
+        const manager = yield* SshTunnel.SshEnvironmentManager;
+        const closed: string[] = [];
+        const firstClosed = yield* Deferred.make<void>();
+        const scope = yield* Scope.make();
+        yield* manager
+          .forwardPort({
+            target: { alias: "devbox", hostname: "devbox.example.com", username: null, port: null },
+            remotePort: 5432,
+            localPort: 15_432,
+            onClosed: (error) =>
+              Effect.sync(() => void closed.push(error.message)).pipe(
+                Effect.andThen(Deferred.succeed(firstClosed, undefined)),
+              ),
+          })
+          .pipe(Effect.provideService(Scope.Scope, scope));
+
+        exitable.exit(255);
+        yield* Deferred.await(firstClosed);
+        assert.lengthOf(closed, 1, "the dropped connection was not reported");
+
+        yield* Scope.close(scope, Exit.void);
+        for (let tick = 0; tick < 20; tick += 1) yield* Effect.yieldNow;
+        assert.lengthOf(closed, 1, "stopping the forward was reported as a drop");
+      }).pipe(Effect.provide(layer), Effect.scoped);
+    }),
+  );
+
+  it("recognizes the ssh bind failure that makes another port worth trying", () => {
+    assert.isTrue(
+      SshTunnel.isSshLocalForwardBindFailure(
+        new Error("bind [127.0.0.1]:15432: Address already in use"),
+      ),
+    );
+    assert.isFalse(
+      SshTunnel.isSshLocalForwardBindFailure(new Error("Permission denied (publickey).")),
+    );
+  });
+});

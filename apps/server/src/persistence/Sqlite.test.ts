@@ -15,7 +15,9 @@ import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
 import { vi } from "vite-plus/test";
 
+import { HOUSTON_BUILD_MIGRATION_IDS } from "../houston/migrations.ts";
 import * as SqlitePersistence from "./Sqlite.ts";
+import { BUILD_MIGRATION_HEAD } from "./databaseMigrationHead.ts";
 
 const workers = vi.hoisted((): Array<NodeWorkerThreads.Worker> => []);
 
@@ -228,3 +230,101 @@ it.effect(
       );
     }),
 );
+
+const writeRecordedMigrations = (
+  dbPath: string,
+  migrations: ReadonlyArray<{ readonly id: number; readonly name: string }>,
+  houstonIds: ReadonlyArray<number> = HOUSTON_BUILD_MIGRATION_IDS,
+) => {
+  const database = new NodeSqlite.DatabaseSync(dbPath);
+  try {
+    database.exec(
+      "CREATE TABLE effect_sql_migrations (migration_id INTEGER PRIMARY KEY, name TEXT NOT NULL)",
+    );
+    for (const migration of migrations) {
+      database
+        .prepare("INSERT INTO effect_sql_migrations (migration_id, name) VALUES (?, ?)")
+        .run(migration.id, migration.name);
+    }
+    database.exec(
+      "CREATE TABLE houston_sql_migrations (migration_id INTEGER PRIMARY KEY, name TEXT NOT NULL)",
+    );
+    for (const id of houstonIds) {
+      database
+        .prepare("INSERT INTO houston_sql_migrations (migration_id, name) VALUES (?, ?)")
+        .run(id, `Houston${id}`);
+    }
+  } finally {
+    database.close();
+  }
+};
+
+it.effect("opens a CLI database without applying migrations", () => {
+  const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-sqlite-cli-"));
+  const dbPath = NodePath.join(tempDir, "state.sqlite");
+  writeRecordedMigrations(dbPath, [{ id: 1, name: "Seed" }]);
+  const persistence = SqlitePersistence.layerFromPathWithoutMigrations(dbPath).pipe(
+    Layer.provide(NodeServices.layer),
+  );
+
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const tables = yield* sql<{ readonly name: string }>`
+      SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name
+    `;
+    assert.deepEqual(
+      tables.map(({ name }) => name),
+      ["effect_sql_migrations", "houston_sql_migrations"],
+    );
+    const recorded = yield* sql<{ readonly count: number }>`
+      SELECT COUNT(*) AS count FROM effect_sql_migrations
+    `;
+    assert.equal(recorded[0]?.count, 1);
+  }).pipe(
+    Effect.provide(persistence),
+    Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
+  );
+});
+
+it.effect("refuses a CLI database whose migrations are newer than this build", () => {
+  const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-sqlite-ahead-"));
+  const dbPath = NodePath.join(tempDir, "state.sqlite");
+  const newer = BUILD_MIGRATION_HEAD + 1;
+  writeRecordedMigrations(dbPath, [{ id: newer, name: "Newer" }]);
+  const persistence = SqlitePersistence.layerFromPathWithoutMigrations(dbPath).pipe(
+    Layer.provide(NodeServices.layer),
+  );
+
+  return Effect.gen(function* () {
+    const error = yield* Layer.build(persistence).pipe(Effect.flip);
+    assert.equal(error._tag, "DatabaseMigrationsAheadError");
+    assert.include(error.message, String(newer));
+    assert.include(error.message, String(BUILD_MIGRATION_HEAD));
+    assert.include(error.message, dbPath);
+  }).pipe(
+    Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
+  );
+});
+
+it.effect("refuses a CLI database that lacks a Houston migration this build needs", () => {
+  const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-sqlite-behind-"));
+  const dbPath = NodePath.join(tempDir, "state.sqlite");
+  const newest = Math.max(...HOUSTON_BUILD_MIGRATION_IDS);
+  writeRecordedMigrations(
+    dbPath,
+    [{ id: BUILD_MIGRATION_HEAD, name: "Head" }],
+    HOUSTON_BUILD_MIGRATION_IDS.filter((id) => id !== newest),
+  );
+  const persistence = SqlitePersistence.layerFromPathWithoutMigrations(dbPath).pipe(
+    Layer.provide(NodeServices.layer),
+  );
+
+  return Effect.gen(function* () {
+    const error = yield* Layer.build(persistence).pipe(Effect.flip);
+    assert.equal(error._tag, "DatabaseMigrationsBehindError");
+    assert.include(error.message, String(newest));
+    assert.include(error.message, dbPath);
+  }).pipe(
+    Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
+  );
+});

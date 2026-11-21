@@ -21,6 +21,7 @@ import { resolveAssistantMessageCopyState } from "./MessagesTimeline.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Text } from "../ui/text";
 import { cn } from "~/lib/utils";
+import { useT } from "~/i18n/useT";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
 import { useV2ItemSupport } from "../../state/v2ItemSupport";
 import { serverEnvironment } from "../../state/server";
@@ -133,6 +134,7 @@ function AssistantSecondOpinionButton({
 }: {
   readonly projectedItem: NonNullable<Extract<TimelineRow, { kind: "message" }>["projectedItem"]>;
 }) {
+  const t = useT();
   const ctx = use(TimelineRowCtx);
   const opinion = ctx.secondOpinion;
   const runId = projectedItem.item.runId;
@@ -159,7 +161,7 @@ function AssistantSecondOpinionButton({
                   type="button"
                   size="xs"
                   variant="ghost"
-                  aria-label="Request a second opinion"
+                  aria-label={t("Request a second opinion")}
                 >
                   <MessagesSquareIcon className="size-3" />
                 </Button>
@@ -167,7 +169,7 @@ function AssistantSecondOpinionButton({
             />
           }
         />
-        <TooltipPopup side="top">Second opinion</TooltipPopup>
+        <TooltipPopup side="top">{t("Second opinion")}</TooltipPopup>
       </Tooltip>
       <MenuPopup align="end" side="top">
         {entries.map((entry) => (
@@ -245,6 +247,7 @@ function AssistantForkButton({
 }: {
   readonly projectedItem: NonNullable<Extract<TimelineRow, { kind: "message" }>["projectedItem"]>;
 }) {
+  const t = useT();
   const ctx = use(TimelineRowCtx);
   const [busy, setBusy] = useState(false);
   const support = useV2ItemSupport({
@@ -276,19 +279,20 @@ function AssistantForkButton({
                 () => setBusy(false),
               );
             }}
-            aria-label="Fork from this response"
+            aria-label={t("Fork from this response")}
           />
         }
       >
         <GitForkIcon className={cn("size-3", busy && "animate-pulse")} />
       </TooltipTrigger>
-      <TooltipPopup side="top">Fork from this response</TooltipPopup>
+      <TooltipPopup side="top">{t("Fork from this response")}</TooltipPopup>
     </Tooltip>
   );
 }
 
 /** Quotes the opening of this response into the composer, as a quote chip the user can remove. */
 function AssistantReplyButton({ message }: { message: ChatMessage }) {
+  const t = useT();
   const { threadRef, onReplyToResponse } = use(TimelineRowCtx);
   if (!threadRef || !onReplyToResponse || !message.text.trim()) return null;
 
@@ -316,13 +320,13 @@ function AssistantReplyButton({ message }: { message: ChatMessage }) {
             size="xs"
             variant="ghost-muted"
             onClick={reply}
-            aria-label="Reply to this response"
+            aria-label={t("Reply to this response")}
           />
         }
       >
         <ReplyIcon className="size-3" />
       </TooltipTrigger>
-      <TooltipPopup side="top">Reply to this response</TooltipPopup>
+      <TooltipPopup side="top">{t("Reply to this response")}</TooltipPopup>
     </Tooltip>
   );
 }
@@ -437,6 +441,7 @@ function AssistantCopyButton({
   showCopyButton: boolean;
   streaming: boolean;
 }) {
+  const t = useT();
   const assistantCopyState = resolveAssistantMessageCopyState({
     text: message.text ?? null,
     showCopyButton,
@@ -449,7 +454,7 @@ function AssistantCopyButton({
 
   return (
     <CopyButton
-      label="Copy message"
+      label={t("Copy message")}
       size="xs"
       value={assistantCopyState.text ?? ""}
       variant="ghost-muted"

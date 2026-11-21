@@ -48,6 +48,7 @@ export * from "./threadSearch.ts";
 export * from "./threadTags.ts";
 export * from "./threadTitle.ts";
 export * from "./houstonProjectFile.ts";
+export * from "./houston/access.ts";
 export * from "./editor.ts";
 export * from "./project.ts";
 export * from "./filesystem.ts";

@@ -739,9 +739,21 @@ function makeManager(input?: {
     if (input?.seed !== undefined) {
       yield* input.seed.pipe(Effect.provideContext(stores), Effect.orDie);
     }
+    // The PR digest reads the visible timeline; a whole-thread read decodes every run,
+    // item and message, so every GitManager test fails if one returns.
+    const projections = yield* ProjectionStore.ProjectionStoreV2.pipe(
+      Effect.provideContext(stores),
+    );
     const manager = yield* GitManager.make.pipe(
       Effect.provide(layerManager),
       Effect.provideContext(stores),
+      Effect.provideService(ProjectionStore.ProjectionStoreV2, {
+        ...projections,
+        getThreadProjection: (threadId) =>
+          Effect.die(new Error(`GitManager read the whole projection of thread ${threadId}`)),
+        getThreadSnapshot: (threadId) =>
+          Effect.die(new Error(`GitManager read the whole snapshot of thread ${threadId}`)),
+      }),
     );
     return { manager, providerCalls };
   });

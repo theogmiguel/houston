@@ -3456,6 +3456,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly allocateSessionId?: Effect.Effect<string>;
     readonly promptSuggestions?: boolean;
     readonly routeModelCatalog?: ClaudeAdapterV2.ClaudeAdapterV2Options["routeModelCatalog"];
+    readonly requestSilenceLimit?: ClaudeAdapterV2.ClaudeAdapterV2Options["requestSilenceLimit"];
     /** Runs in the session's query-stream fiber as each message is read. */
     readonly onMessage?: (message: SDKMessage) => Effect.Effect<void>;
   }) =>
@@ -3522,6 +3523,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         random: yield* SecureRandom.SecureRandom,
         idAllocator,
         ...(options?.routeModelCatalog ? { routeModelCatalog: options.routeModelCatalog } : {}),
+        ...(options?.requestSilenceLimit === undefined
+          ? {}
+          : { requestSilenceLimit: options.requestSilenceLimit }),
         continuationRequests: {
           offer: (request) =>
             Effect.sync(() => {
@@ -12382,10 +12386,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           const rosterBAfterFail = providerThreadRosterEvents(events).findLast(
             (event) => event.providerThread.id === providerThreadB.id,
           )?.providerThread.pendingBackgroundTasks;
-          assert.deepEqual(rosterBAfterFail ?? [], []);
+          assert.deepEqual(rosterBAfterFail ?? [], [
+            { taskId: taskB, description: "work on B", kind: "command" },
+          ]);
           assert.isFalse(yield* hasPendingBackgroundWorkForThread(providerThreadA));
-          assert.isFalse(yield* hasPendingBackgroundWorkForThread(providerThreadB));
-          assert.isFalse(yield* hasPendingBackgroundWork);
+          assert.isTrue(yield* hasPendingBackgroundWorkForThread(providerThreadB));
+          assert.isTrue(yield* hasPendingBackgroundWork);
         }).pipe(
           Effect.provide(
             Layer.mergeAll(
@@ -13061,6 +13067,183 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         assert.equal(statusOf("runtime_request.updated"), "cancelled");
         assert.equal(statusOf("node.updated"), "cancelled");
         assert.equal(statusOf("turn_item.updated"), "cancelled");
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("fails a turn whose request gets no frame for the silence limit", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        let closeCalls = 0;
+        const harness = yield* makeWakeHarnessWithOptions({
+          requestSilenceLimit: "1 minute",
+          close: () =>
+            Effect.sync(() => {
+              closeCalls += 1;
+            }),
+        });
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("attempt-claude-silent-request"),
+            text: "Answer the request.",
+            attachments: [],
+          }),
+        );
+        yield* harness.until(() => harness.offeredMessages.length === 1);
+        yield* yieldTicks(5);
+
+        yield* TestClock.adjust("1 minute");
+        yield* yieldTicks(20);
+
+        assert.lengthOf(harness.terminalEvents(), 1, "the silent request did not fail");
+        const terminal = harness.terminalEvents()[0]!;
+        assert.equal(terminal.status, "failed");
+        assert.include(
+          terminal.failure?.message ?? "",
+          "Claude produced no output for 1 minute while waiting for the model response",
+        );
+        assert.include(terminal.failure?.message ?? "", "limit is 1 minute");
+        assert.isAtLeast(closeCalls, 1, "the silent CLI process was left running");
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("does not count an approval wait as request silence", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarnessWithOptions({ requestSilenceLimit: "1 minute" });
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("attempt-claude-approval-silence"),
+            text: "Run the command.",
+            attachments: [],
+            runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+              runtimeMode: "approval-required",
+              interactionMode: "default",
+              cwd: "/workspace",
+            }),
+          }),
+        );
+        yield* harness.until(() => harness.offeredMessages.length === 1);
+        const permission = yield* Effect.promise(() =>
+          harness.getOpenedOptions()!.canUseTool!(
+            "Bash",
+            { command: "git status" },
+            {
+              signal: new AbortController().signal,
+              toolUseID: "toolu_01SilenceApproval",
+              requestId: "request-silence-approval",
+            },
+          ),
+        ).pipe(Effect.forkScoped);
+        const pending = (yield* Queue.take(harness.runtimeRequestReceipts)).runtimeRequest;
+        assert.equal(pending.status, "pending");
+
+        yield* TestClock.adjust("5 minutes");
+        yield* yieldTicks(20);
+
+        assert.lengthOf(harness.terminalEvents(), 0);
+        assert.isUndefined(permission.pollUnsafe());
+        yield* harness.runtime.respondToRuntimeRequest({
+          requestId: pending.id,
+          decision: "accept",
+        });
+        assert.equal((yield* Fiber.join(permission))?.behavior, "allow");
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("resets the request silence limit on every frame", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarnessWithOptions({ requestSilenceLimit: "1 minute" });
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("attempt-claude-trickle"),
+            text: "Keep working.",
+            attachments: [],
+          }),
+        );
+        yield* harness.until(() => harness.offeredMessages.length === 1);
+        const keepAlive = (uuid: string) =>
+          claudeSdkFrame({
+            type: "system",
+            subtype: "status",
+            status: "requesting",
+            uuid,
+            session_id: WAKE_NATIVE_SESSION,
+          });
+        const toolProgress = (uuid: string) =>
+          claudeSdkFrame({
+            type: "system",
+            subtype: "task_progress",
+            task_id: "task-silence-trickle",
+            tool_use_id: "tool-silence-trickle",
+            description: "",
+            uuid,
+            session_id: WAKE_NATIVE_SESSION,
+          });
+
+        for (const frame of [
+          keepAlive("00000000-0000-4000-8000-000000000951"),
+          toolProgress("00000000-0000-4000-8000-000000000952"),
+          keepAlive("00000000-0000-4000-8000-000000000953"),
+        ]) {
+          yield* TestClock.adjust("50 seconds");
+          yield* harness.offerAndWait(frame);
+        }
+        yield* TestClock.adjust("50 seconds");
+        yield* yieldTicks(20);
+        assert.lengthOf(harness.terminalEvents(), 0);
+
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            ...makeResultFrame({
+              uuid: "00000000-0000-4000-8000-000000000954",
+              result: "Done.",
+            }),
+            user_message_uuid: harness.promptUuid(0),
+          }),
+        );
+        yield* harness.awaitTerminal(1);
+        assert.equal(harness.terminalEvents()[0]?.status, "completed");
       }).pipe(
         Effect.provide(
           Layer.mergeAll(

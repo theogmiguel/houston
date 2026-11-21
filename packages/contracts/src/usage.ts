@@ -29,6 +29,23 @@ export type UsageDay = typeof UsageDay.Type;
 export const UsageResolution = Schema.Literals(["day", "hour"]);
 export type UsageResolution = typeof UsageResolution.Type;
 
+/** The Activity calendar's one-year span is the ceiling for retained Usage history. */
+export const USAGE_RETENTION_MIN_DAYS = 1 as const;
+export const USAGE_RETENTION_MAX_DAYS = 365 as const;
+export const USAGE_RETENTION_DEFAULT_DAYS = USAGE_RETENTION_MAX_DAYS;
+
+/** Null keeps every record the providers still hold, up to the supported maximum. */
+export const UsageRetentionDays = Schema.NullOr(
+  Schema.Int.check(
+    Schema.isBetween({ minimum: USAGE_RETENTION_MIN_DAYS, maximum: USAGE_RETENTION_MAX_DAYS }),
+  ),
+);
+export type UsageRetentionDays = typeof UsageRetentionDays.Type;
+
+export function effectiveUsageRetentionDays(days: UsageRetentionDays): number {
+  return days ?? USAGE_RETENTION_MAX_DAYS;
+}
+
 export const UsageCostSource = Schema.Literals(["providerReported", "modelPriced", "unpriced"]);
 export type UsageCostSource = typeof UsageCostSource.Type;
 
