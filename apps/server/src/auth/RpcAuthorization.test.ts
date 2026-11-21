@@ -532,16 +532,19 @@ it.effect("a pending device has neither the read nor the write scope for approva
     );
 
     expect(
-      (yield* client[WS_METHODS.houstonAccessListPendingDevices]({}).pipe(Effect.flip))
-        .requiredPermission,
-    ).toBe(AuthAccessReadScope);
+      yield* client[WS_METHODS.houstonAccessListPendingDevices]({}).pipe(Effect.flip),
+    ).toMatchObject({
+      _tag: "EnvironmentAuthorizationError",
+      requiredPermission: AuthAccessReadScope,
+    });
     expect(
-      (
-        yield* client[WS_METHODS.houstonAccessApprovePendingDevice]({
-          sessionId: AuthSessionId.make("pending-device"),
-        }).pipe(Effect.flip)
-      ).requiredPermission,
-    ).toBe(AuthAccessWriteScope);
+      yield* client[WS_METHODS.houstonAccessApprovePendingDevice]({
+        sessionId: AuthSessionId.make("pending-device"),
+      }).pipe(Effect.flip),
+    ).toMatchObject({
+      _tag: "EnvironmentAuthorizationError",
+      requiredPermission: AuthAccessWriteScope,
+    });
     expect(handled).toEqual([]);
   }).pipe(Effect.scoped),
 );
