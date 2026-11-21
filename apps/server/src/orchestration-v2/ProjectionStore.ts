@@ -348,6 +348,8 @@ export interface ProjectionRecordFilter {
   readonly latestProviderTurnUsageOnly?: true;
   readonly runtimeRequestStatuses?: ReadonlyArray<OrchestrationV2RuntimeRequest["status"]>;
   readonly contextTransferStatuses?: ReadonlyArray<OrchestrationV2ContextTransfer["status"]>;
+  readonly contextTransferTypes?: ReadonlyArray<OrchestrationV2ContextTransfer["type"]>;
+  readonly contextTransferSourceThreadIds?: ReadonlyArray<ThreadId>;
   readonly subagentIds?: ReadonlyArray<NodeId>;
   readonly subagentRunIds?: ReadonlyArray<RunId>;
   readonly nodeIds?: ReadonlyArray<NodeId>;
@@ -599,6 +601,10 @@ export interface ProjectionStoreV2Shape {
   readonly getThreadProjection: (
     threadId: ThreadId,
   ) => Effect.Effect<OrchestrationV2ThreadProjection, ProjectionStoreV2Error>;
+  /** The thread's visible rows, without decoding unrelated tables or hidden item payloads. */
+  readonly getThreadVisibleTurnItems: (
+    threadId: ThreadId,
+  ) => Effect.Effect<ReadonlyArray<OrchestrationV2ProjectedTurnItem>, ProjectionStoreV2Error>;
   readonly getRuntimeRecoveryProjection: (
     threadId: ThreadId,
   ) => Effect.Effect<ProjectionRuntimeRecoveryState, ProjectionStoreV2Error>;
@@ -3663,7 +3669,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 ORDER BY rowid ASC
               `,
           (fields !== undefined && !fields.includes("contextTransfers")) ||
-          (window === undefined && matchesNothing(filter?.contextTransferStatuses))
+          (window === undefined &&
+            (matchesNothing(filter?.contextTransferStatuses) ||
+              matchesNothing(filter?.contextTransferTypes) ||
+              matchesNothing(filter?.contextTransferSourceThreadIds)))
             ? Effect.succeed([])
             : window === undefined
               ? sql<PayloadRow>`
@@ -3671,6 +3680,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             FROM orchestration_v2_projection_context_transfers
             WHERE (source_thread_id = ${threadId} OR target_thread_id = ${threadId})
               ${filter?.contextTransferStatuses === undefined ? sql`` : sql`AND status IN (SELECT value FROM json_each(${encodeIdList(filter.contextTransferStatuses)}))`}
+              ${filter?.contextTransferTypes === undefined ? sql`` : sql`AND type IN (SELECT value FROM json_each(${encodeIdList(filter.contextTransferTypes)}))`}
+              ${filter?.contextTransferSourceThreadIds === undefined ? sql`` : sql`AND source_thread_id IN (SELECT value FROM json_each(${encodeIdList(filter.contextTransferSourceThreadIds)}))`}
             ORDER BY rowid ASC
           `
               : sql<PayloadRow>`
@@ -6128,6 +6139,57 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           ),
         );
 
+    const getThreadVisibleTurnItems: ProjectionStoreV2Shape["getThreadVisibleTurnItems"] = (
+      threadId,
+    ) =>
+      sql
+        .withTransaction(
+          Effect.gen(function* () {
+            // Runs and attempts come from their columns, so the timeline needs no payload of either.
+            const index = yield* readTimelineIndex(threadId, new Set());
+            const rows = index.visible.map((row, position) => ({ ...row, position }));
+            const sources = yield* encodeTimelineSources(
+              rows
+                .filter((row) => row.synthetic === undefined)
+                .map((row) => ({ threadId: row.sourceThreadId, id: row.sourceItemId })),
+            );
+            const payloads = yield* sql<{
+              readonly thread_id: string;
+              readonly turn_item_id: string;
+              readonly payload_json: string;
+            }>`
+              SELECT item.thread_id, item.turn_item_id, item.payload_json
+              FROM orchestration_v2_projection_turn_items item JOIN json_each(${sources}) wanted
+                ON item.thread_id = json_extract(wanted.value, '$.threadId')
+                AND item.turn_item_id = json_extract(wanted.value, '$.id')
+            `;
+            const byIdentity = new Map(
+              payloads.map((row) => [`${row.thread_id}:${row.turn_item_id}`, row.payload_json]),
+            );
+            return yield* Effect.forEach(rows, (row) =>
+              Effect.gen(function* () {
+                const payload = byIdentity.get(`${row.sourceThreadId}:${row.sourceItemId}`);
+                const item =
+                  row.synthetic ??
+                  (payload === undefined
+                    ? yield* new ProjectionStoreReadError({
+                        threadId,
+                        cause: "Visible item disappeared during snapshot",
+                      })
+                    : yield* decodeTurnItemPayload(payload));
+                return {
+                  position: row.position,
+                  sourceThreadId: row.sourceThreadId,
+                  sourceItemId: row.sourceItemId,
+                  visibility: row.visibility,
+                  item,
+                };
+              }),
+            );
+          }),
+        )
+        .pipe(Effect.mapError(controlReadError(threadId)));
+
     const getThreadSnapshotWindow: ProjectionStoreV2Shape["getThreadSnapshotWindow"] = (
       threadId,
       options,
@@ -7418,6 +7480,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       getThreadWorktreePaths: readOnReader(getThreadWorktreePaths),
       getOpenRemoteDelegatedTasks: getOpenRemoteDelegatedTasks.pipe(NodeSqliteClient.readOnly),
       getThreadProjection,
+      getThreadVisibleTurnItems: readOnReader(getThreadVisibleTurnItems),
       getTurnStartContext: readOnReader(getTurnStartContext),
       getTurnStartHistory: readOnReader(getTurnStartHistory),
       getRuntimeRecoveryProjection: readOnReader(getRuntimeRecoveryProjection),

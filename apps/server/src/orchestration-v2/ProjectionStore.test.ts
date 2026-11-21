@@ -389,6 +389,148 @@ it.effect("idle compaction filters keep the latest run, live work and the newest
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("record reads narrow context transfers and the visible timeline", () =>
+  Effect.gen(function* () {
+    const store = yield* ProjectionStore.ProjectionStoreV2;
+    const threadId = yield* addRolledBackRecoveryCandidate("narrow-record-reads");
+    const now = yield* DateTime.now;
+    const sideThreadId = ThreadId.make("thread:narrow-record-reads:side");
+    const firstChildId = ThreadId.make("thread:narrow-record-reads:first-child");
+    const secondChildId = ThreadId.make("thread:narrow-record-reads:second-child");
+    const transfer = (
+      suffix: string,
+      type: "fork" | "merge_back" | "subagent_result",
+      sourceThreadId: ThreadId,
+    ) => ({
+      id: ContextTransferId.make(`transfer:narrow-record-reads:${suffix}`),
+      type,
+      sourceThreadId,
+      targetThreadId: threadId,
+      sourcePoint: { threadId: sourceThreadId },
+      basePoint: null,
+      sourceProviderInstanceId: providerInstanceId,
+      targetProviderInstanceId: providerInstanceId,
+      targetRunId: null,
+      status: "consumed" as const,
+      resolution: null,
+      createdBy: "user" as const,
+      error: null,
+      createdAt: now,
+      updatedAt: now,
+      consumedAt: now,
+    });
+    const transfers = [
+      transfer("fork", "fork", sideThreadId),
+      transfer("first-result", "subagent_result", firstChildId),
+      transfer("first-merge-back", "merge_back", firstChildId),
+      transfer("second-result", "subagent_result", secondChildId),
+    ];
+    for (const payload of transfers) {
+      yield* store.apply({
+        id: EventId.make(`event:${payload.id}`),
+        type: "context-transfer.created",
+        threadId,
+        occurredAt: now,
+        payload,
+      });
+    }
+    const readTransfers = (filter?: ProjectionStore.ProjectionRecordFilter) =>
+      store
+        .getThreadRecords(threadId, ["contextTransfers"], filter)
+        .pipe(Effect.map(({ contextTransfers }) => contextTransfers.map((row) => row.type)));
+    assert.deepEqual(
+      yield* readTransfers(),
+      transfers.map((row) => row.type),
+    );
+    assert.deepEqual(yield* readTransfers({ contextTransferTypes: ["subagent_result"] }), [
+      "subagent_result",
+      "subagent_result",
+    ]);
+    assert.deepEqual(yield* readTransfers({ contextTransferSourceThreadIds: [firstChildId] }), [
+      "subagent_result",
+      "merge_back",
+    ]);
+    assert.deepEqual(
+      yield* readTransfers({
+        contextTransferTypes: ["subagent_result"],
+        contextTransferSourceThreadIds: [firstChildId],
+      }),
+      ["subagent_result"],
+    );
+    assert.deepEqual(yield* readTransfers({ contextTransferTypes: [] }), []);
+
+    const manyRuns = Array.from({ length: 40 }, (_, index) => index + 2);
+    for (const ordinal of manyRuns) {
+      const runId = RunId.make(`run:narrow-record-reads:${ordinal}`);
+      const nodeId = NodeId.make(`node:narrow-record-reads:${ordinal}`);
+      const itemId = TurnItemId.make(`item:narrow-record-reads:${ordinal}`);
+      yield* store.apply({
+        id: EventId.make(`event:narrow-record-reads:run-${ordinal}`),
+        type: "run.created",
+        threadId,
+        runId,
+        nodeId,
+        driver,
+        providerInstanceId,
+        occurredAt: now,
+        payload: {
+          id: runId,
+          threadId,
+          ordinal,
+          providerInstanceId,
+          modelSelection,
+          providerThreadId: null,
+          userMessageId: MessageId.make(`message:narrow-record-reads:${ordinal}`),
+          rootNodeId: nodeId,
+          activeAttemptId: null,
+          status: "completed",
+          requestedAt: now,
+          startedAt: now,
+          completedAt: now,
+          checkpointId: null,
+          contextHandoffId: null,
+        },
+      });
+      yield* store.apply({
+        id: EventId.make(`event:narrow-record-reads:item-${ordinal}`),
+        type: "turn-item.updated",
+        threadId,
+        runId,
+        nodeId,
+        driver,
+        providerInstanceId,
+        occurredAt: now,
+        payload: {
+          id: itemId,
+          threadId,
+          runId,
+          nodeId,
+          providerThreadId: null,
+          providerTurnId: null,
+          nativeItemRef: null,
+          parentItemId: null,
+          ordinal,
+          status: "completed",
+          title: null,
+          startedAt: now,
+          completedAt: now,
+          updatedAt: now,
+          type: "command_execution",
+          input: `run ${ordinal}`,
+          output: `output ${ordinal}`,
+          exitCode: 0,
+        },
+      });
+    }
+    const visible = yield* store.getThreadVisibleTurnItems(threadId);
+    assert.deepEqual(visible, (yield* store.getThreadProjection(threadId)).visibleTurnItems);
+    assert.deepEqual(
+      visible.map((row) => row.item.id),
+      manyRuns.map((ordinal) => `item:narrow-record-reads:${ordinal}`),
+    );
+  }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("record reads restrict provider histories to delivery identities", () =>
   Effect.gen(function* () {
     const store = yield* ProjectionStore.ProjectionStoreV2;
@@ -7252,6 +7394,10 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         targetBeforeRollback.visibleTurnItems.map((row) => row.item.type),
         ["user_message", "assistant_message", "user_message", "assistant_message", "fork"],
       );
+      assert.deepEqual(
+        yield* projectionStore.getThreadVisibleTurnItems(targetThreadId),
+        targetBeforeRollback.visibleTurnItems,
+      );
 
       yield* projectionStore.apply({
         id: EventId.make("event:projection-fork-source-rollback:run-2-rolled-back"),
@@ -7287,6 +7433,10 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         (yield* projectionStore.getThreadProjection(sourceThreadId)).messages,
       );
       const targetAfterRollback = yield* projectionStore.getThreadProjection(targetThreadId);
+      assert.deepEqual(
+        yield* projectionStore.getThreadVisibleTurnItems(targetThreadId),
+        targetAfterRollback.visibleTurnItems,
+      );
       const shellSnapshot = yield* projectionStore.getShellSnapshot();
       for (const shell of [
         yield* projectionStore.getThreadShell(sourceThreadId),
