@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { CATALOGUES, resolveLocale, SUPPORTED_LOCALES, translate } from "./translate";
+import english from "./catalogues/en.json";
+import {
+  CATALOGUES,
+  isCatalogueLoaded,
+  loadCatalogue,
+  resolveLocale,
+  SUPPORTED_LOCALES,
+  translate,
+} from "./translate";
 
 const PLACEHOLDER = /\{(\w+)\}/g;
 
@@ -13,18 +21,32 @@ describe("catalogues", () => {
     expect([...SUPPORTED_LOCALES]).toEqual(["en", "pt-BR"]);
   });
 
+  it("keeps each English entry identical to its key, so English needs no runtime table", () => {
+    const rewritten = Object.entries(english).filter(([key, value]) => key !== value);
+    expect(rewritten).toEqual([]);
+    expect(translate("en", "General")).toBe("General");
+  });
+
+  it("loads a catalogue once and reports it loaded", async () => {
+    expect(isCatalogueLoaded("en")).toBe(true);
+    await loadCatalogue("pt-BR");
+    expect(isCatalogueLoaded("pt-BR")).toBe(true);
+    expect(loadCatalogue("pt-BR")).toBe(loadCatalogue("pt-BR"));
+    expect(Object.keys(CATALOGUES["pt-BR"]).length).toBeGreaterThan(0);
+  });
+
   it("gives every English key a Brazilian Portuguese translation", () => {
-    const missing = Object.keys(CATALOGUES.en).filter((key) => !(key in CATALOGUES["pt-BR"]));
+    const missing = Object.keys(english).filter((key) => !(key in CATALOGUES["pt-BR"]));
     expect(missing).toEqual([]);
   });
 
   it("has no Brazilian Portuguese key without an English key", () => {
-    const orphaned = Object.keys(CATALOGUES["pt-BR"]).filter((key) => !(key in CATALOGUES.en));
+    const orphaned = Object.keys(CATALOGUES["pt-BR"]).filter((key) => !(key in english));
     expect(orphaned).toEqual([]);
   });
 
   it("keeps the placeholders of each English string in its translation", () => {
-    const mismatched = Object.entries(CATALOGUES.en).flatMap(([key, english]) => {
+    const mismatched = Object.entries(english).flatMap(([key, english]) => {
       const translated = CATALOGUES["pt-BR"][key];
       if (translated === undefined) return [];
       return JSON.stringify(placeholders(english)) === JSON.stringify(placeholders(translated))
@@ -40,7 +62,7 @@ describe("catalogues", () => {
   });
 
   it("never translates the product name", () => {
-    const renamed = Object.entries(CATALOGUES.en).filter(
+    const renamed = Object.entries(english).filter(
       ([key, english]) =>
         english.includes("Houston") && !CATALOGUES["pt-BR"][key]?.includes("Houston"),
     );

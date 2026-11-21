@@ -1,4 +1,11 @@
-import { resolveLocale, translate, type Locale, type TranslationParams } from "./translate";
+import {
+  isCatalogueLoaded,
+  loadCatalogue,
+  resolveLocale,
+  translate,
+  type Locale,
+  type TranslationParams,
+} from "./translate";
 
 let activeLocale: Locale = "en";
 const listeners = new Set<() => void>();
@@ -12,6 +19,19 @@ export function setActiveLocale(language: string): void {
   const next = resolveLocale(language);
   if (next === activeLocale) return;
   activeLocale = next;
+  notifyListeners();
+  // Until its catalogue arrives the text renders in English; arriving re-renders every `useT`.
+  if (!isCatalogueLoaded(next)) {
+    void loadCatalogue(next).then(
+      () => {
+        if (activeLocale === next) notifyListeners();
+      },
+      () => undefined,
+    );
+  }
+}
+
+function notifyListeners(): void {
   for (const listener of listeners) listener();
 }
 
