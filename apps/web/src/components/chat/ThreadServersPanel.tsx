@@ -22,6 +22,8 @@ import { previewEnvironment } from "../../state/preview";
 import { useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { openDiscoveredPort } from "../preview/openDiscoveredPort";
+import { PortForwardingPanel } from "../preview/PortForwardingPanel";
+import { usePortForwards } from "../../state/portForwards";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -53,8 +55,12 @@ export function ThreadServersPanel(props: {
     label: "thread server stop",
   });
   const [stoppingKey, setStoppingKey] = useState<string | null>(null);
+  const forwards = usePortForwards();
+  const environmentForwards = forwards.filter(
+    (forward) => forward.environmentId === props.environmentId,
+  );
 
-  if (servers.length === 0) return null;
+  if (servers.length === 0 && environmentForwards.length === 0) return null;
   const externalClickLabel = isMacPlatform(navigator.platform) ? "⌘-click" : "Ctrl-click";
   const threadRef = scopeThreadRef(props.environmentId, props.threadId);
 
@@ -100,6 +106,9 @@ export function ThreadServersPanel(props: {
 
   return (
     <ThreadDetailsSection headingId="thread-details-servers-heading" title="Servers">
+      <div className="pb-3">
+        <PortForwardingPanel environmentId={props.environmentId} compact />
+      </div>
       <ul className="m-0 list-none p-0">
         {servers.map((server) => {
           const key = serverKey(server);

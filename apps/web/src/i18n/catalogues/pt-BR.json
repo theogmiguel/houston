@@ -329,5 +329,20 @@
   "Stop generation": "Parar geração",
   "Esc to interrupt": "Esc para interromper",
   "Stop the running turn to switch branches.": "Pare o turno em execução para trocar de branch.",
-  "Turn running": "Turno em execução"
+  "Turn running": "Turno em execução",
+  "Forwarded ports": "Portas encaminhadas",
+  "A remote environment's TCP ports reach this machine through its saved connection.": "As portas TCP de um ambiente remoto chegam a esta máquina pela conexão salva dele.",
+  "Port forwarding is off. Turn it on in Settings → Connections → Port forwarding.": "O encaminhamento de portas está desligado. Ligue em Configurações → Conexões → Encaminhamento de portas.",
+  "No ports are forwarded.": "Nenhuma porta está encaminhada.",
+  "Active": "Ativa",
+  "Stop": "Parar",
+  "Remote port": "Porta remota",
+  "Forward": "Encaminhar",
+  "Could not forward port": "Não foi possível encaminhar a porta",
+  "Could not stop the forward": "Não foi possível parar o encaminhamento",
+  "Remote port must be between 1 and 65535.": "A porta remota deve estar entre 1 e 65535.",
+  "Up to 8 ports per environment and 16 in all. Each forward binds 127.0.0.1 only.": "Até 8 portas por ambiente e 16 no total. Cada encaminhamento escuta apenas em 127.0.0.1.",
+  "Port forwarding": "Encaminhamento de portas",
+  "Forward remote ports to this machine": "Encaminhar portas remotas para esta máquina",
+  "Forward a remote environment's TCP ports to this machine's localhost. Nothing is forwarded until you forward a port, and every forward stops when this is off.": "Encaminha as portas TCP de um ambiente remoto para o localhost desta máquina. Nada é encaminhado até você encaminhar uma porta, e todo encaminhamento para quando isto está desligado."
 }

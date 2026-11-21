@@ -5,6 +5,7 @@ import type { BrowserHistoryEntry } from "~/browserHistoryStore";
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "~/components/ui/empty";
 import { DiscoveryIntro, DiscoveryList } from "../ui/discovery-list";
 
+import { PortForwardingPanel } from "./PortForwardingPanel";
 import { PreviewLocalServerCard } from "./PreviewLocalServerCard";
 import { PreviewRecentUrlCard } from "./PreviewRecentUrlCard";
 import { useDiscoveredLocalServers } from "./useDiscoveredLocalServers";
@@ -31,28 +32,27 @@ export function PreviewEmptyState({
     configuredUrls,
   });
   const recents = recentEntries.filter((entry) => URL.canParse(entry.url)).slice(0, 8);
-
-  if (servers.length === 0 && recents.length === 0) {
-    return (
-      <Empty>
-        <EmptyMedia variant="icon">
-          <Globe className="size-4.5 text-muted-foreground" />
-        </EmptyMedia>
-        <EmptyTitle>No preview yet</EmptyTitle>
-        <EmptyDescription>
-          Type a URL above, or run a dev script. Local servers this thread starts will show up here
-          automatically.
-        </EmptyDescription>
-      </Empty>
-    );
-  }
+  const empty = servers.length === 0 && recents.length === 0;
 
   return (
     <div className="scrollbar-gutter-both flex h-full min-h-0 overflow-y-auto px-5 pt-10 pb-8">
       <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
-        <DiscoveryIntro title="Open a page">
-          Pick a recent page or a local server this thread started, or type a URL above.
-        </DiscoveryIntro>
+        {empty ? (
+          <Empty>
+            <EmptyMedia variant="icon">
+              <Globe className="size-4.5 text-muted-foreground" />
+            </EmptyMedia>
+            <EmptyTitle>No preview yet</EmptyTitle>
+            <EmptyDescription>
+              Type a URL above, or run a dev script. Local servers this thread starts will show up
+              here automatically.
+            </EmptyDescription>
+          </Empty>
+        ) : (
+          <DiscoveryIntro title="Open a page">
+            Pick a recent page or a local server this thread started, or type a URL above.
+          </DiscoveryIntro>
+        )}
         {recents.length > 0 ? (
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -72,6 +72,7 @@ export function PreviewEmptyState({
             </DiscoveryList>
           </div>
         ) : null}
+        <PortForwardingPanel environmentId={environmentId} />
         {servers.length > 0 ? (
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">

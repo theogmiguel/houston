@@ -41,6 +41,7 @@ import { useIsPhone } from "../../mobile/usePhone";
 import { LinkedEnvironmentsSettings } from "./LinkedEnvironmentsSettings";
 import { usePeerLinkHosts } from "~/state/peerLinks";
 import { LoadBalancingSettings } from "./LoadBalancingSettings";
+import { PortForwardingSetting } from "./PortForwardingSetting";
 import { PullRequestRoutingSettings } from "./PullRequestRoutingSettings";
 import { Input } from "../ui/input";
 import {
@@ -1402,13 +1403,21 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     />
   );
 
-  if (showsAccess) return <SettingsPageContainer>{primarySettings}</SettingsPageContainer>;
+  if (showsAccess) {
+    return (
+      <SettingsPageContainer>
+        {primarySettings}
+        <PortForwardingSetting />
+      </SettingsPageContainer>
+    );
+  }
 
   return (
     <SettingsPageContainer>
       <SettingsSection id="this-app" title="Local environment">
         <LocalEnvironmentSetting />
       </SettingsSection>
+      <PortForwardingSetting />
       <SettingsSection
         {...searchableSetting("remote-environments")}
         title="Environments"
