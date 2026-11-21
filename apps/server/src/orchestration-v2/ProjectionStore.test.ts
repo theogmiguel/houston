@@ -522,12 +522,26 @@ it.effect("record reads narrow context transfers and the visible timeline", () =
         },
       });
     }
-    const visible = yield* store.getThreadVisibleTurnItems(threadId);
+    const { statements, tracer } = traceSqlStatements();
+    const visible = yield* store
+      .getThreadVisibleTurnItems(threadId)
+      .pipe(Effect.withTracer(tracer));
     assert.deepEqual(visible, (yield* store.getThreadProjection(threadId)).visibleTurnItems);
     assert.deepEqual(
       visible.map((row) => row.item.id),
       manyRuns.map((ordinal) => `item:narrow-record-reads:${ordinal}`),
     );
+    assert.isFalse(
+      statements.some((statement) => statement.includes("orchestration_v2_projection_messages")),
+    );
+    assert.isFalse(
+      statements.some((statement) => statement.includes("orchestration_v2_projection_nodes")),
+    );
+    const runStatements = statements.filter((statement) =>
+      statement.includes("orchestration_v2_projection_runs"),
+    );
+    assert.isNotEmpty(runStatements);
+    assert.isFalse(runStatements.some((statement) => statement.includes("payload_json")));
   }).pipe(Effect.provide(layerTest)),
 );
 
