@@ -23,6 +23,7 @@ import {
   listLayoutWorkspaces,
   moveLayoutChatToWorkspace,
   moveLayoutWorkspaceById,
+  nextDefaultWorkspaceName,
   renameLayoutWorkspaceChecked,
   reorderLayoutWorkspace,
   setLayoutWorkspaceHidden,
@@ -99,6 +100,18 @@ describe("createLayoutWorkspaceNamed", () => {
     expect(refusal).toContain(String(WORKSPACE_NAME_MAX_CHARS));
     expect(refusal).toContain(String(WORKSPACE_NAME_MAX_CHARS + 1));
     expect(selectFocusedWorkspace(state).name).toBeNull();
+  });
+});
+
+describe("nextDefaultWorkspaceName", () => {
+  it("numbers the next workspace after the ones listed", () => {
+    expect(nextDefaultWorkspaceName(twoWorkspaces())).toBe("Workspace 3");
+  });
+
+  it("skips a number another workspace is already named with", () => {
+    let state = twoWorkspaces();
+    state = renameLayoutWorkspaceChecked(state, state.workspaces[0]!.id, "workspace 3").state;
+    expect(nextDefaultWorkspaceName(state)).toBe("Workspace 4");
   });
 });
 

@@ -72,7 +72,9 @@ surface, or the **Pull requests** or **Tasks** page. A thread's chat has one tab
 opening a thread that is already open focuses its tab. Settings, which includes Usage, opens
 as a card above the layout.
 
-- **New workspace** (a sidebar button, also in the **View options** menu) adds one; the
+- **New workspace** (a sidebar button, also in the **View options** menu and the command
+  palette) adds one at the end of the list under a numbered name, with that name selected for
+  editing: `Enter` keeps it and opens a new thread there, `Escape` takes the workspace back. The
   sidebar lists them all, and at least one always exists.
 - A column and its panes share the strip: **New pane to the right** and **New pane below**
   (under **Layout…** in the command palette) open a new tab in a new column or pane, a tab's

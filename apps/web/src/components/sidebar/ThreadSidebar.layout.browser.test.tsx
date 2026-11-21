@@ -19,10 +19,12 @@ import {
   type LayoutTabContent,
 } from "../../layout/layoutModel";
 import { useLayoutStore } from "../../layout/layoutStore";
+import { finishNewWorkspaceNaming } from "../../layout/newWorkspaceNaming";
 import { setThreadMemberships } from "../../layout/threadMembership";
 import {
   createLayoutWorkspaceNamed,
   listLayoutWorkspaces,
+  WORKSPACE_NAME_MAX_CHARS,
   setLayoutWorkspaceHidden,
 } from "../../layout/layoutWorkspaces";
 import { configureMotion } from "../../motion/registry";
@@ -301,6 +303,7 @@ function seed(
       endThreadDrag();
       vi.restoreAllMocks();
       useLayoutStore.getState().reset();
+      finishNewWorkspaceNaming();
     },
   };
 }
@@ -547,14 +550,21 @@ describe("ThreadSidebar workspaces", () => {
     expect(useLayoutStore.getState().layout.focusedWorkspaceId).toBe(focusedBefore);
   });
 
-  it("creates a workspace from the header with a name and lists it", async () => {
+  it("creates a workspace in place under a default name, opens its name for editing, then opens a draft", async () => {
     using _seed = seed([{ name: "Existing", chats: ["t1"] }], [liveThread("t1")]);
     await using screen = await render(<RailHarness />);
     await vi.waitFor(() => expect(groupNames(screen.container)).toEqual(["Existing"]));
 
     await userEvent.click(screen.getByRole("button", { name: "View options" }).element());
     await userEvent.click(page.getByRole("menuitem", { name: "New workspace" }).element());
-    const input = screen.getByRole("textbox", { name: "New workspace name" });
+    const input = screen.getByRole("textbox", { name: "Rename workspace Workspace 2" });
+    await expect.element(input).toHaveFocus();
+    expect((input.element() as HTMLInputElement).value).toBe("Workspace 2");
+    // The field sits in the new workspace's own heading, below the existing one.
+    const headings = [...screen.container.querySelectorAll("[data-workspace-heading]")];
+    expect(headings.at(-1)?.contains(input.element())).toBe(true);
+    expect(openedThreads.refs).toHaveLength(0);
+
     await userEvent.fill(input.element(), "Fresh");
     await userEvent.keyboard("{Enter}");
 
@@ -566,17 +576,41 @@ describe("ThreadSidebar workspaces", () => {
     expect(openedThreads.refs).toHaveLength(1);
   });
 
-  it("refuses an over-long new workspace name, naming the limit", async () => {
+  it("takes a new workspace back on Escape and opens no draft", async () => {
     using _seed = seed([{ name: "Existing", chats: ["t1"] }], [liveThread("t1")]);
     await using screen = await render(<RailHarness />);
     await userEvent.click(screen.getByRole("button", { name: "View options" }).element());
     await userEvent.click(page.getByRole("menuitem", { name: "New workspace" }).element());
-    const input = screen.getByRole("textbox", { name: "New workspace name" });
+    await expect
+      .element(screen.getByRole("textbox", { name: "Rename workspace Workspace 2" }))
+      .toHaveFocus();
+
+    await userEvent.keyboard("{Escape}");
+
+    await vi.waitFor(() => expect(groupNames(screen.container)).toEqual(["Existing"]));
+    expect(
+      listLayoutWorkspaces(useLayoutStore.getState().layout).map((workspace) => workspace.name),
+    ).toEqual(["Existing"]);
+    expect(openedThreads.refs).toHaveLength(0);
+  });
+
+  it("refuses an over-long new workspace name inline, naming the limit, and keeps the field open", async () => {
+    using _seed = seed([{ name: "Existing", chats: ["t1"] }], [liveThread("t1")]);
+    await using screen = await render(<RailHarness />);
+    await userEvent.click(screen.getByRole("button", { name: "View options" }).element());
+    await userEvent.click(page.getByRole("menuitem", { name: "New workspace" }).element());
+    const input = screen.getByRole("textbox", { name: "Rename workspace Workspace 2" });
     await userEvent.fill(input.element(), "x".repeat(500));
     await userEvent.keyboard("{Enter}");
+
     await expect.element(page.getByRole("alert")).toBeVisible();
-    expect(screen.container.querySelector("[role=alert]")?.textContent).toMatch(/\d+/);
-    expect(groupNames(screen.container)).toEqual(["Existing"]);
+    expect(screen.container.querySelector("[role=alert]")?.textContent).toContain(
+      String(WORKSPACE_NAME_MAX_CHARS),
+    );
+    await expect.element(input).toHaveFocus();
+    expect(
+      listLayoutWorkspaces(useLayoutStore.getState().layout).map((workspace) => workspace.name),
+    ).toEqual(["Existing", "Workspace 2"]);
   });
 
   const headingButton = (container: HTMLElement, name: string) =>

@@ -70,20 +70,16 @@ export function PhonePaneBar({
   const shell = useQuietThreadShell(threadRef);
   const { renameThread } = useThreadActions();
   const [renaming, setRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState("");
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const handleNewThread = useNewThreadHandler();
 
   const startRename = () => {
     if (shell === null) return;
-    setRenameValue(shell.title);
     setRenaming(true);
   };
-  const commitRename = () => {
-    if (!renaming) return;
+  const commitRename = (title: string) => {
     setRenaming(false);
-    const title = renameValue.trim();
-    if (threadRef === null || title.length === 0 || title === shell?.title) return;
+    if (threadRef === null || title === shell?.title) return;
     void renameThread(threadRef, title);
   };
   const isServerThread =
@@ -110,8 +106,6 @@ export function PhonePaneBar({
         tabCount={tabs.length}
         {...(activeTab === null ? {} : { onOpenTabs: () => setSheetOpen(true) })}
         renaming={renaming}
-        renameValue={renameValue}
-        onChangeRename={setRenameValue}
         onCommitRename={commitRename}
         onCancelRename={() => setRenaming(false)}
         detailsOpen={detailsOpen}

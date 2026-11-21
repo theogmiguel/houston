@@ -274,10 +274,10 @@ import { buildLayoutPaletteItems } from "../layout/layoutPaletteItems";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { runInNewLayoutTab, useLayoutStore } from "../layout/layoutStore";
 import {
-  createLayoutWorkspaceAction,
   hideLayoutWorkspaceAction,
   pinLayoutWorkspaceAction,
 } from "../layout/layoutWorkspaceActions";
+import { startNewWorkspaceAction } from "../layout/newWorkspaceNaming";
 import { threadRecentUse } from "@houston-app/shared/paletteSearch";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
@@ -1233,7 +1233,7 @@ function OpenCommandPaletteDialog(props: {
     title: t("New workspace"),
     icon: <LayoutGridIcon className={ITEM_ICON_CLASS} />,
     run: async () => {
-      const refusal = createLayoutWorkspaceAction("");
+      const refusal = startNewWorkspaceAction();
       if (refusal !== null) {
         toastManager.add(
           stackedThreadToast({
