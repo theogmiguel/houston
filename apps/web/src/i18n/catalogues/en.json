@@ -1087,5 +1087,13 @@
   "Review": "Review",
   "This device is waiting for approval on {host}. Ask the owner to approve it under Settings → Connections → Sharing & access → Require approval for new devices.": "This device is waiting for approval on {host}. Ask the owner to approve it under Settings → Connections → Sharing & access → Require approval for new devices.",
   "{device} has no access until it is approved. If it is not approved within {hours} hours, it expires and must pair again.": "{device} has no access until it is approved. If it is not approved within {hours} hours, it expires and must pair again.",
-  "Check again": "Check again"
+  "Check again": "Check again",
+  "Search commands, projects, and threads...": "Search commands, projects, and threads...",
+  "Enter project path (e.g. ~/projects/my-app)": "Enter project path (e.g. ~/projects/my-app)",
+  "Search...": "Search...",
+  "Enter path (e.g. ~/projects/my-app)": "Enter path (e.g. ~/projects/my-app)",
+  "Error copied": "Error copied",
+  "Could not copy the error": "Could not copy the error",
+  "Retry": "Retry",
+  "Dismiss error": "Dismiss error"
 }

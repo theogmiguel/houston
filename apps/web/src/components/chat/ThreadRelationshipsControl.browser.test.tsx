@@ -296,7 +296,11 @@ it("marks a running subagent with its provider's logo instead of the generic age
       />
     </ThreadOpenProvider>,
   );
-  const row = screen.getByRole("button", { name: /Glyph child/ }).element();
+  // The row button precedes its Stop button, which shares the title in its label.
+  const row = screen
+    .getByRole("button", { name: /Glyph child/ })
+    .first()
+    .element();
   expect(row.querySelector("svg.lucide-bot")).toBeNull();
   expect(row.querySelector("svg")).not.toBeNull();
 });

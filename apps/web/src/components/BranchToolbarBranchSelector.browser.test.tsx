@@ -117,11 +117,13 @@ describe("BranchToolbarBranchSelector", () => {
     const trigger = page.getByRole("combobox");
     await expect.element(trigger).toBeDisabled();
     await expect.element(page.getByText("Turn running", { exact: true })).toBeVisible();
-    await userEvent.hover(trigger.element());
+    // A disabled control ignores the pointer, so the hover lands on the tooltip's own wrapper.
+    await userEvent.hover(trigger.element().parentElement!);
     await expect
       .element(page.getByText("Stop the running turn to switch branches.", { exact: true }))
       .toBeVisible();
-    await userEvent.click(trigger.element());
+    // The DOM click of a disabled button is a no-op; a pointer click would wait for it to enable.
+    (trigger.element() as HTMLElement).click();
     await expect.element(page.getByPlaceholder("Search refs...")).not.toBeInTheDocument();
   });
 
@@ -130,7 +132,7 @@ describe("BranchToolbarBranchSelector", () => {
     mocks.calls = [];
     await using _screen = await render(view());
     await userEvent.click(page.getByRole("combobox").element());
-    await userEvent.click(page.getByRole("option", { name: "feature", exact: true }).element());
+    await userEvent.click(page.getByRole("option", { name: /^feature\b/ }).element());
     expect(mocks.calls.some((label) => label.endsWith("stop-session"))).toBe(false);
   });
 });

@@ -1087,5 +1087,13 @@
   "Review": "Revisar",
   "This device is waiting for approval on {host}. Ask the owner to approve it under Settings → Connections → Sharing & access → Require approval for new devices.": "Este dispositivo está aguardando aprovação em {host}. Peça ao proprietário para aprová-lo em Configurações → Conexões → Compartilhamento e acesso → Exigir aprovação para novos dispositivos.",
   "{device} has no access until it is approved. If it is not approved within {hours} hours, it expires and must pair again.": "{device} não tem acesso até ser aprovado. Se não for aprovado em {hours} horas, expira e precisa ser emparelhado novamente.",
-  "Check again": "Verificar novamente"
+  "Check again": "Verificar novamente",
+  "Search commands, projects, and threads...": "Buscar comandos, projetos e threads...",
+  "Enter project path (e.g. ~/projects/my-app)": "Digite o caminho do projeto (ex.: ~/projects/my-app)",
+  "Search...": "Buscar...",
+  "Enter path (e.g. ~/projects/my-app)": "Digite o caminho (ex.: ~/projects/my-app)",
+  "Error copied": "Erro copiado",
+  "Could not copy the error": "Não foi possível copiar o erro",
+  "Retry": "Tentar novamente",
+  "Dismiss error": "Dispensar erro"
 }

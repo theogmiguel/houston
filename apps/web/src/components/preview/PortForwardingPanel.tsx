@@ -86,7 +86,7 @@ export function PortForwardingPanel(props: {
           {t("Port forwarding is available in the Houston desktop app.")}
         </DiscoveryHint>
       )}
-      {!enabled || !available ? null : (
+      {enabled || !available ? null : (
         <DiscoveryHint>
           {t("Port forwarding is off. Turn it on in Settings → Connections → Port forwarding.")}
         </DiscoveryHint>
