@@ -46,6 +46,7 @@ describe("applyAuthAccessStreamEvent", () => {
     expect(withClient).toEqual({
       pairingLinks: [pairingLink],
       clientSessions: [clientSession],
+      pendingDevices: [],
     });
   });
 
@@ -63,6 +64,7 @@ describe("applyAuthAccessStreamEvent", () => {
           },
         ],
         clientSessions: [],
+        pendingDevices: [],
       },
       {
         version: 1,

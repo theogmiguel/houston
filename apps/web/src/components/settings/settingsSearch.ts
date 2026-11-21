@@ -1221,6 +1221,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     localBackendManagementOnly: true,
   },
   {
+    id: "require-device-approval",
+    title: "Require approval for new devices",
+    to: "/settings/access",
+    targetId: "authorized-clients",
+    searchTerms: [
+      "pending approve deny new device pair pairing link code wait authorized clients approval",
+    ],
+  },
+  {
     id: "tailscale-https",
     title: "Tailscale HTTPS",
     to: "/settings/access",

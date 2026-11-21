@@ -1070,5 +1070,22 @@
   "{count} agents idle": "{count} agentes ociosos",
   "+{count} more in Houston": "+{count} no Houston",
   "+{count} more waiting, in Agents": "+{count} aguardando, em Agentes",
-  "Agents ({count})": "Agentes ({count})"
+  "Agents ({count})": "Agentes ({count})",
+  "Require approval for new devices": "Exigir aprovação para novos dispositivos",
+  "A device that pairs while this is on waits in Authorized clients until you approve it. It can do nothing until then, and it expires after 24 hours. Turning this off does not approve devices already waiting.": "Um dispositivo que se emparelhar enquanto isto estiver ativado fica aguardando em Clientes autorizados até você aprová-lo. Ele não pode fazer nada até lá e expira após 24 horas. Desativar isto não aprova dispositivos que já estão aguardando.",
+  "Could not update device approval": "Não foi possível atualizar a aprovação de dispositivos",
+  "Try again in a moment.": "Tente novamente em instantes.",
+  "Paired and waiting for approval": "Emparelhado e aguardando aprovação",
+  "Waiting for approval": "Aguardando aprovação",
+  "Paired {date} via {method}.": "Emparelhado em {date} via {method}.",
+  "pairing link": "link de emparelhamento",
+  "pairing code": "código de emparelhamento",
+  "pairing": "emparelhamento",
+  "Deny": "Negar",
+  "Device waiting for approval": "Dispositivo aguardando aprovação",
+  "{device} paired with {host} and is waiting for your approval.": "{device} foi emparelhado com {host} e está aguardando sua aprovação.",
+  "Review": "Revisar",
+  "This device is waiting for approval on {host}. Ask the owner to approve it under Settings → Connections → Sharing & access → Require approval for new devices.": "Este dispositivo está aguardando aprovação em {host}. Peça ao proprietário para aprová-lo em Configurações → Conexões → Compartilhamento e acesso → Exigir aprovação para novos dispositivos.",
+  "{device} has no access until it is approved. If it is not approved within {hours} hours, it expires and must pair again.": "{device} não tem acesso até ser aprovado. Se não for aprovado em {hours} horas, expira e precisa ser emparelhado novamente.",
+  "Check again": "Verificar novamente"
 }

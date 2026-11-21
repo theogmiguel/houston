@@ -1070,5 +1070,22 @@
   "{count} agents idle": "{count} agents idle",
   "+{count} more in Houston": "+{count} more in Houston",
   "+{count} more waiting, in Agents": "+{count} more waiting, in Agents",
-  "Agents ({count})": "Agents ({count})"
+  "Agents ({count})": "Agents ({count})",
+  "Require approval for new devices": "Require approval for new devices",
+  "A device that pairs while this is on waits in Authorized clients until you approve it. It can do nothing until then, and it expires after 24 hours. Turning this off does not approve devices already waiting.": "A device that pairs while this is on waits in Authorized clients until you approve it. It can do nothing until then, and it expires after 24 hours. Turning this off does not approve devices already waiting.",
+  "Could not update device approval": "Could not update device approval",
+  "Try again in a moment.": "Try again in a moment.",
+  "Paired and waiting for approval": "Paired and waiting for approval",
+  "Waiting for approval": "Waiting for approval",
+  "Paired {date} via {method}.": "Paired {date} via {method}.",
+  "pairing link": "pairing link",
+  "pairing code": "pairing code",
+  "pairing": "pairing",
+  "Deny": "Deny",
+  "Device waiting for approval": "Device waiting for approval",
+  "{device} paired with {host} and is waiting for your approval.": "{device} paired with {host} and is waiting for your approval.",
+  "Review": "Review",
+  "This device is waiting for approval on {host}. Ask the owner to approve it under Settings → Connections → Sharing & access → Require approval for new devices.": "This device is waiting for approval on {host}. Ask the owner to approve it under Settings → Connections → Sharing & access → Require approval for new devices.",
+  "{device} has no access until it is approved. If it is not approved within {hours} hours, it expires and must pair again.": "{device} has no access until it is approved. If it is not approved within {hours} hours, it expires and must pair again.",
+  "Check again": "Check again"
 }

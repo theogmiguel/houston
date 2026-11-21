@@ -51,6 +51,13 @@ export function mapRemoteEnvironmentError(
         traceId: error.traceId,
         hop: "server",
       });
+    case "EnvironmentDeviceApprovalPendingError":
+      return new ConnectionBlockedError({
+        reason: "permission",
+        detail: error.message,
+        traceId: error.traceId,
+        hop: "server",
+      });
     case "EnvironmentRequestInvalidError":
       return new ConnectionBlockedError({
         reason: "configuration",

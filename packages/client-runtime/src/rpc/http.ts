@@ -2,6 +2,7 @@ import {
   EnvironmentHttpApi,
   EnvironmentHttpCommonError,
   type EnvironmentAuthInvalidError,
+  type EnvironmentDeviceApprovalPendingError,
   type EnvironmentInternalError,
   type EnvironmentOperationForbiddenError,
   type EnvironmentRequestInvalidError,
@@ -71,6 +72,7 @@ export type RemoteEnvironmentRequestError =
   | EnvironmentAuthInvalidError
   | EnvironmentScopeRequiredError
   | EnvironmentOperationForbiddenError
+  | EnvironmentDeviceApprovalPendingError
   | EnvironmentResourceNotFoundError
   | EnvironmentInternalError
   | RemoteEnvironmentAuthFetchError

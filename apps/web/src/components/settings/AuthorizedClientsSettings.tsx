@@ -12,10 +12,13 @@ import {
   type AuthEnvironmentScope,
   type AuthGrantScope,
   type AuthPairingCredentialResult,
+  type AuthPendingDevice,
   type AdvertisedEndpoint,
+  type EnvironmentId,
 } from "@houston-app/contracts";
 import { settlePromise } from "@houston-app/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
+import * as DateTime from "effect/DateTime";
 
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { cn } from "../../lib/utils";
@@ -28,8 +31,14 @@ import {
   togglePairingScopeSelection,
 } from "./ConnectionsSettings.logic";
 import { useNowSecond } from "../../hooks/useNowSecond";
+import { useEnvironmentSettings } from "../../hooks/useSettings";
+import { useT } from "../../i18n/useT";
+import { serverEnvironment } from "../../state/server";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { searchableSetting } from "./settingsSearch";
 import { Input } from "../ui/input";
 import { Checkbox } from "../ui/checkbox";
+import { Switch } from "../ui/switch";
 import {
   Dialog,
   DialogFooter,
@@ -58,7 +67,7 @@ import { usePrimaryManagedPolicy } from "~/state/managedPolicy";
 import { ManagedControl } from "../ManagedPolicy";
 import { ConnectionStatusDot } from "../ConnectionStatusDot";
 import { ITEM_ROW_CLASSNAME, ITEM_ROW_INNER_CLASSNAME } from "./itemRows";
-import { SettingsSection } from "./settingsLayout";
+import { SettingsRow, SettingsSection } from "./settingsLayout";
 import {
   formatAccessTimestamp,
   selectPairingEndpoint,
@@ -480,6 +489,124 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
         </div>
       ) : null}
     </div>
+  );
+});
+
+/** The off-by-default switch that makes a new pairing wait for the owner. */
+export const RequireDeviceApprovalSetting = memo(function RequireDeviceApprovalSetting({
+  environmentId,
+  canChange,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly canChange: boolean;
+}) {
+  const t = useT();
+  const enabled = useEnvironmentSettings(
+    environmentId,
+    (settings) => settings.requireApprovalForNewDevices,
+  );
+  const updateSettings = useAtomCommand(serverEnvironment.updateSettings, {
+    reportFailure: false,
+  });
+  const [saving, setSaving] = useState(false);
+  const handleChange = async (checked: boolean) => {
+    setSaving(true);
+    const result = await updateSettings({
+      environmentId,
+      input: { patch: { requireApprovalForNewDevices: checked } },
+    });
+    setSaving(false);
+    if (result._tag === "Failure") {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: t("Could not update device approval"),
+          description: t("Try again in a moment."),
+        }),
+      );
+    }
+  };
+  return (
+    <SettingsRow
+      {...searchableSetting("require-device-approval")}
+      title={t("Require approval for new devices")}
+      description={t(
+        "A device that pairs while this is on waits in Authorized clients until you approve it. It can do nothing until then, and it expires after 24 hours. Turning this off does not approve devices already waiting.",
+      )}
+      status={enabled ? t("On") : t("Off")}
+      control={
+        <Switch
+          checked={enabled}
+          disabled={!canChange || saving}
+          aria-label={t("Require approval for new devices")}
+          onCheckedChange={(checked) => void handleChange(checked)}
+        />
+      }
+    />
+  );
+});
+
+const pendingPairingMethodLabel = (
+  t: ReturnType<typeof useT>,
+  pairedVia: AuthPendingDevice["pairedVia"],
+) =>
+  pairedVia === "pairing-link"
+    ? t("pairing link")
+    : pairedVia === "pairing-code"
+      ? t("pairing code")
+      : t("pairing");
+
+type PendingDeviceListProps = {
+  readonly pendingDevices: ReadonlyArray<AuthPendingDevice>;
+  readonly decidingSessionId: string | null;
+  readonly canDecide: boolean;
+  readonly onApprove: (sessionId: AuthPendingDevice["sessionId"]) => void;
+  readonly onDeny: (sessionId: AuthPendingDevice["sessionId"]) => void;
+};
+
+export const PendingDeviceList = memo(function PendingDeviceList({
+  pendingDevices,
+  decidingSessionId,
+  canDecide,
+  onApprove,
+  onDeny,
+}: PendingDeviceListProps) {
+  const t = useT();
+  const nowMs = useNowSecond();
+  return (
+    <>
+      {pendingDevices.map((device) => (
+        <SettingsRow
+          key={device.sessionId}
+          title={device.deviceName}
+          description={`${t("Paired {date} via {method}.", {
+            date: formatAccessTimestamp(DateTime.formatIso(device.pairedAt)),
+            method: pendingPairingMethodLabel(t, device.pairedVia),
+          })} ${formatExpiresInLabel(DateTime.formatIso(device.expiresAt), nowMs)}`}
+          status={t("Waiting for approval")}
+          control={
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!canDecide || decidingSessionId === device.sessionId}
+                onClick={() => onApprove(device.sessionId)}
+              >
+                {t("Approve")}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={!canDecide || decidingSessionId === device.sessionId}
+                onClick={() => onDeny(device.sessionId)}
+              >
+                {t("Deny")}
+              </Button>
+            </>
+          }
+        />
+      ))}
+    </>
   );
 });
 
