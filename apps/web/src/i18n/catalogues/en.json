@@ -344,5 +344,6 @@
   "Up to 8 ports per environment and 16 in all. Each forward binds 127.0.0.1 only.": "Up to 8 ports per environment and 16 in all. Each forward binds 127.0.0.1 only.",
   "Port forwarding": "Port forwarding",
   "Forward remote ports to this machine": "Forward remote ports to this machine",
-  "Forward a remote environment's TCP ports to this machine's localhost. Nothing is forwarded until you forward a port, and every forward stops when this is off.": "Forward a remote environment's TCP ports to this machine's localhost. Nothing is forwarded until you forward a port, and every forward stops when this is off."
+  "Forward a remote environment's TCP ports to this machine's localhost. Nothing is forwarded until you forward a port, and every forward stops when this is off.": "Forward a remote environment's TCP ports to this machine's localhost. Nothing is forwarded until you forward a port, and every forward stops when this is off.",
+  "Port forwarding is available in the Houston desktop app.": "Port forwarding is available in the Houston desktop app."
 }

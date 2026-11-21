@@ -10,6 +10,7 @@ import {
   PORT_FORWARDING_MAX_FORWARDS,
   PORT_FORWARDING_MAX_FORWARDS_PER_ENVIRONMENT,
   PORT_FORWARDING_MAX_PORT,
+  PORT_FORWARDING_MAX_TUNNELS,
   PortForwardingError,
   type PortForward,
   type PortForwardStartInput,
@@ -220,24 +221,24 @@ const make = Effect.gen(function* () {
       ? Effect.void
       : lock.withPermits(1)(removeAndStop(() => true).pipe(Effect.asVoid));
 
-  const recordConnectionLimit = Effect.fn("desktop.portForwarding.recordConnectionLimit")(
-    function* (id: string) {
+  const recordForwardError = Effect.fn("desktop.portForwarding.recordForwardError")(
+    function* (id: string, error: string) {
       yield* Ref.update(forwards, (current) => {
         const entry = current.get(id);
         if (entry === undefined) return current;
         const next = new Map(current);
-        next.set(id, {
-          ...entry,
-          record: {
-            ...entry.record,
-            error: `A browser request was refused: this forward already carries ${PORT_FORWARDING_MAX_CONNECTIONS_PER_FORWARD} connections.`,
-          },
-        });
+        next.set(id, { ...entry, record: { ...entry.record, error } });
         return next;
       });
       yield* publish;
     },
   );
+
+  const recordConnectionLimit = (id: string) =>
+    recordForwardError(
+      id,
+      `A browser request was refused: this forward already carries ${PORT_FORWARDING_MAX_CONNECTIONS_PER_FORWARD} connections.`,
+    );
 
   const bindLinkedPort = Effect.fn("desktop.portForwarding.bindLinkedPort")(function* (input: {
     readonly preferredPort: number;
@@ -281,6 +282,10 @@ const make = Effect.gen(function* () {
                 .pipe(Effect.option);
               if (Option.isNone(remote)) {
                 yield* closeSocket(client, "The environment refused the forwarded connection.");
+                yield* recordForwardError(
+                  input.entry.record.id,
+                  `A forwarded connection was refused; this environment holds at most ${PORT_FORWARDING_MAX_TUNNELS} tunnels at once.`,
+                );
                 return;
               }
               const clientWriter = yield* client.writer;
@@ -346,6 +351,12 @@ const make = Effect.gen(function* () {
           );
         }
         const active = [...(yield* Ref.get(forwards)).values()];
+        const existing = active.find(
+          (entry) =>
+            entry.record.environmentId === input.environmentId &&
+            entry.record.remotePort === input.remotePort,
+        );
+        if (existing !== undefined) return existing.record;
         if (active.length >= PORT_FORWARDING_MAX_FORWARDS) {
           return yield* forbidden(
             "forward-limit",

@@ -344,5 +344,6 @@
   "Up to 8 ports per environment and 16 in all. Each forward binds 127.0.0.1 only.": "Até 8 portas por ambiente e 16 no total. Cada encaminhamento escuta apenas em 127.0.0.1.",
   "Port forwarding": "Encaminhamento de portas",
   "Forward remote ports to this machine": "Encaminhar portas remotas para esta máquina",
-  "Forward a remote environment's TCP ports to this machine's localhost. Nothing is forwarded until you forward a port, and every forward stops when this is off.": "Encaminha as portas TCP de um ambiente remoto para o localhost desta máquina. Nada é encaminhado até você encaminhar uma porta, e todo encaminhamento para quando isto está desligado."
+  "Forward a remote environment's TCP ports to this machine's localhost. Nothing is forwarded until you forward a port, and every forward stops when this is off.": "Encaminha as portas TCP de um ambiente remoto para o localhost desta máquina. Nada é encaminhado até você encaminhar uma porta, e todo encaminhamento para quando isto está desligado.",
+  "Port forwarding is available in the Houston desktop app.": "O encaminhamento de portas está disponível no aplicativo de desktop do Houston."
 }

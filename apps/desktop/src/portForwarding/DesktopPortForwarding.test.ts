@@ -223,6 +223,22 @@ it.live("chooses the next free local port and binds loopback only", () =>
   ),
 );
 
+it.live("reuses the forward already held for the same remote port", () =>
+  Effect.gen(function* () {
+    const forwarding = yield* DesktopPortForwarding.DesktopPortForwarding;
+    const first = yield* forwarding.start({
+      environmentId: environmentId("env-ssh"),
+      remotePort: 5432,
+    });
+    const second = yield* forwarding.start({
+      environmentId: environmentId("env-ssh"),
+      remotePort: 5432,
+    });
+    expect(second.id).toBe(first.id);
+    expect(yield* forwarding.list).toHaveLength(1);
+  }).pipe(Effect.scoped, Effect.provide(serviceLayer({ enabled: true, catalog: sshCatalog() }))),
+);
+
 it.live("closes a forward with its environment", () =>
   Effect.gen(function* () {
     const forwarding = yield* DesktopPortForwarding.DesktopPortForwarding;

@@ -28,6 +28,8 @@ export function PortForwardingPanel(props: {
   const forwards = usePortForwards();
   const [port, setPort] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const available =
+    typeof window !== "undefined" && window.hostBridge?.startPortForward !== undefined;
 
   const report = (title: string, error: unknown) => {
     toastManager.add(
@@ -77,12 +79,15 @@ export function PortForwardingPanel(props: {
       <DiscoveryIntro title={t("Forwarded ports")}>
         {t("A remote environment's TCP ports reach this machine through its saved connection.")}
       </DiscoveryIntro>
-      {enabled ? null : (
+      {available ? null : (
+        <DiscoveryHint>{t("Port forwarding is available in the Houston desktop app.")}</DiscoveryHint>
+      )}
+      {!enabled || !available ? null : (
         <DiscoveryHint>
           {t("Port forwarding is off. Turn it on in Settings → Connections → Port forwarding.")}
         </DiscoveryHint>
       )}
-      {forwards.length > 0 ? (
+      {available && forwards.length > 0 ? (
         <DiscoveryList>
           {forwards.map((forward) => (
             <DiscoveryStaticRow key={forward.id}>
@@ -103,9 +108,9 @@ export function PortForwardingPanel(props: {
           ))}
         </DiscoveryList>
       ) : (
-        <DiscoveryHint>{t("No ports are forwarded.")}</DiscoveryHint>
+        available ? <DiscoveryHint>{t("No ports are forwarded.")}</DiscoveryHint> : null
       )}
-      <form className="flex items-end gap-2 px-1" onSubmit={(event) => void start(event)}>
+      {available ? <form className="flex items-end gap-2 px-1" onSubmit={(event) => void start(event)}>
         <Label className="flex min-w-0 flex-1 flex-col items-stretch gap-1">
           <span>{t("Remote port")}</span>
           <Input
@@ -123,8 +128,8 @@ export function PortForwardingPanel(props: {
         <Button type="submit" disabled={!enabled || busy !== null || port.trim().length === 0}>
           {t("Forward")}
         </Button>
-      </form>
-      {props.compact ? null : (
+      </form> : null}
+      {props.compact || !available ? null : (
         <DiscoveryHint>
           {t("Up to 8 ports per environment and 16 in all. Each forward binds 127.0.0.1 only.")}
         </DiscoveryHint>
