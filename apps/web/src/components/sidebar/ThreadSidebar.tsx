@@ -124,6 +124,7 @@ import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { primaryServerKeybindingsAtom } from "../../state/server";
 import { threadEnvironment } from "../../state/threads";
 import { useThreadActions } from "../../hooks/useThreadActions";
+import { useT } from "~/i18n/useT";
 import {
   useNewThreadHandler,
   resolveWorkspaceNewThreadTarget,
@@ -218,6 +219,7 @@ export function ThreadSidebar({
   /** The rail stands alone as a page, without the controls of the docked column. */
   isPage?: boolean;
 } = {}) {
+  const t = useT();
   const allProjects = useProjects();
   const threads = useQuietThreadShells();
   const projectGroups = useSidebarProjectGroups();
@@ -317,7 +319,7 @@ export function ThreadSidebar({
       const confirmed =
         (await requestConfirmDialog(workspaceDeletionMessage(section.name, plan), {
           variant: "destructive",
-          confirmLabel: "Delete workspace",
+          confirmLabel: t("Delete workspace"),
         })) ?? false;
       if (!confirmed) return;
       const failure = await deleteWorkspaceThreads({
@@ -336,7 +338,7 @@ export function ThreadSidebar({
         },
       });
       if (failure !== null) {
-        explain("Could not delete workspace", failure);
+        explain(t("Could not delete workspace"), failure);
         return;
       }
     }
@@ -344,7 +346,7 @@ export function ThreadSidebar({
       section.workspaceId,
       new Set(plan.threads.map(threadKeyOf)),
     );
-    if (refusal !== null) explain("Could not delete workspace", refusal);
+    if (refusal !== null) explain(t("Could not delete workspace"), refusal);
   };
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
@@ -580,7 +582,7 @@ export function ThreadSidebar({
     for (const thread of threadsToClose) {
       void (async () => {
         const result = await actions.settleThread(scopeThreadRef(thread.environmentId, thread.id));
-        reportFailure("Failed to close thread", result);
+        reportFailure(t("Failed to close thread"), result);
       })();
     }
   };
@@ -596,7 +598,7 @@ export function ThreadSidebar({
           scopeThreadRef(thread.environmentId, thread.id),
           snoozedUntil,
         );
-        reportFailure("Failed to hold thread", result);
+        reportFailure(t("Failed to hold thread"), result);
       })();
     }
   };
@@ -611,7 +613,7 @@ export function ThreadSidebar({
         environmentId: thread.environmentId,
         input: { threadId: thread.id, title },
       });
-      reportFailure("Failed to rename thread", result);
+      reportFailure(t("Failed to rename thread"), result);
     })();
   };
 
@@ -621,7 +623,7 @@ export function ThreadSidebar({
         scopeThreadRef(thread.environmentId, thread.id),
         enabled,
       );
-      reportFailure("Failed to change auto-close", result);
+      reportFailure(t("Failed to change auto-close"), result);
     })();
   };
 
@@ -760,14 +762,14 @@ export function ThreadSidebar({
   const wakeShelfThread = (thread: EnvironmentThreadShell, open = true) => {
     void (async () => {
       const result = await actions.unsnoozeThread(scopeThreadRef(thread.environmentId, thread.id));
-      if (!reportFailure("Failed to bring thread back", result) && open) openThread(thread);
+      if (!reportFailure(t("Failed to bring thread back"), result) && open) openThread(thread);
     })();
   };
 
   const reopenShelfThread = (thread: EnvironmentThreadShell, open = true) => {
     void (async () => {
       const result = await actions.unsettleThread(scopeThreadRef(thread.environmentId, thread.id));
-      if (!reportFailure("Failed to reopen thread", result) && open) openThread(thread);
+      if (!reportFailure(t("Failed to reopen thread"), result) && open) openThread(thread);
     })();
   };
 
@@ -1066,14 +1068,14 @@ export function ThreadSidebar({
                               if (projectTarget !== undefined) openRailTarget(projectTarget);
                             }
                           }}
-                          placeholder="Search"
-                          aria-label="Search workspaces and threads"
+                          placeholder={t("Search")}
+                          aria-label={t("Search workspaces and threads")}
                           className="min-w-0 flex-1 bg-transparent text-inherit outline-none placeholder:text-secondary-label"
                         />
                         {query.length > 0 ? (
                           <button
                             type="button"
-                            aria-label="Clear search"
+                            aria-label={t("Clear search")}
                             onClick={() => setSearch("")}
                             className="inline-grid size-5 shrink-0 cursor-pointer place-items-center rounded-(--r-badge) text-secondary-label hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                           >
@@ -1324,13 +1326,14 @@ function HiddenWorkspacesMenu({
   workspaces: ReadonlyArray<SidebarWorkspaceSection>;
   onShow: (workspaceId: string) => void;
 }) {
+  const t = useT();
   return (
     <Menu>
       <MenuTrigger
         render={
           <button
             type="button"
-            aria-label="Hidden workspaces"
+            aria-label={t("Hidden workspaces")}
             className={SIDEBAR_SECTION_ACTION_CLS}
           />
         }
@@ -1341,7 +1344,7 @@ function HiddenWorkspacesMenu({
         {workspaces.map((workspace) => (
           <MenuItem key={workspace.workspaceId} onClick={() => onShow(workspace.workspaceId)}>
             <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
-            <span className="text-2xs text-secondary-label">Show</span>
+            <span className="text-2xs text-secondary-label">{t("Show")}</span>
           </MenuItem>
         ))}
       </MenuPopup>
@@ -1369,9 +1372,10 @@ export function SidebarWorkspacesHeader({
     onNewWorkspace: () => void;
   };
 }) {
+  const t = useT();
   return (
     <SidebarSectionHeaderRow
-      title="Workspaces"
+      title={t("Workspaces")}
       actions={
         <>
           {projectFilter}
@@ -1393,7 +1397,7 @@ export function SidebarWorkspacesHeader({
                   render={
                     <button
                       type="button"
-                      aria-label="New workspace"
+                      aria-label={t("New workspace")}
                       onClick={phoneControls.onNewWorkspace}
                       className={SIDEBAR_SECTION_ACTION_CLS}
                     />
@@ -1401,7 +1405,7 @@ export function SidebarWorkspacesHeader({
                 >
                   <PlusIcon aria-hidden className="size-[15px]" />
                 </TooltipTrigger>
-                <TooltipPopup side="bottom">New workspace</TooltipPopup>
+                <TooltipPopup side="bottom">{t("New workspace")}</TooltipPopup>
               </Tooltip>
               <SidebarAddProjectButton sectionAction />
             </>
@@ -1425,6 +1429,7 @@ export function SidebarToolbarActions({
   onReset: () => void;
   onNewWorkspace: () => void;
 }) {
+  const t = useT();
   return (
     <>
       <Tooltip>
@@ -1432,7 +1437,7 @@ export function SidebarToolbarActions({
           render={
             <button
               type="button"
-              aria-label="New thread"
+              aria-label={t("New thread")}
               onClick={() => openCommandPalette({ open: "new-thread-in", newTab: true })}
               className={SIDEBAR_TOOLBAR_ACTION_CLS}
             />
@@ -1440,14 +1445,14 @@ export function SidebarToolbarActions({
         >
           <SquarePenIcon aria-hidden className="size-[15px]" />
         </TooltipTrigger>
-        <TooltipPopup side="bottom">New thread</TooltipPopup>
+        <TooltipPopup side="bottom">{t("New thread")}</TooltipPopup>
       </Tooltip>
       <Tooltip>
         <TooltipTrigger
           render={
             <button
               type="button"
-              aria-label="New workspace"
+              aria-label={t("New workspace")}
               onClick={onNewWorkspace}
               className={SIDEBAR_TOOLBAR_ACTION_CLS}
             />
@@ -1455,7 +1460,7 @@ export function SidebarToolbarActions({
         >
           <LayoutGridIcon aria-hidden className="size-[15px]" />
         </TooltipTrigger>
-        <TooltipPopup side="bottom">New workspace</TooltipPopup>
+        <TooltipPopup side="bottom">{t("New workspace")}</TooltipPopup>
       </Tooltip>
       <SidebarAddProjectButton />
       <SidebarOptionsMenu
@@ -1471,13 +1476,14 @@ export function SidebarToolbarActions({
 
 /** Add project: opens the chooser for a folder, a clone or a new repository. */
 export function SidebarAddProjectButton({ sectionAction = false }: { sectionAction?: boolean }) {
+  const t = useT();
   return (
     <Tooltip>
       <TooltipTrigger
         render={
           <button
             type="button"
-            aria-label="Add project"
+            aria-label={t("Add project")}
             onClick={() => openAddProjectDialog()}
             className={sectionAction ? SIDEBAR_SECTION_ACTION_CLS : SIDEBAR_TOOLBAR_ACTION_CLS}
           />
@@ -1485,7 +1491,7 @@ export function SidebarAddProjectButton({ sectionAction = false }: { sectionActi
       >
         <FolderPlusIcon aria-hidden className="size-[15px]" />
       </TooltipTrigger>
-      <TooltipPopup side="bottom">Add project</TooltipPopup>
+      <TooltipPopup side="bottom">{t("Add project")}</TooltipPopup>
     </Tooltip>
   );
 }
@@ -1498,6 +1504,7 @@ function NewWorkspaceField({
   onCreate: (name: string) => string | null;
   onDone: () => void;
 }) {
+  const t = useT();
   const [name, setName] = useState("");
   const [refusal, setRefusal] = useState<string | null>(null);
   const submit = () => {
@@ -1518,8 +1525,8 @@ function NewWorkspaceField({
       <input
         autoFocus
         value={name}
-        placeholder="Workspace name"
-        aria-label="New workspace name"
+        placeholder={t("Workspace name")}
+        aria-label={t("New workspace name")}
         aria-invalid={refusal !== null}
         onChange={(event) => {
           setName(event.target.value);
@@ -1594,17 +1601,18 @@ export function SidebarNeedsYouSection({
   onSetAutoClose: (thread: EnvironmentThreadShell, enabled: boolean) => void;
   handleNewThread?: NewThreadHandler | undefined;
 }) {
+  const t = useT();
   // Nothing needs the user: the section is not a permanent empty shelf on the rail.
   if (entries.length === 0) return null;
   return (
     <section
-      aria-label="Needs you"
+      aria-label={t("Needs you")}
       data-needs-you-section=""
       className={SIDEBAR_NEEDS_YOU_SECTION_CLS}
     >
       <div data-needs-you-heading="" className={SIDEBAR_NEEDS_YOU_HEADING_CLS}>
         <span aria-hidden className={SIDEBAR_NEEDS_YOU_HEADING_GLYPH_CLS} />
-        <span className="min-w-0 truncate">Needs you</span>
+        <span className="min-w-0 truncate">{t("Needs you")}</span>
         <span data-heading-count="" className={SIDEBAR_GROUP_COUNT_CLS}>
           {entries.length}
         </span>
@@ -1718,6 +1726,7 @@ export function SidebarWorkspaceGroup({
   /** Deletes the workspace and its threads after asking; absent, the menu item does nothing. */
   onDeleteWorkspace?: ((section: SidebarWorkspaceSection) => void) | undefined;
 }) {
+  const t = useT();
   const { workspaceId, name: workspaceName, threads } = section;
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState(workspaceName);
@@ -1776,7 +1785,7 @@ export function SidebarWorkspaceGroup({
     setRenaming(false);
     if (draftName.trim() === workspaceName) return;
     const refusal = renameLayoutWorkspaceAction(workspaceId, draftName);
-    if (refusal !== null) explain("Could not rename workspace", refusal);
+    if (refusal !== null) explain(t("Could not rename workspace"), refusal);
   };
   const createThread = () => onCreateThread(workspaceId);
   const focusWorkspaceFromHeading = () => {
@@ -1788,8 +1797,11 @@ export function SidebarWorkspaceGroup({
     const remaining = useLayoutStore.getState().layout.workspaces.length;
     if (previousWorkspaceId === null && nextWorkspaceId === null && hiddenWorkspaces.length === 0) {
       explain(
-        "Could not delete workspace",
-        `“${workspaceName}” is the last workspace (${remaining} in the layout); a layout keeps at least one.`,
+        t("Could not delete workspace"),
+        t("“{name}” is the last workspace ({count} in the layout); a layout keeps at least one.", {
+          name: workspaceName,
+          count: remaining,
+        }),
       );
       return;
     }
@@ -1809,7 +1821,8 @@ export function SidebarWorkspaceGroup({
       hiddenWorkspaces: hiddenWorkspaces.map((hidden) => ({
         id: hidden.workspaceId,
         name: hidden.name,
-      })),
+      })),      translate: t,
+
     });
     setMenuOpen(true);
     const clicked = await settlePromise(() => api.contextMenu.show(items, position));
@@ -1890,7 +1903,7 @@ export function SidebarWorkspaceGroup({
           <input
             autoFocus
             value={draftName}
-            aria-label={`Rename workspace ${workspaceName}`}
+            aria-label={t("Rename workspace {name}", { name: workspaceName })}
             onChange={(event) => setDraftName(event.target.value)}
             onBlur={finishRenaming}
             onKeyDown={(event) => {
@@ -1938,7 +1951,11 @@ export function SidebarWorkspaceGroup({
                   <button
                     type="button"
                     data-workspace-chevron-box=""
-                    aria-label={`${collapsed ? "Expand" : "Collapse"} ${workspaceName}`}
+                    aria-label={
+                      collapsed
+                        ? t("Expand {name}", { name: workspaceName })
+                        : t("Collapse {name}", { name: workspaceName })
+                    }
                     onClick={(event) => {
                       event.stopPropagation();
                       onToggleCollapsed();
@@ -1956,7 +1973,7 @@ export function SidebarWorkspaceGroup({
                 />
               </TooltipTrigger>
               <TooltipPopup side="bottom">
-                {collapsed ? "Expand workspace" : "Collapse workspace"}
+                {collapsed ? t("Expand workspace") : t("Collapse workspace")}
               </TooltipPopup>
             </Tooltip>
             <Tooltip>
@@ -1984,7 +2001,7 @@ export function SidebarWorkspaceGroup({
                 ) : null}
                 {threads.length === 0 && section.empty ? (
                   <span className={SIDEBAR_ROW_TRAILING_CLS} data-heading-trailing="">
-                    <span className={SIDEBAR_GROUP_EMPTY_CLS}>empty</span>
+                    <span className={SIDEBAR_GROUP_EMPTY_CLS}>{t("empty")}</span>
                   </span>
                 ) : collapsed ? (
                   <span className={SIDEBAR_ROW_TRAILING_CLS} data-heading-trailing="">
@@ -2014,7 +2031,7 @@ export function SidebarWorkspaceGroup({
                 render={
                   <button
                     type="button"
-                    aria-label={`New thread in ${workspaceName}`}
+                    aria-label={t("New thread in {name}", { name: workspaceName })}
                     onClick={createThread}
                     className={SIDEBAR_GROUP_ACTION_CLS}
                   />
@@ -2024,14 +2041,17 @@ export function SidebarWorkspaceGroup({
               </TooltipTrigger>
               <TooltipPopup side="top">
                 {newThreadShortcut === null
-                  ? `New thread in ${workspaceName}`
-                  : `New thread in ${workspaceName} · ${newThreadShortcut}`}
+                  ? t("New thread in {name}", { name: workspaceName })
+                  : t("New thread in {name} · {shortcut}", {
+                      name: workspaceName,
+                      shortcut: newThreadShortcut,
+                    })}
               </TooltipPopup>
             </Tooltip>
             <button
               ref={actionsButtonRef}
               type="button"
-              aria-label={`Workspace actions for ${workspaceName}`}
+              aria-label={t("Workspace actions for {name}", { name: workspaceName })}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               onClick={() => openWorkspaceMenuBelow(actionsButtonRef.current)}
@@ -2046,7 +2066,7 @@ export function SidebarWorkspaceGroup({
         {threads.length === 0 && section.empty && !collapsed ? (
           <div data-workspace-empty="" className={cn(SIDEBAR_GROUP_THREADS_CLS, "py-1")}>
             <div className="flex items-center gap-2 px-2 text-xs text-secondary-label">
-              <span className="min-w-0 flex-1 truncate">No threads yet</span>
+              <span className="min-w-0 flex-1 truncate">{t("No threads yet")}</span>
               <button type="button" onClick={createThread} className={SIDEBAR_EMPTY_ACTION_CLS}>
                 New thread
               </button>

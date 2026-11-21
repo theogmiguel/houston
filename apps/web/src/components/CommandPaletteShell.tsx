@@ -17,6 +17,7 @@ import {
   type CommandPaletteReturnContext,
 } from "./CommandPalette.logic";
 import { LazySurfaceBoundary, lazySurface } from "./LazySurface";
+import { useT } from "~/i18n/useT";
 import { CommandDialog, CommandDialogPopup, CommandInputFallback } from "./ui/command-dialog";
 
 const loadCommandPaletteBody = () => import("./CommandPalette");
@@ -58,6 +59,7 @@ function earlyInputPlaceholder(intent: CommandPaletteOpenIntent | null): string 
 }
 
 export function CommandPalette({ children }: { children: ReactNode }) {
+  const t = useT();
   useCommandPaletteMount();
   const state = useCommandPaletteStore();
   const composerHandleRef = useRef<ChatComposerHandle | null>(null);
@@ -124,7 +126,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
               state.mode === "command" ? (
                 <CommandInputFallback
                   defaultValue={state.openIntent?.kind === "search" ? state.openIntent.query : ""}
-                  placeholder={earlyInputPlaceholder(state.openIntent)}
+                  placeholder={t(earlyInputPlaceholder(state.openIntent))}
                   onChange={(event) => rememberEarlyQuery(event.currentTarget.value)}
                 />
               ) : null

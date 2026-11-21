@@ -1,5 +1,6 @@
 import type { ContextMenuItem } from "@houston-app/contracts";
 import type { SnoozePreset } from "@houston-app/client-runtime/state/thread-settled";
+import type { Translate } from "~/i18n/useT";
 
 export type ThreadActionMenuId =
   | "find"
@@ -45,26 +46,28 @@ export function buildDraftActionMenuItems(options: {
   readonly hasPath: boolean;
   readonly hasBranch: boolean;
   readonly hasProject: boolean;
+  readonly translate?: Translate;
 }): ReadonlyArray<ContextMenuItem<DraftActionMenuId>> {
+  const t = options.translate ?? ((source: string) => source);
   return [
     {
       id: "copy",
-      label: "Copy",
+      label: t("Copy"),
       icon: "copy",
       disabled: !options.hasPath && !options.hasBranch,
       children: [
-        ...(options.hasPath ? [{ id: "copy-path" as const, label: "Path", icon: "folder" }] : []),
+        ...(options.hasPath ? [{ id: "copy-path" as const, label: t("Path"), icon: "folder" }] : []),
         ...(options.hasBranch
-          ? [{ id: "copy-branch" as const, label: "Branch", icon: "git-branch" }]
+          ? [{ id: "copy-branch" as const, label: t("Branch"), icon: "git-branch" }]
           : []),
       ],
     },
     ...(options.hasProject
-      ? [{ id: "project-settings" as const, label: "Project settings", icon: "settings" }]
+      ? [{ id: "project-settings" as const, label: t("Project settings"), icon: "settings" }]
       : []),
     {
       id: "discard",
-      label: "Discard draft",
+      label: t("Discard draft"),
       icon: "trash",
       destructive: true,
       separatorBefore: true,
@@ -109,6 +112,7 @@ export interface ThreadActionMenuState {
   /** A No project thread with its own folder, on a server that can promote it. */
   readonly canTurnIntoProject?: boolean;
   readonly workspace?: ThreadActionMenuWorkspaceState | undefined;
+  readonly translate?: Translate;
 }
 
 /** Local navigation, read markers, copying and workspace moves remain available to read-only clients. */
@@ -159,50 +163,54 @@ function menuSection(
 export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
 ): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
+  const t = state.translate ?? ((source: string) => source);
   const hasThread = state.hasThread !== false;
   const thread = hasThread
-    ? menuSection("thread", "Thread", [
-        { id: "rename", label: "Rename thread", icon: "pencil" },
-        { id: "mark-unread", label: "Mark unread", icon: "mail-open" },
-        state.canFind ? { id: "find", label: "Find in thread", icon: "text-search" } : null,
+    ? menuSection("thread", t("Thread"), [
+        { id: "rename", label: t("Rename thread"), icon: "pencil" },
+        { id: "mark-unread", label: t("Mark unread"), icon: "mail-open" },
+        state.canFind ? { id: "find", label: t("Find in thread"), icon: "text-search" } : null,
         {
           id: "copy",
-          label: "Copy",
+          label: t("Copy"),
           icon: "copy",
           children: [
-            { id: "copy-path", label: "Path", icon: "folder" },
+            { id: "copy-path", label: t("Path"), icon: "folder" },
             ...(state.branch
-              ? [{ id: "copy-branch" as const, label: "Branch", icon: "git-branch" }]
+              ? [{ id: "copy-branch" as const, label: t("Branch"), icon: "git-branch" }]
               : []),
-            { id: "copy-thread", label: "Thread", icon: "message-square" },
-            { id: "copy-thread-id", label: "Thread ID", icon: "hash" },
+            { id: "copy-thread", label: t("Thread"), icon: "message-square" },
+            { id: "copy-thread-id", label: t("Thread ID"), icon: "hash" },
           ],
         },
       ])
     : [];
   const status = hasThread
-    ? menuSection("status", "Status", [
+    ? menuSection("status", t("Status"), [
         state.supports.settlement
           ? state.isSettled
-            ? { id: "unsettle", label: "Reopen thread", icon: "circle-check" }
-            : { id: "settle", label: "Close thread", icon: "circle-check" }
+            ? { id: "unsettle", label: t("Reopen thread"), icon: "circle-check" }
+            : { id: "settle", label: t("Close thread"), icon: "circle-check" }
           : null,
         state.supports.snooze
           ? state.isSnoozed
-            ? { id: "unsnooze", label: "Bring thread back", icon: "clock" }
+            ? { id: "unsnooze", label: t("Bring thread back"), icon: "clock" }
             : {
                 id: "snooze",
-                label: "Hold",
+                label: t("Hold"),
                 icon: "clock",
                 disabled: !state.canSnoozeNow,
                 children: [
                   ...state.snoozePresets.map((preset) => ({
                     id: `snooze:${preset.id}` as const,
-                    label: `${preset.label} (${preset.whenLabel})`,
+                    label: t("{label} ({when})", {
+                      label: preset.label,
+                      when: preset.whenLabel,
+                    }),
                   })),
                   {
                     id: "snooze:custom" as const,
-                    label: "Custom…",
+                    label: t("Custom…"),
                     separatorBefore: state.snoozePresets.length > 0,
                   },
                 ],
@@ -211,11 +219,11 @@ export function buildThreadActionMenuItems(
       ])
     : [];
   const organise = hasThread
-    ? menuSection("organise", "Organise", [
+    ? menuSection("organise", t("Organise"), [
         state.workspace !== undefined
           ? {
               id: "move-to-workspace",
-              label: "Move to workspace",
+              label: t("Move to workspace"),
               icon: "layout-grid",
               children: [
                 ...state.workspace.targets.map((target) => ({
@@ -224,7 +232,7 @@ export function buildThreadActionMenuItems(
                 })),
                 {
                   id: "move-to-new-workspace" as const,
-                  label: "New workspace",
+                  label: t("New workspace"),
                   separatorBefore: state.workspace.targets.length > 0,
                 },
               ],
@@ -232,7 +240,7 @@ export function buildThreadActionMenuItems(
           : null,
         {
           id: "tags",
-          label: "Tags",
+          label: t("Tags"),
           icon: "tag",
           children: [
             ...state.tagSuggestions.map((tag) => ({
@@ -242,7 +250,7 @@ export function buildThreadActionMenuItems(
             })),
             {
               id: "tag-edit" as const,
-              label: "Edit tags…",
+              label: t("Edit tags…"),
               separatorBefore: state.tagSuggestions.length > 0,
             },
           ],
@@ -251,23 +259,23 @@ export function buildThreadActionMenuItems(
           ? {
               id: "filter-by-project",
               label: state.projectFilter.isActive
-                ? "Show all projects"
-                : `Filter by ${state.projectFilter.label}`,
+                ? t("Show all projects")
+                : t("Filter by {project}", { project: state.projectFilter.label }),
               icon: "folder-tree",
             }
           : null,
         state.branch && state.canStartBranchThread === true
           ? {
               id: "new-thread-on-branch",
-              label: `New thread on ${state.branch}`,
+              label: t("New thread on {branch}", { branch: state.branch }),
               icon: "message-square-plus",
             }
           : null,
-        { id: "project-settings", label: "Project settings", icon: "settings" },
+        { id: "project-settings", label: t("Project settings"), icon: "settings" },
         state.canTurnIntoProject
           ? {
               id: "turn-into-project",
-              label: "Turn into project",
+              label: t("Turn into project"),
               icon: "folder-plus",
               disabled: state.isRunning,
             }
@@ -279,14 +287,16 @@ export function buildThreadActionMenuItems(
         state.supports.titleRegeneration || state.supports.autoSettleOptOut
           ? {
               id: "more",
-              label: "More",
+              label: t("More"),
               separatorBefore: true,
               children: [
                 ...(state.supports.titleRegeneration
                   ? [
                       {
                         id: "regenerate-title" as const,
-                        label: state.isRegeneratingTitle ? "Regenerating…" : "Regenerate title",
+                        label: state.isRegeneratingTitle
+                          ? t("Regenerating…")
+                          : t("Regenerate title"),
                         icon: "refresh-cw",
                         disabled: state.isRegeneratingTitle,
                       },
@@ -296,17 +306,17 @@ export function buildThreadActionMenuItems(
                   ? [
                       {
                         id: "auto-settle" as const,
-                        label: "Auto-close behavior",
+                        label: t("Auto-close behavior"),
                         icon: "timer",
                         children: [
                           {
                             id: "auto-settle:enabled" as const,
-                            label: "Enabled",
+                            label: t("Enabled"),
                             checked: state.autoSettleEnabled,
                           },
                           {
                             id: "auto-settle:disabled" as const,
-                            label: "Disabled",
+                            label: t("Disabled"),
                             checked: !state.autoSettleEnabled,
                           },
                         ],
@@ -322,12 +332,12 @@ export function buildThreadActionMenuItems(
     ? [
         {
           id: "archive" as const,
-          label: "Archive thread",
+          label: t("Archive thread"),
           icon: "archive",
           disabled: state.isRunning,
           separatorBefore: true,
         },
-        { id: "delete" as const, label: "Delete", destructive: true, icon: "trash" },
+        { id: "delete" as const, label: t("Delete"), destructive: true, icon: "trash" },
       ]
     : [];
   const items: ReadonlyArray<ThreadActionMenuItem> = [

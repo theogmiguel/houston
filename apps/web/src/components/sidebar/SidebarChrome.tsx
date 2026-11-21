@@ -26,6 +26,7 @@ import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 import { SidebarUpdateArchitectureWarning } from "./SidebarUpdatePill";
 import { SidebarUpdatesButton } from "./SidebarUpdatesButton";
 import { observeResize } from "~/lib/observeResize";
+import { useT } from "~/i18n/useT";
 
 /**
  * The rail's brand row: Houston's mark and name, with the sidebar's hide
@@ -40,6 +41,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   /** The phone's home is the rail itself, so it has nothing to hide. */
   showHideControl?: boolean;
 }) {
+  const t = useT();
   const stageLabel = useEnvironmentStageLabel();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
   const pillLabel =
@@ -67,7 +69,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
       </div>
       {showHideControl ? (
         <SidebarTrigger
-          aria-label="Hide sidebar"
+          aria-label={t("Hide sidebar")}
           className="relative z-10 size-7! shrink-0 [-webkit-app-region:no-drag]"
         />
       ) : null}
@@ -100,9 +102,10 @@ export function SidebarBrandWidthProbe({
 }
 
 function SidebarBrand() {
+  const t = useT();
   return (
     <Link
-      aria-label="Go to threads"
+      aria-label={t("Go to threads")}
       className="relative z-10 ml-[calc(var(--workspace-controls-left)-0.75rem)] flex h-7 w-fit min-w-0 shrink items-center overflow-hidden rounded-(--control-radius) text-foreground outline-none ring-ring focus-visible:ring-2 focus-visible:ring-inset"
       to="/"
     >
@@ -155,6 +158,7 @@ function SidebarUtilityItem({
 }
 
 export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
+  const t = useT();
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
   const { appearanceMode, setAppearanceMode } = useTheme();
@@ -173,10 +177,10 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
 
   return (
     <SidebarMenu className="flex-row items-center">
-      <SidebarUtilityItem icon={<SettingsIcon />} label="Settings" onClick={handleSettingsClick} />
+      <SidebarUtilityItem icon={<SettingsIcon />} label={t("Settings")} onClick={handleSettingsClick} />
       <SidebarUtilityItem
         icon={<ThemeIcon />}
-        label={`Theme: ${themeLabel}`}
+        label={t("Theme: {name}", { name: themeLabel })}
         onClick={cycleTheme}
       />
       <li aria-hidden className="min-w-0 flex-1" />

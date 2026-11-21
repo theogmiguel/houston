@@ -98,6 +98,7 @@ import {
 import { ThreadBulkMenuContext } from "./useBulkThreadMenu";
 import { useThreadProjectFilter } from "./ProjectFilterPicker";
 import { useRowFileDrop } from "./useRowFileDrop";
+import { useT } from "~/i18n/useT";
 
 const AGO_SUFFIX_RE = / ago$/;
 
@@ -229,6 +230,7 @@ export function ThreadCard({
   /** Supplies New thread on branch; absent hides that item. */
   handleNewThread?: NewThreadHandler | undefined;
 }) {
+  const t = useT();
   const [renaming, setRenaming] = useState(false);
   const [actionsHovered, setActionsHovered] = useState(false);
   const [holdMenuOpen, setHoldMenuOpen] = useState(false);
@@ -488,7 +490,9 @@ export function ThreadCard({
                 {shelf !== null ? (
                   <button
                     type="button"
-                    aria-label={shelf === "snoozed" ? "Wake thread now" : "Reopen thread"}
+                    aria-label={
+                      shelf === "snoozed" ? t("Wake thread now") : t("Reopen thread")
+                    }
                     {...sweepActionProps(shelf === "snoozed" ? "wake" : "reopen")}
                     onPointerDown={(event) =>
                       sweep?.(event, shelf === "snoozed" ? "wake" : "reopen", threadKey)
@@ -499,12 +503,12 @@ export function ThreadCard({
                     {shelf === "snoozed" ? (
                       <>
                         <AlarmClockOffIcon aria-hidden className="size-3.5" />
-                        Wake
+                        {t("Wake")}
                       </>
                     ) : (
                       <>
                         <Undo2Icon aria-hidden className="size-3.5" />
-                        Reopen
+                        {t("Reopen")}
                       </>
                     )}
                   </button>
@@ -516,7 +520,7 @@ export function ThreadCard({
                           render={
                             <button
                               type="button"
-                              aria-label="Hold"
+                              aria-label={t("Hold")}
                               className={cn(SIDEBAR_THREAD_ICON_ACTION_CLS, FOCUS_ACTION_CLS)}
                             >
                               <ClockIcon aria-hidden className="size-3.5" />
@@ -534,19 +538,19 @@ export function ThreadCard({
                     ) : null}
                     <button
                       type="button"
-                      aria-label="Close thread"
+                      aria-label={t("Close thread")}
                       {...sweepActionProps("close")}
                       onPointerDown={(event) => sweep?.(event, "close", threadKey)}
                       onClick={onClose}
                       className={cn(SIDEBAR_THREAD_TEXT_ACTION_CLS, FOCUS_ACTION_CLS)}
                     >
                       <XIcon aria-hidden className="size-3.5" />
-                      Close
+                      {t("Close")}
                     </button>
                     <button
                       ref={actionsButtonRef}
                       type="button"
-                      aria-label={`Thread actions for ${thread.title}`}
+                      aria-label={t("Thread actions for {title}", { title: thread.title })}
                       aria-haspopup="menu"
                       onClick={openCardMenuFromButton}
                       className={cn(SIDEBAR_THREAD_ICON_ACTION_CLS, FOCUS_ACTION_CLS)}
@@ -642,16 +646,16 @@ export function ThreadCard({
                   dropsFirst
                   label={
                     runningSubagents === 1
-                      ? "1 subagent running"
-                      : `${runningSubagents} subagents running`
+                      ? t("1 subagent running")
+                      : t("{count} subagents running", { count: runningSubagents })
                   }
                 >
                   <span
                     role="img"
                     aria-label={
                       runningSubagents === 1
-                        ? "1 subagent running"
-                        : `${runningSubagents} subagents running`
+                        ? t("1 subagent running")
+                        : t("{count} subagents running", { count: runningSubagents })
                     }
                     className={cn("inline-flex shrink-0 items-center gap-1", SIDEBAR_TABULAR_CLS)}
                   >
@@ -668,9 +672,9 @@ export function ThreadCard({
                 </RowMetaItem>
               ))}
               {regeneratingTitle ? (
-                <RowMetaItem label="Renaming title">
+                <RowMetaItem label={t("Renaming title")}>
                   <span data-thread-regenerating="" className="shrink-0">
-                    Renaming…
+                    {t("Renaming…")}
                   </span>
                 </RowMetaItem>
               ) : null}
@@ -729,9 +733,10 @@ export function HoldMenuItems({
   onPick: (preset: Pick<SnoozePreset, "snoozedUntil">) => void;
   onPickTime: () => Promise<Pick<SnoozePreset, "snoozedUntil"> | null>;
 }) {
+  const t = useT();
   return (
     <>
-      <div className={SIDEBAR_MENU_HEADING_CLS}>Hold until</div>
+      <div className={SIDEBAR_MENU_HEADING_CLS}>{t("Hold until")}</div>
       {presets.map((preset) => (
         <MenuItem key={preset.id} onClick={() => onPick(preset)}>
           {preset.label}
@@ -747,7 +752,7 @@ export function HoldMenuItems({
           })();
         }}
       >
-        Pick a time…
+        {t("Pick a time…")}
       </MenuItem>
     </>
   );

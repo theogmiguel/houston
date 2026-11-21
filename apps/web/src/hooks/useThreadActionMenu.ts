@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useT } from "~/i18n/useT";
 import { scopeProjectRef } from "@houston-app/client-runtime/environment";
 import { requestCustomSnooze } from "../components/CustomSnoozeDialog";
 import { requestThreadTags } from "../components/ThreadTagsDialog";
@@ -76,6 +77,7 @@ export function useThreadActionMenu(input: {
     | null
     | undefined;
 }) {
+  const t = useT();
   const { threadRef, onStartRename, onFind, handleNewThread, workspace } = input;
   const {
     unsettleThread,
@@ -125,6 +127,7 @@ export function useThreadActionMenu(input: {
       ...new Set([...threadTags, ...readThreadShells().flatMap((shell) => shell.tags ?? [])]),
     ].toSorted((left, right) => left.localeCompare(right));
     const items = buildThreadActionMenuItems({
+      translate: t,
       canOperate:
         thread !== null && readEnvironmentScope(environmentId, AuthOrchestrationOperateScope),
       hasThread: thread !== null,

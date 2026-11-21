@@ -1,4 +1,5 @@
 import type { ContextMenuItem } from "@houston-app/contracts";
+import type { Translate } from "~/i18n/useT";
 
 export type WorkspaceHeadingMenuAction =
   | "new-thread"
@@ -22,31 +23,33 @@ export function workspaceHeadingMenuItems(input: {
   canMoveDown: boolean;
   readyCount: number;
   hiddenWorkspaces: ReadonlyArray<{ id: string; name: string }>;
+  translate?: Translate;
 }): ReadonlyArray<ContextMenuItem<WorkspaceHeadingMenuAction>> {
+  const t = input.translate ?? ((source: string) => source);
   const items: ContextMenuItem<WorkspaceHeadingMenuAction>[] = [
-    { id: "new-thread", label: "New thread" },
-    { id: "rename", label: "Rename workspace" },
+    { id: "new-thread", label: t("New thread") },
+    { id: "rename", label: t("Rename workspace") },
     {
       id: "toggle-pin",
-      label: input.pinned ? "Unpin workspace" : "Pin workspace",
+      label: input.pinned ? t("Unpin workspace") : t("Pin workspace"),
       separatorBefore: true,
     },
-    { id: "move-up", label: "Move workspace up", disabled: !input.canMoveUp },
-    { id: "move-down", label: "Move workspace down", disabled: !input.canMoveDown },
-    { id: "hide", label: "Hide workspace" },
-    { id: "delete", label: "Delete workspace…", destructive: true },
+    { id: "move-up", label: t("Move workspace up"), disabled: !input.canMoveUp },
+    { id: "move-down", label: t("Move workspace down"), disabled: !input.canMoveDown },
+    { id: "hide", label: t("Hide workspace") },
+    { id: "delete", label: t("Delete workspace…"), destructive: true },
     {
       id: "close-ready",
-      label: "Close all ready",
+      label: t("Close all ready"),
       disabled: input.readyCount === 0,
       separatorBefore: true,
     },
-    { id: "new-workspace", label: "New workspace", separatorBefore: true },
+    { id: "new-workspace", label: t("New workspace"), separatorBefore: true },
   ];
   if (input.hiddenWorkspaces.length > 0) {
     items.push({
       id: "hidden-workspaces",
-      label: "Show hidden workspaces",
+      label: t("Show hidden workspaces"),
       children: input.hiddenWorkspaces.map((workspace) => ({
         id: `${SHOW_WORKSPACE_PREFIX}${workspace.id}`,
         label: workspace.name,

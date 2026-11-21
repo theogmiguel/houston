@@ -13,6 +13,7 @@ import type { ThreadStatusPill } from "../Sidebar.logic";
 import { useAcknowledgeThreadWoke } from "../../hooks/useThreadActions";
 import { useNowSecond } from "../../hooks/useNowSecond";
 import { cn } from "../../lib/utils";
+import { useT } from "~/i18n/useT";
 import type { ThreadStatusKind } from "../ui/thread-state-glyph";
 import {
   ThreadStatusKindGlyph,
@@ -28,19 +29,20 @@ const BACK_WORD_CLASS = threadStatusWordClass("back");
  * The Back word is a button: pressing it marks the wake as seen.
  */
 export function BackWord({ thread, nowIso }: { thread: EnvironmentThreadShell; nowIso: string }) {
+  const t = useT();
   const acknowledge = useAcknowledgeThreadWoke();
   const wokeAt = threadWokeAt(thread, { now: nowIso }) ?? thread.unsettledAt;
   if (wokeAt === null) {
     return (
       <span data-thread-status="" className={cn(SIDEBAR_THREAD_STATUS_CLASS, BACK_WORD_CLASS)}>
-        Back
+        {t("Back")}
       </span>
     );
   }
   return (
     <button
       type="button"
-      aria-label="Dismiss back notification"
+      aria-label={t("Dismiss back notification")}
       data-thread-status=""
       data-thread-back-dismiss=""
       onPointerDown={(event) => event.stopPropagation()}
@@ -83,10 +85,13 @@ export function ThreadStatusGlyph({
   /** Overrides the kind the thread's state implies, as a Closed shelf row does. */
   kind?: ThreadStatusKind;
 }) {
+  const t = useT();
   return (
     <span
       role="img"
-      aria-label={kind === "closed" ? "Closed" : (threadStatusWord(thread, state) ?? "Idle")}
+      aria-label={
+        kind === "closed" ? t("Closed") : t(threadStatusWord(thread, state) ?? "Idle")
+      }
       data-thread-status-glyph=""
       data-status-kind={kind}
       className={cn(
@@ -132,7 +137,8 @@ export function ThreadStatusWord({
     );
   }
   const startedAt = resolveThreadWorkingStartedAt(thread);
-  const word = threadStatusWord(thread, state) ?? "Idle";
+  const t = useT();
+  const word = t(threadStatusWord(thread, state) ?? "Idle");
   return (
     <span
       data-thread-status=""

@@ -14,6 +14,7 @@ import {
 } from "../../threads/threadDrag";
 import { cn } from "../../lib/utils";
 import { Separator } from "../ui/separator";
+import { useT } from "~/i18n/useT";
 import { MOTION_FEEDBACK_DEFAULT_EASE } from "../ui/motion-recipes";
 import { SidebarShelfHeader } from "./SidebarListMarkers";
 import {
@@ -62,6 +63,7 @@ export function SidebarShelves({
   forceExpanded = false,
   older,
 }: SidebarShelvesProps) {
+  const t = useT();
   const closedRef = useRef<HTMLDivElement | null>(null);
   useThreadDropZone(
     closedRef,
@@ -118,7 +120,7 @@ export function SidebarShelves({
         <SidebarShelfHeader
           variant="rail"
           shelf="snoozed"
-          label="On hold"
+          label={t("On hold")}
           count={held.length}
           toggle={{
             expanded: snoozedOpen,
@@ -157,10 +159,12 @@ export function SidebarShelves({
                 >
                   <ChevronDownIcon aria-hidden className="size-3 shrink-0" />
                   {olderShelf.loading
-                    ? "Loading"
+                    ? t("Loading")
                     : olderShelf.failed
-                      ? "Could not load older threads. Retry"
-                      : `Show ${Math.min(hiddenClosedCount, SETTLED_TAIL_PAGE_COUNT)} more`}
+                      ? t("Could not load older threads. Retry")
+                      : t("Show {count} more", {
+                          count: Math.min(hiddenClosedCount, SETTLED_TAIL_PAGE_COUNT),
+                        })}
                 </button>
               ) : null}
             </div>
@@ -170,7 +174,7 @@ export function SidebarShelves({
           <SidebarShelfHeader
             variant="rail"
             shelf="settled"
-            label="Closed"
+            label={t("Closed")}
             count={closedCount}
             dragging={closedDragActive}
             isDropTarget={closedDropTarget}

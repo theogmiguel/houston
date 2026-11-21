@@ -1,9 +1,11 @@
+import { DEFAULT_CLIENT_SETTINGS } from "@houston-app/contracts/settings";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
 import { render } from "../../test/render";
 import { openCommandPalette } from "../commandPaletteBus";
 import { useCommandPaletteStore } from "../commandPaletteStore";
+import { __setClientSettingsForTests } from "../hooks/useSettings";
 import { CommandPalette } from "./CommandPaletteShell";
 // The shell loads its body on demand; loading it here keeps a cold transform out of the polls.
 import "./CommandPalette";
@@ -50,5 +52,21 @@ describe("CommandPalette open intents", () => {
     await page.getByText("Open tasks", { exact: true }).click();
 
     await vi.waitFor(() => expect(screen.router?.state.location.pathname).toBe("/tasks"));
+  });
+});
+
+describe("CommandPalette language", () => {
+  it("shows the search placeholder in Brazilian Portuguese", async () => {
+    setup();
+    __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, language: "pt-BR" });
+    try {
+      await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+      openCommandPalette({ query: "" });
+      await expect
+        .element(page.getByPlaceholder("Buscar comandos, projetos e threads..."))
+        .toBeVisible();
+    } finally {
+      __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
+    }
   });
 });
