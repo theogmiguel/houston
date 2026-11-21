@@ -1100,6 +1100,8 @@ export interface DesktopTraySession {
 export interface DesktopTrayPayload {
   readonly connection: DesktopTrayConnection;
   readonly sessions: ReadonlyArray<DesktopTraySession>;
+  /** The interface language, so the host can draw its native menu in the same one. */
+  readonly language?: string;
 }
 
 export interface DesktopTrayState {

@@ -9,6 +9,7 @@ import * as Schema from "effect/Schema";
 import * as Electron from "electron";
 
 import type { DesktopTrayPayload, DesktopTrayState } from "@houston-app/contracts";
+import { resolveDesktopLocale, translateDesktop } from "../i18n/translate.ts";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
@@ -83,48 +84,53 @@ export class TrayHost extends Context.Service<
 
 const { logWarning: logTrayWarning } = makeComponentLogger("desktop-tray");
 
-function messageText(item: Exclude<TrayItem, { type: "separator" }>): string {
+function messageText(
+  item: Exclude<TrayItem, { type: "separator" }>,
+  t: (source: string) => string,
+): string {
   switch (item.type) {
     case "header":
     case "group":
     case "overflow":
       return item.label;
     case "open":
-      return "Open Houston";
+      return t("Open Houston");
     case "newThread":
-      return "New thread…";
+      return t("New thread…");
     case "session":
       return item.label;
     case "submenu":
       return item.label;
     case "quit":
-      return "Quit Houston";
+      return t("Quit Houston");
   }
 }
 
 function buildMenu(payload: DesktopTrayPayload, emit: (action: TrayAction) => void): Electron.Menu {
+  const locale = resolveDesktopLocale(payload.language);
+  const t = (source: string) => translateDesktop(locale, source);
   const toTemplate = (items: readonly TrayItem[]): Electron.MenuItemConstructorOptions[] =>
     items.map((item): Electron.MenuItemConstructorOptions => {
       switch (item.type) {
         case "header":
         case "group":
         case "overflow":
-          return { label: messageText(item), enabled: false };
+          return { label: messageText(item, t), enabled: false };
         case "open":
-          return { label: messageText(item), click: () => emit({ type: "open" }) };
+          return { label: messageText(item, t), click: () => emit({ type: "open" }) };
         case "newThread":
-          return { label: messageText(item), click: () => emit({ type: "new-thread" }) };
+          return { label: messageText(item, t), click: () => emit({ type: "new-thread" }) };
         case "separator":
           return { type: "separator" };
         case "session":
           return {
-            label: messageText(item),
+            label: messageText(item, t),
             click: () => emit({ type: "focus-thread", threadKey: item.id }),
           };
         case "submenu":
-          return { label: messageText(item), submenu: toTemplate(item.items) };
+          return { label: messageText(item, t), submenu: toTemplate(item.items) };
         case "quit":
-          return { label: messageText(item), click: () => emit({ type: "quit" }) };
+          return { label: messageText(item, t), click: () => emit({ type: "quit" }) };
       }
     });
   return Electron.Menu.buildFromTemplate(toTemplate(menuModel(payload)));

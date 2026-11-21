@@ -236,7 +236,10 @@ export function startAppServices(): AppRouter {
   const quickComposerWindow = isQuickComposerWindow();
   if (!quickComposerWindow) {
     startThreadNotifications(appAtomRegistry, router);
-    startTraySync(appAtomRegistry, router);
+    startTraySync(appAtomRegistry, router, {
+      language: () => getClientSettings().language,
+      subscribeLanguage: subscribeClientSettings,
+    });
     startGuideRunNotifications(appAtomRegistry, router);
     if (isDesktopHost) startDesktopUpdateLaunchNotice();
   }

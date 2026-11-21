@@ -71,6 +71,7 @@ export function buildTrayPayload(
   projectTitles: ReadonlyMap<string, string>,
   providerDrivers: ReadonlyMap<ProviderInstanceId, string>,
   delegatedUnderParent: ReadonlySet<string>,
+  language: string = "en",
 ): DesktopTrayPayload {
   const sessions = threads
     .filter(
@@ -95,10 +96,17 @@ export function buildTrayPayload(
         workspace: projectTitle ?? "Houston",
       };
     });
-  return { connection: trayConnection(phases), sessions };
+  return { connection: trayConnection(phases), sessions, language };
 }
 
-export function startTraySync(registry: AtomRegistry.AtomRegistry, router: AnyRouter): () => void {
+export function startTraySync(
+  registry: AtomRegistry.AtomRegistry,
+  router: AnyRouter,
+  options: {
+    readonly language?: () => string;
+    readonly subscribeLanguage?: (listener: () => void) => () => void;
+  } = {},
+): () => void {
   const bridge = window.hostBridge;
   if (!bridge?.traySync) return () => {};
 
@@ -133,6 +141,7 @@ export function startTraySync(registry: AtomRegistry.AtomRegistry, router: AnyRo
       projectTitles,
       providerDrivers,
       delegatedUnderParent,
+      options.language?.() ?? "en",
     );
     if (JSON.stringify(payload) === lastSentKey) {
       pending = null;
@@ -163,6 +172,7 @@ export function startTraySync(registry: AtomRegistry.AtomRegistry, router: AnyRo
     registry.subscribe(environmentPresentations.presentationsAtom, publish),
     registry.subscribe(environmentThreadShells.delegatedUnderParentAtom, publish),
     registry.subscribe(environmentPresentations.providersByEnvironmentAtom, publish),
+    ...(options.subscribeLanguage === undefined ? [] : [options.subscribeLanguage(publish)]),
   ];
   const unsubscribeFocus = bridge.onTrayFocus?.((key) => {
     const target = parseTrayThreadKey(key);

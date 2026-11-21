@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 
 import * as DesktopClientSettings from "../../settings/DesktopClientSettings.ts";
 import * as DesktopPortForwarding from "../../portForwarding/DesktopPortForwarding.ts";
+import * as DesktopApplicationMenu from "../../window/DesktopApplicationMenu.ts";
 import * as DesktopSnapShot from "../../snapShot/DesktopSnapShot.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
@@ -27,6 +28,8 @@ export const setClientSettings = DesktopIpc.makeIpcMethod({
     const clientSettings = yield* DesktopClientSettings.DesktopClientSettings;
     const snapShot = yield* DesktopSnapShot.DesktopSnapShot;
     yield* clientSettings.set(settings);
+    const applicationMenu = yield* DesktopApplicationMenu.DesktopApplicationMenu;
+    yield* applicationMenu.configure;
     yield* snapShot.configure(settings);
     const forwarding = yield* DesktopPortForwarding.DesktopPortForwarding;
     yield* forwarding.applySettings(settings.portForwardingEnabled);
