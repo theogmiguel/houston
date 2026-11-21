@@ -1,9 +1,15 @@
 import {
   AuthAccessTokenType,
   AuthAccessWriteScope,
+  AuthDevicePairingMethod,
+  AuthGrantScope,
   AuthMcpClientAccess,
   AuthOrchestrationOperateScope,
+  AuthPendingApprovalNotice,
+  AuthPendingDevice,
   AuthStandardClientScopes,
+  PENDING_DEVICE_APPROVAL_LIMIT_HOURS,
+  pendingDeviceApprovalMessage,
   type AuthAccessTokenResult,
   type AuthBrowserSessionResult,
   type AuthClientMetadata,
@@ -38,6 +44,7 @@ import * as HttpServerRequest from "effect/http/HttpServerRequest";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ServerConfig from "../config.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as EnvironmentAuthPolicy from "./EnvironmentAuthPolicy.ts";
 import * as PairingGrantStore from "./PairingGrantStore.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
@@ -91,8 +98,11 @@ export interface AuthenticatedSession {
   readonly subject: string;
   readonly method: ServerAuthSessionMethod;
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
+  readonly client?: AuthClientMetadata;
   readonly proofKeyThumbprint?: string;
   readonly expiresAt?: DateTime.DateTime;
+  /** Present while the device waits for its owner; every HTTP and RPC call refuses it. */
+  readonly pendingApproval?: AuthPendingApprovalNotice;
 }
 
 const serverAuthInternalErrorContext = {
@@ -362,6 +372,21 @@ export const ServerAuthInternalError = Schema.Union([
 export type ServerAuthInternalError = typeof ServerAuthInternalError.Type;
 export const isServerAuthInternalError = Schema.is(ServerAuthInternalError);
 
+export class ServerAuthDeviceApprovalPendingError extends Schema.TaggedError<ServerAuthDeviceApprovalPendingError>()(
+  "ServerAuthDeviceApprovalPendingError",
+  {
+    notice: AuthPendingApprovalNotice,
+  },
+) {
+  override get message(): string {
+    return pendingDeviceApprovalMessage(this.notice);
+  }
+}
+
+export const isServerAuthDeviceApprovalPendingError = Schema.is(
+  ServerAuthDeviceApprovalPendingError,
+);
+
 export class ServerAuthMissingCredentialError extends Schema.TaggedError<ServerAuthMissingCredentialError>()(
   "ServerAuthMissingCredentialError",
   {},
@@ -462,6 +487,7 @@ export class EnvironmentAuth extends Context.Service<
       credential: string,
       requestMetadata: AuthClientMetadata,
       previousSessionToken?: string,
+      input?: { readonly pairedVia?: AuthDevicePairingMethod },
     ) => Effect.Effect<
       {
         readonly response: AuthBrowserSessionResult;
@@ -524,6 +550,16 @@ export class EnvironmentAuth extends Context.Service<
     readonly listClientSessions: (
       currentSessionId: AuthSessionId,
     ) => Effect.Effect<ReadonlyArray<AuthClientSession>, ServerAuthInternalError>;
+    readonly listPendingDevices: () => Effect.Effect<
+      ReadonlyArray<AuthPendingDevice>,
+      ServerAuthInternalError
+    >;
+    readonly approvePendingDevice: (
+      sessionId: AuthSessionId,
+    ) => Effect.Effect<boolean, ServerAuthInternalError>;
+    readonly denyPendingDevice: (
+      sessionId: AuthSessionId,
+    ) => Effect.Effect<boolean, ServerAuthInternalError>;
     readonly revokeClientSession: (
       currentSessionId: AuthSessionId,
       targetSessionId: AuthSessionId,
@@ -533,7 +569,10 @@ export class EnvironmentAuth extends Context.Service<
     ) => Effect.Effect<number, ServerAuthInternalError>;
     readonly authenticateHttpRequest: (
       request: HttpServerRequest.HttpServerRequest,
-    ) => Effect.Effect<AuthenticatedSession, ServerAuthCredentialError | ServerAuthInternalError>;
+    ) => Effect.Effect<
+      AuthenticatedSession,
+      ServerAuthCredentialError | ServerAuthInternalError | ServerAuthDeviceApprovalPendingError
+    >;
     readonly authenticateWebSocketUpgrade: (
       request: HttpServerRequest.HttpServerRequest,
       use: AuthWebSocketTicketUse,
@@ -732,6 +771,25 @@ export const make = Effect.gen(function* () {
   const managedPolicy = yield* ManagedPolicy.ManagedPolicy;
   const devAuth = resolveReusableDevAuth(config);
 
+  const requireApprovalForNewDevices = Effect.gen(function* () {
+    const settingsService = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
+    if (Option.isNone(settingsService)) return false;
+    return yield* settingsService.value.getSettings.pipe(
+      Effect.map((settings) => settings.requireApprovalForNewDevices),
+      Effect.orElseSucceed(() => false),
+    );
+  });
+
+  const pendingNotice = (
+    client: AuthClientMetadata | undefined,
+    pending: { readonly expiresAt: DateTime.Utc },
+  ): AuthPendingApprovalNotice => ({
+    deviceName: SessionStore.deviceDisplayName(client ?? { deviceType: "unknown" }),
+    hostLabel: "this host",
+    expiresAt: pending.expiresAt,
+    limitHours: PENDING_DEVICE_APPROVAL_LIMIT_HOURS,
+  });
+
   const authenticateToken = (
     token: string,
   ): Effect.Effect<
@@ -755,8 +813,12 @@ export const make = Effect.gen(function* () {
         subject: session.subject,
         method: session.method,
         scopes: session.scopes,
+        client: session.client,
         ...(session.proofKeyThumbprint ? { proofKeyThumbprint: session.proofKeyThumbprint } : {}),
         ...(session.expiresAt ? { expiresAt: session.expiresAt } : {}),
+        ...(session.pendingApproval
+          ? { pendingApproval: pendingNotice(session.client, session.pendingApproval) }
+          : {}),
       })),
     );
 
@@ -845,6 +907,7 @@ export const make = Effect.gen(function* () {
             ...authScopeResponse(session.scopes),
             sessionMethod: session.method,
             ...(session.expiresAt ? { expiresAt: DateTime.toUtc(session.expiresAt) } : {}),
+            ...(session.pendingApproval ? { approvalPending: session.pendingApproval } : {}),
           }) satisfies AuthSessionState,
       ),
       Effect.catchIf(isServerAuthCredentialError, () =>
@@ -858,7 +921,7 @@ export const make = Effect.gen(function* () {
 
   const createBrowserSession: EnvironmentAuth["Service"]["createBrowserSession"] = Effect.fn(
     "EnvironmentAuth.createBrowserSession",
-  )(function* (credential, requestMetadata, previousSessionToken) {
+  )(function* (credential, requestMetadata, previousSessionToken, input) {
     if (devAuth?.matches(credential)) {
       return yield* sessions.verify(credential).pipe(
         mapSessionVerificationErrors,
@@ -893,11 +956,18 @@ export const make = Effect.gen(function* () {
     const grant = yield* bootstrapCredentials
       .consume(credential)
       .pipe(Effect.mapError(toBootstrapExchangeError));
+    // Only a standard pairing link or code becomes a device; startup and desktop grants stay local.
+    const pendingApproval =
+      grant.method === "one-time-token" &&
+      grant.subject === "one-time-token" &&
+      (yield* requireApprovalForNewDevices);
+    const pairedVia = input?.pairedVia ?? "unknown";
+    const issuedAt = yield* DateTime.now;
     const session = yield* sessions
       .issue({
         method: "browser-session-cookie",
         subject: grant.subject,
-        scopes: grant.scopes,
+        scopes: pendingApproval ? [] : grant.scopes,
         ...(previousSession?.method === "browser-session-cookie"
           ? { replaceSessionId: previousSession.sessionId }
           : {}),
@@ -905,14 +975,36 @@ export const make = Effect.gen(function* () {
           ...requestMetadata,
           ...(grant.label ? { label: grant.label } : {}),
         },
+        ...(pendingApproval
+          ? {
+              pendingApproval: {
+                grantedScopes: grant.scopes.filter(Schema.is(AuthGrantScope)),
+                pairedVia,
+                expiresAt: DateTime.add(issuedAt, {
+                  hours: PENDING_DEVICE_APPROVAL_LIMIT_HOURS,
+                }),
+              },
+            }
+          : {}),
       })
       .pipe(Effect.mapError((cause) => new ServerAuthAuthenticatedSessionIssueError({ cause })));
+    const notice = pendingApproval
+      ? {
+          deviceName: SessionStore.deviceDisplayName(session.client),
+          hostLabel: "this host",
+          expiresAt: DateTime.toUtc(
+            DateTime.add(issuedAt, { hours: PENDING_DEVICE_APPROVAL_LIMIT_HOURS }),
+          ),
+          limitHours: PENDING_DEVICE_APPROVAL_LIMIT_HOURS,
+        } satisfies AuthPendingApprovalNotice
+      : undefined;
     return {
       response: {
         authenticated: true,
         ...authScopeResponse(session.scopes),
         sessionMethod: session.method,
         expiresAt: DateTime.toUtc(session.expiresAt),
+        ...(notice !== undefined ? { approvalPending: notice } : {}),
       } satisfies AuthBrowserSessionResult,
       sessionToken: session.token,
     } satisfies BootstrapExchangeResult;
@@ -1207,6 +1299,24 @@ export const make = Effect.gen(function* () {
       Effect.withSpan("EnvironmentAuth.listClientSessions"),
     );
 
+  const listPendingDevices: EnvironmentAuth["Service"]["listPendingDevices"] = () =>
+    sessions.listPendingDevices().pipe(
+      Effect.mapError((cause) => new ServerAuthSessionsListError({ cause })),
+      Effect.withSpan("EnvironmentAuth.listPendingDevices"),
+    );
+
+  const approvePendingDevice: EnvironmentAuth["Service"]["approvePendingDevice"] = (sessionId) =>
+    sessions.approvePendingDevice(sessionId).pipe(
+      Effect.mapError((cause) => new ServerAuthSessionRevocationError({ cause })),
+      Effect.withSpan("EnvironmentAuth.approvePendingDevice"),
+    );
+
+  const denyPendingDevice: EnvironmentAuth["Service"]["denyPendingDevice"] = (sessionId) =>
+    sessions.denyPendingDevice(sessionId).pipe(
+      Effect.mapError((cause) => new ServerAuthSessionRevocationError({ cause })),
+      Effect.withSpan("EnvironmentAuth.denyPendingDevice"),
+    );
+
   const revokeClientSession: EnvironmentAuth["Service"]["revokeClientSession"] = Effect.fn(
     "EnvironmentAuth.revokeClientSession",
   )(function* (currentSessionId, targetSessionId) {
@@ -1264,7 +1374,16 @@ export const make = Effect.gen(function* () {
   const authenticateHttpRequest: EnvironmentAuth["Service"]["authenticateHttpRequest"] = (
     request,
   ) =>
-    authenticateRequest(request).pipe(Effect.withSpan("EnvironmentAuth.authenticateHttpRequest"));
+    authenticateRequest(request).pipe(
+      Effect.filterOrFail(
+        (session) => session.pendingApproval === undefined,
+        (session) =>
+          new ServerAuthDeviceApprovalPendingError({
+            notice: pendingNotice(session.client, session.pendingApproval!),
+          }),
+      ),
+      Effect.withSpan("EnvironmentAuth.authenticateHttpRequest"),
+    );
 
   const authenticateWebSocketUpgrade: EnvironmentAuth["Service"]["authenticateWebSocketUpgrade"] =
     Effect.fn("EnvironmentAuth.authenticateWebSocketUpgrade")(function* (request, use) {
@@ -1309,10 +1428,14 @@ export const make = Effect.gen(function* () {
             subject: session.subject,
             method: session.method,
             scopes: session.scopes,
+            client: session.client,
             ...(session.proofKeyThumbprint
               ? { proofKeyThumbprint: session.proofKeyThumbprint }
               : {}),
             ...(session.expiresAt ? { expiresAt: session.expiresAt } : {}),
+            ...(session.pendingApproval
+              ? { pendingApproval: pendingNotice(session.client, session.pendingApproval) }
+              : {}),
           };
         }
       }
@@ -1425,6 +1548,9 @@ export const make = Effect.gen(function* () {
     listSessions,
     revokeSession,
     listClientSessions,
+    listPendingDevices,
+    approvePendingDevice,
+    denyPendingDevice,
     revokeClientSession,
     revokeOtherClientSessions,
     authenticateHttpRequest,

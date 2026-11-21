@@ -102,6 +102,8 @@ export const speechStreamRouteLayer = Layer.unwrap(
           .authenticateWebSocketUpgrade(request, "media")
           .pipe(Effect.result);
         if (session._tag === "Failure") return HttpServerResponse.empty({ status: 401 });
+        if (session.success.pendingApproval !== undefined)
+          return HttpServerResponse.empty({ status: 403 });
         if (!session.success.scopes.includes(AuthOrchestrationOperateScope))
           return HttpServerResponse.empty({ status: 403 });
         const socket = yield* request.upgrade;

@@ -4,7 +4,10 @@ import {
   AuthStandardClientScopes,
   AuthGrantScope,
   EnvironmentAuthInvalidError,
+  EnvironmentDeviceApprovalPendingError,
   type EnvironmentAuthInvalidReason,
+  type AuthPendingApprovalNotice,
+  pendingDeviceApprovalMessage,
   EnvironmentHttpApi,
   EnvironmentHttpForbiddenError,
   EnvironmentInternalError,
@@ -121,6 +124,23 @@ export function failEnvironmentInvalidRequest(reason: EnvironmentRequestInvalidR
   );
 }
 
+export function failEnvironmentDeviceApprovalPending(notice: AuthPendingApprovalNotice) {
+  return currentEnvironmentTraceId.pipe(
+    Effect.flatMap((traceId) =>
+      Effect.fail(
+        new EnvironmentDeviceApprovalPendingError({
+          code: "device_approval_pending",
+          message: pendingDeviceApprovalMessage(notice),
+          deviceName: notice.deviceName,
+          hostLabel: notice.hostLabel,
+          limitHours: notice.limitHours,
+          traceId,
+        }),
+      ),
+    ),
+  );
+}
+
 export function failEnvironmentScopeRequired(requiredScope: AuthEnvironmentScope) {
   return currentEnvironmentTraceId.pipe(
     Effect.flatMap((traceId) =>
@@ -180,6 +200,9 @@ export const authenticateMediaRequest =
         }),
       ),
     );
+    if (session.pendingApproval !== undefined) {
+      return yield* failEnvironmentDeviceApprovalPending(session.pendingApproval);
+    }
     if (!session.scopes.includes(requiredScope)) {
       return yield* failEnvironmentScopeRequired(requiredScope);
     }
@@ -240,6 +263,9 @@ export const layerAuthenticatedAuth = Layer.effect(
               EnvironmentAuth.serverAuthCredentialReason(error),
               EnvironmentAuth.serverAuthDpopFailureReason(error),
             ),
+          ),
+          Effect.catchIf(EnvironmentAuth.isServerAuthDeviceApprovalPendingError, (error) =>
+            failEnvironmentDeviceApprovalPending(error.notice),
           ),
           Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>
             failEnvironmentInternal("internal_error", error),
@@ -309,6 +335,9 @@ export const layer = HttpApiBuilder.group(
                 EnvironmentAuth.isBrowserCookieCredential(previousCredential.source)
                 ? previousCredential.token
                 : undefined,
+              args.payload.pairedVia === undefined
+                ? undefined
+                : { pairedVia: args.payload.pairedVia },
             );
             const cookieName = result.cookieName ?? sessions.cookieName;
             const selectedCookie = yield* Effect.fromResult(

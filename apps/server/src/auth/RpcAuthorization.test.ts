@@ -20,6 +20,7 @@ import {
   WsRpcGroup,
 } from "@houston-app/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
@@ -451,6 +452,45 @@ it.effect("denies manual cleanup before the handler without settings permission"
     expect(yield* client[WS_METHODS.serverRunStorageCleanup]({}).pipe(Effect.flip)).toMatchObject({
       requiredPermission: AuthSettingsWriteScope,
     });
+    expect(handled).toBe(false);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("refuses every method while a device waits for approval, naming it", () =>
+  Effect.gen(function* () {
+    const group = WsRpcGroup.omit(
+      ...[...WsRpcGroup.requests.keys()].filter(
+        (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, typeof WS_METHODS.serverProbe> =>
+          tag !== WS_METHODS.serverProbe,
+      ),
+    );
+    let handled = false;
+    const client = yield* RpcTest.makeClient(group).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          group.toLayerHandler(WS_METHODS.serverProbe, () =>
+            Effect.sync(() => {
+              handled = true;
+              return {};
+            }),
+          ),
+          RpcAuthorization.layer(
+            [],
+            undefined,
+            {
+              deviceName: "Living room iPad",
+              hostLabel: "this host",
+              expiresAt: DateTime.makeUnsafe("2026-11-21T12:00:00.000Z"),
+              limitHours: 24,
+            },
+          ),
+        ),
+      ),
+    );
+    const error = yield* client[WS_METHODS.serverProbe]({}).pipe(Effect.flip);
+    expect(error).toMatchObject({ _tag: "EnvironmentAuthorizationError" });
+    expect(error.message).toContain("Living room iPad");
+    expect(error.message).toContain("Require approval for new devices");
     expect(handled).toBe(false);
   }).pipe(Effect.scoped),
 );

@@ -31,6 +31,7 @@ import {
   type AuthEnvironmentScope,
   type ScheduledTaskListResult,
   AuthSessionId,
+  HoustonAccessPendingDeviceError,
   ClientConnectionMethod,
   ClientDeviceType,
   ClientOs,
@@ -784,8 +785,30 @@ function toAuthAccessStreamEvent(
         type: "clientRemoved",
         payload: { sessionId: change.sessionId },
       };
+    case "pendingDeviceUpserted":
+      return {
+        version: 1,
+        revision,
+        type: "pendingDeviceUpserted",
+        payload: change.pendingDevice,
+      };
+    case "pendingDeviceRemoved":
+      return {
+        version: 1,
+        revision,
+        type: "pendingDeviceRemoved",
+        payload: { sessionId: change.sessionId },
+      };
   }
 }
+
+const toPendingDeviceAccessError = (cause: unknown): HoustonAccessPendingDeviceError =>
+  Schema.is(HoustonAccessPendingDeviceError)(cause)
+    ? cause
+    : new HoustonAccessPendingDeviceError({
+        reason: "unavailable",
+        message: "Could not read or update devices waiting for approval.",
+      });
 
 const isClientSurface = Schema.is(ClientSurface);
 const isClientConnectionMethod = Schema.is(ClientConnectionMethod);
@@ -1998,6 +2021,7 @@ export const layerWsRpc = (
         Effect.all({
           pairingLinks: serverAuth.listPairingLinks(),
           clientSessions: serverAuth.listClientSessions(currentSessionId),
+          pendingDevices: serverAuth.listPendingDevices(),
         }).pipe(
           Effect.mapError(
             (error) =>
@@ -3714,6 +3738,40 @@ export const layerWsRpc = (
               return Stream.concat(rpcInitialItems(snapshotEvents), liveEvents);
             }),
           ),
+        [WS_METHODS.houstonAccessListPendingDevices]: (_input) =>
+          serverAuth.listPendingDevices().pipe(
+            Effect.mapError(toPendingDeviceAccessError),
+          ),
+        [WS_METHODS.houstonAccessApprovePendingDevice]: (input) =>
+          serverAuth.approvePendingDevice(input.sessionId).pipe(
+            Effect.mapError(toPendingDeviceAccessError),
+            Effect.flatMap((approved) =>
+              approved
+                ? Effect.succeed({ sessionId: input.sessionId, approved: true as const })
+                : Effect.fail(
+                    new HoustonAccessPendingDeviceError({
+                      reason: "not_found",
+                      message:
+                        "That device is no longer waiting for approval; it may have expired or already been decided.",
+                    }),
+                  ),
+            ),
+          ),
+        [WS_METHODS.houstonAccessDenyPendingDevice]: (input) =>
+          serverAuth.denyPendingDevice(input.sessionId).pipe(
+            Effect.mapError(toPendingDeviceAccessError),
+            Effect.flatMap((denied) =>
+              denied
+                ? Effect.succeed({ sessionId: input.sessionId, approved: false as const })
+                : Effect.fail(
+                    new HoustonAccessPendingDeviceError({
+                      reason: "not_found",
+                      message:
+                        "That device is no longer waiting for approval; it may have expired or already been decided.",
+                    }),
+                  ),
+            ),
+          ),
         [WS_METHODS.subscribeAuthAccess]: (_input) =>
           Stream.unwrap(
             Effect.gen(function* () {
@@ -3821,7 +3879,7 @@ export const layer = Layer.unwrap(
             Effect.provideService(RpcServer.Protocol, withOutputWindow(protocol)),
             Effect.provide(
               Layer.merge(
-                RpcAuthorization.layer(session.scopes),
+                RpcAuthorization.layer(session.scopes, undefined, session.pendingApproval),
                 makeRpcInstrumentationLayer({ clientKind: clientAnalyticsProps.surface }),
               ),
             ),

@@ -316,6 +316,9 @@ const RPC_AGGREGATES = {
   [WS_METHODS.subscribeServerConfig]: "server",
   [WS_METHODS.subscribeServerLifecycle]: "server",
   [WS_METHODS.subscribeAuthAccess]: "auth",
+  [WS_METHODS.houstonAccessListPendingDevices]: "auth",
+  [WS_METHODS.houstonAccessApprovePendingDevice]: "auth",
+  [WS_METHODS.houstonAccessDenyPendingDevice]: "auth",
 } as const satisfies Readonly<Record<WsRpcMethod, string>>;
 
 // RpcServer opens each call's span as `ws.rpc.<method>`, continuing the client's trace.
