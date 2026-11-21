@@ -37,7 +37,7 @@ export async function forwardLoopbackUrl(
   if (!Number.isInteger(port) || port <= 0) return rawUrl;
   try {
     const forward = await window.hostBridge.startPortForward({ environmentId, remotePort: port });
-    return `${parsed.protocol}//localhost:${forward.localPort}${parsed.pathname}${parsed.search}${parsed.hash}`;
+    return `${parsed.protocol}//127.0.0.1:${forward.localPort}${parsed.pathname}${parsed.search}${parsed.hash}`;
   } catch (error) {
     toastManager.add(
       stackedThreadToast({
