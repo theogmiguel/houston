@@ -15,6 +15,7 @@ import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
 import { vi } from "vite-plus/test";
 
+import { HOUSTON_BUILD_MIGRATION_IDS } from "../houston/migrations.ts";
 import * as SqlitePersistence from "./Sqlite.ts";
 import { BUILD_MIGRATION_HEAD } from "./databaseMigrationHead.ts";
 
@@ -233,6 +234,7 @@ it.effect(
 const writeRecordedMigrations = (
   dbPath: string,
   migrations: ReadonlyArray<{ readonly id: number; readonly name: string }>,
+  houstonIds: ReadonlyArray<number> = HOUSTON_BUILD_MIGRATION_IDS,
 ) => {
   const database = new NodeSqlite.DatabaseSync(dbPath);
   try {
@@ -243,6 +245,14 @@ const writeRecordedMigrations = (
       database
         .prepare("INSERT INTO effect_sql_migrations (migration_id, name) VALUES (?, ?)")
         .run(migration.id, migration.name);
+    }
+    database.exec(
+      "CREATE TABLE houston_sql_migrations (migration_id INTEGER PRIMARY KEY, name TEXT NOT NULL)",
+    );
+    for (const id of houstonIds) {
+      database
+        .prepare("INSERT INTO houston_sql_migrations (migration_id, name) VALUES (?, ?)")
+        .run(id, `Houston${id}`);
     }
   } finally {
     database.close();
@@ -264,7 +274,7 @@ it.effect("opens a CLI database without applying migrations", () => {
     `;
     assert.deepEqual(
       tables.map(({ name }) => name),
-      ["effect_sql_migrations"],
+      ["effect_sql_migrations", "houston_sql_migrations"],
     );
     const recorded = yield* sql<{ readonly count: number }>`
       SELECT COUNT(*) AS count FROM effect_sql_migrations
@@ -290,6 +300,29 @@ it.effect("refuses a CLI database whose migrations are newer than this build", (
     assert.equal(error._tag, "DatabaseMigrationsAheadError");
     assert.include(error.message, String(newer));
     assert.include(error.message, String(BUILD_MIGRATION_HEAD));
+    assert.include(error.message, dbPath);
+  }).pipe(
+    Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
+  );
+});
+
+it.effect("refuses a CLI database that lacks a Houston migration this build needs", () => {
+  const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-sqlite-behind-"));
+  const dbPath = NodePath.join(tempDir, "state.sqlite");
+  const newest = Math.max(...HOUSTON_BUILD_MIGRATION_IDS);
+  writeRecordedMigrations(
+    dbPath,
+    [{ id: BUILD_MIGRATION_HEAD, name: "Head" }],
+    HOUSTON_BUILD_MIGRATION_IDS.filter((id) => id !== newest),
+  );
+  const persistence = SqlitePersistence.layerFromPathWithoutMigrations(dbPath).pipe(
+    Layer.provide(NodeServices.layer),
+  );
+
+  return Effect.gen(function* () {
+    const error = yield* Layer.build(persistence).pipe(Effect.flip);
+    assert.equal(error._tag, "DatabaseMigrationsBehindError");
+    assert.include(error.message, String(newest));
     assert.include(error.message, dbPath);
   }).pipe(
     Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),

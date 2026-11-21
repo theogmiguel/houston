@@ -11,7 +11,12 @@ import { runMigrations } from "./Migrations.ts";
 import { runHoustonMigrations } from "../houston/migrations.ts";
 import { ensureHoustonReadModels } from "../houston/projectionReadModels.ts";
 import { initializeV2Database } from "./initializeV2Database.ts";
-import { BUILD_MIGRATION_HEAD, recordedMigrations } from "./databaseMigrationHead.ts";
+import {
+  BUILD_MIGRATION_HEAD,
+  recordedHoustonMigrationIds,
+  recordedMigrations,
+} from "./databaseMigrationHead.ts";
+import { HOUSTON_BUILD_MIGRATION_IDS } from "../houston/migrations.ts";
 import { isProcessAlive, readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
 import * as ServerConfig from "../config.ts";
 
@@ -25,6 +30,18 @@ export class DatabaseMigrationsAheadError extends Schema.TaggedError<DatabaseMig
 ) {
   override get message(): string {
     return `The database at ${this.databasePath} records migration ${this.databaseMigration}, newer than this build's migration ${this.buildMigration}. Run a build that includes migration ${this.databaseMigration}, or use a database this build supports.`;
+  }
+}
+
+export class DatabaseMigrationsBehindError extends Schema.TaggedError<DatabaseMigrationsBehindError>()(
+  "DatabaseMigrationsBehindError",
+  {
+    databasePath: Schema.String,
+    missingMigrations: Schema.Array(Schema.Int),
+  },
+) {
+  override get message(): string {
+    return `The database at ${this.databasePath} lacks Houston migrations ${this.missingMigrations.join(", ")} that this build needs, so the server using it is an older build. Restart that server on this build, then run the command again.`;
   }
 }
 
@@ -110,7 +127,7 @@ export const layerFromPath = Effect.fn("makeSqlitePersistenceLive")(function* (d
   return yield* layerWithSetup(dbPath, layerSetup);
 }, Layer.unwrap);
 
-/** A database a running server owns: never applies migrations, and refuses one this build is too old for. */
+/** A database a running server owns: never applies migrations, and refuses one this build is too old or too new for. */
 export const layerFromPathWithoutMigrations = Effect.fn("makeSqlitePersistenceWithoutMigrations")(
   function* (dbPath: string) {
     const recorded = recordedMigrations(dbPath);
@@ -121,6 +138,15 @@ export const layerFromPathWithoutMigrations = Effect.fn("makeSqlitePersistenceWi
         databaseMigration,
         buildMigration: BUILD_MIGRATION_HEAD,
       });
+    }
+    // This build's statements use columns its own Houston migrations add; an older schema fails them mid-command.
+    const houstonRecorded = recordedHoustonMigrationIds(dbPath);
+    const missingMigrations =
+      houstonRecorded === null
+        ? []
+        : HOUSTON_BUILD_MIGRATION_IDS.filter((id) => !houstonRecorded.has(id));
+    if (missingMigrations.length > 0) {
+      return yield* new DatabaseMigrationsBehindError({ databasePath: dbPath, missingMigrations });
     }
     return yield* layerWithSetup(dbPath, layerSetupWithoutMigrations);
   },

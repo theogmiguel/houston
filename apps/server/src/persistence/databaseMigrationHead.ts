@@ -47,3 +47,36 @@ export function databaseMigrationHead(databasePath: string): number | undefined 
     ? undefined
     : Math.max(BUILD_MIGRATION_HEAD, ...recorded.map(({ id }) => id));
 }
+
+/** Houston-track migration ids the database records, read-only. A database without the table
+ * records none; one that cannot be read is null, since its history is unknown. */
+export function recordedHoustonMigrationIds(databasePath: string): ReadonlySet<number> | null {
+  let db: NodeSqlite.DatabaseSync;
+  try {
+    db = new NodeSqlite.DatabaseSync(databasePath, { readOnly: true });
+  } catch {
+    return NodeFS.existsSync(databasePath) ? null : new Set();
+  }
+  try {
+    const hasTable = db
+      .prepare(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'houston_sql_migrations'",
+      )
+      .get();
+    if (hasTable === undefined) return new Set();
+    return new Set(
+      db
+        .prepare("SELECT migration_id FROM houston_sql_migrations")
+        .all()
+        .map((row) => Number(row.migration_id)),
+    );
+  } catch {
+    return null;
+  } finally {
+    try {
+      db.close();
+    } catch {
+      // A read-only handle has nothing to flush; the result above already stands.
+    }
+  }
+}
