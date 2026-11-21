@@ -25,13 +25,11 @@ import * as DesktopSshEnvironment from "../ssh/DesktopSshEnvironment.ts";
 import * as DesktopPortForwarding from "./DesktopPortForwarding.ts";
 
 const decodeEnvironmentId = Schema.decodeSync(Schema.String);
-const environmentId = (value: string): EnvironmentId =>
-  decodeEnvironmentId(value) as EnvironmentId;
+const environmentId = (value: string): EnvironmentId => decodeEnvironmentId(value) as EnvironmentId;
 
 const encodeCatalog = Schema.encodeSync(Schema.fromJsonString(ConnectionCatalogDocument));
 const decodeCatalog = Schema.decodeUnknownSync(ConnectionCatalogDocument);
-const catalogJson = (plain: unknown): string =>
-  encodeCatalog(decodeCatalog(plain));
+const catalogJson = (plain: unknown): string => encodeCatalog(decodeCatalog(plain));
 
 const sshCatalog = (): string =>
   catalogJson({
@@ -134,10 +132,7 @@ const sshLayer = (onForward?: (localPort: number) => void) =>
       }),
   });
 
-const serviceLayer = (input: {
-  readonly enabled: boolean;
-  readonly catalog: string;
-}) =>
+const serviceLayer = (input: { readonly enabled: boolean; readonly catalog: string }) =>
   DesktopPortForwarding.layer.pipe(
     Layer.provideMerge(settingsLayer(input.enabled)),
     Layer.provide(catalogLayer(input.catalog)),
@@ -348,4 +343,3 @@ const tcpRefused = (port: number, host: string) =>
     socket.setTimeout(500, () => settle(true));
     return Effect.sync(() => socket.destroy());
   });
-

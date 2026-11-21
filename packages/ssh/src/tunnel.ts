@@ -1984,7 +1984,9 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
           authOptions,
           scope,
         }),
-    }).pipe(Effect.onExit((exit) => (Exit.isSuccess(exit) ? Effect.void : Scope.close(scope, Exit.void))));
+    }).pipe(
+      Effect.onExit((exit) => (Exit.isSuccess(exit) ? Effect.void : Scope.close(scope, Exit.void))),
+    );
     const stop = Scope.close(scope, Exit.void);
     yield* Effect.addFinalizer(() => stop);
     yield* Effect.logInfo("ssh.forward.ready", {

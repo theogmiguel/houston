@@ -989,14 +989,14 @@ export const make = Effect.gen(function* () {
       })
       .pipe(Effect.mapError((cause) => new ServerAuthAuthenticatedSessionIssueError({ cause })));
     const notice = pendingApproval
-      ? {
+      ? ({
           deviceName: SessionStore.deviceDisplayName(session.client),
           hostLabel: "this host",
           expiresAt: DateTime.toUtc(
             DateTime.add(issuedAt, { hours: PENDING_DEVICE_APPROVAL_LIMIT_HOURS }),
           ),
           limitHours: PENDING_DEVICE_APPROVAL_LIMIT_HOURS,
-        } satisfies AuthPendingApprovalNotice
+        } satisfies AuthPendingApprovalNotice)
       : undefined;
     return {
       response: {

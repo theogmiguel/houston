@@ -81,9 +81,9 @@ describe("usageLimitBlockedRun", () => {
     expect(usageLimitBlockedRun([limited, laterSuccess], turnItems, null)).toBeNull();
 
     // Scoped to the limited provider, its failed run is the one that holds the queue.
-    expect(
-      usageLimitBlockedRun([limited, laterSuccess], turnItems, null, claude)?.id,
-    ).toBe(limited.id);
+    expect(usageLimitBlockedRun([limited, laterSuccess], turnItems, null, claude)?.id).toBe(
+      limited.id,
+    );
   });
 
   it("still reports a limit when the same provider's later run is also limited", () => {

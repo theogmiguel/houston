@@ -2868,14 +2868,11 @@ const WsSubscribeAuthAccessRpc = Rpc.make(WS_METHODS.subscribeAuthAccess, {
   stream: true,
 });
 
-const WsHoustonAccessListPendingDevicesRpc = Rpc.make(
-  WS_METHODS.houstonAccessListPendingDevices,
-  {
-    payload: HoustonAccessListPendingDevicesInput,
-    success: Schema.Array(AuthPendingDevice),
-    error: Schema.Union([HoustonAccessPendingDeviceError, EnvironmentAuthorizationError]),
-  },
-);
+const WsHoustonAccessListPendingDevicesRpc = Rpc.make(WS_METHODS.houstonAccessListPendingDevices, {
+  payload: HoustonAccessListPendingDevicesInput,
+  success: Schema.Array(AuthPendingDevice),
+  error: Schema.Union([HoustonAccessPendingDeviceError, EnvironmentAuthorizationError]),
+});
 
 const WsHoustonAccessApprovePendingDeviceRpc = Rpc.make(
   WS_METHODS.houstonAccessApprovePendingDevice,
@@ -2886,14 +2883,11 @@ const WsHoustonAccessApprovePendingDeviceRpc = Rpc.make(
   },
 );
 
-const WsHoustonAccessDenyPendingDeviceRpc = Rpc.make(
-  WS_METHODS.houstonAccessDenyPendingDevice,
-  {
-    payload: HoustonAccessDecidePendingDeviceInput,
-    success: HoustonAccessPendingDeviceDecision,
-    error: Schema.Union([HoustonAccessPendingDeviceError, EnvironmentAuthorizationError]),
-  },
-);
+const WsHoustonAccessDenyPendingDeviceRpc = Rpc.make(WS_METHODS.houstonAccessDenyPendingDevice, {
+  payload: HoustonAccessDecidePendingDeviceInput,
+  success: HoustonAccessPendingDeviceDecision,
+  error: Schema.Union([HoustonAccessPendingDeviceError, EnvironmentAuthorizationError]),
+});
 
 const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeResourceTelemetry, {
   payload: Schema.Struct({}),

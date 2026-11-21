@@ -86,7 +86,11 @@ function unknownCount(payload: DesktopTrayPayload): number {
     .length;
 }
 
-function trayText(payload: DesktopTrayPayload, source: string, params?: Readonly<Record<string, string | number>>): string {
+function trayText(
+  payload: DesktopTrayPayload,
+  source: string,
+  params?: Readonly<Record<string, string | number>>,
+): string {
   return translateDesktop(resolveDesktopLocale(payload.language), source, params);
 }
 

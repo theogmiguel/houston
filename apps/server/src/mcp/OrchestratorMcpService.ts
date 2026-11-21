@@ -1564,8 +1564,7 @@ const make = Effect.gen(function* () {
       task.result !== null ? "result_available" : heldForRestart ? "working" : taskWorkState;
     const resultRun = taskResultRun ?? childRun;
     const effectiveResultRun =
-      resultRun !== undefined &&
-      runInterruptedByNativeSubagent(resultRun, childControls.subagents)
+      resultRun !== undefined && runInterruptedByNativeSubagent(resultRun, childControls.subagents)
         ? { ...resultRun, status: "interrupted" as const }
         : resultRun;
     const status =

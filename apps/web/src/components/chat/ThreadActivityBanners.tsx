@@ -294,10 +294,10 @@ export function branchMismatchBannerItem(input: {
             }
           />
           <TooltipPopup side="top">
-            {t(
-              "This thread last ran on {branch}. Sending will continue on {current}.",
-              { branch: mismatch.threadBranch, current: mismatch.currentBranch },
-            )}
+            {t("This thread last ran on {branch}. Sending will continue on {current}.", {
+              branch: mismatch.threadBranch,
+              current: mismatch.currentBranch,
+            })}
           </TooltipPopup>
         </Tooltip>
       </span>

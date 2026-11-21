@@ -58,153 +58,150 @@ const makeCookieRequest = (
     EnvironmentAuth.EnvironmentAuth["Service"]["authenticateHttpRequest"]
   >[0];
 
-const pairDevice = (serverAuth: EnvironmentAuth.EnvironmentAuth["Service"], input?: {
-  readonly scopes?: ReadonlyArray<AuthGrantScope>;
-  readonly label?: string;
-}) =>
+const pairDevice = (
+  serverAuth: EnvironmentAuth.EnvironmentAuth["Service"],
+  input?: {
+    readonly scopes?: ReadonlyArray<AuthGrantScope>;
+    readonly label?: string;
+  },
+) =>
   Effect.gen(function* () {
     const pairing = yield* serverAuth.issuePairingCredential({
       ...(input?.label ? { label: input.label } : {}),
       scopes: input?.scopes ?? [AuthOrchestrationReadScope, AuthOrchestrationOperateScope],
     });
-    return yield* serverAuth.createBrowserSession(
-      pairing.credential,
-      requestMetadata,
-      undefined,
-      { pairedVia: "pairing-link" },
-    );
+    return yield* serverAuth.createBrowserSession(pairing.credential, requestMetadata, undefined, {
+      pairedVia: "pairing-link",
+    });
   });
 
-it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
-  "device approval",
-  (it) => {
-    it.effect("pairs immediately while the setting is off", () =>
-      Effect.gen(function* () {
-        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-        const sessions = yield* SessionStore.SessionStore;
-        const paired = yield* pairDevice(serverAuth);
-        const session = yield* sessions.verify(paired.sessionToken);
+it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))("device approval", (it) => {
+  it.effect("pairs immediately while the setting is off", () =>
+    Effect.gen(function* () {
+      const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const sessions = yield* SessionStore.SessionStore;
+      const paired = yield* pairDevice(serverAuth);
+      const session = yield* sessions.verify(paired.sessionToken);
 
-        expect(paired.response).toMatchObject(
-          authScopeResponse([AuthOrchestrationReadScope, AuthOrchestrationOperateScope]),
-        );
-        expect((yield* serverAuth.listPendingDevices())).toEqual([]);
-        expect(
-          (yield* serverAuth.listClientSessions(session.sessionId)).map((client) => client.scopes),
-        ).toEqual([[AuthOrchestrationReadScope, AuthOrchestrationOperateScope]]);
-      }).pipe(Effect.provide(layerEnvironmentAuth(false))),
-    );
+      expect(paired.response).toMatchObject(
+        authScopeResponse([AuthOrchestrationReadScope, AuthOrchestrationOperateScope]),
+      );
+      expect(yield* serverAuth.listPendingDevices()).toEqual([]);
+      expect(
+        (yield* serverAuth.listClientSessions(session.sessionId)).map((client) => client.scopes),
+      ).toEqual([[AuthOrchestrationReadScope, AuthOrchestrationOperateScope]]);
+    }).pipe(Effect.provide(layerEnvironmentAuth(false))),
+  );
 
-    it.effect("holds a new device pending with no scope and names it in the refusal", () =>
-      Effect.gen(function* () {
-        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-        const sessions = yield* SessionStore.SessionStore;
-        const paired = yield* pairDevice(serverAuth, { label: "Living room iPad" });
-        const session = yield* sessions.verify(paired.sessionToken);
+  it.effect("holds a new device pending with no scope and names it in the refusal", () =>
+    Effect.gen(function* () {
+      const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const sessions = yield* SessionStore.SessionStore;
+      const paired = yield* pairDevice(serverAuth, { label: "Living room iPad" });
+      const session = yield* sessions.verify(paired.sessionToken);
 
-        expect(paired.response.permissions).toEqual([]);
-        expect(paired.response.approvalPending).toMatchObject({
-          deviceName: "Living room iPad",
-          hostLabel: "this host",
-          limitHours: 24,
-        });
-        expect(yield* serverAuth.listClientSessions(session.sessionId)).toEqual([]);
-        expect((yield* serverAuth.listPendingDevices())[0]).toMatchObject({
-          sessionId: session.sessionId,
-          deviceName: "Living room iPad",
-          pairedVia: "pairing-link",
-          scopes: [AuthOrchestrationReadScope, AuthOrchestrationOperateScope],
-        });
+      expect(paired.response.permissions).toEqual([]);
+      expect(paired.response.approvalPending).toMatchObject({
+        deviceName: "Living room iPad",
+        hostLabel: "this host",
+        limitHours: 24,
+      });
+      expect(yield* serverAuth.listClientSessions(session.sessionId)).toEqual([]);
+      expect((yield* serverAuth.listPendingDevices())[0]).toMatchObject({
+        sessionId: session.sessionId,
+        deviceName: "Living room iPad",
+        pairedVia: "pairing-link",
+        scopes: [AuthOrchestrationReadScope, AuthOrchestrationOperateScope],
+      });
 
-        const request = makeCookieRequest(sessions.cookieName, paired.sessionToken);
-        const error = yield* serverAuth.authenticateHttpRequest(request).pipe(Effect.flip);
-        expect(error._tag).toBe("ServerAuthDeviceApprovalPendingError");
-        expect(error.message).toContain("Living room iPad");
-        expect(error.message).toContain("Require approval for new devices");
-        expect(error.message).toContain("24 hours");
-      }).pipe(Effect.provide(layerEnvironmentAuth(true))),
-    );
+      const request = makeCookieRequest(sessions.cookieName, paired.sessionToken);
+      const error = yield* serverAuth.authenticateHttpRequest(request).pipe(Effect.flip);
+      expect(error._tag).toBe("ServerAuthDeviceApprovalPendingError");
+      expect(error.message).toContain("Living room iPad");
+      expect(error.message).toContain("Require approval for new devices");
+      expect(error.message).toContain("24 hours");
+    }).pipe(Effect.provide(layerEnvironmentAuth(true))),
+  );
 
-    it.effect("approving grants exactly the pairing scopes and moves the device to clients", () =>
-      Effect.gen(function* () {
-        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-        const sessions = yield* SessionStore.SessionStore;
-        const paired = yield* pairDevice(serverAuth, {
-          scopes: [AuthOrchestrationReadScope],
-          label: "Kitchen phone",
-        });
-        const [pending] = yield* serverAuth.listPendingDevices();
-        expect(yield* serverAuth.approvePendingDevice(pending!.sessionId)).toBe(true);
+  it.effect("approving grants exactly the pairing scopes and moves the device to clients", () =>
+    Effect.gen(function* () {
+      const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const sessions = yield* SessionStore.SessionStore;
+      const paired = yield* pairDevice(serverAuth, {
+        scopes: [AuthOrchestrationReadScope],
+        label: "Kitchen phone",
+      });
+      const [pending] = yield* serverAuth.listPendingDevices();
+      expect(yield* serverAuth.approvePendingDevice(pending!.sessionId)).toBe(true);
 
-        const request = makeCookieRequest(sessions.cookieName, paired.sessionToken);
-        const authenticated = yield* serverAuth.authenticateHttpRequest(request);
-        expect(authenticated.scopes).toEqual([AuthOrchestrationReadScope]);
-        expect(yield* serverAuth.listPendingDevices()).toEqual([]);
-        expect(
-          (yield* serverAuth.listClientSessions(authenticated.sessionId)).map(
-            (client) => client.scopes,
-          ),
-        ).toEqual([[AuthOrchestrationReadScope]]);
-      }).pipe(Effect.provide(layerEnvironmentAuth(true))),
-    );
+      const request = makeCookieRequest(sessions.cookieName, paired.sessionToken);
+      const authenticated = yield* serverAuth.authenticateHttpRequest(request);
+      expect(authenticated.scopes).toEqual([AuthOrchestrationReadScope]);
+      expect(yield* serverAuth.listPendingDevices()).toEqual([]);
+      expect(
+        (yield* serverAuth.listClientSessions(authenticated.sessionId)).map(
+          (client) => client.scopes,
+        ),
+      ).toEqual([[AuthOrchestrationReadScope]]);
+    }).pipe(Effect.provide(layerEnvironmentAuth(true))),
+  );
 
-    it.effect("denying revokes the credential", () =>
-      Effect.gen(function* () {
-        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-        const sessions = yield* SessionStore.SessionStore;
-        const paired = yield* pairDevice(serverAuth);
-        const [pending] = yield* serverAuth.listPendingDevices();
-        expect(yield* serverAuth.denyPendingDevice(pending!.sessionId)).toBe(true);
-        expect(yield* serverAuth.listPendingDevices()).toEqual([]);
+  it.effect("denying revokes the credential", () =>
+    Effect.gen(function* () {
+      const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const sessions = yield* SessionStore.SessionStore;
+      const paired = yield* pairDevice(serverAuth);
+      const [pending] = yield* serverAuth.listPendingDevices();
+      expect(yield* serverAuth.denyPendingDevice(pending!.sessionId)).toBe(true);
+      expect(yield* serverAuth.listPendingDevices()).toEqual([]);
 
-        const error = yield* serverAuth
-          .authenticateHttpRequest(makeCookieRequest(sessions.cookieName, paired.sessionToken))
-          .pipe(Effect.flip);
-        expect(error._tag).toBe("ServerAuthInvalidCredentialError");
-      }).pipe(Effect.provide(layerEnvironmentAuth(true))),
-    );
+      const error = yield* serverAuth
+        .authenticateHttpRequest(makeCookieRequest(sessions.cookieName, paired.sessionToken))
+        .pipe(Effect.flip);
+      expect(error._tag).toBe("ServerAuthInvalidCredentialError");
+    }).pipe(Effect.provide(layerEnvironmentAuth(true))),
+  );
 
-    it.effect("expires an undecided device and refuses its credential", () =>
-      Effect.gen(function* () {
-        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-        const sessions = yield* SessionStore.SessionStore;
-        const now = yield* DateTime.now;
-        const issued = yield* sessions.issue({
-          subject: "one-time-token",
-          scopes: [],
-          pendingApproval: {
-            grantedScopes: [AuthOrchestrationReadScope],
-            pairedVia: "pairing-code",
-            expiresAt: DateTime.subtract(DateTime.toUtc(now), { hours: 1 }),
-          },
-          client: requestMetadata,
-        });
+  it.effect("expires an undecided device and refuses its credential", () =>
+    Effect.gen(function* () {
+      const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const sessions = yield* SessionStore.SessionStore;
+      const now = yield* DateTime.now;
+      const issued = yield* sessions.issue({
+        subject: "one-time-token",
+        scopes: [],
+        pendingApproval: {
+          grantedScopes: [AuthOrchestrationReadScope],
+          pairedVia: "pairing-code",
+          expiresAt: DateTime.subtract(DateTime.toUtc(now), { hours: 1 }),
+        },
+        client: requestMetadata,
+      });
 
-        const error = yield* sessions.verify(issued.token).pipe(Effect.flip);
-        expect(error._tag).toBe("SessionPendingApprovalExpiredError");
-        expect(yield* serverAuth.listPendingDevices()).toEqual([]);
-      }).pipe(Effect.provide(layerEnvironmentAuth(true))),
-    );
+      const error = yield* sessions.verify(issued.token).pipe(Effect.flip);
+      expect(error._tag).toBe("SessionPendingApprovalExpiredError");
+      expect(yield* serverAuth.listPendingDevices()).toEqual([]);
+    }).pipe(Effect.provide(layerEnvironmentAuth(true))),
+  );
 
-    it.effect("turning the setting off leaves waiting devices waiting", () =>
-      Effect.gen(function* () {
-        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-        const settings = yield* ServerSettings.ServerSettingsService;
-        yield* pairDevice(serverAuth, { label: "Hallway tablet" });
-        expect(yield* serverAuth.listPendingDevices()).toHaveLength(1);
+  it.effect("turning the setting off leaves waiting devices waiting", () =>
+    Effect.gen(function* () {
+      const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const settings = yield* ServerSettings.ServerSettingsService;
+      yield* pairDevice(serverAuth, { label: "Hallway tablet" });
+      expect(yield* serverAuth.listPendingDevices()).toHaveLength(1);
 
-        yield* settings.updateSettings({ requireApprovalForNewDevices: false });
-        expect(yield* serverAuth.listPendingDevices()).toHaveLength(1);
+      yield* settings.updateSettings({ requireApprovalForNewDevices: false });
+      expect(yield* serverAuth.listPendingDevices()).toHaveLength(1);
 
-        const pairedAfter = yield* pairDevice(serverAuth, { label: "Office laptop" });
-        expect(pairedAfter.response.permissions).toEqual([
-          AuthOrchestrationReadScope,
-          AuthOrchestrationOperateScope,
-        ]);
-      }).pipe(Effect.provide(layerEnvironmentAuth(true))),
-    );
-  },
-);
+      const pairedAfter = yield* pairDevice(serverAuth, { label: "Office laptop" });
+      expect(pairedAfter.response.permissions).toEqual([
+        AuthOrchestrationReadScope,
+        AuthOrchestrationOperateScope,
+      ]);
+    }).pipe(Effect.provide(layerEnvironmentAuth(true))),
+  );
+});
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
   "pending approval persistence",

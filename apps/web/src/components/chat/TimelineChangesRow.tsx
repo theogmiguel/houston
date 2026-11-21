@@ -101,9 +101,7 @@ export function TimelineChangesRow({
   const hiddenCount = Math.max(0, totals.count - files.length);
   const count = totals.count.toLocaleString();
   const countLabel =
-    totals.count === 1
-      ? t("{count} file", { count })
-      : t("{count} files", { count });
+    totals.count === 1 ? t("{count} file", { count }) : t("{count} files", { count });
   const hasBody = files.length > 0 || detail !== undefined;
 
   return (

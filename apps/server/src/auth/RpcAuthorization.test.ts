@@ -477,16 +477,12 @@ it.effect("refuses every method while a device waits for approval, naming it", (
               return {};
             }),
           ),
-          RpcAuthorization.layer(
-            [],
-            undefined,
-            {
-              deviceName: "Living room iPad",
-              hostLabel: "this host",
-              expiresAt: DateTime.makeUnsafe("2026-11-21T12:00:00.000Z"),
-              limitHours: 24,
-            },
-          ),
+          RpcAuthorization.layer([], undefined, {
+            deviceName: "Living room iPad",
+            hostLabel: "this host",
+            expiresAt: DateTime.makeUnsafe("2026-11-21T12:00:00.000Z"),
+            limitHours: 24,
+          }),
         ),
       ),
     );

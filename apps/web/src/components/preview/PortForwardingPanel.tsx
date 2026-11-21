@@ -82,7 +82,9 @@ export function PortForwardingPanel(props: {
         {t("A remote environment's TCP ports reach this machine through its saved connection.")}
       </DiscoveryIntro>
       {available ? null : (
-        <DiscoveryHint>{t("Port forwarding is available in the Houston desktop app.")}</DiscoveryHint>
+        <DiscoveryHint>
+          {t("Port forwarding is available in the Houston desktop app.")}
+        </DiscoveryHint>
       )}
       {!enabled || !available ? null : (
         <DiscoveryHint>
@@ -109,29 +111,31 @@ export function PortForwardingPanel(props: {
             </DiscoveryStaticRow>
           ))}
         </DiscoveryList>
-      ) : (
-        available ? <DiscoveryHint>{t("No ports are forwarded.")}</DiscoveryHint> : null
-      )}
-      {available ? <form className="flex items-end gap-2 px-1" onSubmit={(event) => void start(event)}>
-        <Label className="flex min-w-0 flex-1 flex-col items-stretch">
-          <span>{t("Remote port")}</span>
-          <Input
-            type="number"
-            inputMode="numeric"
-            min={PORT_MIN}
-            max={PORT_MAX}
-            step={1}
-            value={port}
-            placeholder="3000"
-            className="mt-1"
-            disabled={!enabled || busy !== null}
-            onChange={(event) => setPort(event.target.value)}
-          />
-        </Label>
-        <Button type="submit" disabled={!enabled || busy !== null || port.trim().length === 0}>
-          {t("Forward")}
-        </Button>
-      </form> : null}
+      ) : available ? (
+        <DiscoveryHint>{t("No ports are forwarded.")}</DiscoveryHint>
+      ) : null}
+      {available ? (
+        <form className="flex items-end gap-2 px-1" onSubmit={(event) => void start(event)}>
+          <Label className="flex min-w-0 flex-1 flex-col items-stretch">
+            <span>{t("Remote port")}</span>
+            <Input
+              type="number"
+              inputMode="numeric"
+              min={PORT_MIN}
+              max={PORT_MAX}
+              step={1}
+              value={port}
+              placeholder="3000"
+              className="mt-1"
+              disabled={!enabled || busy !== null}
+              onChange={(event) => setPort(event.target.value)}
+            />
+          </Label>
+          <Button type="submit" disabled={!enabled || busy !== null || port.trim().length === 0}>
+            {t("Forward")}
+          </Button>
+        </form>
+      ) : null}
       {props.compact || !available ? null : (
         <DiscoveryHint>
           {t("Up to 8 ports per environment and 16 in all. Each forward binds 127.0.0.1 only.")}

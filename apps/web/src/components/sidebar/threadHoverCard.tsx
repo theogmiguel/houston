@@ -119,7 +119,8 @@ export function ThreadHoverCard({
         </Line>
       )}
       <Line icon={<CpuIcon />}>
-        {[details.provider, details.model].filter((part) => part !== null).join(" · ") || t("model")}
+        {[details.provider, details.model].filter((part) => part !== null).join(" · ") ||
+          t("model")}
       </Line>
       {details.handoffs.length === 0 ? null : (
         <Line icon={<RepeatIcon />}>

@@ -629,7 +629,8 @@ const make = Effect.gen(function* () {
     });
     yield* Effect.forEach(
       expiredSessionIds,
-      (sessionId) => emitPendingDeviceRemoved(sessionId).pipe(Effect.andThen(emitRemoved(sessionId))),
+      (sessionId) =>
+        emitPendingDeviceRemoved(sessionId).pipe(Effect.andThen(emitRemoved(sessionId))),
       { concurrency: "unbounded", discard: true },
     );
     return expiredSessionIds;

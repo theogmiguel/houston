@@ -502,9 +502,7 @@ export function QueuedRunsControl({
             onPointerDown={(event) => event.preventDefault()}
             onClick={() => setShowAll((value) => !value)}
           >
-            {showAll
-              ? t("Show fewer")
-              : t("Show all {count} queued", { count: items.length })}
+            {showAll ? t("Show fewer") : t("Show all {count} queued", { count: items.length })}
             <ChevronDownIcon
               aria-hidden
               className={cn(

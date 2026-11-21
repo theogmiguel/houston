@@ -44,9 +44,7 @@ import { isSshLocalForwardBindFailure as isSshBindFailure } from "@houston-app/s
 export const PORT_FORWARD_BIND_HOST = "127.0.0.1";
 const PORT_FORWARDING_SETTINGS_PATH = "Settings → Connections → Port forwarding";
 
-const decodeCatalog = Schema.decodeUnknownOption(
-  Schema.fromJsonString(ConnectionCatalogDocument),
-);
+const decodeCatalog = Schema.decodeUnknownOption(Schema.fromJsonString(ConnectionCatalogDocument));
 
 const isSshProfile = (
   profile: ConnectionProfile,
@@ -76,9 +74,7 @@ export class PortForwardTunnelTransport extends Context.Service<
       readonly token: string;
     }) => Effect.Effect<Socket.Socket, PortForwardTransportError, Scope.Scope>;
   }
->()(
-  "@houston-app/desktop/portForwarding/DesktopPortForwarding/PortForwardTunnelTransport",
-) {}
+>()("@houston-app/desktop/portForwarding/DesktopPortForwarding/PortForwardTunnelTransport") {}
 
 interface ActiveForward {
   readonly record: PortForward;
@@ -103,7 +99,8 @@ export class DesktopPortForwarding extends Context.Service<
   }
 >()("@houston-app/desktop/portForwarding/DesktopPortForwarding") {}
 
-const pump = /* Frames move continuously; a span per chunk adds no diagnostic value. */
+const pump =
+  /* Frames move continuously; a span per chunk adds no diagnostic value. */
   Effect.fnUntraced(function* (source: Socket.Socket, sink: Socket.Writer) {
     const { pull } = yield* source.reader;
     while (true) {
@@ -186,25 +183,23 @@ const make = Effect.gen(function* () {
   const removeAndStop = Effect.fn("desktop.portForwarding.removeAndStop")(function* (
     predicate: (entry: ActiveForward) => boolean,
   ) {
-      const removed = yield* Ref.modify(forwards, (current) => {
-        const next = new Map(current);
-        const gone: ActiveForward[] = [];
-        for (const [id, entry] of current) {
-          if (!predicate(entry)) continue;
-          next.delete(id);
-          gone.push(entry);
-        }
-        return [gone, next] as const;
-      });
-      if (removed.length === 0) return;
-      yield* Effect.forEach(removed, stopEntry, { concurrency: "unbounded", discard: true });
-      yield* publish;
+    const removed = yield* Ref.modify(forwards, (current) => {
+      const next = new Map(current);
+      const gone: ActiveForward[] = [];
+      for (const [id, entry] of current) {
+        if (!predicate(entry)) continue;
+        next.delete(id);
+        gone.push(entry);
+      }
+      return [gone, next] as const;
+    });
+    if (removed.length === 0) return;
+    yield* Effect.forEach(removed, stopEntry, { concurrency: "unbounded", discard: true });
+    yield* publish;
   });
 
   const stop: DesktopPortForwarding["Service"]["stop"] = (input) =>
-    lock.withPermits(1)(
-      removeAndStop((entry) => entry.record.id === input.id).pipe(Effect.asVoid),
-    );
+    lock.withPermits(1)(removeAndStop((entry) => entry.record.id === input.id).pipe(Effect.asVoid));
 
   const stopEnvironment: DesktopPortForwarding["Service"]["stopEnvironment"] = (environmentId) =>
     lock.withPermits(1)(
@@ -217,22 +212,21 @@ const make = Effect.gen(function* () {
     );
 
   const applySettings: DesktopPortForwarding["Service"]["applySettings"] = (enabledNow) =>
-    enabledNow
-      ? Effect.void
-      : lock.withPermits(1)(removeAndStop(() => true).pipe(Effect.asVoid));
+    enabledNow ? Effect.void : lock.withPermits(1)(removeAndStop(() => true).pipe(Effect.asVoid));
 
-  const recordForwardError = Effect.fn("desktop.portForwarding.recordForwardError")(
-    function* (id: string, error: string) {
-      yield* Ref.update(forwards, (current) => {
-        const entry = current.get(id);
-        if (entry === undefined) return current;
-        const next = new Map(current);
-        next.set(id, { ...entry, record: { ...entry.record, error } });
-        return next;
-      });
-      yield* publish;
-    },
-  );
+  const recordForwardError = Effect.fn("desktop.portForwarding.recordForwardError")(function* (
+    id: string,
+    error: string,
+  ) {
+    yield* Ref.update(forwards, (current) => {
+      const entry = current.get(id);
+      if (entry === undefined) return current;
+      const next = new Map(current);
+      next.set(id, { ...entry, record: { ...entry.record, error } });
+      return next;
+    });
+    yield* publish;
+  });
 
   const recordConnectionLimit = (id: string) =>
     recordForwardError(
@@ -246,60 +240,60 @@ const make = Effect.gen(function* () {
     readonly tunnelUrl: string;
     readonly token: string;
   }) {
-      for (
-        let candidate = input.preferredPort;
-        candidate <= localPortWindowEnd(input.preferredPort);
-        candidate += 1
-      ) {
-        if (!(yield* net.canListenOnHost(candidate, PORT_FORWARD_BIND_HOST))) continue;
-        const bound = yield* NodeSocketServer.make({
-          host: PORT_FORWARD_BIND_HOST,
-          port: candidate,
-        }).pipe(Effect.provideService(Scope.Scope, input.entry.scope), Effect.option);
-        if (Option.isNone(bound)) continue;
-        const server = bound.value;
-        yield* server
-          .run((client) =>
-            Effect.gen(function* () {
-              const open = yield* Ref.modify(input.entry.connections, (count) =>
-                count >= PORT_FORWARDING_MAX_CONNECTIONS_PER_FORWARD
-                  ? [false, count]
-                  : [true, count + 1],
+    for (
+      let candidate = input.preferredPort;
+      candidate <= localPortWindowEnd(input.preferredPort);
+      candidate += 1
+    ) {
+      if (!(yield* net.canListenOnHost(candidate, PORT_FORWARD_BIND_HOST))) continue;
+      const bound = yield* NodeSocketServer.make({
+        host: PORT_FORWARD_BIND_HOST,
+        port: candidate,
+      }).pipe(Effect.provideService(Scope.Scope, input.entry.scope), Effect.option);
+      if (Option.isNone(bound)) continue;
+      const server = bound.value;
+      yield* server
+        .run((client) =>
+          Effect.gen(function* () {
+            const open = yield* Ref.modify(input.entry.connections, (count) =>
+              count >= PORT_FORWARDING_MAX_CONNECTIONS_PER_FORWARD
+                ? [false, count]
+                : [true, count + 1],
+            );
+            if (!open) {
+              yield* closeSocket(
+                client,
+                `This forward already carries ${PORT_FORWARDING_MAX_CONNECTIONS_PER_FORWARD} connections.`,
               );
-              if (!open) {
-                yield* closeSocket(
-                  client,
-                  `This forward already carries ${PORT_FORWARDING_MAX_CONNECTIONS_PER_FORWARD} connections.`,
-                );
-                yield* recordConnectionLimit(input.entry.record.id);
-                return;
-              }
-              yield* Effect.acquireRelease(Effect.void, () =>
-                Ref.update(input.entry.connections, (count) => Math.max(0, count - 1)),
+              yield* recordConnectionLimit(input.entry.record.id);
+              return;
+            }
+            yield* Effect.acquireRelease(Effect.void, () =>
+              Ref.update(input.entry.connections, (count) => Math.max(0, count - 1)),
+            );
+            const remote = yield* transport
+              .connect({ url: input.tunnelUrl, token: input.token })
+              .pipe(Effect.option);
+            if (Option.isNone(remote)) {
+              yield* closeSocket(client, "The environment refused the forwarded connection.");
+              yield* recordForwardError(
+                input.entry.record.id,
+                `A forwarded connection was refused. The environment may not support port forwarding, or it already holds ${PORT_FORWARDING_MAX_TUNNELS} tunnels.`,
               );
-              const remote = yield* transport
-                .connect({ url: input.tunnelUrl, token: input.token })
-                .pipe(Effect.option);
-              if (Option.isNone(remote)) {
-                yield* closeSocket(client, "The environment refused the forwarded connection.");
-                yield* recordForwardError(
-                  input.entry.record.id,
-                  `A forwarded connection was refused. The environment may not support port forwarding, or it already holds ${PORT_FORWARDING_MAX_TUNNELS} tunnels.`,
-                );
-                return;
-              }
-              const clientWriter = yield* client.writer;
-              const remoteWriter = yield* remote.value.writer;
-              yield* Effect.raceFirst(
-                pump(remote.value, clientWriter),
-                pump(client, remoteWriter),
-              ).pipe(Effect.ignoreCause);
-            }).pipe(Effect.scoped, Effect.ignoreCause),
-          )
-          .pipe(Effect.forkIn(input.entry.scope));
-        return server;
-      }
-      return null;
+              return;
+            }
+            const clientWriter = yield* client.writer;
+            const remoteWriter = yield* remote.value.writer;
+            yield* Effect.raceFirst(
+              pump(remote.value, clientWriter),
+              pump(client, remoteWriter),
+            ).pipe(Effect.ignoreCause);
+          }).pipe(Effect.scoped, Effect.ignoreCause),
+        )
+        .pipe(Effect.forkIn(input.entry.scope));
+      return server;
+    }
+    return null;
   });
 
   const startSshForward = Effect.fn("desktop.portForwarding.startSshForward")(function* (input: {
@@ -307,24 +301,24 @@ const make = Effect.gen(function* () {
     readonly target: DesktopSshEnvironmentTarget;
     readonly entry: ActiveForward;
   }) {
-      let failure: unknown = null;
-      for (
-        let candidate = input.remotePort;
-        candidate <= localPortWindowEnd(input.remotePort);
-        candidate += 1
-      ) {
-        const result = yield* ssh
-          .forwardPort({
-            target: input.target,
-            remotePort: input.remotePort,
-            localPort: candidate,
-          })
-          .pipe(Effect.provideService(Scope.Scope, input.entry.scope), Effect.result);
-        if (result._tag === "Success") return candidate;
-        failure = result.failure;
-        if (!isSshBindFailure(result.failure)) break;
-      }
-      return yield* Effect.fail(failure ?? new Error("SSH port forward failed."));
+    let failure: unknown = null;
+    for (
+      let candidate = input.remotePort;
+      candidate <= localPortWindowEnd(input.remotePort);
+      candidate += 1
+    ) {
+      const result = yield* ssh
+        .forwardPort({
+          target: input.target,
+          remotePort: input.remotePort,
+          localPort: candidate,
+        })
+        .pipe(Effect.provideService(Scope.Scope, input.entry.scope), Effect.result);
+      if (result._tag === "Success") return candidate;
+      failure = result.failure;
+      if (!isSshBindFailure(result.failure)) break;
+    }
+    return yield* Effect.fail(failure ?? new Error("SSH port forward failed."));
   });
 
   const start: DesktopPortForwarding["Service"]["start"] = (input) =>
@@ -373,9 +367,10 @@ const make = Effect.gen(function* () {
           );
         }
         const target = routes[0]!;
-        const connectionId = target._tag === "BearerConnectionTarget" || target._tag === "SshConnectionTarget"
-          ? target.connectionId
-          : null;
+        const connectionId =
+          target._tag === "BearerConnectionTarget" || target._tag === "SshConnectionTarget"
+            ? target.connectionId
+            : null;
         const profile =
           connectionId === null
             ? undefined
@@ -436,7 +431,7 @@ const make = Effect.gen(function* () {
               `${target.label} has no saved credential or tunnel address, so port ${input.remotePort} cannot be forwarded. Reconnect the environment.`,
             );
           }
-          localPort = (yield* bindLinkedPort({
+          localPort = yield* bindLinkedPort({
             preferredPort: input.remotePort,
             entry: provisional,
             tunnelUrl,
@@ -455,7 +450,7 @@ const make = Effect.gen(function* () {
                 `Could not forward port ${input.remotePort} of ${target.label}: ${errorMessage(cause)}`,
               ),
             ),
-          ));
+          );
           if (localPort === null) {
             yield* Scope.close(entryScope, Exit.void).pipe(Effect.ignoreCause);
             return yield* forbidden(

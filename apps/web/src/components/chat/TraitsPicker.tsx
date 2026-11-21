@@ -717,9 +717,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
       ) : null}
 
       {ultrathinkInBodyText ? (
-        <div className="px-2 pb-1.5 text-(--houston) text-xs">
-          {t(ULTRATHINK_IN_BODY_NOTE)}
-        </div>
+        <div className="px-2 pb-1.5 text-(--houston) text-xs">{t(ULTRATHINK_IN_BODY_NOTE)}</div>
       ) : null}
 
       {fastModeDescriptor ? (

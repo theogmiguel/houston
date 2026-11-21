@@ -30,10 +30,7 @@ export function feedbackBannerItem(
           size="xs"
           variant="ghost"
           onClick={() => {
-            void writeTextToClipboard(
-              submission.feedbackId,
-              t("Codex feedback thread ID"),
-            ).catch(
+            void writeTextToClipboard(submission.feedbackId, t("Codex feedback thread ID")).catch(
               (error: unknown) => {
                 toastManager.add({
                   type: "error",

@@ -19,9 +19,7 @@ export const getConnectionCatalog = DesktopIpc.makeIpcMethod({
   }),
 });
 
-const decodeCatalog = Schema.decodeUnknownOption(
-  Schema.fromJsonString(ConnectionCatalogDocument),
-);
+const decodeCatalog = Schema.decodeUnknownOption(Schema.fromJsonString(ConnectionCatalogDocument));
 
 const retainedEnvironments = (raw: string | null): ReadonlySet<EnvironmentId> => {
   if (raw === null) return new Set();

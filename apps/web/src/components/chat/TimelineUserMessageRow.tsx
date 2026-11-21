@@ -163,7 +163,12 @@ function UserFileCard({
       {file.downloadable === false ? (
         <>
           <div className="flex min-w-0 flex-1 items-center gap-3">{identity}</div>
-          <Button size="icon-xs" variant="ghost-muted" disabled aria-label={t("Sending attachment")}>
+          <Button
+            size="icon-xs"
+            variant="ghost-muted"
+            disabled
+            aria-label={t("Sending attachment")}
+          >
             <DownloadIcon />
           </Button>
         </>
@@ -910,9 +915,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
               <BotIcon aria-hidden="true" className="size-3.5" />
             </TooltipTrigger>
             <TooltipPopup side="top">
-              {senderShell
-                ? t("From {sender}", { sender: senderLabel })
-                : t("Sent by an agent")}
+              {senderShell ? t("From {sender}", { sender: senderLabel }) : t("Sent by an agent")}
             </TooltipPopup>
           </Tooltip>
         ) : null}
@@ -968,7 +971,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                       <span className="block truncate">{label}</span>
                       {file.downloadable === false || pastedText ? (
                         <span className="block text-xs text-muted-foreground tabular-nums">
-                          {file.downloadable === false ? t("Sending…") : formatBytes(file.sizeBytes)}
+                          {file.downloadable === false
+                            ? t("Sending…")
+                            : formatBytes(file.sizeBytes)}
                         </span>
                       ) : null}
                     </span>
@@ -999,7 +1004,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                         >
                           <DownloadIcon />
                         </TooltipTrigger>
-                        <TooltipPopup side="top">{t("Download {name}", { name: label })}</TooltipPopup>
+                        <TooltipPopup side="top">
+                          {t("Download {name}", { name: label })}
+                        </TooltipPopup>
                       </Tooltip>
                     </div>
                   );

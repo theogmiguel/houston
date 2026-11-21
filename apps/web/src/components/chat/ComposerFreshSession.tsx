@@ -4,10 +4,7 @@ import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 import type { Translate } from "~/i18n/useT";
 
 /** Shown while `/clear` is armed; dismissing it keeps the current conversation. */
-export function freshSessionBannerItem(
-  onUndo: () => void,
-  t: Translate,
-): ComposerBannerStackItem {
+export function freshSessionBannerItem(onUndo: () => void, t: Translate): ComposerBannerStackItem {
   return {
     id: "fresh-session",
     variant: "info",

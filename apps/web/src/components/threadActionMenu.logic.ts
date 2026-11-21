@@ -56,7 +56,9 @@ export function buildDraftActionMenuItems(options: {
       icon: "copy",
       disabled: !options.hasPath && !options.hasBranch,
       children: [
-        ...(options.hasPath ? [{ id: "copy-path" as const, label: t("Path"), icon: "folder" }] : []),
+        ...(options.hasPath
+          ? [{ id: "copy-path" as const, label: t("Path"), icon: "folder" }]
+          : []),
         ...(options.hasBranch
           ? [{ id: "copy-branch" as const, label: t("Branch"), icon: "git-branch" }]
           : []),

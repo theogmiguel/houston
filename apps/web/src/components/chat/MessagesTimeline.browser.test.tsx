@@ -3208,7 +3208,9 @@ describe("MessagesTimeline language", () => {
     try {
       await using _screen = await renderTimeline([]);
       await expect.element(page.getByText("Nenhuma mensagem ainda", { exact: true })).toBeVisible();
-      await expect.element(page.getByText("Envie uma mensagem para iniciar a conversa.")).toBeVisible();
+      await expect
+        .element(page.getByText("Envie uma mensagem para iniciar a conversa."))
+        .toBeVisible();
     } finally {
       __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
     }

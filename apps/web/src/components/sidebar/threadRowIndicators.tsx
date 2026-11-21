@@ -182,13 +182,7 @@ export function ThreadTerminalItem({
   });
   if (terminalIds.length === 0) return null;
   return (
-    <RowMetaItem
-      label={
-        terminalIds.length === 1
-          ? t("Terminal running")
-          : t("Terminals running")
-      }
-    >
+    <RowMetaItem label={terminalIds.length === 1 ? t("Terminal running") : t("Terminals running")}>
       <ThreadTerminalStatusButton
         threadRef={scopeThreadRef(thread.environmentId, thread.id)}
         terminalIds={terminalIds}

@@ -758,9 +758,7 @@ export default function ChatView(props: ChatViewProps) {
       toastManager.add({
         type: "warning",
         title: t("The composer is not ready"),
-        description: t(
-          "Try replying after the connection or pending input is resolved.",
-        ),
+        description: t("Try replying after the connection or pending input is resolved."),
       });
     }
     return accepted;
@@ -2731,14 +2729,18 @@ export default function ChatView(props: ChatViewProps) {
   };
   const handleRestoreThreadBranchStable = useStableCallback(handleRestoreThreadBranch);
   const feedbackBannerItems = feedbackSubmissions.flatMap((submission) => {
-    const item = feedbackBannerItem(submission, () => {
-      setFeedbackSubmissionsByThreadKey((current) => ({
-        ...current,
-        [routeThreadKey]: (current[routeThreadKey] ?? []).filter(
-          (entry) => entry.id !== submission.id,
-        ),
-      }));
-    }, t);
+    const item = feedbackBannerItem(
+      submission,
+      () => {
+        setFeedbackSubmissionsByThreadKey((current) => ({
+          ...current,
+          [routeThreadKey]: (current[routeThreadKey] ?? []).filter(
+            (entry) => entry.id !== submission.id,
+          ),
+        }));
+      },
+      t,
+    );
     return item ? [item] : [];
   });
   const limitRecoveryBanner =
@@ -2792,7 +2794,7 @@ export default function ChatView(props: ChatViewProps) {
       fallbackWindow !== dismissedFallbackWindow
         ? [
             modelFallbackBannerItem({
-            translate: t,
+              translate: t,
               fallbackModelName:
                 providerStatuses
                   .find((provider) => provider.instanceId === fallbackSelection.instanceId)

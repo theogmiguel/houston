@@ -143,8 +143,7 @@ function RecoveryActions({
     } catch (cause) {
       toastManager.add({
         type: "error",
-        title:
-          action === "resume" ? t("Could not change auto-resume") : t("Could not hold thread"),
+        title: action === "resume" ? t("Could not change auto-resume") : t("Could not hold thread"),
         description: cause instanceof Error ? cause.message : t("An error occurred."),
       });
     }
@@ -154,11 +153,7 @@ function RecoveryActions({
   return (
     <span className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1">
       <InlineButton touchTarget="padded" disabled={pending} onClick={() => void toggle("resume")}>
-        {pending
-          ? t("Saving...")
-          : scheduled
-            ? t("Cancel auto-resume")
-            : t("Resume at reset")}
+        {pending ? t("Saving...") : scheduled ? t("Cancel auto-resume") : t("Resume at reset")}
       </InlineButton>
       <InlineButton
         touchTarget="padded"

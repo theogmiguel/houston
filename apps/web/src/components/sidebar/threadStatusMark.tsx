@@ -89,9 +89,7 @@ export function ThreadStatusGlyph({
   return (
     <span
       role="img"
-      aria-label={
-        kind === "closed" ? t("Closed") : t(threadStatusWord(thread, state) ?? "Idle")
-      }
+      aria-label={kind === "closed" ? t("Closed") : t(threadStatusWord(thread, state) ?? "Idle")}
       data-thread-status-glyph=""
       data-status-kind={kind}
       className={cn(

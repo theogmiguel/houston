@@ -64,7 +64,10 @@ describe("PortForwardingPanel", () => {
     mocks.forwards = [forward];
     mocks.stopped = [];
     setHostBridge({
-      startPortForward: async (input: { readonly environmentId: string; readonly remotePort: number }) => {
+      startPortForward: async (input: {
+        readonly environmentId: string;
+        readonly remotePort: number;
+      }) => {
         mocks.started.push(input);
         return forward;
       },
@@ -85,7 +88,10 @@ describe("PortForwardingPanel", () => {
     mocks.forwards = [];
     mocks.enabled = false;
     setHostBridge({
-      startPortForward: async (input: { readonly environmentId: string; readonly remotePort: number }) => {
+      startPortForward: async (input: {
+        readonly environmentId: string;
+        readonly remotePort: number;
+      }) => {
         mocks.started.push(input);
         return forward;
       },

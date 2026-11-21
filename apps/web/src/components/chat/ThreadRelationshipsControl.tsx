@@ -133,7 +133,9 @@ function ThreadLineageRowList(props: {
           className={`flex min-h-7 w-full cursor-pointer items-center rounded-lg ${THREAD_DETAILS_PANEL_ROW_CONTENT_CLASS} text-sm font-medium text-muted-foreground/70 hover:bg-[var(--hover)] hover:text-foreground/80`}
         >
           <PlusIcon aria-hidden className="size-4 shrink-0" />
-          {t("Show {count} more", { count: Math.min(props.hiddenCount, THREAD_LINEAGE_PAGE_COUNT) })}
+          {t("Show {count} more", {
+            count: Math.min(props.hiddenCount, THREAD_LINEAGE_PAGE_COUNT),
+          })}
         </button>
       ) : null}
     </>
@@ -176,7 +178,9 @@ function ThreadLineageGroup<Row extends LineageRow>(props: {
           <span className={cn(THREAD_DETAILS_PANEL_LABEL_CLASS, "min-w-0 flex-1 truncate")}>
             {t(props.label)}
           </span>
-          {failedCount > 0 ? <SectionHeaderStatus>{t("{count} failed", { count: failedCount })}</SectionHeaderStatus> : null}
+          {failedCount > 0 ? (
+            <SectionHeaderStatus>{t("{count} failed", { count: failedCount })}</SectionHeaderStatus>
+          ) : null}
           {expanded ? null : (
             <span className="shrink-0 text-xs font-normal tabular-nums text-muted-foreground">
               {props.rows.length}
@@ -433,10 +437,9 @@ function DelegatedFromRow(props: {
             title={title}
             hint={
               environment === null
-                ? t(
-                    "Delegated from {environment}. Connect to it to open the parent thread.",
-                    { environment: label ?? t("a linked environment") },
-                  )
+                ? t("Delegated from {environment}. Connect to it to open the parent thread.", {
+                    environment: label ?? t("a linked environment"),
+                  })
                 : t("Open parent agent")
             }
           />

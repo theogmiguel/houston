@@ -333,9 +333,7 @@ function LinkRequestDialog(props: {
     >
       <WizardPopup>
         <WizardHeader
-          title={
-            pickMachine ? t("Link a machine") : t("Link {target}", { target: targetName })
-          }
+          title={pickMachine ? t("Link a machine") : t("Link {target}", { target: targetName })}
           description={t(
             "Agents here can then launch, message and wait on threads there. Revoke it in that machine's Connections.",
           )}

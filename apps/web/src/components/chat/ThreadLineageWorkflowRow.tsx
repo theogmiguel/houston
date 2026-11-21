@@ -189,11 +189,7 @@ export function ThreadLineageWorkflowRow({
           variant="ghost"
           part="secondary"
           aria-expanded={expanded}
-          aria-label={
-            expanded
-              ? t("Collapse {label}", { label })
-              : t("Expand {label}", { label })
-          }
+          aria-label={expanded ? t("Collapse {label}", { label }) : t("Expand {label}", { label })}
           onClick={() => setExpanded((value) => !value)}
         >
           <ChevronDownIcon

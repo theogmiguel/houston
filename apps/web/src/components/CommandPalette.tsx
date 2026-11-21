@@ -1382,7 +1382,9 @@ function OpenCommandPaletteDialog(props: {
           ? ["copy", "pull request", "link", "reference"]
           : ["copy", "thread", "thread id", "reference"],
       title:
-        activeThreadReferenceCopyTarget.kind === "pull-request" ? t("Copy PR link") : t("Copy thread"),
+        activeThreadReferenceCopyTarget.kind === "pull-request"
+          ? t("Copy PR link")
+          : t("Copy thread"),
       description: activeThreadReferenceCopyTarget.description,
       icon: <LinkIcon className={ITEM_ICON_CLASS} />,
       shortcutCommand: "thread.copyReference",
@@ -1718,7 +1720,8 @@ function OpenCommandPaletteDialog(props: {
   });
 
   for (const direction of [1, -1] as const) {
-    const title = direction === 1 ? t("Focus Next Workspace Area") : t("Focus Previous Workspace Area");
+    const title =
+      direction === 1 ? t("Focus Next Workspace Area") : t("Focus Previous Workspace Area");
     actionItems.push({
       kind: "action",
       value: `action:workspace-focus:${direction}`,

@@ -443,7 +443,13 @@ function SpeedGroup(props: { traits: TraitsSelectionInput }) {
     label === "Fast" || label === "Ultrafast" ? <FastBolt ultra={label === "Ultrafast"} /> : null;
   return (
     <OptionGroup
-      label={speedSelect?.label !== undefined ? t(speedSelect.label) : fastToggle?.label !== undefined ? t(fastToggle.label) : t("Speed")}
+      label={
+        speedSelect?.label !== undefined
+          ? t(speedSelect.label)
+          : fastToggle?.label !== undefined
+            ? t(fastToggle.label)
+            : t("Speed")
+      }
     >
       {speedSelect
         ? selectableProviderOptionChoices(speedSelect).map((option) => (

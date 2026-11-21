@@ -133,7 +133,8 @@ export function ThreadServersPanel(props: {
                     <ThreadDetailsRowContent
                       label={`localhost:${server.port}`}
                       value={
-                        server.processName ?? (server.terminal === null ? t("Agent") : t("Terminal"))
+                        server.processName ??
+                        (server.terminal === null ? t("Agent") : t("Terminal"))
                       }
                     />
                   </TooltipTrigger>

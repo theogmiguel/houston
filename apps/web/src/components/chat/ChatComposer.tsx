@@ -1030,7 +1030,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         : undefined))
     : undefined;
   const resolvedCompactDisabledReason =
-    compactDisabledReason ?? (noProviderAvailable ? t("Compacting is unavailable right now") : null);
+    compactDisabledReason ??
+    (noProviderAvailable ? t("Compacting is unavailable right now") : null);
   const { modes: compatibleRuntimeModes, mode: compatibleRuntimeMode } =
     resolveCompatibleRuntimeMode(
       runtimeMode,
@@ -3224,9 +3225,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             isEnvironmentRequestInvalidError(error) &&
             error.reason === "thread_transcript_too_large"
               ? t("This thread exceeds the attachment size limit. Try a shorter thread.")
-              : t(
-                  "Check that its environment is connected and up to date, then try again.",
-                ),
+              : t("Check that its environment is connected and up to date, then try again."),
         });
       }
       toastManager.close(loadingToast);

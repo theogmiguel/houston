@@ -3739,9 +3739,7 @@ export const layerWsRpc = (
             }),
           ),
         [WS_METHODS.houstonAccessListPendingDevices]: (_input) =>
-          serverAuth.listPendingDevices().pipe(
-            Effect.mapError(toPendingDeviceAccessError),
-          ),
+          serverAuth.listPendingDevices().pipe(Effect.mapError(toPendingDeviceAccessError)),
         [WS_METHODS.houstonAccessApprovePendingDevice]: (input) =>
           serverAuth.approvePendingDevice(input.sessionId).pipe(
             Effect.mapError(toPendingDeviceAccessError),

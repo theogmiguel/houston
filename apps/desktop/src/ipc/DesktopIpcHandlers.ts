@@ -17,11 +17,7 @@ import {
   setServerExposureMode,
   setTailscaleServeEnabled,
 } from "./methods/serverExposure.ts";
-import {
-  listPortForwards,
-  startPortForward,
-  stopPortForward,
-} from "./methods/portForwarding.ts";
+import { listPortForwards, startPortForward, stopPortForward } from "./methods/portForwarding.ts";
 import {
   bootstrapSshBearerSession,
   disconnectSshEnvironment,

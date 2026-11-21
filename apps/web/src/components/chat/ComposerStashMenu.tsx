@@ -31,11 +31,7 @@ function stashEntrySnippet(entry: PromptStashEntry, t: Translate): string {
     return t("(empty)");
   }
   const label =
-    imageCount > 0 && fileCount > 0
-      ? t("attachment")
-      : fileCount > 0
-        ? t("file")
-        : t("image");
+    imageCount > 0 && fileCount > 0 ? t("attachment") : fileCount > 0 ? t("file") : t("image");
   return attachmentCount === 1
     ? t("({count} {label})", { count: attachmentCount, label })
     : t("({count} {label}s)", { count: attachmentCount, label });

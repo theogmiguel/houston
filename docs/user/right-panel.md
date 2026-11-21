@@ -53,7 +53,7 @@ download, size or checksum check names the step that failed.
   one, and only `127.0.0.1` is bound. **Settings ▸ Connections ▸ Port forwarding** turns the
   feature off, which stops every forward; removing or disconnecting the environment, or quitting
   Houston, does the same. Up to 8 ports per environment and 16 in all can be forwarded at once,
-and a link forward carries up to 8 connections at a time; a refusal names the limit.
+  and a link forward carries up to 8 connections at a time; a refusal names the limit.
 - **Full screen** expands the page; `Esc` returns to the panel.
 - Browser tabs and their URLs are remembered per project. **Settings ▸ Browser** sets
   profiles, viewport, zoom, appearance, link target, search engine and whether agents may

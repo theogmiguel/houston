@@ -33,7 +33,8 @@ const readPort = (searchParams: URLSearchParams): Option.Option<number> => {
     : Option.none();
 };
 
-const pump = /* Frames move continuously; a span per chunk adds no diagnostic value. */
+const pump =
+  /* Frames move continuously; a span per chunk adds no diagnostic value. */
   Effect.fnUntraced(function* (source: Socket.Socket, sink: Socket.Writer) {
     const { pull } = yield* source.reader;
     while (true) {
@@ -73,9 +74,7 @@ const makeHandler = (input: {
       return HttpServerResponse.text("Not Found", { status: 404 });
     }
     const url = requestUrl(request);
-    const port = Option.isSome(url)
-      ? readPort(url.value.searchParams)
-      : Option.none<number>();
+    const port = Option.isSome(url) ? readPort(url.value.searchParams) : Option.none<number>();
     if (Option.isNone(port)) {
       return HttpServerResponse.text("Not Found", { status: 404 });
     }

@@ -61,8 +61,7 @@ export function ConfirmDialogHost() {
 
   const copy = resolveConfirmDialogCopy(state.status === "idle" ? "" : state.message, t);
   const confirmVariant = state.status === "idle" ? "default" : state.variant;
-  const confirmLabel =
-    (state.status === "idle" ? undefined : state.confirmLabel) ?? t("Confirm");
+  const confirmLabel = (state.status === "idle" ? undefined : state.confirmLabel) ?? t("Confirm");
   const onCancel = () => respondToConfirmDialog(false);
   const onConfirm = () => respondToConfirmDialog(true);
 

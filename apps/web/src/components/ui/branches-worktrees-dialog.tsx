@@ -181,9 +181,7 @@ export function BranchesWorktreesDialog(props: {
     run(async () => {
       if (cwd === null) return;
       const confirmed =
-        (await requestConfirmDialog(
-          t("Drop {ref}? The stash cannot be recovered.", { ref }),
-          {
+        (await requestConfirmDialog(t("Drop {ref}? The stash cannot be recovered.", { ref }), {
           variant: "destructive",
         })) ?? false;
       if (!confirmed) return;

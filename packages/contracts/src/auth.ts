@@ -165,11 +165,7 @@ export const AuthAccessTokenType = "urn:ietf:params:oauth:token-type:access_toke
 export const AuthEnvironmentBootstrapTokenType =
   "urn:houston:params:oauth:token-type:environment-bootstrap" as const;
 
-export const AuthDevicePairingMethod = Schema.Literals([
-  "pairing-link",
-  "pairing-code",
-  "unknown",
-]);
+export const AuthDevicePairingMethod = Schema.Literals(["pairing-link", "pairing-code", "unknown"]);
 export type AuthDevicePairingMethod = typeof AuthDevicePairingMethod.Type;
 
 /** A paired device the host has not approved yet. It holds no scope while pending. */

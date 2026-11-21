@@ -673,9 +673,7 @@ export function BranchToolbarBranchSelector({
       }
       className="min-w-0 flex-1 max-w-full active:scale-100"
       disabled={
-        isInitialBranchesLoadPending ||
-        isBranchActionPending ||
-        branchSwitchBlockedReason !== null
+        isInitialBranchesLoadPending || isBranchActionPending || branchSwitchBlockedReason !== null
       }
     >
       <GitBranchIcon

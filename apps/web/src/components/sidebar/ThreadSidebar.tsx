@@ -1821,8 +1821,8 @@ export function SidebarWorkspaceGroup({
       hiddenWorkspaces: hiddenWorkspaces.map((hidden) => ({
         id: hidden.workspaceId,
         name: hidden.name,
-      })),      translate: t,
-
+      })),
+      translate: t,
     });
     setMenuOpen(true);
     const clicked = await settlePromise(() => api.contextMenu.show(items, position));

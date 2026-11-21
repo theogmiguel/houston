@@ -17,9 +17,7 @@ export function isRemoteEnvironment(environmentId: EnvironmentId): boolean {
 
 /** A saved environment that is not this machine, and so has a port to forward. */
 export function needsLoopbackForward(environmentId: EnvironmentId): boolean {
-  return (
-    isDesktopHost && window.hostBridge !== undefined && isRemoteEnvironment(environmentId)
-  );
+  return isDesktopHost && window.hostBridge !== undefined && isRemoteEnvironment(environmentId);
 }
 
 /**

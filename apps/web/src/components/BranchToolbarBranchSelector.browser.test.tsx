@@ -1,10 +1,4 @@
-import {
-  EnvironmentId,
-  ProjectId,
-  RunId,
-  ThreadId,
-  type VcsRef,
-} from "@houston-app/contracts";
+import { EnvironmentId, ProjectId, RunId, ThreadId, type VcsRef } from "@houston-app/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 

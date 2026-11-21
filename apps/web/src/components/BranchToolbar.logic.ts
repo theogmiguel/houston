@@ -235,9 +235,7 @@ export function resolveBranchTriggerLabel(input: {
 }
 
 /** A running turn pins the branch: changing it would interrupt the provider session. */
-export function resolveBranchSwitchBlockedReason(input: {
-  isTurnActive: boolean;
-}): string | null {
+export function resolveBranchSwitchBlockedReason(input: { isTurnActive: boolean }): string | null {
   return input.isTurnActive ? "Stop the running turn to switch branches." : null;
 }
 

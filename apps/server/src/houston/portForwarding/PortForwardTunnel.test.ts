@@ -71,9 +71,14 @@ const echoServer = () =>
 const serveTunnel = (auth: ReturnType<typeof makeAuth>, maxTunnels?: number) =>
   Effect.gen(function* () {
     const services = yield* Layer.build(
-      HttpRouter.serve(makeRouteLayer(maxTunnels === undefined ? {} : { maxTunnels }).pipe(Layer.provide(platformLayer)), {
-        disableListenLog: true,
-      }).pipe(Layer.provideMerge(NodeHttpServer.layerTest), Layer.provide(auth.layer)),
+      HttpRouter.serve(
+        makeRouteLayer(maxTunnels === undefined ? {} : { maxTunnels }).pipe(
+          Layer.provide(platformLayer),
+        ),
+        {
+          disableListenLog: true,
+        },
+      ).pipe(Layer.provideMerge(NodeHttpServer.layerTest), Layer.provide(auth.layer)),
     );
     const server = Context.get(services, HttpServer.HttpServer);
     return { origin: HttpServer.formatAddress(server.address).replace(/^http/, "ws") };
@@ -138,10 +143,7 @@ it.live("carries bytes to a service on the environment's loopback", () =>
     const tunnel = yield* serveTunnel(auth);
     const service = yield* echoServer();
     const socket = yield* Effect.acquireRelease(
-      openSocket(
-        tunnel.origin,
-        `${PORT_FORWARD_TUNNEL_PATH}?port=${service.port}`,
-      ),
+      openSocket(tunnel.origin, `${PORT_FORWARD_TUNNEL_PATH}?port=${service.port}`),
       (socket) => Effect.sync(() => socket.close()),
     );
     const echoed = yield* echoRoundTrip(socket, new Uint8Array([1, 2, 3, 4]));
@@ -167,9 +169,7 @@ it.live("closes a tunnel whose service is not listening", () =>
     const auth = makeAuth([AuthPreviewOperateScope]);
     const tunnel = yield* serveTunnel(auth);
     const closed = yield* Effect.callback<number | null>((resume) => {
-      const socket = new WebSocket(
-        `${tunnel.origin}${PORT_FORWARD_TUNNEL_PATH}?port=1`,
-      );
+      const socket = new WebSocket(`${tunnel.origin}${PORT_FORWARD_TUNNEL_PATH}?port=1`);
       socket.addEventListener("close", (event) => resume(Effect.succeed(event.code)), {
         once: true,
       });

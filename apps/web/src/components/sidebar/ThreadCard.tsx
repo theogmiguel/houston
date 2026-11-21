@@ -490,9 +490,7 @@ export function ThreadCard({
                 {shelf !== null ? (
                   <button
                     type="button"
-                    aria-label={
-                      shelf === "snoozed" ? t("Wake thread now") : t("Reopen thread")
-                    }
+                    aria-label={shelf === "snoozed" ? t("Wake thread now") : t("Reopen thread")}
                     {...sweepActionProps(shelf === "snoozed" ? "wake" : "reopen")}
                     onPointerDown={(event) =>
                       sweep?.(event, shelf === "snoozed" ? "wake" : "reopen", threadKey)

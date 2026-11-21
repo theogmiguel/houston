@@ -177,7 +177,11 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
 
   return (
     <SidebarMenu className="flex-row items-center">
-      <SidebarUtilityItem icon={<SettingsIcon />} label={t("Settings")} onClick={handleSettingsClick} />
+      <SidebarUtilityItem
+        icon={<SettingsIcon />}
+        label={t("Settings")}
+        onClick={handleSettingsClick}
+      />
       <SidebarUtilityItem
         icon={<ThemeIcon />}
         label={t("Theme: {name}", { name: themeLabel })}

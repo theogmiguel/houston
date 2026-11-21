@@ -391,10 +391,9 @@ function BackgroundWorktreeSetupChip({ snapshot }: { snapshot: WorktreeSetupSnap
             variant="ghost-muted"
             size="micro"
             className="ml-auto min-w-0 shrink-0"
-            aria-label={t(
-              "Background setup is still running: {script}. Show setup progress.",
-              { script: scriptName },
-            )}
+            aria-label={t("Background setup is still running: {script}. Show setup progress.", {
+              script: scriptName,
+            })}
           />
         }
       >
