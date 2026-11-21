@@ -617,6 +617,24 @@ const make = Effect.gen(function* () {
       sessionId,
     }).pipe(Effect.asVoid);
 
+  const expirePendingDevices = Effect.fn("SessionStore.expirePendingDevices")(function* (
+    now: DateTime.Utc,
+  ) {
+    const expiredSessionIds = yield* authSessions.expirePending({ now });
+    if (expiredSessionIds.length === 0) return expiredSessionIds;
+    yield* Ref.update(connectedSessionsRef, (current) => {
+      const next = new Map(current);
+      for (const sessionId of expiredSessionIds) next.delete(sessionId);
+      return next;
+    });
+    yield* Effect.forEach(
+      expiredSessionIds,
+      (sessionId) => emitPendingDeviceRemoved(sessionId).pipe(Effect.andThen(emitRemoved(sessionId))),
+      { concurrency: "unbounded", discard: true },
+    );
+    return expiredSessionIds;
+  });
+
   const loadActiveSession = Effect.fn("SessionStore.loadActiveSession")(function* (
     sessionId: AuthSessionId,
   ) {
@@ -926,13 +944,11 @@ const make = Effect.gen(function* () {
       const pending = row.value.pendingApproval;
       if (pending !== null) {
         if (pending.expiresAt.epochMilliseconds <= observedAt.epochMilliseconds) {
-          yield* authSessions.expirePending({ now: observedAt }).pipe(
+          yield* expirePendingDevices(observedAt).pipe(
             Effect.mapError(
               (cause) => new SessionCredentialVerificationError({ sessionId: claims.sid, cause }),
             ),
           );
-          yield* emitPendingDeviceRemoved(claims.sid);
-          yield* emitRemoved(claims.sid);
           return yield* new SessionPendingApprovalExpiredError({
             sessionId: claims.sid,
             expiresAt: pending.expiresAt,
@@ -1056,13 +1072,11 @@ const make = Effect.gen(function* () {
 
     const pending = row.value.pendingApproval;
     if (pending !== null && pending.expiresAt.epochMilliseconds <= observedAt.epochMilliseconds) {
-      yield* authSessions.expirePending({ now: observedAt }).pipe(
+      yield* expirePendingDevices(observedAt).pipe(
         Effect.mapError(
           (cause) => new WebSocketTokenVerificationError({ sessionId: claims.sid, cause }),
         ),
       );
-      yield* emitPendingDeviceRemoved(claims.sid);
-      yield* emitRemoved(claims.sid);
       return yield* new SessionPendingApprovalExpiredError({
         sessionId: claims.sid,
         expiresAt: pending.expiresAt,
@@ -1169,7 +1183,7 @@ const make = Effect.gen(function* () {
     "SessionStore.listPendingDevices",
   )(function* () {
     const now = yield* DateTime.now;
-    yield* authSessions.expirePending({ now }).pipe(
+    yield* expirePendingDevices(now).pipe(
       Effect.mapError((cause) => new ActiveSessionsListError({ cause })),
     );
     const rows = yield* authSessions
