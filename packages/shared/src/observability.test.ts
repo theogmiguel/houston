@@ -32,7 +32,11 @@ import {
   processServiceInstanceId,
   redactUrlCredentials,
 } from "./observability.ts";
-import { SENSITIVE_QUERY_PARAM_NAMES } from "./sensitiveNames.ts";
+import {
+  QUERY_ONLY_SENSITIVE_NAMES,
+  SENSITIVE_QUERY_PARAM_NAMES,
+  UNAMBIGUOUS_SENSITIVE_NAMES,
+} from "./sensitiveNames.ts";
 
 describe("processServiceInstanceId", () => {
   it("stays the same for the process unless the operator set one", () => {
@@ -127,17 +131,23 @@ const nodeServicesIt = it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.la
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // The redaction pattern before the marker pre-check, kept as the oracle for its equivalence.
-const SENSITIVE_NAME_ALTERNATION = SENSITIVE_QUERY_PARAM_NAMES.map(escapeRegExp).join("|");
+const UNAMBIGUOUS_ALTERNATION = UNAMBIGUOUS_SENSITIVE_NAMES.map(escapeRegExp).join("|");
+const QUERY_ONLY_ALTERNATION = QUERY_ONLY_SENSITIVE_NAMES.map(escapeRegExp).join("|");
 const UNCONDITIONAL_URL_CREDENTIALS = new RegExp(
-  String.raw`((?:^|[?&"\s])(?:${SENSITIVE_NAME_ALTERNATION})=)([^&#"\\\s]*)` +
-    String.raw`|("(?:${SENSITIVE_NAME_ALTERNATION})"\s*:\s*")([^"]*)(")`,
+  String.raw`((?:^|[?&"\s])(?:${UNAMBIGUOUS_ALTERNATION})=)([^&#"\\\s]*)` +
+    String.raw`|((?:^|[?&])(?:${QUERY_ONLY_ALTERNATION})=)([^&#"\\\s]*)` +
+    String.raw`|("(?:${UNAMBIGUOUS_ALTERNATION})"\s*:\s*")([^"]*)(")`,
   "gi",
 );
 const redactUnconditional = (text: string) =>
   text.replace(
     UNCONDITIONAL_URL_CREDENTIALS,
-    (match, keyValueHead, keyValueValue, jsonHead, jsonValue, jsonTail) =>
-      keyValueHead !== undefined ? `${keyValueHead}<redacted>` : `${jsonHead}<redacted>${jsonTail}`,
+    (match, valueHead, _value, queryHead, _queryValue, jsonHead, _jsonValue, jsonTail) =>
+      valueHead !== undefined
+        ? `${valueHead}<redacted>`
+        : queryHead !== undefined
+          ? `${queryHead}<redacted>`
+          : `${jsonHead}<redacted>${jsonTail}`,
   );
 
 const urlCredentialCorpus = (): ReadonlyArray<string> => {
@@ -208,12 +218,34 @@ describe("redactUrlCredentials", () => {
 
   it("redacts credential-named keys in JSON fragments", () => {
     assert.equal(
-      redactUrlCredentials('{"code":"abc","access_token":"token-secret"}'),
-      '{"code":"<redacted>","access_token":"<redacted>"}',
+      redactUrlCredentials('{"state":"abc","access_token":"token-secret"}'),
+      '{"state":"abc","access_token":"<redacted>"}',
     );
     assert.equal(
       redactUrlCredentials('{"client_secret": "secret-value"}'),
       '{"client_secret": "<redacted>"}',
+    );
+  });
+
+  it("keeps diagnostic code and state values that are not in a URL query", () => {
+    assert.equal(
+      redactUrlCredentials('{"code":"EACCES","state":"failed"}'),
+      '{"code":"EACCES","state":"failed"}',
+    );
+    assert.equal(
+      redactUrlCredentials("process exit code=1 state=running"),
+      "process exit code=1 state=running",
+    );
+  });
+
+  it("redacts an OAuth code and state in a URL query or form body", () => {
+    assert.equal(
+      redactUrlCredentials("https://host/cb?code=oauth-code&state=oauth-state"),
+      "https://host/cb?code=<redacted>&state=<redacted>",
+    );
+    assert.equal(
+      redactUrlCredentials("code=oauth-code&state=oauth-state"),
+      "code=<redacted>&state=<redacted>",
     );
   });
 });

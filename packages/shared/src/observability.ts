@@ -14,7 +14,7 @@ import * as Tracer from "effect/Tracer";
 import { OtlpResource, OtlpTracer, OtlpSerialization } from "effect/observability";
 
 import { makeAsyncRotatingFileSink } from "./logging.ts";
-import { SENSITIVE_QUERY_PARAM_NAMES } from "./sensitiveNames.ts";
+import { QUERY_ONLY_SENSITIVE_NAMES, UNAMBIGUOUS_SENSITIVE_NAMES } from "./sensitiveNames.ts";
 
 export const OtlpProtocol = Schema.Literals(["http/json", "http/protobuf"]);
 export type OtlpProtocol = typeof OtlpProtocol.Type;
@@ -406,23 +406,27 @@ function spanToTraceRecord(span: SerializableSpan): EffectTraceRecord {
 const REGEXP_SPECIAL_CHARS = /[.*+?^${}()|[\]\\]/g;
 const escapeRegExp = (text: string) => text.replace(REGEXP_SPECIAL_CHARS, "\\$&");
 
-// WebSocket tickets, DPoP proofs, and OAuth parameters ride in URL queries, bodies and JSON
-// fragments and stay valid after the request. `name=value` covers a URL, query string or
-// key=value text; `"name":"value"` covers a serialized JSON fragment. Case-insensitive, and the
-// value stops at its own `&`/`#`/`"`/whitespace boundary, so unrelated text is left alone.
-const SENSITIVE_NAME_ALTERNATION = SENSITIVE_QUERY_PARAM_NAMES.map(escapeRegExp).join("|");
+// WebSocket tickets, DPoP proofs and OAuth parameters stay valid after the request, in a URL
+// query, key=value text or a JSON fragment; the value ends at its own boundary. `code` and
+// `state` are everyday diagnostic words, so they match only right after `?`, `&` or a body start.
+const UNAMBIGUOUS_ALTERNATION = UNAMBIGUOUS_SENSITIVE_NAMES.map(escapeRegExp).join("|");
+const QUERY_ONLY_ALTERNATION = QUERY_ONLY_SENSITIVE_NAMES.map(escapeRegExp).join("|");
 const URL_CREDENTIAL_PARAMS = new RegExp(
-  String.raw`((?:^|[?&"\s])(?:${SENSITIVE_NAME_ALTERNATION})=)([^&#"\\\s]*)` +
-    String.raw`|("(?:${SENSITIVE_NAME_ALTERNATION})"\s*:\s*")([^"]*)(")`,
+  String.raw`((?:^|[?&"\s])(?:${UNAMBIGUOUS_ALTERNATION})=)([^&#"\\\s]*)` +
+    String.raw`|((?:^|[?&])(?:${QUERY_ONLY_ALTERNATION})=)([^&#"\\\s]*)` +
+    String.raw`|("(?:${UNAMBIGUOUS_ALTERNATION})"\s*:\s*")([^"]*)(")`,
   "gi",
 );
 // Every match contains `<name>=` or `"<name>"`, so text without one of those markers cannot
 // match. Nearly no span carries one, and the marker check costs far less than scanning every
 // serialized trace record with the pattern.
-const SENSITIVE_MARKERS = SENSITIVE_QUERY_PARAM_NAMES.flatMap((name) => {
-  const lower = name.toLowerCase();
-  return [`${lower}=`, `"${lower}"`];
-});
+const SENSITIVE_MARKERS = [
+  ...UNAMBIGUOUS_SENSITIVE_NAMES.flatMap((name) => {
+    const lower = name.toLowerCase();
+    return [`${lower}=`, `"${lower}"`];
+  }),
+  ...QUERY_ONLY_SENSITIVE_NAMES.map((name) => `${name}=`),
+];
 const hasSensitiveMarker = (text: string) => {
   const lower = text.toLowerCase();
   return SENSITIVE_MARKERS.some((marker) => lower.includes(marker));
@@ -432,10 +436,21 @@ export const redactUrlCredentials = (text: string) =>
   hasSensitiveMarker(text)
     ? text.replace(
         URL_CREDENTIAL_PARAMS,
-        (match, keyValueHead, keyValueValue, jsonHead, jsonValue, jsonTail) =>
-          keyValueHead !== undefined
-            ? `${keyValueHead}<redacted>`
-            : `${jsonHead}<redacted>${jsonTail}`,
+        (
+          _match,
+          valueHead: string | undefined,
+          _value,
+          queryHead: string | undefined,
+          _queryValue,
+          jsonHead: string | undefined,
+          _jsonValue,
+          jsonTail: string | undefined,
+        ) =>
+          valueHead !== undefined
+            ? `${valueHead}<redacted>`
+            : queryHead !== undefined
+              ? `${queryHead}<redacted>`
+              : `${jsonHead}<redacted>${jsonTail}`,
       )
     : text;
 
