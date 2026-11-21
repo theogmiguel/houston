@@ -21,6 +21,10 @@ save an environment instead of writing it unencrypted. Environments saved by an 
 version are moved into the encrypted file the first time the desktop app reads them, and the
 older keychain entry is removed.
 
+**Load balancing** chooses how new work is spread across environments by resources. **Pull
+request sharing** chooses which trusted environments may read or act on pull requests with
+this machine's credentials.
+
 ### Port forwarding
 
 A thread can run a dev server or another TCP service in a remote environment and reach it from
@@ -45,10 +49,6 @@ requested, and a connection refused by a forward's per-connection limit is shown
 value. While it is off, nothing is forwarded, every existing forward stops, and the controls say
 why. Removing or disconnecting an environment stops its forwards, and quitting Houston stops
 them all. Linux and Windows support the feature.
-
-**Load balancing** chooses how new work is spread across environments by resources. **Pull
-request sharing** chooses which trusted environments may read or act on pull requests with
-this machine's credentials.
 
 ## Sharing and access
 
