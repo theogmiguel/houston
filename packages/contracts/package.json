@@ -63,6 +63,10 @@
       "types": "./src/houston/portForwarding.ts",
       "import": "./src/houston/portForwarding.ts"
     },
+    "./houston/access": {
+      "types": "./src/houston/access.ts",
+      "import": "./src/houston/access.ts"
+    },
     "./houston/observability": {
       "types": "./src/houston/observability.ts",
       "import": "./src/houston/observability.ts"

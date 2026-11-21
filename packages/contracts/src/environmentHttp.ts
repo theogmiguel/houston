@@ -194,6 +194,26 @@ export class EnvironmentScopeRequiredError extends Schema.TaggedError<Environmen
   }
 }
 
+/** A paired device holds no scope until its owner approves it on this host. */
+export class EnvironmentDeviceApprovalPendingError extends Schema.TaggedError<EnvironmentDeviceApprovalPendingError>()(
+  "EnvironmentDeviceApprovalPendingError",
+  {
+    code: Schema.Literal("device_approval_pending"),
+    message: Schema.String,
+    deviceName: TrimmedNonEmptyString,
+    hostLabel: TrimmedNonEmptyString,
+    limitHours: Schema.Number,
+    traceId: TrimmedNonEmptyString,
+  },
+  { httpApiStatus: 403 },
+) {
+  [HttpServerRespondable.symbol]() {
+    return HttpServerResponse.schemaJson(EnvironmentDeviceApprovalPendingError)(this, {
+      status: 403,
+    });
+  }
+}
+
 export class EnvironmentOperationForbiddenError extends Schema.TaggedError<EnvironmentOperationForbiddenError>()(
   "EnvironmentOperationForbiddenError",
   {
@@ -256,6 +276,7 @@ export const EnvironmentHttpCommonError = Schema.Union([
   EnvironmentAuthInvalidError,
   EnvironmentScopeRequiredError,
   EnvironmentOperationForbiddenError,
+  EnvironmentDeviceApprovalPendingError,
   EnvironmentResourceNotFoundError,
   EnvironmentInternalError,
 ]);
@@ -263,6 +284,7 @@ export type EnvironmentHttpCommonError = typeof EnvironmentHttpCommonError.Type;
 
 const EnvironmentAuthenticationErrors = [
   EnvironmentAuthInvalidError,
+  EnvironmentDeviceApprovalPendingError,
   EnvironmentInternalError,
 ] as const;
 
