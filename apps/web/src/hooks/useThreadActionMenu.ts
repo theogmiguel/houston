@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useT } from "~/i18n/useT";
+import { translateCurrent } from "~/i18n/locale";
 import { scopeProjectRef } from "@houston-app/client-runtime/environment";
 import { requestCustomSnooze } from "../components/CustomSnoozeDialog";
 import { requestThreadTags } from "../components/ThreadTagsDialog";
@@ -77,7 +77,7 @@ export function useThreadActionMenu(input: {
     | null
     | undefined;
 }) {
-  const t = useT();
+  const t = translateCurrent;
   const { threadRef, onStartRename, onFind, handleNewThread, workspace } = input;
   const {
     unsettleThread,

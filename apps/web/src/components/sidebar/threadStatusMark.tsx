@@ -126,6 +126,7 @@ export function ThreadStatusWord({
   state: ThreadRowState;
   nowIso: string;
 }) {
+  const t = useT();
   const kind = threadStatusKind(thread, state);
   const glyph = <ThreadStatusGlyph thread={thread} state={state} kind={kind} />;
   if (state === "back") {
@@ -137,7 +138,6 @@ export function ThreadStatusWord({
     );
   }
   const startedAt = resolveThreadWorkingStartedAt(thread);
-  const t = useT();
   const word = t(threadStatusWord(thread, state) ?? "Idle");
   return (
     <span

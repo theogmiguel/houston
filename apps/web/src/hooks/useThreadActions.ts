@@ -69,7 +69,8 @@ import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { getClientSettings, useClientSettings } from "./useSettings";
-import { useT, type Translate } from "~/i18n/useT";
+import { translateCurrent } from "~/i18n/locale";
+import type { Translate } from "~/i18n/useT";
 import * as ThreadUndo from "@houston-app/client-runtime/state/thread-undo";
 import { showThreadUndoNotice } from "./showThreadUndoNotice";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -291,7 +292,7 @@ function threadOperationFailure(target: ScopedThreadRef) {
 }
 
 export function useThreadActions() {
-  const t = useT();
+  const t: Translate = translateCurrent;
   const archiveThreadMutation = useOrchestrationCommand(threadEnvironment.archive, {
     reportFailure: false,
   });
