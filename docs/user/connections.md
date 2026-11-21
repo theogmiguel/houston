@@ -65,9 +65,32 @@ them all. Linux and Windows support the feature.
   the desktop app's resource statistics, its in-app browser channel or its desktop update
   reports.
 - **Pair a device** — create a pairing link or QR code.
-- **Authorized clients** — list paired devices and revoke their access.
+- **Require approval for new devices** — off by default. On, a device that completes pairing
+  waits in **Authorized clients** until you approve it; see below.
+- **Authorized clients** — list paired devices, approve or deny devices waiting for approval, and
+  revoke access.
 
 Changing network access restarts the server. Existing tunnels keep working.
+
+### Device approval
+
+**Require approval for new devices** in **Settings ▸ Connections ▸ Sharing & access** is off by
+default, so pairing behaves as before. When it is on, a device that completes pairing with a
+pairing link, QR code or pairing code appears under **Authorized clients** as waiting for
+approval. It holds no permission at all: every request and every WebSocket method it makes is
+refused with a message naming the device, this host and the setting. It cannot list clients,
+approve itself or approve another device.
+
+The host owner sees the device's name, when it paired, how it paired (link or code) and when its
+approval expires, with **Approve** and **Deny**. The owner also gets an in-app notification when a
+device starts waiting. Approving gives the device exactly the permissions the link or code
+carried, never more; denying revokes its credential. A device that is not decided within 24 hours
+expires, loses its credential and must pair again.
+
+Turning the setting off does not approve devices already waiting: they stay pending until you
+approve or deny them. Devices approved earlier keep working, and you can revoke any of them as
+before. The WSL backend is a separate environment, so its server has its own setting and its own
+pending devices.
 
 ## Use Houston from a phone
 
