@@ -713,7 +713,7 @@ export const make = Effect.gen(function* () {
   const readThreadContext = Effect.fnUntraced(
     function* (threadId: ThreadId | undefined) {
       if (threadId === undefined) return undefined;
-      const { visibleTurnItems } = yield* threads.getThreadProjection(threadId);
+      const visibleTurnItems = yield* threads.getThreadVisibleTurnItems(threadId);
       const selected = selectHistory({
         messages: visibleTurnItems.flatMap(
           ({ item }) => historicalMessage(limitCommandOutput(item)) ?? [],
