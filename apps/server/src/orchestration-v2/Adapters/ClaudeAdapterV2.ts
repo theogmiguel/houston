@@ -11400,6 +11400,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               Effect.raceFirst(Deferred.await(requestSilenceExceeded)),
               Effect.exit,
             );
+            // Ending the stream does not end a CLI that stopped answering; close it so it cannot linger.
+            if (yield* Deferred.isDone(requestSilenceExceeded)) {
+              yield* querySession.close.pipe(Effect.ignore);
+            }
             const heldContext = yield* Ref.get(activeTurn);
             if (
               (yield* Ref.get(queryContext))?.query === querySession &&

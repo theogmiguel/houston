@@ -13083,7 +13083,14 @@ describe("ClaudeAdapterV2 background wake turns", () => {
   it.effect("fails a turn whose request gets no frame for the silence limit", () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const harness = yield* makeWakeHarnessWithOptions({ requestSilenceLimit: "1 minute" });
+        let closeCalls = 0;
+        const harness = yield* makeWakeHarnessWithOptions({
+          requestSilenceLimit: "1 minute",
+          close: () =>
+            Effect.sync(() => {
+              closeCalls += 1;
+            }),
+        });
         yield* harness.runtime.startTurn(
           makeClaudeTestTurnInput({
             threadId: harness.threadId,
@@ -13108,6 +13115,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           "Claude produced no output for 1 minute while waiting for the model response",
         );
         assert.include(terminal.failure?.message ?? "", "limit is 1 minute");
+        assert.isAtLeast(closeCalls, 1, "the silent CLI process was left running");
       }).pipe(
         Effect.provide(
           Layer.mergeAll(

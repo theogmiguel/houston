@@ -824,17 +824,25 @@ function withPullRequestWatch(
   return ended === undefined ? rest : { ...rest, endedWatch: ended };
 }
 
-/** A monitor wake is a pull request watch's message; it must not start once that watch or thread ended. */
-function isStalePullRequestWatchWake(
+/** Whether `text` names `url` itself, not a longer pull request number that starts with it. */
+function namesPullRequestUrl(text: string, url: string): boolean {
+  let from = 0;
+  while (true) {
+    const at = text.indexOf(url, from);
+    if (at === -1) return false;
+    const next = text.charCodeAt(at + url.length);
+    if (Number.isNaN(next) || next < 48 || next > 57) return true;
+    from = at + 1;
+  }
+}
+
+/** A pull request watch's wake must not start once that watch or thread ended; other notifications are left alone. */
+export function isStalePullRequestWatchWake(
   thread: OrchestrationV2AppThread,
   message: Pick<OrchestrationV2ConversationMessage, "id" | "text" | "notification">,
 ): boolean {
+  if (!message.id.startsWith(PULL_REQUEST_WATCH_WAKE_MESSAGE_PREFIX)) return false;
   const links = threadPullRequestsOf(thread);
-  const namedLink = links.some((link) => message.text.includes(link.url));
-  const isWatchWake =
-    message.id.startsWith(PULL_REQUEST_WATCH_WAKE_MESSAGE_PREFIX) ||
-    (message.notification?.source.kind === "monitor" && namedLink);
-  if (!isWatchWake) return false;
   if (
     thread.archivedAt !== null ||
     thread.deletedAt !== null ||
@@ -844,7 +852,9 @@ function isStalePullRequestWatchWake(
   )
     return true;
   // The server writes the watched pull request's URL into the wake; an ended watch no longer carries one.
-  return !links.some((link) => link.watch !== undefined && message.text.includes(link.url));
+  return !links.some(
+    (link) => link.watch !== undefined && namesPullRequestUrl(message.text, link.url),
+  );
 }
 
 function legacyPullRequestLink(
