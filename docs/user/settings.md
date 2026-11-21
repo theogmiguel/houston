@@ -29,14 +29,22 @@ Search Settings by feature or setting name. `Esc` clears an active search.
 (default) and Português (Brasil). The change applies at once, is saved on this device and
 survives a restart. Restoring the default settings returns it to English.
 
-Only part of the interface is translated: the Settings sidebar, page titles and
-descriptions, the breadcrumb, settings search (a query matches the translated or the
-English name), and most row titles and descriptions on the General, Appearance, Chat,
-Diffs and Labs pages. Rows on the other pages are translated only where their text is
-shared with those pages. Everything else stays in English, including the thread view,
-composer, menus, dialogs, toasts, the values inside controls and text that includes
-names or numbers. Product and developer terms (Houston, thread, worktree, commit,
-pull request) are kept in English. A string without a translation is shown in English.
+Settings is translated throughout: its sidebar, page titles and descriptions, the
+breadcrumb, and settings search, where a query matches either the translated or the
+English name. Most settings rows follow, including the General, Appearance, Chat, Diffs
+and Labs pages and the rows those pages share with other pages. The thread view and
+timeline, the composer and its pickers, the sidebar and workspaces, the command palette,
+thread and workspace context menus, the common confirmation, project, tag, task, commit,
+worktree and repository dialogs, in-app thread notifications, and the desktop host's
+native menu and tray are translated too. The interface language applies to the native
+menu and tray after the setting is saved.
+
+Other surfaces stay in English: project, pull request, issue, task, usage, provider and
+diagnostics pages; the browser, file and terminal panels; external-link context menus;
+catalogues, provider output and agent messages; and any string without a translation.
+Values inside controls, model names, file paths and keyboard shortcuts are not
+translated. Product and developer terms (Houston, thread, worktree, commit, pull
+request) are kept in English.
 
 ### Terminal
 
