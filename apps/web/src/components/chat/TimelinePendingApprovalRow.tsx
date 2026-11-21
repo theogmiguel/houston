@@ -11,6 +11,7 @@ import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions
 import { ToolActivityIconView, type WorkEntryIconName } from "./TimelineToolActivityIcon";
 import { TimelineRowCtx } from "./timelineRowContext";
 import { WorkLogRow } from "./WorkLog";
+import { useT } from "~/i18n/useT";
 
 const APPROVAL_PRESENTATION = {
   command: { icon: "terminal", label: "Command approval", detailLabel: "Command" },
@@ -36,6 +37,7 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
 }: {
   approval: PendingApproval;
 }) {
+  const t = useT();
   const { respondingRequestIds, canOperateThread, onRespondToApproval } = use(TimelineRowCtx);
   const presentation = APPROVAL_PRESENTATION[approval.requestKind];
   const canRespond = approval.responseCapability === "live";
@@ -43,7 +45,7 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
     <div className="rounded-(--r-group) border border-(--warn-line) bg-(--warn-wash) px-2.5 py-2">
       <WorkLogRow
         role="group"
-        aria-label={presentation.label}
+        aria-label={t(presentation.label)}
         data-v2-item-type="approval_request"
         wrapLabel
         icon={
@@ -56,7 +58,7 @@ export const TimelinePendingApprovalRow = memo(function TimelinePendingApprovalR
         }
         label={
           <code
-            aria-label={presentation.detailLabel}
+            aria-label={t(presentation.detailLabel)}
             className="block max-h-40 min-w-0 overflow-auto rounded-(--r-ctl) border border-border bg-(--code-bg) px-2.5 py-1.5 whitespace-pre-wrap font-mono text-mono leading-5 text-foreground select-text! wrap-anywhere [scrollbar-width:thin] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
             data-approval-detail="complete"
             tabIndex={0}

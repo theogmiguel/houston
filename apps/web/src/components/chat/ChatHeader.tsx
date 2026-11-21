@@ -47,6 +47,7 @@ import {
 import { ThreadRowPullRequestBadge } from "../sidebar/ThreadRowPullRequestBadge";
 import type { RowPullRequest } from "~/threads/rowPullRequest";
 import { textDirection } from "~/textDirection";
+import { useT } from "~/i18n/useT";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -89,8 +90,9 @@ export const ChatHeader = memo(function ChatHeader({
   onOpenProjectSettings,
   onFindInThread,
 }: ChatHeaderProps) {
+  const t = useT();
   const activeProjectName = activeProject?.isScratch
-    ? "No project"
+    ? t("No project")
     : activeProject?.title.trim() || undefined;
   const activeThreadRef = scopeThreadRef(activeThreadEnvironmentId, activeThreadId);
   const canOperateThread = useEnvironmentScope(
@@ -141,7 +143,7 @@ export const ChatHeader = memo(function ChatHeader({
       originalTitle: renamingTitle ?? activeThreadTitle,
     });
     if (resolution.action === "reject-empty") {
-      toastManager.add({ type: "warning", title: "Thread title cannot be empty" });
+      toastManager.add({ type: "warning", title: t("Thread title cannot be empty") });
       return;
     }
     if (resolution.action === "noop") return;
@@ -153,8 +155,8 @@ export const ChatHeader = memo(function ChatHeader({
         const error = squashAtomCommandFailure(result);
         toastManager.add({
           type: "error",
-          title: "Failed to rename thread",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          title: t("Failed to rename thread"),
+          description: error instanceof Error ? error.message : t("An error occurred."),
         });
       }
     });
@@ -219,7 +221,7 @@ export const ChatHeader = memo(function ChatHeader({
       const api = readLocalApi();
       if (!api) return;
       void api.contextMenu
-        .show([{ id: "project-settings", label: "Project settings", icon: "settings" }], {
+        .show([{ id: "project-settings", label: t("Project settings"), icon: "settings" }], {
           x: event.clientX,
           y: event.clientY,
         })
@@ -260,7 +262,7 @@ export const ChatHeader = memo(function ChatHeader({
         <input
           autoFocus
           dir="auto"
-          aria-label="Thread title"
+          aria-label={t("Thread title")}
           className={THREAD_TITLE_INPUT_CLS}
           defaultValue={renamingTitle}
           onBlur={(event) => {
@@ -284,7 +286,7 @@ export const ChatHeader = memo(function ChatHeader({
               <button
                 ref={titleButtonRef}
                 type="button"
-                aria-label={`Thread actions for ${activeThreadTitle}`}
+                aria-label={t("Thread actions for {title}", { title: activeThreadTitle })}
                 aria-haspopup="menu"
                 onClick={openMenuFromTitle}
                 onDoubleClick={canOperateThread ? handleTitleDoubleClick : undefined}
@@ -335,10 +337,12 @@ export const ChatHeader = memo(function ChatHeader({
       {renamingTitle === null && activeThreadLinkOrigin ? (
         <Tooltip>
           <TooltipTrigger render={<Badge variant="info" size="sm" />}>
-            From {activeThreadLinkOrigin}
+            {t("From {origin}", { origin: activeThreadLinkOrigin })}
           </TooltipTrigger>
           <TooltipPopup side="top">
-            Started by an agent on {activeThreadLinkOrigin} through a linked environment.
+            {t("Started by an agent on {origin} through a linked environment.", {
+              origin: activeThreadLinkOrigin,
+            })}
           </TooltipPopup>
         </Tooltip>
       ) : null}
@@ -348,7 +352,7 @@ export const ChatHeader = memo(function ChatHeader({
             render={
               <button
                 type="button"
-                aria-label={`Open parent thread: ${parentThreadLink.title}`}
+                aria-label={t("Open parent thread: {title}", { title: parentThreadLink.title })}
                 onClick={() => onOpenThread(parentThreadLink.threadId)}
                 className={THREAD_PARENT_LINK_CLS}
               />

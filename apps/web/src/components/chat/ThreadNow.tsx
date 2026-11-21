@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { threadSyncLabel, type ThreadSyncPhase } from "../../threadSync";
 import { cn } from "~/lib/utils";
+import { useT } from "~/i18n/useT";
 import { NoticeText } from "./ComposerBannerStack";
 import { IN_TURN_GAP_ABOVE_CLASS } from "./timelineSpacing";
 import { ThreadNowDetails } from "../ui/thread-now-details";
@@ -40,6 +41,7 @@ function ThreadNowLine({
   /** Announces the line when it appears; only for something that needs the user. */
   readonly announce?: boolean;
 }) {
+  const t = useT();
   return (
     <div
       role={announce ? "alert" : undefined}
@@ -54,14 +56,16 @@ function ThreadNowLine({
           <span data-thread-now-title="true" className="min-w-0 truncate">
             {item.title}
           </span>
-          <ThreadNowDetails label={item.detailsLabel ?? "Show details"} entries={item.details} />
+          <ThreadNowDetails label={item.detailsLabel ?? t("Show details")} entries={item.details} />
         </>
       ) : (
         /* Title and detail read as one line that gives way before the actions, so Stop stays
            reachable; when it is cut, its details button shows all of it. */
         <NoticeText
           detailsLabel={
-            typeof item.title === "string" ? `Show details: ${item.title}` : "Show details"
+            typeof item.title === "string"
+              ? t("Show details: {title}", { title: item.title })
+              : t("Show details")
           }
           className="min-w-0 truncate"
         >

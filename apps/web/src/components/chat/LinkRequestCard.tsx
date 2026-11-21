@@ -40,6 +40,7 @@ import { Input } from "../ui/input";
 import { Radio, RadioGroup } from "../ui/radio-group";
 import { WizardFooter, WizardHeader, WizardPanel, WizardPopup, WizardSteps } from "../ui/wizard";
 import { WorkLogRow } from "./WorkLog";
+import { useT } from "~/i18n/useT";
 
 const accessLabel = (access: AuthMcpClientAccess) => accessConfig[access].label;
 
@@ -83,6 +84,7 @@ function PendingLinkRequest(props: {
   readonly environmentId: EnvironmentId;
   readonly item: LinkRequestItem;
 }) {
+  const t = useT();
   const { item } = props;
   const [open, setOpen] = useState(false);
   const [declining, setDeclining] = useState(false);
@@ -118,8 +120,8 @@ function PendingLinkRequest(props: {
       <div className="flex min-w-0 flex-col gap-1">
         <p className="text-sm font-medium text-foreground">
           {picksMachine(item)
-            ? "Link a machine to this environment"
-            : `Link ${target} to this environment`}
+            ? t("Link a machine to this environment")
+            : t("Link {target} to this environment", { target })}
         </p>
         {item.reason.trim() ? <p className="text-sm text-muted-foreground">{item.reason}</p> : null}
         {item.label !== undefined && item.url !== undefined ? (
@@ -140,15 +142,15 @@ function PendingLinkRequest(props: {
             disabled={declining}
             onClick={() => void decline()}
           >
-            Decline
+            {t("Decline")}
           </Button>
           <Button type="button" size="xs" disabled={declining} onClick={() => setOpen(true)}>
-            {picksMachine(item) ? "Choose machine…" : "Review link…"}
+            {picksMachine(item) ? t("Choose machine…") : t("Review link…")}
           </Button>
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">
-          Only a session that manages access here can answer this.
+          {t("Only a session that manages access here can answer this.")}
         </p>
       )}
       <LinkRequestDialog
@@ -205,6 +207,7 @@ function LinkRequestDialog(props: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
 }) {
+  const t = useT();
   const { item } = props;
   const formId = useId();
   const pickMachine = picksMachine(item);
@@ -330,12 +333,16 @@ function LinkRequestDialog(props: {
     >
       <WizardPopup>
         <WizardHeader
-          title={pickMachine ? "Link a machine" : `Link ${targetName}`}
-          description="Agents here can then launch, message and wait on threads there. Revoke it in that machine's Connections."
+          title={
+            pickMachine ? t("Link a machine") : t("Link {target}", { target: targetName })
+          }
+          description={t(
+            "Agents here can then launch, message and wait on threads there. Revoke it in that machine's Connections.",
+          )}
         >
           {steps.length > 1 && !useExisting ? (
             <WizardSteps
-              steps={["Machine", "Access"]}
+              steps={[t("Machine"), t("Access")]}
               currentStep={steps.indexOf(current)}
               summaries={[target.kind === "none" ? null : targetName, null]}
               showSummaries
@@ -401,20 +408,22 @@ function LinkRequestDialog(props: {
                     {canMint ? null : (
                       <label className="block space-y-1.5">
                         <span className="block text-xs font-medium text-foreground">
-                          Pairing code
+                          {t("Pairing code")}
                         </span>
                         <Input
                           value={pairingCode}
                           onChange={(event) => setPairingCode(event.target.value)}
-                          placeholder="Paste the code"
+                          placeholder={t("Paste the code")}
                           disabled={busy}
                           autoComplete="one-time-code"
                           nativeInput
                           spellCheck={false}
                         />
                         <span className="block text-xs text-muted-foreground">
-                          Create a link on {targetName}: Settings → Connections → Create link, then
-                          paste its code here.
+                          {t(
+                            "Create a link on {target}: Settings → Connections → Create link, then paste its code here.",
+                            { target: targetName },
+                          )}
                         </span>
                       </label>
                     )}
@@ -425,8 +434,10 @@ function LinkRequestDialog(props: {
             )}
             {useExisting ? (
               <p className="text-xs text-muted-foreground">
-                This environment is already linked to {targetName}. The agent can use that link as
-                it is; change its access in Settings → Connections.
+                {t(
+                  "This environment is already linked to {target}. The agent can use that link as it is; change its access in Settings → Connections.",
+                  { target: targetName },
+                )}
               </p>
             ) : null}
             {error !== null ? (
@@ -447,11 +458,11 @@ function LinkRequestDialog(props: {
                 setError(null);
               }}
             >
-              Back
+              {t("Back")}
             </Button>
           ) : (
             <Button variant="outline" type="button" disabled={busy} onClick={close}>
-              Cancel
+              {t("Cancel")}
             </Button>
           )}
           <Button
@@ -459,7 +470,13 @@ function LinkRequestDialog(props: {
             type="submit"
             disabled={busy || (finishesHere ? !ready : !machineReady)}
           >
-            {busy ? "Linking…" : useExisting ? "Use this link" : finishesHere ? "Link" : "Continue"}
+            {busy
+              ? t("Linking…")
+              : useExisting
+                ? t("Use this link")
+                : finishesHere
+                  ? t("Link")
+                  : t("Continue")}
           </Button>
         </WizardFooter>
       </WizardPopup>

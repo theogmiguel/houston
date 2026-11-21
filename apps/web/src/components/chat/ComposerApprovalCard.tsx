@@ -5,6 +5,7 @@ import { memo } from "react";
 import type { PaneDensity } from "../../threads/density";
 import { type PendingApproval } from "../../session-logic";
 import { cn } from "../../lib/utils";
+import { useT } from "~/i18n/useT";
 import {
   COMPOSER_STATUS_CARD_CLS,
   COMPOSER_STATUS_CARD_ICON_CLS,
@@ -52,14 +53,15 @@ export const ComposerApprovalCard = memo(function ComposerApprovalCard({
   phone = false,
   onRespond,
 }: ComposerApprovalCardProps) {
+  const t = useT();
   const compact = !phone && (density === "compact" || density === "glance");
-  const title = APPROVAL_TITLES[approval.requestKind] ?? "Approval needed";
+  const title = t(APPROVAL_TITLES[approval.requestKind] ?? "Approval needed");
   const detail = approval.detail?.trim() || approval.reason?.trim() || "";
   const primaryOptions = approval.options?.filter(
     (option) => option.decision === "decline" || option.decision === "accept",
   ) ?? [
-    { decision: "decline" as const, label: "Decline" },
-    { decision: "accept" as const, label: "Approve" },
+    { decision: "decline" as const, label: t("Decline") },
+    { decision: "accept" as const, label: t("Approve") },
   ];
   const titleLine = (
     <div className={cn("flex min-w-0 gap-2", phone ? "items-start" : "items-center")}>
@@ -72,14 +74,14 @@ export const ComposerApprovalCard = memo(function ComposerApprovalCard({
       </span>
       {count > 1 ? (
         <span className={COMPOSER_STATUS_CARD_META_CLS}>
-          {index + 1} of {count}
+          {t("{index} of {count}", { index: index + 1, count })}
         </span>
       ) : null}
     </div>
   );
   return (
     <section
-      aria-label="Approval needed"
+      aria-label={t("Approval needed")}
       data-composer-approval-card={density}
       className={cn(
         "flex min-w-0 flex-col gap-2",
@@ -99,7 +101,7 @@ export const ComposerApprovalCard = memo(function ComposerApprovalCard({
       {compact ? null : (
         <div className="flex min-w-0 flex-col gap-1.5">
           <pre
-            aria-label="Approval detail"
+            aria-label={t("Approval detail")}
             className="max-h-40 min-w-0 overflow-auto rounded-md border border-border bg-code px-2.5 py-1.5 font-mono text-xs leading-5 whitespace-pre-wrap text-foreground select-text! [scrollbar-width:thin]"
           >
             {detail || title}

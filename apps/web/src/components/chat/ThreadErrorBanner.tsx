@@ -13,6 +13,7 @@ import { CircleAlertIcon, XIcon } from "lucide-react";
 import { OpenAI } from "../Icons";
 import { ChatGptUsageButton } from "../settings/ChatGptUsageButton";
 import { ExpandableText } from "../settings/ExpandableText";
+import { useT } from "~/i18n/useT";
 
 export function copyAdminRequest() {
   void writeTextToClipboard(CHATGPT_WORKSPACE_ADMIN_REQUEST, "admin request").then(
@@ -97,14 +98,15 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
   onDismiss?: () => void;
   onRetry?: (() => void) | undefined;
 }) {
+  const t = useT();
   if (!error) return null;
   const workspaceLimit = errorCode === CHATGPT_WORKSPACE_USAGE_LIMIT_CODE;
   const chatGptLimit = workspaceLimit || errorCode === CHATGPT_USAGE_LIMIT_CODE;
   const variant = errorClass === "usage_limit" || chatGptLimit ? "stateWarning" : "stateError";
   const copyError = () => {
     void writeTextToClipboard(error, "error message").then(
-      () => toastManager.add({ type: "success", title: "Error copied" }),
-      () => toastManager.add({ type: "error", title: "Could not copy the error" }),
+      () => toastManager.add({ type: "success", title: t("Error copied") }),
+      () => toastManager.add({ type: "error", title: t("Could not copy the error") }),
     );
   };
   return (
@@ -121,7 +123,7 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
         <AlertDescription>
           {chatGptLimit ? (
             <div className="space-y-1">
-              <p className="font-medium">ChatGPT usage limit reached</p>
+              <p className="font-medium">{t("ChatGPT usage limit reached")}</p>
               {workspaceLimit ? (
                 <p>
                   {
@@ -142,7 +144,7 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
         <AlertAction>
           {workspaceLimit ? (
             <Button variant="default" size="sm" onClick={copyAdminRequest}>
-              Copy request for admin
+              {t("Copy request for admin")}
             </Button>
           ) : chatGptLimit ? (
             <ChatGptUsageButton variant="default" size="sm" />
@@ -150,16 +152,21 @@ export const ThreadErrorBanner = memo(function ThreadErrorBanner({
             <>
               {onRetry ? (
                 <Button variant="ghost" size="xs" onClick={onRetry}>
-                  Retry
+                  {t("Retry")}
                 </Button>
               ) : null}
               <Button variant="ghost" size="xs" onClick={copyError}>
-                Copy
+                {t("Copy")}
               </Button>
             </>
           )}
           {onDismiss ? (
-            <Button variant="ghost" size="icon-xs" aria-label="Dismiss error" onClick={onDismiss}>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label={t("Dismiss error")}
+              onClick={onDismiss}
+            >
               <XIcon />
             </Button>
           ) : null}

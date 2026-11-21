@@ -18,6 +18,7 @@ import {
   TIMELINE_CHANGE_TOGGLE_CLS,
 } from "../ui/timeline-changes-recipes";
 import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
+import { useT } from "~/i18n/useT";
 
 export interface TimelineChangeFile {
   readonly path: string;
@@ -37,12 +38,13 @@ export function TimelineFileChip({
   readonly onOpen: () => void;
   readonly onContextMenu?: ((event: ReactMouseEvent<HTMLButtonElement>) => void) | undefined;
 }) {
+  const t = useT();
   const label = formatWorkspaceRelativePath(file.path, workspaceRoot);
   const drag = filePillDragHandlers({ path: file.path, workspaceRoot });
   return (
     <button
       type="button"
-      aria-label={`Open diff for ${label}`}
+      aria-label={t("Open diff for {path}", { path: label })}
       onClick={onOpen}
       onContextMenu={onContextMenu}
       className={TIMELINE_CHANGE_CHIP_CLS}
@@ -88,6 +90,7 @@ export function TimelineChangesRow({
   readonly detail?: ReactNode;
   readonly defaultExpanded?: boolean;
 }) {
+  const t = useT();
   const [expanded, setExpanded] = useState(defaultExpanded);
   const syncTimelineLayout = useSyncLayout();
   const toggleExpanded = () => {
@@ -96,7 +99,11 @@ export function TimelineChangesRow({
     syncTimelineLayout();
   };
   const hiddenCount = Math.max(0, totals.count - files.length);
-  const countLabel = `${totals.count.toLocaleString()} file${totals.count === 1 ? "" : "s"}`;
+  const count = totals.count.toLocaleString();
+  const countLabel =
+    totals.count === 1
+      ? t("{count} file", { count })
+      : t("{count} files", { count });
   const hasBody = files.length > 0 || detail !== undefined;
 
   return (
@@ -105,7 +112,11 @@ export function TimelineChangesRow({
         <button
           type="button"
           aria-expanded={expanded}
-          aria-label={expanded ? `Collapse ${countLabel}` : `Expand ${countLabel}`}
+          aria-label={
+            expanded
+              ? t("Collapse {label}", { label: countLabel })
+              : t("Expand {label}", { label: countLabel })
+          }
           disabled={!hasBody}
           onClick={toggleExpanded}
           className={cn(TIMELINE_CHANGE_TOGGLE_CLS, TIMELINE_CHANGE_FOCUS_CLS)}
@@ -125,11 +136,11 @@ export function TimelineChangesRow({
             size="xs"
             variant="ghost-muted"
             className="ms-auto shrink-0"
-            aria-label="Open diff"
+            aria-label={t("Open diff")}
             onClick={onOpenDiff}
           >
             <ChevronRightIcon aria-hidden className="size-3" />
-            <span>Open diff</span>
+            <span>{t("Open diff")}</span>
           </Button>
         )}
       </div>

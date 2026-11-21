@@ -15,6 +15,7 @@ import { Popover, PopoverPopup, PopoverCreateHandle } from "../ui/popover";
 import { DetailsSheet } from "../../mobile/DetailsSheet";
 import { selectThreadPanelOpen, useRightPanelStore } from "../../rightPanelStore";
 import { useChatCanvas } from "./ChatCanvasContext";
+import { useT } from "~/i18n/useT";
 import {
   THREAD_DETAILS_CARD_GAP,
   resolveThreadDetailsCardDensity,
@@ -66,7 +67,8 @@ export function ThreadDetailsCard({
   onContextMenu?: MouseEventHandler<HTMLDivElement>;
   children: (density: "full" | "compact" | "essential") => ReactNode;
 }) {
-  const detailsArea = workspaceAreaProps("details", 3, "Thread details");
+  const t = useT();
+  const detailsArea = workspaceAreaProps("details", 3, t("Thread details"));
   const canvas = useChatCanvas();
   const preferredPlacement = canvas?.preferredDetailsCard ?? null;
   const placement = canvas?.detailsCardPlacement ?? null;

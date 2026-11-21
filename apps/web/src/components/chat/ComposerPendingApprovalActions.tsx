@@ -9,6 +9,7 @@ import { Button, InlineButton } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { composerFloatingLayerProps } from "./composerEventScope";
+import { useT } from "~/i18n/useT";
 
 interface ComposerPendingApprovalActionsProps {
   presentation?: "composer" | "inline";
@@ -42,6 +43,7 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
   options = DEFAULT_APPROVAL_OPTIONS,
   onRespondToApproval,
 }: ComposerPendingApprovalActionsProps) {
+  const t = useT();
   const primaryOptions = options.filter(
     (option) => option.decision === "decline" || option.decision === "accept",
   );
@@ -73,7 +75,7 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
                     : "max-w-40 truncate"
               }
             >
-              {option.label}
+              {t(option.label)}
             </span>
           </>
         );
@@ -100,7 +102,7 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
         return option.warning ? (
           <Tooltip key={option.decision}>
             <TooltipTrigger render={button} />
-            <TooltipPopup side="top">{option.warning}</TooltipPopup>
+            <TooltipPopup side="top">{t(option.warning)}</TooltipPopup>
           </Tooltip>
         ) : (
           button
@@ -112,18 +114,18 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
             disabled={disabled || isResponding || !canRespond}
             render={
               presentation === "inline" ? (
-                <InlineButton tone="muted" aria-label="More approval options" />
+                <InlineButton tone="muted" aria-label={t("More approval options")} />
               ) : (
                 <Button
                   size="icon-xs"
                   variant="outline"
-                  aria-label="More approval options"
+                  aria-label={t("More approval options")}
                   {...(phone ? { className: "size-11 shrink-0" } : {})}
                 />
               )
             }
           >
-            {presentation === "inline" ? "More" : <EllipsisIcon />}
+            {presentation === "inline" ? t("More") : <EllipsisIcon />}
           </MenuTrigger>
           <MenuPopup {...composerFloatingLayerProps} side="top" align="end" width="content">
             {moreOptions.map((option) => {
@@ -144,7 +146,7 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
               return option.warning ? (
                 <Tooltip key={option.decision}>
                   <TooltipTrigger render={item} />
-                  <TooltipPopup side="top">{option.warning}</TooltipPopup>
+                  <TooltipPopup side="top">{t(option.warning)}</TooltipPopup>
                 </Tooltip>
               ) : (
                 item

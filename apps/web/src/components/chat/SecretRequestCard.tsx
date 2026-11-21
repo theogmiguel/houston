@@ -31,12 +31,14 @@ import { SecretSourceSelect } from "../settings/SecretSourceInput";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { WorkLogRow } from "./WorkLog";
+import { useT } from "~/i18n/useT";
 
 export function SecretRequestCard(props: {
   readonly environmentId: EnvironmentId;
   readonly item: SecretRequestItem;
   readonly visibility: OrchestrationV2ProjectedTurnItem["visibility"];
 }) {
+  const t = useT();
   const { item } = props;
   const display = secretRequestDisplay(item, props.visibility);
   if (display.kind === "answered" || display.kind === "pending-elsewhere") {
@@ -71,6 +73,7 @@ function PendingSecretRequestForm(props: {
   readonly environmentId: EnvironmentId;
   readonly item: SecretRequestItem;
 }) {
+  const t = useT();
   const { item } = props;
   const inputId = useId();
   const errorId = useId();
@@ -148,7 +151,7 @@ function PendingSecretRequestForm(props: {
           <ExpandableText
             text={item.reason}
             className="text-sm text-muted-foreground"
-            expandLabel="Show more"
+            expandLabel={t("Show more")}
           />
         ) : null}
       </div>

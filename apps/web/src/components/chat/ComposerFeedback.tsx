@@ -8,10 +8,12 @@ import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
+import type { Translate } from "~/i18n/useT";
 
 export function feedbackBannerItem(
   submission: CodexFeedbackSubmission,
   onDismiss: () => void,
+  t: Translate,
 ): ComposerBannerStackItem | null {
   const notice = codexFeedbackNotice(submission);
   if (!notice) return null;
@@ -20,29 +22,33 @@ export function feedbackBannerItem(
     variant:
       submission.status === "failed" ? "error" : submission.status === "sent" ? "success" : "info",
     icon: <MessageSquareIcon />,
-    ...notice,
+    title: t(notice.title),
+    description: notice.description,
     actions:
       submission.status === "sent" ? (
         <Button
           size="xs"
           variant="ghost"
           onClick={() => {
-            void writeTextToClipboard(submission.feedbackId, "Codex feedback thread ID").catch(
+            void writeTextToClipboard(
+              submission.feedbackId,
+              t("Codex feedback thread ID"),
+            ).catch(
               (error: unknown) => {
                 toastManager.add({
                   type: "error",
-                  title: "Could not copy thread ID",
-                  description: error instanceof Error ? error.message : "An error occurred.",
+                  title: t("Could not copy thread ID"),
+                  description: error instanceof Error ? error.message : t("An error occurred."),
                 });
               },
             );
           }}
         >
-          Copy ID
+          {t("Copy ID")}
         </Button>
       ) : undefined,
     ...(submission.status !== "uploading"
-      ? { dismissLabel: "Dismiss feedback notice", onDismiss }
+      ? { dismissLabel: t("Dismiss feedback notice"), onDismiss }
       : {}),
   };
 }

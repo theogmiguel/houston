@@ -17,6 +17,7 @@ function bannerDescription(resetAt: Date, timestampFormat: TimestampFormat) {
     snoozedUntil: null,
     recovery: null,
     timestampFormat,
+    translate: (source) => source,
     onChange: async () => {},
   }).description;
 }

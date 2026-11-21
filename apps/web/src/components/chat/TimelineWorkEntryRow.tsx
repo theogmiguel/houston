@@ -1,6 +1,7 @@
 import { useThreadErrorCardShows } from "./ThreadErrorBanner";
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import { WorkLogDetails, WorkLogRow } from "./WorkLog";
+import { useT } from "~/i18n/useT";
 import {
   getQuestionAnswerPreview,
   getQuestionAnswerText,
@@ -187,6 +188,7 @@ export const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: WorkEn
 });
 
 function WorkEntryLogRow(props: WorkEntryRowProps) {
+  const t = useT();
   const { workEntry, workspaceRoot, displayLabel, headerCreatedAt } = props;
   const ctx = use(TimelineRowCtx);
   const { threadRef, onImageExpand, timestampFormat } = ctx;
@@ -267,7 +269,9 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     const resetAt = failureItem.failure.resetAt;
     const resetTime = resetAt ? formatUpcomingTimestamp(resetAt, timestampFormat) : null;
     const label = warning
-      ? `Usage limit reached.${resetTime ? ` Retry after ${resetTime}.` : ""}`
+      ? resetTime
+        ? t("Usage limit reached. Retry after {time}.", { time: resetTime })
+        : t("Usage limit reached.")
       : workEntry.label;
     const retryRunId =
       failureItem.runId !== null &&
@@ -343,8 +347,8 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
   const previewText =
     isReasoning && expanded
       ? workEntry.toolLifecycleStatus === "inProgress"
-        ? "Thinking"
-        : "Thought"
+        ? t("Thinking")
+        : t("Thought")
       : questionHeading || (displayLabel ?? workEntryDisplayLabel(workEntry, workspaceRoot));
   const answerPreview =
     workEntry.questionAnswer && hasQuestionAnswer(workEntry.questionAnswer)
@@ -453,7 +457,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     .filter(Boolean)
     .join(": ");
   const accessibleDisplayText = showFailedIndicator
-    ? `${accessiblePreview}, tool call failed`
+    ? t("{preview}, tool call failed", { preview: accessiblePreview })
     : accessiblePreview;
   const rowToggleProps = canExpandProjectedItem
     ? {
@@ -480,7 +484,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         <span
           className={iconWrapperClass}
           role={showFailedIndicator ? "img" : undefined}
-          aria-label={showFailedIndicator ? "Tool call failed" : undefined}
+          aria-label={showFailedIndicator ? t("Tool call failed") : undefined}
         >
           <ToolActivityIconView
             icon={entryToolIcon}
@@ -555,7 +559,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
                     type="button"
                     size="icon-micro"
                     variant="ghost-muted"
-                    aria-label="Open diff"
+                    aria-label={t("Open diff")}
                     onClick={(event) => {
                       event.stopPropagation();
                       onOpenMergedDiff?.();
@@ -566,7 +570,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
               >
                 <ExternalLinkIcon aria-hidden />
               </TooltipTrigger>
-              <TooltipPopup side="top">Open diff</TooltipPopup>
+              <TooltipPopup side="top">{t("Open diff")}</TooltipPopup>
             </Tooltip>
           ) : null}
           {toolParts?.additions !== undefined || toolParts?.deletions !== undefined ? (
@@ -604,26 +608,28 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
             <button
               type="button"
               className="shrink-0 rounded-sm text-sm text-(--accent-ink) hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-              aria-label={`Open ${createdThread.title ?? "created thread"}`}
+              aria-label={t("Open {title}", {
+                title: createdThread.title ?? t("created thread"),
+              })}
               onClick={(event) => {
                 event.stopPropagation();
                 ctx.onOpenThread(createdThread.targetThreadId);
               }}
               onKeyDown={stopRowToggle}
             >
-              Open chat
+              {t("Open chat")}
             </button>
           ) : null}
           {notifiedSubagentThreadId ? (
             <InlineButton
-              aria-label="Open subagent thread"
+              aria-label={t("Open subagent thread")}
               onClick={(event) => {
                 event.stopPropagation();
                 ctx.onOpenThread(notifiedSubagentThreadId);
               }}
               onKeyDown={stopRowToggle}
             >
-              Open subagent
+              {t("Open subagent")}
             </InlineButton>
           ) : null}
           {showFailedIndicator &&
