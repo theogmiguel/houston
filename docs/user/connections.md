@@ -39,7 +39,7 @@ the SSH connection Houston already keeps; a linked environment forwards over its
 connection, where the environment's server dials the service on its own loopback. A linked
 environment holds up to 8 simultaneous connections per forward. This device holds up to 8
 forwards per environment and 16 in all; a refused forward names the limit and the port it
-requested. Both limits and the per-connection limit are errors you can read in the list.
+requested, and a connection refused by a forward's per-connection limit is shown on its row.
 
 **Settings ▸ Connections ▸ Port forwarding** turns the feature on and off and shows its current
 value. While it is off, nothing is forwarded, every existing forward stops, and the controls say
