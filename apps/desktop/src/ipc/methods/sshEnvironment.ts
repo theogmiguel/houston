@@ -34,6 +34,7 @@ import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 import * as DesktopSshEnvironment from "../../ssh/DesktopSshEnvironment.ts";
 import * as DesktopSshPasswordPrompts from "../../ssh/DesktopSshPasswordPrompts.ts";
+import * as DesktopPortForwarding from "../../portForwarding/DesktopPortForwarding.ts";
 
 type DesktopSshEnvironmentRequestOperation =
   | "fetch-environment-descriptor"
@@ -152,6 +153,8 @@ export const disconnectSshEnvironment = DesktopIpc.makeIpcMethod({
   handler: Effect.fn("desktop.ipc.sshEnvironment.disconnectEnvironment")(function* (target) {
     const sshEnvironment = yield* DesktopSshEnvironment.DesktopSshEnvironment;
     yield* sshEnvironment.disconnectEnvironment(target);
+    const forwarding = yield* DesktopPortForwarding.DesktopPortForwarding;
+    yield* forwarding.stopSshTarget(DesktopPortForwarding.sshTargetKeyOf(target));
   }),
 });
 

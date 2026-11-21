@@ -18,6 +18,11 @@ import {
   setTailscaleServeEnabled,
 } from "./methods/serverExposure.ts";
 import {
+  listPortForwards,
+  startPortForward,
+  stopPortForward,
+} from "./methods/portForwarding.ts";
+import {
   bootstrapSshBearerSession,
   disconnectSshEnvironment,
   discoverSshHosts,
@@ -156,6 +161,9 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(bootstrapSshBearerSession);
   yield* ipc.handle(fetchSshSessionState);
   yield* ipc.handle(resolveSshPasswordPrompt);
+  yield* ipc.handle(startPortForward);
+  yield* ipc.handle(stopPortForward);
+  yield* ipc.handle(listPortForwards);
 
   yield* ipc.handle(getServerExposureState);
   yield* ipc.handle(setServerExposureMode);

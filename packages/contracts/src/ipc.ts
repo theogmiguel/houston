@@ -15,6 +15,11 @@ import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import { type ClientSettings, type QuitConfirmationMode, SnapShotShortcut } from "./settings.ts";
 import type { EditorId } from "./editor.ts";
 import { KeybindingShortcut, type PreviewForwardedShortcut } from "./keybindings.ts";
+import type {
+  PortForward,
+  PortForwardStartInput,
+  PortForwardStopInput,
+} from "./houston/portForwarding.ts";
 
 import type {
   DesktopAppActivationRequest,
@@ -1228,6 +1233,11 @@ export interface HostBridge {
   fetchSshSessionState: (httpBaseUrl: string, bearerToken: string) => Promise<AuthSessionState>;
   onSshPasswordPrompt: (listener: (request: DesktopSshPasswordPromptRequest) => void) => () => void;
   resolveSshPasswordPrompt: (requestId: string, password: string | null) => Promise<void>;
+  /** Forwards one remote loopback port to a local loopback port; a user action per port. */
+  startPortForward: (input: PortForwardStartInput) => Promise<PortForward>;
+  stopPortForward: (input: PortForwardStopInput) => Promise<void>;
+  listPortForwards: () => Promise<readonly PortForward[]>;
+  onPortForwardsChanged: (listener: (forwards: readonly PortForward[]) => void) => () => void;
   getServerExposureState: () => Promise<DesktopServerExposureState>;
   setServerExposureMode: (mode: DesktopServerExposureMode) => Promise<DesktopServerExposureState>;
   setTailscaleServeEnabled: (input: {
