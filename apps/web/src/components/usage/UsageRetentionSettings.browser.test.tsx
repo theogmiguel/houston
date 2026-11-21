@@ -9,14 +9,16 @@ const state = vi.hoisted(() => ({
   mixed: false,
 }));
 
-vi.mock(import("../../i18n/useT"), () => ({
+vi.mock(import("../../i18n/useT"), async (original) => ({
+  ...(await original()),
   useT: () => (source: string, params?: Record<string, string | number>) =>
     source.replace(/\{(\w+)\}/g, (placeholder, name: string) =>
       params !== undefined && Object.hasOwn(params, name) ? String(params[name]) : placeholder,
     ),
 }));
 
-vi.mock(import("../settings/SettingsScopeContext"), () => ({
+vi.mock(import("../settings/SettingsScopeContext"), async (original) => ({
+  ...(await original()),
   useSettingsScope: (() => ({
     connectedEnvironments: [
       {
@@ -34,13 +36,15 @@ vi.mock(import("../settings/SettingsScopeContext"), () => ({
   })) as never,
 }));
 
-vi.mock(import("../settings/useScopedSettings"), () => ({
+vi.mock(import("../settings/useScopedSettings"), async (original) => ({
+  ...(await original()),
   useScopedSettings: (() => state.settings) as never,
   useScopedSettingsMixed: (() => state.mixed) as never,
   useUpdateScopedSettings: (() => state.update) as never,
 }));
 
-vi.mock(import("../settings/settingsSearch"), () => ({
+vi.mock(import("../settings/settingsSearch"), async (original) => ({
+  ...(await original()),
   searchableSetting: (id: string) => ({ id, title: "Usage history retention" }),
 }));
 
@@ -100,15 +104,19 @@ it("keeps the supported maximum by default and confirms before a shorter window 
 
   const input = screen.getByLabelText("Usage history retention in days").element();
   await userEvent.fill(input, "30");
-  await userEvent.type(input, "{Enter}");
+  await userEvent.tab();
   await expect.element(page.getByText("Delete older usage records?")).toBeVisible();
   await expect
     .element(page.getByText(/on the next Usage refresh. This cannot be undone./))
     .toBeVisible();
   expect(state.update).not.toHaveBeenCalled();
 
-  await page.getByText("Delete older records").click();
-  expect(state.update).toHaveBeenCalledWith({ usageRetentionDays: 30 });
+  // The alert dialog is still animating, which Playwright's pointer click waits out forever.
+  const confirm = [...document.querySelectorAll('[role="alertdialog"] button')].find(
+    (button) => button.textContent?.trim() === "Delete older records",
+  ) as HTMLButtonElement;
+  confirm.click();
+  await vi.waitFor(() => expect(state.update).toHaveBeenCalledWith({ usageRetentionDays: 30 }));
 });
 
 it("shows the effective value and resets a shorter window to the default", async () => {
