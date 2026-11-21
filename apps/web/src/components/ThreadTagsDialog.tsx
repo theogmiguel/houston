@@ -12,6 +12,7 @@ import {
 } from "./ui/dialog";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { useT, type Translate } from "~/i18n/useT";
 
 type Request = {
   readonly current: ReadonlyArray<string>;
@@ -44,7 +45,7 @@ const MAX_TAG_LENGTH = 64;
 
 const CONTROL_CHARACTER = /[\p{Cc}]/u;
 
-function parseTags(value: string): ReadonlyArray<string> | string {
+function parseTags(value: string, t: Translate): ReadonlyArray<string> | string {
   const tags = [
     ...new Set(
       value
@@ -55,16 +56,21 @@ function parseTags(value: string): ReadonlyArray<string> | string {
   ];
   const tooLong = tags.find((tag) => tag.length > MAX_TAG_LENGTH);
   if (tooLong !== undefined) {
-    return `A tag must be at most ${MAX_TAG_LENGTH} characters; "${tooLong}" is ${tooLong.length}.`;
+    return t('A tag must be at most {max} characters; "{tag}" is {length}.', {
+      max: MAX_TAG_LENGTH,
+      tag: tooLong,
+      length: tooLong.length,
+    });
   }
   const multiline = tags.find((tag) => CONTROL_CHARACTER.test(tag));
   if (multiline !== undefined) {
-    return "A tag must be a single line of text.";
+    return t("A tag must be a single line of text.");
   }
   return tags;
 }
 
 function ThreadTagsDialog() {
+  const t = useT();
   const request = useRequest((state) => state.request)!;
   const id = useId();
   const [value, setValue] = useState(request.current.join(", "));
@@ -81,7 +87,7 @@ function ThreadTagsDialog() {
           className="flex min-h-0 flex-col"
           onSubmit={(event) => {
             event.preventDefault();
-            const tags = parseTags(value);
+            const tags = parseTags(value, t);
             if (typeof tags === "string") {
               setError(tags);
               return;
@@ -90,22 +96,26 @@ function ThreadTagsDialog() {
           }}
         >
           <DialogHeader>
-            <DialogTitle>Thread tags</DialogTitle>
+            <DialogTitle>{t("Thread tags")}</DialogTitle>
           </DialogHeader>
           <DialogPanel>
             <div className="flex flex-col gap-2">
-              <Label htmlFor={`${id}-tags`}>Tags</Label>
+              <Label htmlFor={`${id}-tags`}>{t("Tags")}</Label>
               <Input
                 id={`${id}-tags`}
                 autoFocus
                 value={value}
-                placeholder="private, demo"
+                placeholder={t("private, demo")}
                 onChange={(event) => {
                   setValue(event.target.value);
                   setError(null);
                 }}
               />
-              <p>Separate tags with commas. Tags match exactly, ignoring case and outer spaces.</p>
+              <p>
+                {t(
+                  "Separate tags with commas. Tags match exactly, ignoring case and outer spaces.",
+                )}
+              </p>
               {error === null ? null : <p>{error}</p>}
             </div>
           </DialogPanel>

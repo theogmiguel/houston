@@ -23,15 +23,16 @@ import {
 } from "./dialog";
 import { Input } from "./input";
 import { toastManager } from "./toast";
+import { useT, type Translate } from "~/i18n/useT";
 
-function failureMessage(failure: unknown): string {
+function failureMessage(failure: unknown, t: Translate): string {
   const error = squashAtomCommandFailure(failure as never);
-  return error instanceof Error ? error.message : "An error occurred.";
+  return error instanceof Error ? error.message : t("An error occurred.");
 }
 
-function notifyError(title: string, failure: unknown) {
+function notifyError(title: string, failure: unknown, t: Translate) {
   if (isAtomCommandInterrupted(failure as never)) return;
-  toastManager.add({ type: "error", title, description: failureMessage(failure) });
+  toastManager.add({ type: "error", title, description: failureMessage(failure, t) });
 }
 
 export function BranchesWorktreesDialog(props: {
@@ -40,6 +41,7 @@ export function BranchesWorktreesDialog(props: {
   readonly environmentId: EnvironmentId;
   readonly cwd: string | null;
 }) {
+  const t = useT();
   const { environmentId, cwd, open } = props;
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -92,7 +94,7 @@ export function BranchesWorktreesDialog(props: {
       if (newRefName.length === 0) return;
       const result = await renameRef({ environmentId, input: { cwd, oldRefName, newRefName } });
       if (result._tag === "Failure") {
-        notifyError("Could not rename the branch", result);
+        notifyError(t("Could not rename the branch"), result, t);
         return;
       }
       setRenaming(null);
@@ -114,7 +116,10 @@ export function BranchesWorktreesDialog(props: {
       if (isAtomCommandInterrupted(simple)) return;
       const confirmed =
         (await requestConfirmDialog(
-          `Branch ${refName} is not merged. Delete it anyway? Commits only on this branch are lost.`,
+          t(
+            "Branch {branch} is not merged. Delete it anyway? Commits only on this branch are lost.",
+            { branch: refName },
+          ),
           { variant: "destructive" },
         )) ?? false;
       if (!confirmed) return;
@@ -123,7 +128,7 @@ export function BranchesWorktreesDialog(props: {
         input: { cwd, refName, force: true },
       });
       if (forced._tag === "Failure") {
-        notifyError("Could not delete the branch", forced);
+        notifyError(t("Could not delete the branch"), forced, t);
         return;
       }
       refreshAll();
@@ -134,7 +139,7 @@ export function BranchesWorktreesDialog(props: {
       if (cwd === null) return;
       const result = await pruneWorktrees({ environmentId, input: { cwd } });
       if (result._tag === "Failure") {
-        notifyError("Could not prune worktrees", result);
+        notifyError(t("Could not prune worktrees"), result, t);
         return;
       }
       worktrees.refresh();
@@ -149,11 +154,11 @@ export function BranchesWorktreesDialog(props: {
         input: { cwd, ...(message.length > 0 ? { message } : {}) },
       });
       if (result._tag === "Failure") {
-        notifyError("Could not stash changes", result);
+        notifyError(t("Could not stash changes"), result, t);
         return;
       }
       if (!result.value.created) {
-        toastManager.add({ type: "info", title: "Nothing to stash" });
+        toastManager.add({ type: "info", title: t("Nothing to stash") });
         return;
       }
       setStashMessage("");
@@ -166,7 +171,7 @@ export function BranchesWorktreesDialog(props: {
       if (cwd === null) return;
       const result = await popStash({ environmentId, input: { cwd, ref } });
       if (result._tag === "Failure") {
-        notifyError("Could not pop the stash", result);
+        notifyError(t("Could not pop the stash"), result, t);
         return;
       }
       refreshAll();
@@ -176,13 +181,15 @@ export function BranchesWorktreesDialog(props: {
     run(async () => {
       if (cwd === null) return;
       const confirmed =
-        (await requestConfirmDialog(`Drop ${ref}? The stash cannot be recovered.`, {
+        (await requestConfirmDialog(
+          t("Drop {ref}? The stash cannot be recovered.", { ref }),
+          {
           variant: "destructive",
         })) ?? false;
       if (!confirmed) return;
       const result = await dropStash({ environmentId, input: { cwd, ref } });
       if (result._tag === "Failure") {
-        notifyError("Could not drop the stash", result);
+        notifyError(t("Could not drop the stash"), result, t);
         return;
       }
       stashes.refresh();

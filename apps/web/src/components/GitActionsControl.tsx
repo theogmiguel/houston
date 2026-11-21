@@ -1,4 +1,5 @@
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
+import { useT } from "~/i18n/useT";
 import {
   ThreadDetailsRowButton,
   ThreadDetailsRowContent,
@@ -949,6 +950,7 @@ export default function GitActionsControl({
   showChanges = true,
   onOpenChanges,
 }: GitActionsControlProps) {
+  const t = useT();
   const panelAnchorRef = useRef<HTMLDivElement | null>(null);
   const updateThreadMetadata = useAtomCommand(
     threadEnvironment.updateMetadata,
@@ -1782,22 +1784,28 @@ export default function GitActionsControl({
       >
         <DialogPopup>
           <DialogHeader>
-            <DialogTitle>{isAmendDialog ? "Amend last commit" : COMMIT_DIALOG_TITLE}</DialogTitle>
+            <DialogTitle>
+              {isAmendDialog ? t("Amend last commit") : t(COMMIT_DIALOG_TITLE)}
+            </DialogTitle>
             <DialogDescription>
               {isAmendDialog
-                ? "Amending rewrites the most recent commit. It is refused once that commit is on the branch's upstream."
-                : COMMIT_DIALOG_DESCRIPTION}
+                ? t(
+                    "Amending rewrites the most recent commit. It is refused once that commit is on the branch's upstream.",
+                  )
+                : t(COMMIT_DIALOG_DESCRIPTION)}
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
             <div className="space-y-3 rounded-xl bg-muted/40 p-3 text-sm ring-1 ring-foreground/5 dark:bg-foreground/[0.035] dark:ring-foreground/5">
               <div className="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1">
-                <span className="text-muted-foreground">Branch</span>
+                <span className="text-muted-foreground">{t("Branch")}</span>
                 <span className="flex items-center justify-between gap-2">
                   <span className="font-medium">
                     {gitStatusForActions?.refName ?? "(detached HEAD)"}
                   </span>
-                  {isDefaultRef && <span className="text-right text-warning">Default branch</span>}
+                  {isDefaultRef && (
+                    <span className="text-right text-warning">{t("Default branch")}</span>
+                  )}
                 </span>
               </div>
               <div className="space-y-1">

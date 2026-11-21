@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 
 import { getClientSettings, subscribeClientSettings } from "../hooks/useSettings";
+import { resolveLocale, translate } from "../i18n/translate";
 import { isWindowsPlatform } from "../lib/utils";
 import { environmentSummaries } from "../state/presentation";
 import { environmentShell } from "../state/shell";
@@ -169,16 +170,17 @@ export function startThreadNotifications(
       useLayoutStore
         .getState()
         .onScreenThreadKeys.has(scopedThreadKey(scopeThreadRef(environmentId, thread.id)));
+    const t = (source: string) => translate(resolveLocale(getClientSettings().language), source);
     const title =
       kind === "completion"
-        ? "Thread completed"
+        ? t("Thread completed")
         : status === "approval"
-          ? "Approval needed"
+          ? t("Approval needed")
           : status === "limited"
-            ? "Usage limit reached"
+            ? t("Usage limit reached")
             : status === "failed"
-              ? "Thread failed"
-              : "Input needed";
+              ? t("Thread failed")
+              : t("Input needed");
     if (hasNotificationSound(mode)) {
       void playNotificationSound(kind, () =>
         hasNotificationSound(getClientSettings().notificationMode),
@@ -210,7 +212,7 @@ export function startThreadNotifications(
             ),
         },
         actionProps: {
-          children: "Open thread",
+          children: t("Open thread"),
           onClick: () => {
             toastManager.close(toastId);
             openThread(environmentId, thread.id);

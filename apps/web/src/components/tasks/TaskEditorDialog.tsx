@@ -27,6 +27,7 @@ import { Text } from "../ui/text";
 import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { TASK_KIND_LABELS, TASK_PRIORITY_LABELS, TASK_STATUS_LABELS } from "./tasks.logic";
+import { useT } from "~/i18n/useT";
 
 export interface TaskDeliveryOption {
   readonly id: number;
@@ -64,6 +65,7 @@ function TaskEditorForm({
   onCancel: () => void;
   onConflict?: (() => void) | undefined;
 }) {
+  const t = useT();
   const commands = useTaskCommands(environmentId);
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
@@ -120,7 +122,7 @@ function TaskEditorForm({
       }
       const message = readableFailure(failure);
       setError(message);
-      toastManager.add({ type: "error", title: "Task not saved", description: message });
+      toastManager.add({ type: "error", title: t("Task not saved"), description: message });
       return;
     }
     const saved = outcome.value as { readonly key: string; readonly revision: number };
@@ -134,7 +136,7 @@ function TaskEditorForm({
         setBusy(false);
         const message = readableFailure(squashAtomCommandFailure(domain));
         setError(message);
-        toastManager.add({ type: "error", title: "Task kind not saved", description: message });
+        toastManager.add({ type: "error", title: t("Task kind not saved"), description: message });
         return;
       }
     }
@@ -182,20 +184,20 @@ function TaskEditorForm({
                   }
                 }}
               >
-                <SelectTrigger aria-label="Status">
-                  <SelectValue>{TASK_STATUS_LABELS[status]}</SelectValue>
+                <SelectTrigger aria-label={t("Status")}>
+                  <SelectValue>{t(TASK_STATUS_LABELS[status])}</SelectValue>
                 </SelectTrigger>
                 <SelectPopup>
                   {(Object.keys(TASK_STATUS_LABELS) as HoustonTaskStatus[]).map((value) => (
                     <SelectItem key={value} value={value}>
-                      {TASK_STATUS_LABELS[value]}
+                      {t(TASK_STATUS_LABELS[value])}
                     </SelectItem>
                   ))}
                 </SelectPopup>
               </Select>
             </div>
             <div className="grid gap-1.5">
-              <Label>Priority</Label>
+              <Label>{t("Priority")}</Label>
               <Select
                 value={priority}
                 onValueChange={(value) => {
@@ -204,13 +206,13 @@ function TaskEditorForm({
                   }
                 }}
               >
-                <SelectTrigger aria-label="Priority">
-                  <SelectValue>{TASK_PRIORITY_LABELS[priority]}</SelectValue>
+                <SelectTrigger aria-label={t("Priority")}>
+                  <SelectValue>{t(TASK_PRIORITY_LABELS[priority])}</SelectValue>
                 </SelectTrigger>
                 <SelectPopup>
                   {(Object.keys(TASK_PRIORITY_LABELS) as HoustonTaskPriority[]).map((value) => (
                     <SelectItem key={value} value={value}>
-                      {TASK_PRIORITY_LABELS[value]}
+                      {t(TASK_PRIORITY_LABELS[value])}
                     </SelectItem>
                   ))}
                 </SelectPopup>
@@ -218,22 +220,22 @@ function TaskEditorForm({
             </div>
           </div>
           <div className="grid gap-1.5">
-            <Label>Workspace</Label>
+            <Label>{t("Workspace")}</Label>
             <Select
               value={projectId ?? ""}
               onValueChange={(value) => {
                 if (typeof value === "string") setProjectId(value === "" ? null : value);
               }}
             >
-              <SelectTrigger aria-label="Workspace">
+              <SelectTrigger aria-label={t("Workspace")}>
                 <SelectValue>
                   {projectId === null
-                    ? "No workspace"
+                    ? t("No workspace")
                     : (projects.find((project) => project.id === projectId)?.title ?? projectId)}
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup>
-                <SelectItem value="">No workspace</SelectItem>
+                <SelectItem value="">{t("No workspace")}</SelectItem>
                 {projects.map((project) => (
                   <SelectItem key={project.id} value={project.id}>
                     {project.title}
@@ -329,10 +331,10 @@ function TaskEditorForm({
       </DialogPanel>
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
+          {t("Cancel")}
         </Button>
         <Button type="submit" disabled={!canSave || busy}>
-          {task === null ? "Create task" : "Save task"}
+          {task === null ? t("Create task") : t("Save task")}
         </Button>
       </DialogFooter>
     </form>
@@ -362,11 +364,12 @@ export function TaskEditorDialog({
   onSaved: () => void;
   onConflict?: (() => void) | undefined;
 }) {
+  const t = useT();
   return (
     <Dialog open={open} onOpenChange={(next) => onOpenChange(next)}>
       <DialogPopup className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{task === null ? "New task" : "Edit task"}</DialogTitle>
+          <DialogTitle>{task === null ? t("New task") : t("Edit task")}</DialogTitle>
         </DialogHeader>
         {open ? (
           <TaskEditorForm
