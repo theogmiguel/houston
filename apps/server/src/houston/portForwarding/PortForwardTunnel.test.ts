@@ -1,4 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off -- the tunnel test drives a real loopback TCP service.
+// @effect-diagnostics globalTimersInEffect:off
+// @effect-diagnostics globalErrorInEffectFailure:off
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";

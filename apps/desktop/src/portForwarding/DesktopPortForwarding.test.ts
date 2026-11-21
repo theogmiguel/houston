@@ -16,7 +16,6 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
-import * as Socket from "effect/socket/Socket";
 import * as NetService from "@houston-app/shared/Net";
 
 import * as DesktopConnectionCatalogStore from "../app/DesktopConnectionCatalogStore.ts";
@@ -25,8 +24,9 @@ import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
 import * as DesktopSshEnvironment from "../ssh/DesktopSshEnvironment.ts";
 import * as DesktopPortForwarding from "./DesktopPortForwarding.ts";
 
+const decodeEnvironmentId = Schema.decodeSync(Schema.String);
 const environmentId = (value: string): EnvironmentId =>
-  Schema.decodeSync(Schema.String)(value) as EnvironmentId;
+  decodeEnvironmentId(value) as EnvironmentId;
 
 const encodeCatalog = Schema.encodeSync(Schema.fromJsonString(ConnectionCatalogDocument));
 const decodeCatalog = Schema.decodeUnknownSync(ConnectionCatalogDocument);

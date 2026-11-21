@@ -1504,7 +1504,15 @@ const startSshPortForward = Effect.fn("ssh/tunnel.startSshPortForward")(function
         ),
     }),
   );
-  yield* Effect.raceFirst(listening, exitFailure);
+  yield* Effect.raceFirst(listening, exitFailure).pipe(
+    Effect.onExit((exit) =>
+      Exit.isSuccess(exit)
+        ? Effect.void
+        : child
+            .kill({ killSignal: "SIGTERM", forceKillAfter: TUNNEL_SHUTDOWN_TIMEOUT_MS })
+            .pipe(Effect.ignoreCause),
+    ),
+  );
   yield* Scope.addFinalizer(
     scope,
     child

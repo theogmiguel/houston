@@ -17,6 +17,7 @@ import { authenticateMediaRequest } from "../../auth/http.ts";
 import { requestUrl } from "../../requestUrl.ts";
 
 const TUNNEL_OPEN_TIMEOUT = "10 seconds";
+const PORT_QUERY = /^\d{1,5}$/u;
 const TUNNEL_UNAVAILABLE_CLOSE_CODE = 1013;
 const TUNNEL_NORMAL_CLOSE_CODE = 1000;
 
@@ -25,7 +26,7 @@ const isWebSocketUpgrade = (request: HttpServerRequest.HttpServerRequest) =>
 
 const readPort = (searchParams: URLSearchParams): Option.Option<number> => {
   const raw = searchParams.get(PORT_FORWARD_TUNNEL_PORT_PARAM) ?? "";
-  if (!/^\d{1,5}$/u.test(raw)) return Option.none();
+  if (!PORT_QUERY.test(raw)) return Option.none();
   const port = Number.parseInt(raw, 10);
   return port >= PORT_FORWARDING_MIN_PORT && port <= PORT_FORWARDING_MAX_PORT
     ? Option.some(port)

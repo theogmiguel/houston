@@ -56,9 +56,8 @@ export function PortForwardingPanel(props: {
       setPort("");
     } catch (error) {
       report(t("Could not forward port"), error);
-    } finally {
-      setBusy(null);
     }
+    setBusy(null);
   };
 
   const stop = async (id: string) => {
@@ -69,9 +68,8 @@ export function PortForwardingPanel(props: {
       await bridge.stopPortForward({ id });
     } catch (error) {
       report(t("Could not stop the forward"), error);
-    } finally {
-      setBusy(null);
     }
+    setBusy(null);
   };
 
   return (
@@ -111,7 +109,7 @@ export function PortForwardingPanel(props: {
         available ? <DiscoveryHint>{t("No ports are forwarded.")}</DiscoveryHint> : null
       )}
       {available ? <form className="flex items-end gap-2 px-1" onSubmit={(event) => void start(event)}>
-        <Label className="flex min-w-0 flex-1 flex-col items-stretch gap-1">
+        <Label className="flex min-w-0 flex-1 flex-col items-stretch">
           <span>{t("Remote port")}</span>
           <Input
             type="number"
@@ -121,6 +119,7 @@ export function PortForwardingPanel(props: {
             step={1}
             value={port}
             placeholder="3000"
+            className="mt-1"
             disabled={!enabled || busy !== null}
             onChange={(event) => setPort(event.target.value)}
           />

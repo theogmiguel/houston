@@ -7,6 +7,7 @@ const EMPTY: ReadonlyArray<PortForward> = [];
 export function usePortForwards(): ReadonlyArray<PortForward> {
   const [forwards, setForwards] = useState<ReadonlyArray<PortForward>>(EMPTY);
 
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- keeps the host's forward list in step with the panel while it is mounted
   useEffect(() => {
     const bridge = window.hostBridge;
     if (bridge === undefined) return;
