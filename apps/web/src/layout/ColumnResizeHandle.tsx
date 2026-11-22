@@ -150,7 +150,8 @@ function presetAt(value: number): number | null {
 
 /**
  * Resize columns independently and stacked panes within their column.
- * Preview during the drag, then persist once on release; keyboard resizing uses presets.
+ * Preview during the drag, then persist once on release; keyboard resizing uses presets, and a
+ * double-click evens the edge's two sides.
  * Handles live in the scrolling strip so they stay aligned with pane edges.
  */
 export function LayoutResizeHandles({
@@ -402,6 +403,7 @@ export function LayoutResizeHandles({
             });
           }}
           {...keyboardFocusProps(`pane:${pane.id}`)}
+          onDoubleClick={() => useLayoutStore.getState().evenPaneEdge(pane.id)}
           onPointerMove={moveDrag}
           onPointerUp={endDrag}
           onPointerCancel={() => finishDrag()}
@@ -465,6 +467,7 @@ export function LayoutResizeHandles({
           });
         }}
         {...keyboardFocusProps(`column:${column.id}`)}
+        onDoubleClick={() => useLayoutStore.getState().evenColumnEdge(column.id)}
         onPointerMove={moveDrag}
         onPointerUp={endDrag}
         onPointerCancel={() => finishDrag()}

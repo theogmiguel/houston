@@ -368,6 +368,40 @@ describe("resizing", () => {
     await userEvent.keyboard("{ArrowRight}");
     expect(useLayoutStore.getState().layout.workspaces[0]!.columns[0]!.width).not.toBe(before);
   });
+
+  it("evens out a column and its neighbor on a double-click of their handle", async () => {
+    using _layout = openLayout([[[["a"]], [["b"]]]]);
+    await using screen = await render(<Harness />, { router: false });
+    await act(() => useLayoutStore.getState().resizeColumn("w0c0", 0.3));
+    const [left, right] = useLayoutStore.getState().layout.workspaces[0]!.columns;
+    const pair = left!.width + right!.width;
+    expect(left!.width).not.toBeCloseTo(right!.width, 5);
+    const handle = separators(screen.container, "vertical")[0]!;
+    await act(() => handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    const columns = useLayoutStore.getState().layout.workspaces[0]!.columns;
+    expect(columns[0]!.width).toBeCloseTo(pair / 2, 5);
+    expect(columns[1]!.width).toBeCloseTo(pair / 2, 5);
+    // Within a pixel: the gutter between the frames rounds to whole pixels.
+    await vi.waitFor(() =>
+      expect(
+        Math.abs(
+          rect(frameOf(screen.container, "w0c0p0")).width -
+            rect(frameOf(screen.container, "w0c1p0")).width,
+        ),
+      ).toBeLessThanOrEqual(1),
+    );
+  });
+
+  it("evens out stacked panes on a double-click of their divider", async () => {
+    using _layout = openLayout([[[["a"], ["b"]]]]);
+    await using screen = await render(<Harness />, { router: false });
+    await act(() => useLayoutStore.getState().resizePane("w0c0p0", 0.7));
+    const handle = separators(screen.container, "horizontal")[0]!;
+    await act(() => handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    const [first, second] = useLayoutStore.getState().layout.workspaces[0]!.columns[0]!.panes;
+    expect(first!.size).toBeCloseTo(0.5, 5);
+    expect(second!.size).toBeCloseTo(0.5, 5);
+  });
 });
 
 describe("motion and themes", () => {
