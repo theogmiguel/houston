@@ -145,14 +145,25 @@ const WorkflowStopTool = Tool.make("houston_workflow_stop", {
   .annotate(Tool.Title, "Stop a workflow")
   .annotate(Tool.Destructive, true);
 
+export const BACKGROUND_WAIT_MAX_TASK_IDS = 20;
+export const BACKGROUND_WAIT_SHAPE = `\`taskIds\` (an array of 1 to ${BACKGROUND_WAIT_MAX_TASK_IDS} task ID strings) or \`taskId\` (one task ID string)`;
+const backgroundWaitShape = { message: `Expected ${BACKGROUND_WAIT_SHAPE}` };
+
+// Both forms are optional here because the deferred schema is often unseen when the
+// agent first calls the tool; the handler refuses a call that names neither.
 const BackgroundWaitTool = Tool.make("houston_background_wait", {
   description:
-    "Keep this thread in Working while background work runs. Pass its task ID after starting it. Not for work left running (dev server, watcher). `waiting=false` clears. Does not stop the task. Claude only.",
+    "Keep this thread in Working while background work runs. Pass `taskIds` (or one `taskId`) after starting it. Not for work left running (dev server, watcher). `waiting=false` clears. Does not stop the task. Claude only.",
   parameters: Schema.Struct({
-    taskIds: Schema.Array(TrimmedNonEmptyString).check(
-      Schema.isMinLength(1),
-      Schema.isMaxLength(20),
+    taskIds: Schema.optionalKey(
+      Schema.Array(TrimmedNonEmptyString)
+        .annotate(backgroundWaitShape)
+        .check(
+          Schema.isMinLength(1, backgroundWaitShape),
+          Schema.isMaxLength(BACKGROUND_WAIT_MAX_TASK_IDS, backgroundWaitShape),
+        ),
     ),
+    taskId: Schema.optionalKey(TrimmedNonEmptyString.annotate(backgroundWaitShape)),
     waiting: Schema.optional(Schema.Boolean),
   }),
   success: Schema.Struct({
