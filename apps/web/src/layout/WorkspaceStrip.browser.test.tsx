@@ -358,6 +358,60 @@ describe("resizing", () => {
     expect(screen.container.querySelector("[data-layout-pill]")).toBeNull();
   });
 
+  it("lays out a drag step in the frame it arrives, not a frame later", async () => {
+    using _layout = openLayout([[[["a"]], [["b"]]]]);
+    await using screen = await render(<Harness />, { router: false });
+    const handle = separators(screen.container, "vertical")[0]!;
+    const at = rect(handle);
+    const x = at.left + at.width / 2;
+    const y = at.top + 200;
+    const before = rect(frameOf(screen.container, "w0c0p0")).width;
+    await act(() => pointer("pointerdown", handle, x, y));
+    // No act and no wait: the move's own task must already have drawn the new width.
+    pointer("pointermove", handle, x + 200, y);
+    expect(rect(frameOf(screen.container, "w0c0p0")).width).toBeGreaterThan(before + 100);
+    await act(() => pointer("pointerup", handle, x + 200, y));
+  });
+
+  it("leaves the styles of panes a column drag neither resizes nor moves alone", async () => {
+    using _layout = openLayout([[[["a"]], [["b"]], [["c"]], [["d"]]]]);
+    const layout = useLayoutStore.getState().layout;
+    for (const column of layout.workspaces[0]!.columns) column.width = 0.6;
+    layout.workspaces[0]!.cameraWidth = 1000;
+    useLayoutStore.getState().setLayoutFromServer(layout);
+    await using screen = await render(<Harness />, { router: false });
+    const handle = separators(screen.container, "vertical")[2]!;
+    const at = rect(handle);
+    const x = at.left + at.width / 2;
+    const y = at.top + 200;
+    await act(() => pointer("pointerdown", handle, x, y));
+    // The drag draws in pixels from its first step on; steps after it must not restyle.
+    await act(() => pointer("pointermove", handle, x + 50, y));
+    const untouched = [
+      frameOf(screen.container, "w0c0p0"),
+      screen.container.querySelector<HTMLElement>("[data-layout-body-pane-id='w0c0p0']")!,
+    ];
+    const restyled: string[] = [];
+    const observer = new MutationObserver((records) => {
+      for (const record of records) restyled.push(String(record.oldValue));
+    });
+    for (const element of untouched) {
+      observer.observe(element, {
+        attributes: true,
+        attributeFilter: ["style"],
+        attributeOldValue: true,
+      });
+    }
+    const movedPane = frameOf(screen.container, "w0c3p0");
+    const leftAfterFirstStep = movedPane.style.left;
+    await act(() => pointer("pointermove", handle, x + 150, y));
+    await act(() => pointer("pointermove", handle, x + 250, y));
+    await vi.waitFor(() => expect(movedPane.style.left).not.toBe(leftAfterFirstStep));
+    observer.disconnect();
+    await act(() => pointer("pointerup", handle, x + 250, y));
+    expect(restyled).toEqual([]);
+  });
+
   it("resizes stacked panes by their divider", async () => {
     using _layout = openLayout([[[["a"], ["b"]]]]);
     await using screen = await render(<Harness />, { router: false });

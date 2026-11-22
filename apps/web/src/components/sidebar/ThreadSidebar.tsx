@@ -94,7 +94,7 @@ import { ProjectFilterContext, ProjectFilterPicker } from "./ProjectFilterPicker
 import { jumpHintLabels } from "../../threads/jumpHints";
 import { useRevealOpenThread } from "../../threads/useRevealOpenThread";
 import { attachSidebarTree } from "../../lib/sidebarTree";
-import { useShortcutModifierState } from "../../shortcutModifierState";
+import { useHeldShortcutModifiers } from "../../shortcutModifierState";
 import { reportFailure } from "./reportFailure";
 import { ThreadBulkMenuContext, useBulkThreadMenu } from "./useBulkThreadMenu";
 import { ThreadJumpHintContext } from "./threadJumpHints";
@@ -163,7 +163,7 @@ import { openCommandPalette } from "../../commandPaletteBus";
 import { SidebarRailNav } from "./SidebarRailNav";
 import type { SidebarProviderEntry } from "./SidebarThreadRow";
 import { EMPTY_PROVIDER_ENTRIES, sidebarProviderEntriesAtom } from "./sidebarProviderEntries";
-import { useSnoozeWakeClock, useThreadJumpHintsVisible } from "../Sidebar.logic";
+import { THREAD_JUMP_HINT_SHOW_DELAY_MS, useSnoozeWakeClock } from "../Sidebar.logic";
 import { resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { SidebarContent, SidebarHeader, useSidebar, useSidebarVisibility } from "../ui/sidebar";
@@ -569,11 +569,12 @@ export function ThreadSidebar({
     scopedThreadKey(scopeThreadRef(target.environmentId, target.threadId as never)),
   );
   // The first nine rows carry their Mod+1..9 label while the modifier is held.
-  const shortcutModifiers = useShortcutModifierState();
-  const jumpHintsVisible = useThreadJumpHintsVisible(
-    shouldShowThreadJumpHintsForModifiers(shortcutModifiers, keybindings, {
-      context: { terminalFocus: isTerminalFocused() },
-    }),
+  const jumpHintsVisible = useHeldShortcutModifiers(
+    (modifiers) =>
+      shouldShowThreadJumpHintsForModifiers(modifiers, keybindings, {
+        context: { terminalFocus: isTerminalFocused() },
+      }),
+    THREAD_JUMP_HINT_SHOW_DELAY_MS,
   );
   const jumpHints = jumpHintsVisible ? jumpHintLabels(orderedThreadKeys, keybindings) : null;
   const openRailTarget = (target: (typeof railTargets)[number]) => {

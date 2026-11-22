@@ -69,6 +69,7 @@ import {
   FULL_RECT,
   HALF_PANE_GAP,
   selectShownSlots,
+  dragSlotStyle,
   slotStyle,
   stackSlotStyle,
   type StackRow,
@@ -436,7 +437,10 @@ export function LayoutWorkspaceStrip({
   } else {
     for (const slot of own.slots) {
       const pane = paneOf(workspace, slot.paneId);
-      if (pane) placed.push({ workspace, pane, slot, style: slotStyle(slot), stripPx });
+      if (pane) {
+        const style = dragging ? dragSlotStyle(slot, stripPx) : slotStyle(slot);
+        placed.push({ workspace, pane, slot, style, stripPx });
+      }
     }
   }
 
