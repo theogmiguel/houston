@@ -28,7 +28,11 @@ import { openAddProjectDialog } from "../AddProjectDialog";
 import { requestCustomSnooze } from "../CustomSnoozeDialog";
 import { isDesktopHost } from "../../env";
 import { DEFAULT_SIDEBAR_GRID_THREAD_SORT_ORDER } from "@houston-app/contracts/settings";
-import { selectFocusedTab, type LayoutWorkspace } from "../../layout/layoutModel";
+import {
+  selectFocusedLayoutGhostId,
+  selectFocusedTab,
+  type LayoutWorkspace,
+} from "../../layout/layoutModel";
 import { chatTargetThreadRef } from "../../layout/layoutThreadRef";
 import { runInNewLayoutTab, useLayoutStore } from "../../layout/layoutStore";
 import { useThreadMembershipStore } from "../../layout/threadMembership";
@@ -377,6 +381,17 @@ export function ThreadSidebar({
       },
       scopeThreadRef(thread.environmentId, thread.id),
     );
+  };
+
+  // A row click on the thread its focused ghost tab already shows says "this one": keep the tab.
+  const openThreadFromRow = (thread: Pick<EnvironmentThreadShell, "environmentId" | "id">) => {
+    const store = useLayoutStore.getState();
+    const ghostId = selectFocusedLayoutGhostId(store.layout, {
+      kind: "chat",
+      target: { kind: "server", threadRef: scopeThreadRef(thread.environmentId, thread.id) },
+    });
+    if (ghostId !== null) store.keepTab(ghostId);
+    openThread(thread);
   };
 
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -942,7 +957,7 @@ export function ThreadSidebar({
     return true;
   };
 
-  const openNeedsYouThread = (thread: EnvironmentThreadShell) => openThread(thread);
+  const openNeedsYouThread = (thread: EnvironmentThreadShell) => openThreadFromRow(thread);
 
   const reorder = useWorkspaceReorderDrag((draggedId, targetId, side) =>
     reorderLayoutWorkspaceAction(draggedId, targetId, side),
@@ -974,7 +989,7 @@ export function ThreadSidebar({
       runningSubagents={runningSubagentsByThread}
       dragging={dragging}
       reorder={{ drag: reorder.drag, begin: reorder.begin }}
-      onOpenThread={openThread}
+      onOpenThread={openThreadFromRow}
       onSelectThread={selectThread}
       onCloseThread={(thread) => closeThreads([thread])}
       onHoldThread={(thread, preset) => holdThreads([thread], preset.snoozedUntil)}

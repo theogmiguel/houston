@@ -6,6 +6,7 @@ import {
   closeLayoutTab,
   createLayoutState,
   focusLayoutTab,
+  keepLayoutTab,
   layoutChatSwaps,
   moveLayoutTab,
   moveLayoutTabToWorkspace,
@@ -18,6 +19,7 @@ import {
   fitLayoutColumns,
   resizeLayoutColumnEdge,
   selectFocusedChatTarget,
+  selectFocusedLayoutGhostId,
   selectFocusedTab,
   selectFocusedWorkspace,
   selectLayoutPaneSlots,
@@ -388,6 +390,27 @@ describe("ghost tabs", () => {
     const state = showLayoutContent(createLayoutState(), draftOf("draft"));
     const promoted = replaceLayoutTabContent(state, selectFocusedTab(state)!.id, chatOf("D"));
     expect(shapeOf(promoted)).toEqual([[[["~D!"]]]]);
+  });
+
+  it("stay kept when a sent first message promotes their draft", () => {
+    const state = showLayoutContent(createLayoutState(), draftOf("draft"));
+    const tabId = selectFocusedTab(state)!.id;
+    const promoted = replaceLayoutTabContent(keepLayoutTab(state, tabId), tabId, chatOf("D"));
+    expect(shapeOf(promoted)).toEqual([[[["D!"]]]]);
+  });
+
+  it("name the focused ghost that already shows the content, and nothing else", () => {
+    const ghostOfD = (layout: LayoutState) => selectFocusedLayoutGhostId(layout, chatOf("D"));
+    expect(ghostOfD(layoutOf([[["A", "~D!"]]]))).toBe("D");
+    expect(ghostOfD(layoutOf([[["~D!"]]]))).toBe("D");
+    expect(ghostOfD(layoutOf([[["~D"]], [["A!"]]]))).toBeNull();
+    expect(ghostOfD(layoutOf([[["~A!", "D"]]]))).toBeNull();
+    expect(ghostOfD(layoutOf([[["A", "D!"]]]))).toBeNull();
+    const lineage = openLayoutGhostChat(layoutOf([[["A!"]]]), refOf("A"), {
+      kind: "server",
+      threadRef: refOf("D"),
+    })!;
+    expect(ghostOfD(lineage)).toBe(selectFocusedTab(lineage)!.id);
   });
 
   it("keep a plain ghost parent when its lineage child opens beside it", () => {
