@@ -25,6 +25,7 @@ import { DraftId, useComposerDraftStore } from "../composerDraftStore";
 import {
   closeLayoutTabByUser,
   closeOtherLayoutTabsByUser,
+  createLayoutNewTabContent,
   registerLayoutSurfaceCloser,
 } from "./layoutActions";
 import {
@@ -266,5 +267,30 @@ describe("closeLayoutTabByUser: drafts", () => {
     expect(useClosedViewStore.getState().entries).toMatchObject([{ draftId, threadRef: draftRef }]);
     expect(toastAdd).toHaveBeenCalledOnce();
     useClosedViewStore.setState({ entries: [] });
+  });
+});
+
+describe("createLayoutNewTabContent", () => {
+  it("offers the surfaces of the thread the named pane shows, not the focused one", () => {
+    using layout = setup([parent]);
+    const parentPane = layout.tabOf(parent)!;
+    useLayoutStore.getState().openTab(other, { placement: "new-column", position: "end" });
+    const parentPaneId = findLayoutTab(
+      useLayoutStore.getState().layout,
+      (tab) => tab.id === parentPane.id,
+    )!.pane.id;
+    expect(createLayoutNewTabContent(parentPaneId)).toMatchObject({
+      kind: "launcher",
+      context: parent.target,
+    });
+    expect(createLayoutNewTabContent(null)).toMatchObject({
+      kind: "launcher",
+      context: other.target,
+    });
+  });
+
+  it("creates a launcher with no context for a pane that does not exist", () => {
+    using _layout = setup([parent]);
+    expect(createLayoutNewTabContent("gone")).toMatchObject({ kind: "launcher", context: null });
   });
 });

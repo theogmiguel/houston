@@ -12,6 +12,7 @@ import {
   type LayoutDragPane,
 } from "./layoutDrag";
 import {
+  createLayoutLauncherContent,
   createLayoutState,
   findLayoutTab,
   selectFocusedTab,
@@ -187,6 +188,19 @@ describe("isLayoutDropUseful", () => {
         { kind: "into", paneId },
       ),
     ).toBe(true);
+  });
+
+  it("accepts dragged content anywhere a destination exists, even onto the only pane", () => {
+    open(chat("one"), "active-pane");
+    const paneId = tabOf(chat("one")).pane.id;
+    const source = { kind: "content", content: createLayoutLauncherContent(null) } as const;
+    for (const target of [
+      { kind: "side", paneId, side: "left" },
+      { kind: "into", paneId },
+      { kind: "extend", edge: "right" },
+    ] as const) {
+      expect(isLayoutDropUseful(layout(), source, target)).toBe(true);
+    }
   });
 
   it("rejects a tab the layout no longer holds", () => {

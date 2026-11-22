@@ -79,7 +79,9 @@ as a card above the layout.
 - A column and its panes share the strip: **New pane to the right** and **New pane below**
   (under **Layout…** in the command palette) open a new tab in a new column or pane, a tab's
   **Split right** and **Split down** split its pane, and dragging a tab to a pane's edge does the
-  same. Drag a tab between panes or onto another workspace to move it.
+  same. Drag a tab between panes or onto another workspace to move it. Drag a pane's **+**
+  button to place a new tab where you drop it: on a tab bar, at a pane's edge or at the
+  strip's edge. `Escape` cancels the drag.
 - Closing a tab closes that view only; the thread keeps its history, and an unsent draft keeps
   its text until you send it. Closing a draft with text offers **Reopen** in a notice.
   **Reopen closed tab** (its rebindable shortcut, or the command palette) brings back the most
@@ -203,6 +205,9 @@ asks for confirmation.
 ### Dragging
 
 - Drag a row onto a chat composer to attach that thread as context.
+- Drag a thread row from the command palette, or a thread chip in a message or composer, onto
+  a pane to open its chat there, or onto a composer to attach it. The palette closes when the
+  drag starts.
 - Drag a thread row onto another workspace group to move its chat tab to that workspace,
   where it opens in a column of its own. Drag a workspace heading to reorder workspaces.
 - Drag a **Closed** or **On hold** row into the rail to reopen or wake it in its workspace.

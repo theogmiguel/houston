@@ -26,9 +26,11 @@ import {
   type FilesystemBrowseEntry,
   type KeybindingCommand,
   type SourceControlDiscoveryResult,
+  type ScopedThreadRef,
   type SourceControlRepositoryInfo,
   THREAD_JUMP_KEYBINDING_COMMANDS,
 } from "@houston-app/contracts";
+import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import { filterFilesystemBrowseEntries } from "@houston-app/client-runtime/state/filesystem";
 import { type ReactNode } from "react";
 import { formatRelativeTimeLabel } from "../timestampFormat";
@@ -211,6 +213,8 @@ export interface CommandPaletteItem {
   readonly titleTrailingContent?: ReactNode;
   readonly shortcutCommand?: KeybindingCommand;
   readonly secondary?: boolean;
+  /** A thread row can be dragged into the layout, which opens this thread's chat. */
+  readonly dragThread?: { readonly threadRef: ScopedThreadRef; readonly title: string };
 }
 
 export interface CommandPaletteActionItem extends CommandPaletteItem {
@@ -487,6 +491,10 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
           input.environmentLabelOf?.(thread),
         ),
         title: thread.title,
+        dragThread: {
+          threadRef: scopeThreadRef(thread.environmentId, thread.id),
+          title: thread.title,
+        },
         description,
         timestamp: formatRelativeTimeLabel(
           thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
