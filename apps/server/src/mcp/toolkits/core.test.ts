@@ -1123,7 +1123,7 @@ describe("houston_background_wait", () => {
   it.effect("names the malformed field and the expected shape", () =>
     Effect.gen(function* () {
       waits.length = 0;
-      const failure = yield* Effect.flip(call({ taskIds: "tests", taskId: 5 }));
+      const failure = yield* Effect.flip(call({ taskIds: "tests" }));
       expect(failure.message).toContain('["taskIds"]');
       expect(failure.message).toContain("`taskIds` (an array of 1 to 20 task ID strings)");
       expect(failure.message).toContain("`taskId` (one task ID string)");
