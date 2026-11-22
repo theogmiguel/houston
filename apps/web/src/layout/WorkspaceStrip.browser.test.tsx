@@ -336,12 +336,47 @@ describe("resizing", () => {
       expect(rect(frameOf(screen.container, "w0c0p0")).width).toBeGreaterThan(before + 100),
     );
     expect(useLayoutStore.getState().layout.workspaces[0]!.columns[0]!.width).toBe(widthBefore);
-    expect(screen.container.querySelector("[data-layout-pill]")?.textContent).toMatch(/% width/);
+    expect(document.querySelector("[data-layout-pill]")?.textContent).toMatch(/% width/);
     await act(() => pointer("pointerup", handle, x + 200, y));
     expect(useLayoutStore.getState().layout.workspaces[0]!.columns[0]!.width).toBeGreaterThan(
       widthBefore,
     );
-    expect(screen.container.querySelector("[data-layout-pill]")).toBeNull();
+    expect(document.querySelector("[data-layout-pill]")).toBeNull();
+  });
+
+  it("paints the resize guide and pill above hosted webviews, on the dragged edge", async () => {
+    using _layout = openLayout([[[["a"]], [["b"]]]]);
+    await using screen = await render(<Harness />, { router: false });
+    const handle = separators(screen.container, "vertical")[0]!;
+    const at = rect(handle);
+    const x = at.left + at.width / 2;
+    const y = at.top + 200;
+    await act(() => pointer("pointerdown", handle, x, y));
+    await act(() => pointer("pointermove", handle, x + 120, y));
+    const pill = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>("[data-layout-pill]");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    // A hosted webview is a fixed z-30 element in the window's stacking context, so a guide
+    // inside the strip's isolated stage is painted under it.
+    expect(pill.closest("[data-layout-stage]")).toBeNull();
+    const layer = pill.closest<HTMLElement>("[data-layout-window-layer]")!;
+    expect(getComputedStyle(layer).position).toBe("fixed");
+    expect(Number(getComputedStyle(layer).zIndex)).toBeGreaterThan(30);
+    // The layer sits exactly over the stage, so strip coordinates land where they did inside it.
+    const stage = rect(screen.container.querySelector("[data-layout-stage]")!);
+    const frame = rect(layer.firstElementChild!);
+    expect([frame.left, frame.top, frame.width, frame.height]).toEqual([
+      stage.left,
+      stage.top,
+      stage.width,
+      stage.height,
+    ]);
+    const guide = document.querySelector("[data-layout-resize-guide='vertical']")!;
+    await vi.waitFor(() => expect(rect(guide).left).toBeGreaterThan(x + 100));
+    await act(() => pointer("pointerup", handle, x + 120, y));
+    expect(document.querySelector("[data-layout-pill]")).toBeNull();
   });
 
   it("resizes stacked panes by their divider", async () => {
