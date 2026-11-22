@@ -10,6 +10,7 @@ import "~/index.css";
 
 import { AppRoot } from "~/AppRoot";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
+import { isBlankLayoutWorkspace } from "~/layout/layoutModel";
 import { useLayoutStore } from "~/layout/layoutStore";
 import { configureMotion } from "~/motion/registry";
 import { useRightPanelStore } from "~/rightPanelStore";
@@ -185,9 +186,11 @@ it("closes a tab from the sheet through the layout's close path", async () => {
   await userEvent.click(page.getByRole("button", { name: "Close Diff" }));
   await vi.waitFor(() => expect(rows()).toHaveLength(1), { timeout: 5_000 });
   expect(trigger()!.getAttribute("aria-label")).toBe(`${TITLE}, 1 tab`);
+  // The blank spare workspace keeps a launcher of its own; only filled workspaces count here.
   const kinds = useLayoutStore
     .getState()
-    .layout.workspaces.flatMap((workspace) =>
+    .layout.workspaces.filter((workspace) => !isBlankLayoutWorkspace(workspace))
+    .flatMap((workspace) =>
       workspace.columns.flatMap((column) =>
         column.panes.flatMap((pane) => pane.tabs.map((tab) => tab.content.kind)),
       ),

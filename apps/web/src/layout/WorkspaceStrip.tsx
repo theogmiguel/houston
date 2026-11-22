@@ -43,6 +43,7 @@ import {
 import { LayoutEmptyPane, LayoutLauncherShell } from "./EmptyPane";
 import { useLayoutBehavior } from "./layoutBehavior";
 import {
+  isBlankLayoutWorkspace,
   selectFocusedPane,
   selectFocusedWorkspace,
   selectWindowStartPaneId,
@@ -150,7 +151,7 @@ function selectStackRows(
   return stack.rows.map(({ id, offset }) => {
     // A row's workspace can be gone (an empty one left behind): it shows as empty.
     const workspace = layout.workspaces.find((candidate) => candidate.id === id) ?? null;
-    if (!workspace || workspace.columns.length === 0) {
+    if (!workspace || isBlankLayoutWorkspace(workspace)) {
       return { id, workspace, offset, slots: [], stripWidth: 1, camera: 0 };
     }
     const shown = selectShownSlots(workspace, viewport, narrow, maximizedTabId);
@@ -360,7 +361,13 @@ export function LayoutWorkspaceStrip({
   const overviewStarts = staged
     ? selectOverviewStartPaneIds(stage, viewportWidth, getOverviewEntry())
     : null;
-  const own = selectShownSlots(workspace, viewport, narrow, maximizedTabId);
+  // A blank workspace shows the launcher itself, not a pane holding its launcher tab.
+  const own = selectShownSlots(
+    isBlankLayoutWorkspace(workspace) ? { ...workspace, columns: [] } : workspace,
+    viewport,
+    narrow,
+    maximizedTabId,
+  );
   const stripPx = own.stripWidth * viewportWidth;
   const stackRows =
     workspaceStack && !staged
@@ -380,7 +387,7 @@ export function LayoutWorkspaceStrip({
   const emptyRows: { id: string; style: React.CSSProperties; own: boolean }[] = [];
   if (staged) {
     for (const row of stage.rows) {
-      if (row.workspace.columns.length === 0) {
+      if (isBlankLayoutWorkspace(row.workspace)) {
         emptyRows.push({
           id: row.workspace.id,
           style: overviewSlotStyle(row, fullSlot(), stage.gap, HALF_PANE_GAP),
@@ -424,7 +431,7 @@ export function LayoutWorkspaceStrip({
         }
       }
     }
-  } else if (workspace.columns.length === 0) {
+  } else if (isBlankLayoutWorkspace(workspace)) {
     emptyRows.push({ id: workspace.id, style: FULL_STYLE, own: true });
   } else {
     for (const slot of own.slots) {

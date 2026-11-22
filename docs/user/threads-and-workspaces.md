@@ -83,7 +83,8 @@ as a card above the layout.
 - Closing a tab closes that view only; the thread keeps its history, and an unsent draft keeps
   its text until you send it. Closing a draft with text offers **Reopen** in a notice.
   **Reopen closed tab** (its rebindable shortcut, or the command palette) brings back the most
-  recent one.
+  recent one. A workspace's last tab gives way to a launcher; closing that launcher removes the
+  workspace only when it is unnamed and holds no threads.
 - **Fill the window** gives the focused pane the whole window, and the same command undoes it.
   **Column width** cycles ⅓, ½, ⅔ and full width; **Center column**, **Pull pane into the left
   column** and **Push pane out to its own column** rearrange the strip. The workspaces overview

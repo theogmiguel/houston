@@ -5,7 +5,11 @@ import { sortThreads } from "@houston-app/client-runtime/state/thread-sort";
 import type { SidebarGridThreadSortOrder } from "@houston-app/contracts/settings";
 import { projectKeyOf } from "@houston-app/shared/projectKey";
 
-import type { LayoutState, LayoutWorkspace } from "../../layout/layoutModel";
+import {
+  isBlankLayoutWorkspace,
+  type LayoutState,
+  type LayoutWorkspace,
+} from "../../layout/layoutModel";
 import { listLayoutWorkspaces, workspaceDisplayName } from "../../layout/layoutWorkspaces";
 import type { ThreadMembershipState } from "../../layout/threadMembership";
 import { pinnedThreadsFirst } from "../../threads/rail";
@@ -196,7 +200,7 @@ export function buildSidebarWorkspaceSections(
       name,
       pinned: (workspace.pinnedAt ?? null) !== null,
       hidden,
-      empty: workspace.columns.length === 0,
+      empty: isBlankLayoutWorkspace(workspace),
       threads: shown,
       needsYouThreads: lifted,
     };

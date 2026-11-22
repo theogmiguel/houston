@@ -6,7 +6,7 @@ import { act, render } from "../../test/render";
 import { configureMotion } from "../motion/registry";
 import { finishWorkspaceSwitch } from "../motion/workspaceSwitch";
 import { buildLayout } from "./layoutFixtures";
-import { findLayoutTab, selectFocusedPane } from "./layoutModel";
+import { createLayoutState, findLayoutTab, selectFocusedPane } from "./layoutModel";
 import { useLayoutStore } from "./layoutStore";
 import type { LayoutTabLabel } from "./PaneTabBar";
 import { LayoutWorkspaceStrip, type LayoutWorkspaceStripProps } from "./WorkspaceStrip";
@@ -221,6 +221,20 @@ describe("empty", () => {
     expect(rect(empty)).toMatchObject({ width: 984, height: 592 });
     expect(empty.querySelector("[data-launcher]")).not.toBeNull();
     expect(screen.container.querySelectorAll("[data-layout-tab-strip]")).toHaveLength(0);
+  });
+
+  it("shows the caller's empty content, with no tab strip, for a workspace holding only its launcher", async () => {
+    using _layout = openLayout([[]]);
+    const blank = createLayoutState();
+    useLayoutStore.getState().setLayoutFromServer(blank);
+    expect(selectFocusedPane(blank)?.tabs.map((tab) => tab.content.kind)).toEqual(["launcher"]);
+    await using screen = await render(<Harness empty={<p data-launcher="">Start something</p>} />, {
+      router: false,
+    });
+    const empty = screen.container.querySelector<HTMLElement>("[data-layout-empty-workspace]")!;
+    expect(empty.querySelector("[data-launcher]")).not.toBeNull();
+    expect(screen.container.querySelectorAll("[data-layout-tab-strip]")).toHaveLength(0);
+    expect(screen.container.querySelector("[data-body]")).toBeNull();
   });
 
   it("shows a pane with no active tab as empty rather than blank", async () => {

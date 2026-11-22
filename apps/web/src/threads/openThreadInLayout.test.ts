@@ -3,7 +3,7 @@ import { EnvironmentId, ThreadId } from "@houston-app/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { buildLayout } from "../layout/layoutFixtures";
-import { selectFocusedTab } from "../layout/layoutModel";
+import { isBlankLayoutWorkspace, selectFocusedTab } from "../layout/layoutModel";
 import { useLayoutStore } from "../layout/layoutStore";
 import { openThreadInLayout } from "./openThreadInLayout";
 
@@ -18,7 +18,8 @@ function setup(shape: readonly (readonly (readonly (readonly string[])[])[])[]) 
     tabs: () =>
       useLayoutStore
         .getState()
-        .layout.workspaces.flatMap((workspace) => workspace.columns)
+        .layout.workspaces.filter((workspace) => !isBlankLayoutWorkspace(workspace))
+        .flatMap((workspace) => workspace.columns)
         .flatMap((column) => column.panes)
         .flatMap((pane) => pane.tabs),
     focused: () => selectFocusedTab(useLayoutStore.getState().layout),

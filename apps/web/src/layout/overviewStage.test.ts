@@ -12,6 +12,7 @@ import {
 } from "./overviewStage";
 import {
   focusLayoutWorkspaceStep,
+  isBlankLayoutWorkspace,
   type LayoutState,
   type LayoutTabContent,
   type LayoutWorkspace,
@@ -59,7 +60,7 @@ describe("overviewRowShift", () => {
     const onFirst = stack("a");
     const onNewAbove = focusLayoutWorkspaceStep(onFirst, -1);
     const backOnFirst = focusLayoutWorkspaceStep(onNewAbove, 1);
-    expect(stageOf(onNewAbove).focusedRow.workspace.columns).toEqual([]);
+    expect(isBlankLayoutWorkspace(stageOf(onNewAbove).focusedRow.workspace)).toBe(true);
     expect(overviewRowShift(stageOf(onFirst).rows, stageOf(onNewAbove).rows)).toBe(1);
     expect(overviewRowShift(stageOf(onNewAbove).rows, stageOf(backOnFirst).rows)).toBe(-1);
   });

@@ -30,6 +30,7 @@ import {
 import {
   createLayoutState,
   findLayoutTab,
+  isBlankLayoutWorkspace,
   selectFocusedTab,
   type LayoutTabContent,
 } from "./layoutModel";
@@ -64,7 +65,8 @@ function setup(contents: ReadonlyArray<LayoutTabContent>) {
     chats: () =>
       useLayoutStore
         .getState()
-        .layout.workspaces.flatMap((workspace) => workspace.columns)
+        .layout.workspaces.filter((workspace) => !isBlankLayoutWorkspace(workspace))
+        .flatMap((workspace) => workspace.columns)
         .flatMap((column) => column.panes)
         .flatMap((pane) => pane.tabs.map((tab) => tab.content)),
     [Symbol.dispose]: () => {

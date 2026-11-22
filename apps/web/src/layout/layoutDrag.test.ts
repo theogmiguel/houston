@@ -15,6 +15,7 @@ import {
   createLayoutState,
   findLayoutTab,
   selectFocusedTab,
+  selectFocusedWorkspace,
   type LayoutState,
   type LayoutTabContent,
 } from "./layoutModel";
@@ -216,7 +217,7 @@ describe("open to the side", () => {
     openThreadToTheSide(ref("two"));
     const second = tabOf(chat("two"));
     expect(second.pane.id).not.toBe(first.pane.id);
-    expect(layout().workspaces.flatMap((workspace) => workspace.columns)).toHaveLength(2);
+    expect(selectFocusedWorkspace(layout()).columns).toHaveLength(2);
     expect(selectFocusedTab(layout())?.id).toBe(second.tab.id);
   });
 
