@@ -28,6 +28,12 @@ A child thread that is delegated work reports to its parent as well as appearing
 tab. Its question or approval request shows in the parent's pending approvals; the parent
 answers there.
 
+Background work ends with the agent process that started it. When a Claude process exits on its
+own while its thread is idle, Houston records the background work it took with it, and a thread
+that was waiting on that work gets a message naming it so the agent can restart what it still
+needs. **Settings ▸ Maintenance ▸ Continue threads after restarts** turns this message off along
+with the one sent after a restart; work nobody waited on is mentioned with the next message instead.
+
 **Settings ▸ Threads** sets whether a hold and a resume follow usage limits: **Hold until
 limits reset** parks a limited thread, and **Resume after usage limits** continues it when
 the limit clears.

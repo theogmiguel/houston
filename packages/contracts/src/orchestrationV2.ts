@@ -676,6 +676,8 @@ export const OrchestrationV2RestartCancelledBackgroundWork = Schema.Struct({
   id: Schema.optional(TrimmedNonEmptyString),
   /** The agent was waiting on this work, so its restart note wakes the agent even for a shell. */
   awaited: Schema.optional(Schema.Literal(true)),
+  /** Set when the provider process exited under a running server; absent means a server restart. */
+  cause: Schema.optional(Schema.Literal("provider_exit")),
 });
 export type OrchestrationV2RestartCancelledBackgroundWork =
   typeof OrchestrationV2RestartCancelledBackgroundWork.Type;

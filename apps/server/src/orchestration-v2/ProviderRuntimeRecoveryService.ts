@@ -1,4 +1,3 @@
-import { runRanAfter } from "@houston-app/shared/orchestrationV2ThreadError";
 import { resolveProjectSettings } from "@houston-app/shared/projectSettings";
 import {
   CommandId,
@@ -35,6 +34,7 @@ import {
   awaitingProviderThreadId,
   cancelledRosterTaskWork,
   cancelledTurnItemWork,
+  latestStartedRun,
   mergeRestartCancelledBackgroundWork,
   neverStarted,
 } from "./RestartBackgroundNote.ts";
@@ -173,23 +173,6 @@ function recoveryCancellationNoticeOrdinal(
     if (item.runId === runId && item.ordinal >= ordinal) ordinal = item.ordinal + 1;
   }
   return ordinal;
-}
-
-function latestStartedRun(
-  projection: ProjectionStore.ProjectionRuntimeRecoveryState,
-  providerThreadId: ProviderThreadId,
-) {
-  return projection.runs.reduce<OrchestrationV2ThreadProjection["runs"][number] | undefined>(
-    (latest, run) =>
-      run.providerThreadId === providerThreadId &&
-      run.status !== "queued" &&
-      run.status !== "rolled_back" &&
-      !neverStarted(run) &&
-      (latest === undefined || runRanAfter(run, latest))
-        ? run
-        : latest,
-    undefined,
-  );
 }
 
 export const make = Effect.gen(function* () {
@@ -822,7 +805,7 @@ export const make = Effect.gen(function* () {
         });
       }
       for (const [providerThreadId, work] of cancelledBackgroundWork) {
-        const noteRun = latestStartedRun(projection, providerThreadId);
+        const noteRun = latestStartedRun(projection.runs, providerThreadId);
         if (noteRun === undefined) continue;
         // Use a separate event; stale run snapshots can overwrite intervening lifecycle changes.
         events.push({
