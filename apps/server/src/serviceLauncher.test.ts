@@ -1,5 +1,7 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off - observes the children the launcher spawns with Node built-ins.
 import type * as NodeChildProcess from "node:child_process";
+// @effect-diagnostics-next-line nodeBuiltinImport:off - opens the service log the way a service manager does.
+import * as NodeFS from "node:fs";
 
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -9,7 +11,7 @@ import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
-import { vi } from "vite-plus/test";
+import { expect, vi } from "vite-plus/test";
 
 import {
   databaseBackupBlocker,
@@ -216,6 +218,50 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         yield* fs.writeFileString(restartPending, "1.0.0\n");
         yield* run();
         assert.isFalse(yield* fs.exists(restartPending));
+      }),
+    );
+
+    it.effect("appends the child's output to a service log file through a pipe", () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "houston-service-output-" });
+        const statePath = path.join(root, "runtime", "service-state.json");
+        const logPath = path.join(root, "service.log");
+        yield* writeFakeRuntime(
+          fs,
+          path,
+          path.join(root, "runtime", "versions", "1.0.0"),
+          `process.stdout.write("server stdout\\n");\nprocess.stderr.write("server stderr\\n");\nsetInterval(() => {}, 1_000);\n`,
+        );
+        yield* Effect.promise(() =>
+          writeServiceState(statePath, {
+            protocol: SERVICE_LAUNCHER_PROTOCOL,
+            activeVersion: "1.0.0",
+          }),
+        );
+        const log = yield* Effect.acquireRelease(
+          Effect.sync(() => NodeFS.openSync(logPath, "a")),
+          (fd) => Effect.sync(() => NodeFS.closeSync(fd)),
+        );
+        const spawnedBefore = spawnedChildren.length;
+        const launcher = new Launcher(
+          root,
+          yield* Effect.promise(() => readServiceState(statePath)),
+          { appendOutputTo: { stdout: log, stderr: log } },
+        );
+        const running = launcher.run();
+        const contents = () => NodeFS.readFileSync(logPath, "utf8");
+        yield* Effect.promise(() =>
+          expect
+            .poll(contents, { timeout: 30_000 })
+            .toMatch(/server stdout\n[^]*server stderr\n|server stderr\n[^]*server stdout\n/),
+        );
+        const child = spawnedChildren[spawnedBefore];
+        assert.isNotNull(child?.stdout ?? null);
+        assert.isNotNull(child?.stderr ?? null);
+        yield* Effect.promise(() => launcher.stop("SIGTERM"));
+        yield* Effect.promise(() => running);
       }),
     );
 

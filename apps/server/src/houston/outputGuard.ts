@@ -14,6 +14,10 @@ export interface OutputGuard {
 const guards = new WeakMap<OutputStream, OutputGuard>();
 const ERROR_CODE = /^[A-Z][A-Z0-9_]{0,63}$/;
 
+/** An error's code when it has the shape of one, else `unknown`: a message can carry a path. */
+export const outputErrorCode = (error: NodeJS.ErrnoException): string =>
+  typeof error.code === "string" && ERROR_CODE.test(error.code) ? error.code : "unknown";
+
 // Node reports a failed stdout or stderr write (a closed reader, a full or failing disk) as an
 // `error` event on that stream, which crashes the process when no listener takes it. Every such
 // event is an output failure: the line is dropped and the first one is reported on the other stream.
@@ -34,9 +38,7 @@ export function guardProcessOutput(
       failures[name] += 1;
       // A stream that already failed is not written to, so two failing streams cannot ping-pong.
       if (failures[name] > 1 || failures[other] > 0) return;
-      // Only the code is reported: a message can carry a path.
-      const code =
-        typeof error.code === "string" && ERROR_CODE.test(error.code) ? error.code : "unknown";
+      const code = outputErrorCode(error);
       try {
         streams[other].write(
           `houston: a write to ${name} failed (${code}); later ${name} output from this process is dropped\n`,
