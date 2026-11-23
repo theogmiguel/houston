@@ -187,7 +187,11 @@ import {
 import { planThreadDeletion } from "./ThreadDeletion.ts";
 import type * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
-import { acceptedDelivery, nextDelivery } from "../houston/messageDelivery.ts";
+import {
+  acceptedDelivery,
+  nextDelivery,
+  steerFollowUpCommand,
+} from "../houston/messageDelivery.ts";
 import {
   ASIDE_NEEDS_FINISHED_TURN,
   asideForkRefusal,
@@ -15134,22 +15138,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           },
         },
       ]);
-      yield* dispatchWithReceiptEffect({
-        type: "message.dispatch",
-        commandId: CommandId.make(`command:dropped-steer:${run.id}:${message.id}`),
-        threadId,
-        messageId: message.id,
-        text: message.text,
-        ...(message.context ? { context: message.context } : {}),
-        attachments: message.attachments,
-        dispatchMode: { type: "start_immediately" },
-        createdBy: message.createdBy,
-        creationSource: message.creationSource,
-        ...(message.scheduledTaskId === undefined
-          ? {}
-          : { scheduledTaskId: message.scheduledTaskId }),
-        ...(message.senderThreadId === undefined ? {} : { senderThreadId: message.senderThreadId }),
-      });
+      yield* dispatchWithReceiptEffect(
+        steerFollowUpCommand({
+          commandId: CommandId.make(`command:dropped-steer:${run.id}:${message.id}`),
+          message,
+          run,
+        }),
+      );
     }
   });
 
@@ -15186,17 +15181,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               : Effect.void
             ).pipe(
               Effect.andThen(
+                startNextQueuedRun(threadId, {
+                  endedRunId: run.id,
+                  ...(run.status === "failed" ? { failedRunId: run.id } : {}),
+                }),
+              ),
+              // After the queue starts, so the dropped steer waits behind messages queued before it.
+              Effect.ensuring(
                 requeueDroppedSteers(threadId, run).pipe(
                   Effect.catchCause((cause) =>
                     Effect.logWarning("Failed to requeue a dropped steer", { threadId, cause }),
                   ),
                 ),
-              ),
-              Effect.andThen(
-                startNextQueuedRun(threadId, {
-                  endedRunId: run.id,
-                  ...(run.status === "failed" ? { failedRunId: run.id } : {}),
-                }),
               ),
             ),
           )

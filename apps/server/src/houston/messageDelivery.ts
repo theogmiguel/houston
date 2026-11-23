@@ -1,7 +1,11 @@
 // Delivery states for queued, steered and interrupting messages. The transition rules are one
 // pure function; the writer applies them to the stored user_message turn item.
 import {
+  type CommandId,
   type MessageId,
+  type OrchestrationV2Command,
+  type OrchestrationV2ConversationMessage,
+  type OrchestrationV2Run,
   type OrchestrationV2TurnItem,
   type ProviderInstanceId,
   type ProviderSessionId,
@@ -174,6 +178,40 @@ export function nextDelivery(current: MessageDelivery, signal: DeliverySignal): 
         ? { ...current, route: "ownTurn", rerouted: signal.reason, at: signal.at }
         : current;
   }
+}
+
+/**
+ * The turn that sends a steer its turn never read, reusing the message's id so a retry cannot
+ * duplicate it. Notifications and completions wait in the queue on the steered run's model.
+ */
+export function steerFollowUpCommand(input: {
+  readonly commandId: CommandId;
+  readonly message: OrchestrationV2ConversationMessage;
+  readonly run: Pick<OrchestrationV2Run, "modelSelection">;
+}): Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }> {
+  const { message } = input;
+  const queued = message.delegatedCompletion !== undefined || message.notification !== undefined;
+  return {
+    type: "message.dispatch",
+    commandId: input.commandId,
+    threadId: message.threadId,
+    messageId: message.id,
+    text: message.text,
+    ...(message.context ? { context: message.context } : {}),
+    attachments: message.attachments,
+    ...(message.delegatedCompletion === undefined
+      ? {}
+      : { modelSelection: input.run.modelSelection }),
+    dispatchMode: { type: queued ? "queue_after_active" : "start_immediately" },
+    createdBy: message.createdBy,
+    creationSource: message.creationSource,
+    ...(message.delegatedCompletion === undefined
+      ? {}
+      : { delegatedCompletion: message.delegatedCompletion }),
+    ...(message.notification === undefined ? {} : { notification: message.notification }),
+    ...(message.scheduledTaskId === undefined ? {} : { scheduledTaskId: message.scheduledTaskId }),
+    ...(message.senderThreadId === undefined ? {} : { senderThreadId: message.senderThreadId }),
+  };
 }
 
 /** The delivery signal a provider event carries; assistant output and tool activity carry none. */

@@ -1,13 +1,17 @@
 // The transition rules alone: provider events in, the next delivery out.
 import {
+  CommandId,
   MessageId,
   NodeId,
   ProviderDriverKind,
   ProviderThreadId,
+  ProviderInstanceId,
   ProviderTurnId,
   RunAttemptId,
+  RunId,
   ThreadId,
   TurnItemId,
+  type OrchestrationV2ConversationMessage,
   type OrchestrationV2ProviderTurn,
 } from "@houston-app/contracts";
 import type { MessageDelivery } from "@houston-app/contracts/houston/messageDelivery";
@@ -15,7 +19,12 @@ import type { ProviderAdapterV2Event } from "@houston-app/provider-core/server/P
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
-import { acceptedDelivery, deliverySignalOf, nextDelivery } from "./messageDelivery.ts";
+import {
+  acceptedDelivery,
+  deliverySignalOf,
+  nextDelivery,
+  steerFollowUpCommand,
+} from "./messageDelivery.ts";
 
 const driver = ProviderDriverKind.make("codex");
 const threadId = ThreadId.make("thread:1");
@@ -280,5 +289,72 @@ describe("message delivery transitions", () => {
     expect(
       nextDelivery(steer, { type: "failed", message: "Codex rejected the steer.", at: later(1) }),
     ).toMatchObject({ state: "dropped", reason: "failed", message: "Codex rejected the steer." });
+  });
+});
+
+describe("a steer's follow-up turn", () => {
+  const message: OrchestrationV2ConversationMessage = {
+    createdBy: "agent",
+    creationSource: "server",
+    id: messageId,
+    threadId,
+    runId: RunId.make("run:steered"),
+    nodeId: null,
+    role: "user",
+    text: "The delegated task asks which branch to use.",
+    attachments: [],
+    streaming: false,
+    createdAt: t0,
+    updatedAt: t0,
+  };
+  const run = { modelSelection: { instanceId: ProviderInstanceId.make("claude"), model: "opus" } };
+  const commandId = CommandId.make("command:follow-up");
+
+  it("starts a person's steer at once and keeps who sent it", () => {
+    expect(
+      steerFollowUpCommand({
+        commandId,
+        message: { ...message, createdBy: "user", creationSource: "web" },
+        run,
+      }),
+    ).toEqual({
+      type: "message.dispatch",
+      commandId,
+      threadId,
+      messageId,
+      text: message.text,
+      attachments: [],
+      dispatchMode: { type: "start_immediately" },
+      createdBy: "user",
+      creationSource: "web",
+    });
+  });
+
+  it("queues a notice with its notification", () => {
+    const notification = {
+      source: { kind: "delegated_task" as const, taskIds: [NodeId.make("node:task")] },
+      outcome: "updated" as const,
+      summary: "Delegated task has a question",
+    };
+    expect(steerFollowUpCommand({ commandId, message: { ...message, notification }, run })).toEqual(
+      expect.objectContaining({ dispatchMode: { type: "queue_after_active" }, notification }),
+    );
+  });
+
+  it("queues a completion with its cohort on the steered run's model", () => {
+    const delegatedCompletion = {
+      parentRunId: RunId.make("run:parent"),
+      generation: 1,
+      taskIds: [NodeId.make("node:task")],
+    };
+    expect(
+      steerFollowUpCommand({ commandId, message: { ...message, delegatedCompletion }, run }),
+    ).toEqual(
+      expect.objectContaining({
+        dispatchMode: { type: "queue_after_active" },
+        delegatedCompletion,
+        modelSelection: run.modelSelection,
+      }),
+    );
   });
 });

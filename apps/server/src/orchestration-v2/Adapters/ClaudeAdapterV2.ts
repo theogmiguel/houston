@@ -422,6 +422,8 @@ export const ClaudeProviderCapabilitiesV2 = {
     emitsTurnCompleted: true,
     supportsInterrupt: true,
     supportsActiveSteering: true,
+    // Steers no longer cancel tools; kept true so automatic notices still queue instead of
+    // steering, since a dropped notice has no delivery record to requeue it from.
     activeSteeringInterruptsTools: true,
     supportsSteeringByInterruptRestart: false,
     supportsQueuedMessages: true,
@@ -4033,6 +4035,9 @@ function terminalStatusFromResult(
   return "failed";
 }
 
+const joinFallbackText = (earlier: string, current: string) =>
+  earlier.length === 0 ? current : current.length === 0 ? earlier : `${earlier}\n\n${current}`;
+
 function isClaudeActiveSteeringAbortResult(message: SDKResultMessage): boolean {
   return (
     message.terminal_reason === "aborted_streaming" || message.terminal_reason === "aborted_tools"
@@ -4383,6 +4388,8 @@ interface ActiveClaudeTurnContext {
   readonly itemOrdinals: Map<string, number>;
   readonly assistant: {
     fallbackText: string;
+    // Result-only replies of held results that ended before the current part.
+    earlierFallbackText: string;
     fallbackNativeItemId: string;
     emittedNativeItemIds: Set<string>;
     // The CLI repeats a notice that ends a prompt as the turn's result text.
@@ -5221,6 +5228,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         // A held result's segment is billed with the turn once another result settles it.
         const absorbHeldResult = (context: ActiveClaudeTurnContext) => {
           if (context.heldResult === undefined) return;
+          const { assistant } = context;
+          assistant.earlierFallbackText = joinFallbackText(
+            assistant.earlierFallbackText,
+            assistant.fallbackText,
+          );
+          assistant.fallbackText = "";
           context.steeredSegmentUsage.push(context.heldResult.usage);
           context.heldResult = undefined;
         };
@@ -8134,6 +8147,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           readonly threadDisposition?: "reusable" | "broken";
           readonly result?: SDKResultMessage;
         }) {
+          // Stop or a process exit can end a turn whose completed result is still held.
+          absorbHeldResult(input.context);
           yield* reasoningDeltas.flushTurn(input.context.nativeTurnId);
           // Houston: a completed turn answered without the unsnapshotted text; a stopped
           // turn keeps the text cut off before its snapshot, as streamed so far.
@@ -8206,10 +8221,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             subagentToolCalls.delete(toolCall.nativeItemId);
           }
 
-          if (
-            input.context.assistant.emittedNativeItemIds.size === 0 &&
-            input.context.assistant.fallbackText.length > 0
-          ) {
+          const fallbackText = joinFallbackText(
+            input.context.assistant.earlierFallbackText,
+            input.context.assistant.fallbackText,
+          );
+          if (input.context.assistant.emittedNativeItemIds.size === 0 && fallbackText.length > 0) {
             const ordinal = yield* resolveItemOrdinal(
               input.context,
               input.context.assistant.fallbackNativeItemId,
@@ -8219,7 +8235,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               turnInput: input.context.input,
               providerTurnId: input.context.providerTurnId,
               nativeItemId: input.context.assistant.fallbackNativeItemId,
-              text: input.context.assistant.fallbackText,
+              text: fallbackText,
               ordinal,
               startedAt: input.context.startedAt,
               completedAt: input.completedAt,
@@ -11589,6 +11605,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               itemOrdinals: new Map(),
               assistant: {
                 fallbackText: "",
+                earlierFallbackText: "",
                 fallbackNativeItemId: `assistant:${turnInput.runId}`,
                 emittedNativeItemIds: new Set(),
                 noticeTexts: new Set(),
