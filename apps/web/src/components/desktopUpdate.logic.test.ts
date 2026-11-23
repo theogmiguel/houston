@@ -72,6 +72,18 @@ describe("desktop update button state", () => {
     };
     expect(resolveDesktopUpdateButtonAction(state)).toBe("download");
   });
+
+  it("installs the downloaded build and names the newer version when one appears", () => {
+    const state: DesktopUpdateState = {
+      ...baseState,
+      status: "downloaded",
+      availableVersion: "1.2.0",
+      downloadedVersion: "1.1.0",
+    };
+    expect(resolveDesktopUpdateButtonAction(state)).toBe("install");
+    expect(getDesktopUpdateButtonTooltip(state)).toContain("1.1.0");
+    expect(getDesktopUpdateButtonTooltip(state)).toContain("1.2.0");
+  });
 });
 
 describe("refused desktop update actions", () => {

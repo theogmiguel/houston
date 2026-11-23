@@ -91,6 +91,14 @@ export function getArm64IntelBuildWarningDescription(state: DesktopUpdateState):
   return "This Mac has Apple Silicon, but Houston is still running the Intel build under Rosetta. The next app update will replace it with the native Apple Silicon build.";
 }
 
+function downloadedUpdateTooltip(state: DesktopUpdateState): string {
+  const downloadedVersion = state.downloadedVersion ?? state.availableVersion ?? "ready";
+  if (state.availableVersion !== null && state.availableVersion !== state.downloadedVersion) {
+    return `Update ${downloadedVersion} downloaded. ${state.availableVersion} is newer; restarting installs ${downloadedVersion}.`;
+  }
+  return `Update ${downloadedVersion} downloaded. Click to restart and install.`;
+}
+
 export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string {
   if (
     state.notAppliedVersion !== undefined &&
@@ -103,9 +111,7 @@ export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string
     return `Update ${state.availableVersion ?? "available"} ready to download`;
   }
   if (state.status === "checking") {
-    if (state.downloadedVersion !== null) {
-      return `Update ${state.downloadedVersion} downloaded. Click to restart and install.`;
-    }
+    if (state.downloadedVersion !== null) return downloadedUpdateTooltip(state);
     return state.availableVersion !== null
       ? `Update ${state.availableVersion} ready to download`
       : "Checking for updates…";
@@ -116,8 +122,7 @@ export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string
     return `Downloading update${progress}`;
   }
   if (state.status === "downloaded") {
-    const downloadedVersion = state.downloadedVersion ?? state.availableVersion ?? "ready";
-    return `Update ${downloadedVersion} downloaded. Click to restart and install.`;
+    return downloadedUpdateTooltip(state);
   }
   if (state.status === "error") {
     if (state.errorContext === "download" && state.availableVersion) {
