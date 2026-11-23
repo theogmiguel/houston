@@ -2,6 +2,10 @@ import type { DesktopUpdateActionResult, DesktopUpdateState } from "@houston-app
 
 export type DesktopUpdateButtonAction = "download" | "install" | "none";
 
+export type DesktopUpdateAction = "download" | "install";
+
+export type ReportLocalUpdateError = (title: string, description: string) => void;
+
 const DEFAULT_DESKTOP_RELEASE_REPOSITORY = "theogmiguel/houston";
 const GITHUB_REPOSITORY_SEGMENT = /^[A-Za-z0-9._-]+$/u;
 
@@ -47,13 +51,14 @@ export function resolveDesktopUpdateButtonAction(
   if (
     state.downloadedVersion &&
     (state.status === "downloaded" ||
+      state.status === "checking" ||
       (state.status === "error" &&
         (state.errorContext === null || state.errorContext === "install")))
   ) {
     return "install";
   }
-  if (state.status === "available") {
-    return "download";
+  if (state.status === "available" || state.status === "checking") {
+    return state.availableVersion ? "download" : "none";
   }
   if (state.status === "error") {
     if (state.errorContext === "download" && state.availableVersion) {
@@ -97,13 +102,22 @@ export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string
   if (state.status === "available") {
     return `Update ${state.availableVersion ?? "available"} ready to download`;
   }
+  if (state.status === "checking") {
+    if (state.downloadedVersion !== null) {
+      return `Update ${state.downloadedVersion} downloaded. Click to restart and install.`;
+    }
+    return state.availableVersion !== null
+      ? `Update ${state.availableVersion} ready to download`
+      : "Checking for updates…";
+  }
   if (state.status === "downloading") {
     const progress =
       typeof state.downloadPercent === "number" ? ` (${Math.floor(state.downloadPercent)}%)` : "";
     return `Downloading update${progress}`;
   }
   if (state.status === "downloaded") {
-    return `Update ${state.downloadedVersion ?? state.availableVersion ?? "ready"} downloaded. Click to restart and install.`;
+    const downloadedVersion = state.downloadedVersion ?? state.availableVersion ?? "ready";
+    return `Update ${downloadedVersion} downloaded. Click to restart and install.`;
   }
   if (state.status === "error") {
     if (state.errorContext === "download" && state.availableVersion) {
@@ -127,15 +141,45 @@ export function getDesktopUpdateInstallConfirmationMessage(
   return `Install update${version ? ` ${version}` : ""} and restart Houston?\n\nAny running tasks will be interrupted. Make sure you're ready before continuing.`;
 }
 
-export function getDesktopUpdateActionError(result: DesktopUpdateActionResult): string | null {
-  if (!result.accepted || result.completed) return null;
-  if (typeof result.state.message !== "string") return null;
-  const message = result.state.message.trim();
-  return message.length > 0 ? message : null;
+/** Why the host refused to start an action, in words the user can act on. */
+export function getDesktopUpdateActionRefusal(
+  state: DesktopUpdateState,
+  action: DesktopUpdateAction,
+): string {
+  const message = typeof state.message === "string" ? state.message.trim() : "";
+  if (message.length > 0) return message;
+  if (state.status === "checking") {
+    return "A check for updates is still running. Try again when it finishes.";
+  }
+  if (state.status === "downloading") {
+    return "A download is already running.";
+  }
+  if (action === "install") {
+    if (state.downloadedVersion === null) {
+      return "There is no downloaded build to install yet.";
+    }
+    return "Houston could not start the install.";
+  }
+  if (state.status === "downloaded") {
+    return `Update ${state.downloadedVersion ?? ""} is already downloaded; restart to install it.`.trim();
+  }
+  return "Houston could not start the download.";
 }
 
-export function shouldToastDesktopUpdateActionResult(result: DesktopUpdateActionResult): boolean {
-  return getDesktopUpdateActionError(result) !== null;
+function inferRefusedAction(state: DesktopUpdateState): DesktopUpdateAction {
+  return state.downloadedVersion !== null && state.status !== "available" ? "install" : "download";
+}
+
+export function getDesktopUpdateActionError(
+  result: DesktopUpdateActionResult,
+  action?: DesktopUpdateAction,
+): string | null {
+  if (!result.accepted) {
+    return getDesktopUpdateActionRefusal(result.state, action ?? inferRefusedAction(result.state));
+  }
+  if (result.completed) return null;
+  const message = typeof result.state.message === "string" ? result.state.message.trim() : "";
+  return message.length > 0 ? message : "The update did not finish.";
 }
 
 export function canCheckForUpdate(state: DesktopUpdateState | null): boolean {
