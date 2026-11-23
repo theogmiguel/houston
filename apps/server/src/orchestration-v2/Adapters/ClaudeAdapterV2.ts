@@ -6005,13 +6005,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               preservedOpaqueTombstones,
             );
           }
-          if (!hadRoster && !hadPersistedRoster) {
-            return;
-          }
-          if (remembered === undefined) {
-            return;
-          }
-          if (lostBackgroundTasks.length > 0 && remembered.appThreadId !== null) {
+          if (lostBackgroundTasks.length > 0 && remembered?.appThreadId != null) {
             yield* emitProviderEvent({
               type: "background_work.lost",
               driver: CLAUDE_PROVIDER,
@@ -6019,6 +6013,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               providerThreadId: remembered.id,
               tasks: lostBackgroundTasks,
             });
+          }
+          if (!hadRoster && !hadPersistedRoster) {
+            return;
+          }
+          if (remembered === undefined) {
+            return;
           }
           const activeContext = yield* Ref.get(activeTurn);
           const status =
