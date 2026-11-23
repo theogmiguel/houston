@@ -3862,6 +3862,9 @@ describe("OrchestratorMcpService provider resolution", () => {
             });
 
           const unknown = yield* delegate("nebula").pipe(Effect.flip);
+          if (unknown._tag !== "OrchestratorMcpFailure") {
+            return assert.fail(JSON.stringify(unknown));
+          }
           assert.equal(unknown.code, "model_unavailable");
           assert.include(unknown.message, "nebula");
           assert.include(
@@ -3874,6 +3877,9 @@ describe("OrchestratorMcpService provider resolution", () => {
           assert.include(unknown.message, "search");
 
           const ambiguous = yield* delegate("large").pipe(Effect.flip);
+          if (ambiguous._tag !== "OrchestratorMcpFailure") {
+            return assert.fail(JSON.stringify(ambiguous));
+          }
           assert.equal(ambiguous.code, "model_unavailable");
           assert.include(ambiguous.message, "large");
           assert.include(ambiguous.message, "orbit-large-2, comet-large-1");
