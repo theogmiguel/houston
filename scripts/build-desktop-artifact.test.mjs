@@ -228,6 +228,22 @@ NodeTest.test("the Linux config builds the AppImage and deb", () => {
   NodeAssert.equal(config.asar, false);
 });
 
+NodeTest.test("only the Linux AppImage drops its version so updates replace it in place", () => {
+  const linux = buildConfig("linux", "AppImage");
+  NodeAssert.deepEqual(linux.appImage, { artifactName: "Houston-${arch}.${ext}" });
+  // The deb shares the top-level name and keeps the version.
+  NodeAssert.equal(linux.artifactName, "Houston-${version}-${arch}.${ext}");
+  NodeAssert.equal(linux.deb.artifactName, undefined);
+
+  const mac = buildConfig("mac", "dmg");
+  NodeAssert.equal(mac.appImage, undefined);
+  NodeAssert.equal(mac.artifactName, "Houston-${version}-${arch}.${ext}");
+
+  const win = buildConfig("win", "nsis");
+  NodeAssert.equal(win.appImage, undefined);
+  NodeAssert.equal(win.nsis.artifactName, "Houston-${version}-${arch}-setup.${ext}");
+});
+
 NodeTest.test("the packaged metadata matches the bundle strings", () => {
   const config = buildConfig("linux", "deb");
   NodeAssert.equal(DESKTOP_SHORT_DESCRIPTION, "Mission control for CLI coding agents");

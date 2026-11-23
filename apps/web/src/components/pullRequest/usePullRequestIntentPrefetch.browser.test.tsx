@@ -32,10 +32,14 @@ const row = {
   number: 7,
 };
 
+const onHostRender = vi.fn();
+
 function Rows() {
-  const prefetch = usePullRequestIntentPrefetch(() => true);
+  const { prefetch, reads } = usePullRequestIntentPrefetch(() => true);
+  onHostRender();
   return (
     <>
+      {reads}
       <button type="button" onClick={() => prefetch(row)}>
         rest
       </button>
@@ -64,6 +68,7 @@ it("reads the panel's detail once intent rests on a row for 150 ms", async () =>
   expect(state.reads).toEqual([]);
 
   await act(() => rest.click());
+  const hostRendersBeforeRest = onHostRender.mock.calls.length;
   await act(() => vi.advanceTimersByTime(149));
   expect(state.reads).toEqual([]);
   await act(() => vi.advanceTimersByTime(1));
@@ -83,4 +88,6 @@ it("reads the panel's detail once intent rests on a row for 150 ms", async () =>
 
   await act(() => leave.click());
   expect(state.reads.at(-1)).toBeNull();
+  // The reads render in their own element: resting and leaving never render the list's host.
+  expect(onHostRender.mock.calls.length).toBe(hostRendersBeforeRest);
 });

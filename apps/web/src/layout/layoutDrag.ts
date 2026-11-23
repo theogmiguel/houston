@@ -10,10 +10,12 @@ import {
   findLayoutPane,
   findLayoutTab,
   findLayoutTabByContent,
+  layoutTabContentKey,
   selectFocusedChatTab,
   selectFocusedWorkspace,
   type LayoutDirection,
   type LayoutState,
+  type LayoutTabContent,
   type LayoutTabDestination,
 } from "./layoutModel";
 import { notePaneDrop } from "../motion/paneDrop";
@@ -22,7 +24,9 @@ import { useThreadMembershipStore } from "./threadMembership";
 
 export type LayoutDragSource =
   | { kind: "tab"; tabId: string }
-  | { kind: "thread"; threadRef: ScopedThreadRef; title?: string };
+  | { kind: "thread"; threadRef: ScopedThreadRef; title?: string }
+  /** New content that is not open yet (a launcher from the `+` button): a drop opens it there. */
+  | { kind: "content"; content: LayoutTabContent };
 
 /** A sidebar card dropped on a pane that took its thread into another workspace. */
 export interface LayoutThreadDrop {
@@ -220,7 +224,7 @@ export function isLayoutDropUseful(
   target: LayoutDropTarget,
 ): boolean {
   if (layoutDropDestination(layout, target) === null) return false;
-  if (source.kind === "thread") return true;
+  if (source.kind !== "tab") return true;
   const location = findLayoutTab(layout, (tab) => tab.id === source.tabId);
   if (!location) return false;
   const alone = location.pane.tabs.length === 1;
@@ -270,10 +274,11 @@ export function layoutDropLabel(target: LayoutDropTarget): string {
   }
 }
 
-/** A thread goes into any composer except its own dragged tab's. */
+/** A thread goes into any composer except its own dragged tab's; other content goes into none. */
 export function composerTakesDrag(source: LayoutDragSource, composer: HTMLElement): boolean {
+  if (source.kind === "thread") return true;
+  if (source.kind === "content") return false;
   return (
-    source.kind === "thread" ||
     composer.closest<HTMLElement>("[data-layout-tab-id]")?.dataset.layoutTabId !== source.tabId
   );
 }
@@ -348,6 +353,13 @@ function sameSource(a: LayoutDragSource, b: LayoutDragSource): boolean {
   if (a.kind === "tab" || b.kind === "tab") {
     return a.kind === "tab" && b.kind === "tab" && a.tabId === b.tabId;
   }
+  if (a.kind === "content" || b.kind === "content") {
+    return (
+      a.kind === "content" &&
+      b.kind === "content" &&
+      layoutTabContentKey(a.content) === layoutTabContentKey(b.content)
+    );
+  }
   return scopedThreadKey(a.threadRef) === scopedThreadKey(b.threadRef);
 }
 
@@ -386,6 +398,8 @@ function commitLayoutDrop(source: LayoutDragSource, target: LayoutDropTarget): b
   if (!destination || !isLayoutDropUseful(store.layout, source, target)) return false;
   if (source.kind === "tab") {
     store.moveTab(source.tabId, destination);
+  } else if (source.kind === "content") {
+    store.placeContent(source.content, destination);
   } else {
     placeDraggedThread(source, destination);
   }
