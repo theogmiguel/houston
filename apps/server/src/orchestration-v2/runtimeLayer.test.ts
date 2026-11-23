@@ -9066,6 +9066,93 @@ const layerQueueResumeDisabledInstanceTest = Layer.mergeAll(
   Layer.provide(layerPlatformTest),
 );
 
+it.layer(layerTest)("manual resume of a stopped run", (it) => {
+  it.effect.each([
+    { name: "ordinary", text: "Start work.", refused: false },
+    { name: "compact", text: "/compact", refused: true },
+    { name: "compact-instructions", text: "/compact keep the open risks", refused: true },
+  ] as const)("resumes a stopped $name run only when it was not a compaction", (source) =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const events = yield* EventSink.EventSinkV2;
+      const threadId = ThreadId.make(`stopped-resume:${source.name}`);
+      const projectId = ProjectId.make(`stopped-resume:project:${source.name}`);
+      const now = yield* DateTime.now;
+      yield* seedProject({
+        projectId,
+        title: "Resume project",
+        workspaceRoot: process.cwd(),
+        defaultModelSelection: modelSelection,
+        createdAt: DateTime.formatIso(now),
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make(`stopped-resume:create:${source.name}`),
+        threadId,
+        projectId,
+        title: "Stopped thread",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdBy: "user",
+        creationSource: "web",
+      });
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make(`stopped-resume:start:${source.name}`),
+        threadId,
+        messageId: MessageId.make(`stopped-resume:start:${source.name}`),
+        text: source.text,
+        attachments: [],
+        dispatchMode: { type: "defer_start" },
+        createdBy: "user",
+        creationSource: "web",
+      });
+      const [stopped] = (yield* orchestrator.getThreadProjection(threadId)).runs as [
+        OrchestrationV2Run,
+      ];
+      yield* events.write({
+        events: [
+          {
+            id: EventId.make(`stopped-resume:stop:${source.name}`),
+            type: "run.updated",
+            threadId,
+            occurredAt: now,
+            payload: { ...stopped, status: "interrupted", completedAt: now },
+          },
+        ],
+      });
+      const resume = orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make(`stopped-resume:resume:${source.name}`),
+        threadId,
+        messageId: MessageId.make(`stopped-resume:resume:${source.name}`),
+        manualContinuationOfRunId: stopped.id,
+        text: "Continue where you left off.",
+        attachments: [],
+        dispatchMode: { type: "start_immediately" },
+        createdBy: "user",
+        creationSource: "web",
+      });
+      if (source.refused) {
+        const error = yield* resume.pipe(Effect.flip);
+        assert.match(
+          String(error.cause),
+          /was a context compaction that did not finish, and a compaction cannot be resumed\. Run the compaction again\./,
+        );
+        assert.lengthOf((yield* orchestrator.getThreadProjection(threadId)).runs, 1);
+        return;
+      }
+      yield* resume;
+      const after = yield* orchestrator.getThreadProjection(threadId);
+      assert.lengthOf(after.runs, 2);
+      assert.equal(after.runs[1]?.status, "starting");
+    }),
+  );
+});
+
 it.layer(layerQueueResumeDisabledInstanceTest)(
   "queue.resume on a project-disabled instance",
   (it) => {
