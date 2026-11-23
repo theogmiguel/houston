@@ -6,6 +6,7 @@
 import type { CSSProperties } from "react";
 
 import {
+  isBlankLayoutWorkspace,
   selectLayoutPaneSlots,
   selectWindowStartPaneId,
   type LayoutPaneSlot,
@@ -66,7 +67,7 @@ export interface OverviewEntry {
 /** An empty workspace only shows while it is the focused one. */
 export function overviewWorkspaces(layout: LayoutState): LayoutWorkspace[] {
   return layout.workspaces.filter(
-    (workspace) => workspace.columns.length > 0 || workspace.id === layout.focusedWorkspaceId,
+    (workspace) => !isBlankLayoutWorkspace(workspace) || workspace.id === layout.focusedWorkspaceId,
   );
 }
 
@@ -82,7 +83,11 @@ export function selectOverviewStage(
   const rows = overviewWorkspaces(layout).map((workspace, index) => ({
     workspace,
     index,
-    ...selectLayoutPaneSlots(workspace, viewport),
+    // A blank workspace shows as an empty row, with no pane for its launcher.
+    ...selectLayoutPaneSlots(
+      isBlankLayoutWorkspace(workspace) ? { ...workspace, columns: [] } : workspace,
+      viewport,
+    ),
   }));
   const widest = Math.max(1, ...rows.map((row) => row.stripWidth));
   const toWindow = viewport.width > 0 ? windowWidth / viewport.width : 1;
