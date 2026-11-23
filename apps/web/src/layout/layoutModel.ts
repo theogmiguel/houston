@@ -2101,6 +2101,35 @@ export function resizeLayoutColumnEdge(
   return arrangeLayoutWorkspaces(state, shared, cameraWidth);
 }
 
+/** Split a column's width evenly with the next one (the previous, for the last); the strip keeps its length. */
+export function evenLayoutColumnEdge(state: LayoutState, columnId: string): LayoutState {
+  return mapWorkspaces(state, (workspace) => {
+    const index = workspace.columns.findIndex((column) => column.id === columnId);
+    if (index < 0 || workspace.columns.length < 2) return workspace;
+    const neighborIndex = index + 1 < workspace.columns.length ? index + 1 : index - 1;
+    const half = (workspace.columns[index]!.width + workspace.columns[neighborIndex]!.width) / 2;
+    if (Math.abs(workspace.columns[index]!.width - half) < 1e-6) return workspace;
+    return {
+      ...workspace,
+      columns: workspace.columns.map((column, columnIndex) =>
+        columnIndex === index || columnIndex === neighborIndex
+          ? { ...column, width: half }
+          : column,
+      ),
+    };
+  });
+}
+
+/** Split the height a pane shares with the one below it (above it, for the last pane) evenly. */
+export function evenLayoutPaneEdge(state: LayoutState, paneId: string): LayoutState {
+  const found = findPane(state, paneId);
+  if (!found || found.column.panes.length < 2) return state;
+  const panes = found.column.panes;
+  const index = panes.indexOf(found.pane);
+  const neighbor = panes[index + 1 < panes.length ? index + 1 : index - 1]!;
+  return resizeLayoutPane(state, paneId, (found.pane.size + neighbor.size) / 2);
+}
+
 /** Step to the next width preset, wrapping from 2/3 back to 1/3. A lone column keeps filling the window. */
 export function cycleLayoutColumnWidth(state: LayoutState, columnId: string): LayoutState {
   const workspace = state.workspaces.find((candidate) =>

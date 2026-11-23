@@ -6,6 +6,7 @@ import {
   closeLayoutTab,
   createLayoutState,
   countLayoutTabs,
+  evenLayoutColumnEdge,
   focusLayoutTab,
   isBlankLayoutWorkspace,
   keepLayoutTab,
@@ -592,6 +593,32 @@ describe("resizeLayoutColumnEdge", () => {
       unitWidth,
     );
     expect(drawnRightEdges(released, viewportWidth, "always-shrink")).toEqual([333, 600, 1000]);
+  });
+});
+
+describe("evenLayoutColumnEdge", () => {
+  const strip = (...columns: ReturnType<typeof column>[]): LayoutState => ({
+    focusedWorkspaceId: "workspace",
+    workspaces: [{ id: "workspace", name: null, focusedPaneId: null, cameraWidth: 1000, columns }],
+  });
+  const widths = (state: LayoutState) => state.workspaces[0]!.columns.map((entry) => entry.width);
+
+  it("splits a column's width evenly with the next column and leaves the others", () => {
+    const evened = evenLayoutColumnEdge(
+      strip(column("a", 0.2), column("b", 0.6), column("c", 0.4)),
+      "a",
+    );
+    expect(widths(evened)).toEqual([0.4, 0.4, 0.4]);
+  });
+
+  it("splits the last column's width evenly with the previous one", () => {
+    const evened = evenLayoutColumnEdge(strip(column("a", 0.7), column("b", 0.3)), "b");
+    expect(widths(evened)).toEqual([0.5, 0.5]);
+  });
+
+  it("leaves a lone column as it is", () => {
+    const lone = strip(column("a", 0.7));
+    expect(evenLayoutColumnEdge(lone, "a")).toBe(lone);
   });
 });
 
