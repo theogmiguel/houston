@@ -169,6 +169,24 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
 }
 
 describe("buildThreadActionItems", () => {
+  it("names the thread each row would drag into the layout, by environment and id", () => {
+    const local = makeThread({ title: "Fix the build" });
+    const remote = makeThread({ environmentId: EnvironmentId.make("remote-copy"), title: "Other" });
+    const items = buildThreadActionItems({
+      threads: [local, remote],
+      projectByKey: new Map(),
+      icon: null,
+      runThread: async () => {},
+    });
+    expect(items.map((item) => item.dragThread)).toEqual([
+      {
+        threadRef: { environmentId: local.environmentId, threadId: local.id },
+        title: "Fix the build",
+      },
+      { threadRef: { environmentId: remote.environmentId, threadId: remote.id }, title: "Other" },
+    ]);
+  });
+
   it("keeps threads apart when two environments share a thread ID", async () => {
     const local = makeThread();
     const remote = makeThread({ environmentId: EnvironmentId.make("remote-copy") });

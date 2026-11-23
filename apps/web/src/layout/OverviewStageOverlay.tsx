@@ -18,6 +18,7 @@ import {
 import { chooseOverviewTab } from "./LayoutOverview";
 import {
   findLayoutTab,
+  isBlankLayoutWorkspace,
   type LayoutPaneSlot,
   type LayoutState,
   type LayoutTab,
@@ -141,7 +142,7 @@ export function OverviewStageOverlay({
   ): OverviewDropTarget | null => {
     const measured = rows.flatMap((row) => {
       const element = rowRefs.current.get(row.workspace.id);
-      return element && row.workspace.columns.length > 0
+      return element && !isBlankLayoutWorkspace(row.workspace)
         ? [{ row, rect: element.getBoundingClientRect() }]
         : [];
     });
@@ -297,7 +298,7 @@ export function OverviewStageOverlay({
                 </LayoutOverviewPane>
               );
             })}
-            {row.workspace.columns.length === 0 && open ? (
+            {isBlankLayoutWorkspace(row.workspace) && open ? (
               <>
                 <LayoutOverviewEmptyRow style={{ borderWidth: px(1) }} />
                 {focusedRow ? focusRing : null}
