@@ -15,7 +15,6 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
   closeFinishedUpdateRun,
   getUpdateEverythingToastView,
-  isServerUpdateHandedOff,
   type UpdateEverythingResult,
   type UpdateEverythingRun,
   type UpdateRunMachine,
@@ -112,29 +111,6 @@ export function dismissSettledUpdateRunMachines(): void {
         machines: run.machines.filter((machine) => machine.result === null),
       }),
   );
-}
-
-export function waitForServerUpdateHandoff(
-  environmentId: EnvironmentId,
-  finished: Promise<unknown>,
-): Promise<void> {
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      queueMicrotask(() => unsubscribe());
-      resolve();
-    };
-    const unsubscribe = appAtomRegistry.subscribe(
-      serverEnvironment.updateStateAtom(environmentId),
-      (state) => {
-        if (isServerUpdateHandedOff(state)) finish();
-      },
-      { immediate: true },
-    );
-    void finished.then(finish, finish);
-  });
 }
 
 /** Resolves once the host has accepted the update trigger, not when the server returns. */
