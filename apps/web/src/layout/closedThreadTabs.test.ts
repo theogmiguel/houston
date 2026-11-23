@@ -3,7 +3,7 @@ import { EnvironmentId, ThreadId } from "@houston-app/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { createClosedThreadTabWatcher } from "./closedThreadTabs";
-import { createLayoutState, type LayoutTabContent } from "./layoutModel";
+import { createLayoutState, isBlankLayoutWorkspace, type LayoutTabContent } from "./layoutModel";
 import { useLayoutStore } from "./layoutStore";
 
 const environmentId = EnvironmentId.make("local");
@@ -33,7 +33,12 @@ function setup(contents: ReadonlyArray<LayoutTabContent>) {
     tabs: () =>
       useLayoutStore
         .getState()
-        .layout.workspaces.flatMap((workspace) => workspace.columns)
+        .layout.workspaces.filter(
+          (workspace) =>
+            !isBlankLayoutWorkspace(workspace) ||
+            workspace.id === useLayoutStore.getState().layout.focusedWorkspaceId,
+        )
+        .flatMap((workspace) => workspace.columns)
         .flatMap((column) => column.panes)
         .flatMap((pane) => pane.tabs.map((tab) => tab.content)),
     [Symbol.dispose]: () => useLayoutStore.setState({ layout: original }),

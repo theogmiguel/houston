@@ -1,7 +1,19 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
 
+import {
+  dropThreadContext,
+  endThreadContextDrag,
+  findThreadContextDropTarget,
+  listThreadContextDropTargets,
+  moveThreadContextDrag,
+} from "../components/chat/threadContextDrag";
 import { endTabDrag, moveTabDrag, type TabDragSource } from "../threads/threadDrag";
-import { cancelLayoutDrag, dropLayoutDrag, moveLayoutDrag } from "./layoutDrag";
+import {
+  cancelLayoutDrag,
+  dropLayoutDrag,
+  moveLayoutDrag,
+  type LayoutDragSource,
+} from "./layoutDrag";
 import { findLayoutTab } from "./layoutModel";
 import { useLayoutStore } from "./layoutStore";
 
@@ -30,12 +42,43 @@ function tabDragSourceOf(tabId: string): TabDragSource | null {
  * pane targets do.
  */
 export function beginLayoutTabDrag(event: ReactPointerEvent, tabId: string): void {
+  beginLayoutPointerDrag(event, { kind: "tab", tabId }, tabDragSourceOf(tabId));
+}
+
+/**
+ * Start dragging content that has no tab yet, such as the `+` button's launcher, with the same
+ * gesture rules as a tab: the layout's pane targets take it and nothing else does.
+ */
+export function beginLayoutContentDrag(
+  event: ReactPointerEvent,
+  source: Extract<LayoutDragSource, { kind: "content" }>,
+): void {
+  beginLayoutPointerDrag(event, source, null);
+}
+
+/**
+ * Start dragging a thread from a control that shows it (a context chip). A chat composer under
+ * the pointer takes it as context; elsewhere the layout's pane targets open its chat.
+ */
+export function beginLayoutThreadDrag(
+  event: ReactPointerEvent,
+  source: Extract<LayoutDragSource, { kind: "thread" }>,
+  options: { onStart?: () => void } = {},
+): void {
+  beginLayoutPointerDrag(event, source, null, options.onStart);
+}
+
+function beginLayoutPointerDrag(
+  event: ReactPointerEvent,
+  source: LayoutDragSource,
+  sidebarSource: TabDragSource | null,
+  onStart?: () => void,
+): void {
   if (event.button !== 0 || event.pointerType === "touch") return;
   const start = { x: event.clientX, y: event.clientY };
   const pointerId = event.pointerId;
-  const source = { kind: "tab", tabId } as const;
-  const sidebarSource = tabDragSourceOf(tabId);
   let started = false;
+  let last = start;
 
   const move = (moveEvent: PointerEvent) => {
     if (moveEvent.pointerId !== pointerId) return;
@@ -44,9 +87,19 @@ export function beginLayoutTabDrag(event: ReactPointerEvent, tabId: string): voi
         return;
       }
       started = true;
+      onStart?.();
     }
     moveEvent.preventDefault();
     const point = { x: moveEvent.clientX, y: moveEvent.clientY };
+    last = point;
+    if (source.kind === "thread") {
+      moveThreadContextDrag(point, { title: source.title ?? "Thread", count: 1 });
+      moveLayoutDrag(source, point, {
+        composer: findThreadContextDropTarget(point),
+        composerTargets: listThreadContextDropTargets(),
+      });
+      return;
+    }
     if (sidebarSource !== null && moveTabDrag(sidebarSource, point)) {
       // The sidebar shows the destination; the layout keeps only the tab's chip on the pointer.
       moveLayoutDrag(source, point, { targetless: true });
@@ -61,11 +114,19 @@ export function beginLayoutTabDrag(event: ReactPointerEvent, tabId: string): voi
     window.removeEventListener("keydown", key, true);
     window.removeEventListener("blur", cancel);
     if (!started) return;
-    // The sidebar commits first: when a workspace had the pointer, the layout has no target.
-    const sidebarTookIt = endTabDrag(drop);
-    if (drop && !sidebarTookIt) dropLayoutDrag();
-    else cancelLayoutDrag();
-    // The release that ends a drag must not also open the tab's menu or focus it.
+    if (source.kind === "thread") {
+      // The layout has no target while a composer has the pointer, so it commits first.
+      const layoutTookIt = drop && dropLayoutDrag();
+      endThreadContextDrag();
+      cancelLayoutDrag();
+      if (drop && !layoutTookIt) dropThreadContext(last, [source.threadRef]);
+    } else {
+      // The sidebar commits first: when a workspace had the pointer, the layout has no target.
+      const sidebarTookIt = source.kind === "tab" && endTabDrag(drop);
+      if (drop && !sidebarTookIt) dropLayoutDrag();
+      else cancelLayoutDrag();
+    }
+    // The release that ends a drag must not also activate the control it started on.
     const swallow = (clickEvent: MouseEvent) => {
       clickEvent.preventDefault();
       clickEvent.stopPropagation();

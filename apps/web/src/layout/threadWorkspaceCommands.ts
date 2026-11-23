@@ -10,7 +10,7 @@ import { HOUSTON_LAYOUT_WORKSPACE_LIMITS } from "@houston-app/contracts/houston/
 
 import { useComposerDraftStore } from "../composerDraftStore";
 import { appAtomRegistry } from "../rpc/atomRegistry";
-import { findLayoutTabByContent } from "./layoutModel";
+import { findLayoutTabByContent, isBlankLayoutWorkspace } from "./layoutModel";
 import { useLayoutStore } from "./layoutStore";
 import {
   flushLayoutSync,
@@ -111,7 +111,7 @@ export async function createEmptyWorkspaceOnServer(): Promise<{ id: string; name
   const environmentId = environmentOrThrow("create a workspace");
   const layout = useLayoutStore.getState().layout;
   const name =
-    `Workspace ${layout.workspaces.filter((workspace) => workspace.columns.length > 0).length + 1}`.slice(
+    `Workspace ${layout.workspaces.filter((workspace) => !isBlankLayoutWorkspace(workspace)).length + 1}`.slice(
       0,
       HOUSTON_LAYOUT_WORKSPACE_LIMITS.nameChars,
     );
