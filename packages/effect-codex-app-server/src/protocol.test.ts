@@ -1165,6 +1165,18 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
       { label: "a plain object", crash: { secret: defectSentinel }, kind: "Object" },
       { label: "undefined", crash: undefined, kind: "undefined" },
       { label: "null", crash: null, kind: "null" },
+      { label: "an object with a free-text _tag", crash: { _tag: defectSentinel }, kind: "object" },
+      {
+        label: "an instance of a class with a free-text name",
+        crash: new (Object.defineProperty(
+          class {
+            readonly detail = defectSentinel;
+          },
+          "name",
+          { value: defectSentinel },
+        ))(),
+        kind: "object",
+      },
     ] as const)("logs only a safe kind when the crash is $label", ({ crash, kind }) =>
       Effect.gen(function* () {
         const { stdio, input, output } = yield* makeInMemoryStdio();

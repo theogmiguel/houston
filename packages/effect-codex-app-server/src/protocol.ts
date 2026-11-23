@@ -194,13 +194,16 @@ const CRASH_MAX_FRAME_CHARS = 256;
 const CRASH_MAX_KIND_CHARS = 64;
 const STACK_FRAME = /^\s+at /;
 
+// A thrown value sets its own `_tag` and class name, so only an identifier is taken as a kind.
+const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+
 const crashKind = (defect: unknown): string => {
   if (defect === null) return "null";
   if (typeof defect !== "object" && typeof defect !== "function") return typeof defect;
   const tag: unknown = (defect as { readonly _tag?: unknown })._tag;
-  if (typeof tag === "string") return tag;
+  if (typeof tag === "string") return IDENTIFIER.test(tag) ? tag : typeof defect;
   const constructorName: unknown = Object.getPrototypeOf(defect)?.constructor?.name;
-  return typeof constructorName === "string" && constructorName.length > 0
+  return typeof constructorName === "string" && IDENTIFIER.test(constructorName)
     ? constructorName
     : typeof defect;
 };
