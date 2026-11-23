@@ -272,10 +272,13 @@ the text `model:<provider>/<model>`. The `@` list and the chips are in the web a
 
 While a turn is running, the send button reads **Steer** or **Queue** and its chevron opens
 the send menu, which offers **Queue message**, **Steer message** and
-**Interrupt and send**. Steering is disabled for providers that cannot accept it. Queued
-and steered messages show their delivery state, and a dropped message names the reason.
-**Follow-up behavior** in **Settings ▸ Chat** sets what a plain send does while a turn
-runs.
+**Interrupt and send**. Steering is disabled for providers that cannot accept it, and while a
+turn that only compacts the context runs, such as `/compact`; a follow-up then queues behind
+it. When the provider compacts by itself inside a turn, a follow-up sent from the composer
+still steers Codex; for Claude and every other provider it queues until the compaction ends,
+because a Claude steer would stop the compaction and start it again. Queued and steered
+messages show their delivery state, and a dropped message names the reason.
+**Follow-up behavior** in **Settings ▸ Chat** sets what a plain send does while a turn runs.
 
 Hovering a finished assistant response shows **Reply to this response**. It adds a quote chip
 with the opening of that response (up to 300 characters) to the composer, which the chip's

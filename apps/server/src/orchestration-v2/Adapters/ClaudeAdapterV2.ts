@@ -423,6 +423,8 @@ export const ClaudeProviderCapabilitiesV2 = {
     supportsInterrupt: true,
     supportsActiveSteering: true,
     activeSteeringInterruptsTools: true,
+    // A "now" steer aborts a running compaction and Claude starts it again from the beginning.
+    activeSteeringDuringCompaction: false,
     supportsSteeringByInterruptRestart: false,
     supportsQueuedMessages: true,
     terminalStatusQuality: "strong",
