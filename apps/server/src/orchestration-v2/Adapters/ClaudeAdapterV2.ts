@@ -3952,10 +3952,13 @@ const watchClaudeRequestSilence = Effect.fnUntraced(function* (input: {
 // Claude Code's result error for a --resume whose session it no longer has.
 const CLAUDE_CONVERSATION_NOT_FOUND = "No conversation found with session ID:";
 
-function isClaudeConversationNotFoundResult(message: SDKMessage): boolean {
+// Only a zero-turn result for the resumed session itself, so a healthy session is never dropped.
+function isClaudeConversationNotFoundResult(message: SDKMessage, nativeThreadId: string): boolean {
   return (
     message.type === "result" &&
     message.subtype !== "success" &&
+    message.num_turns === 0 &&
+    message.session_id === nativeThreadId &&
     message.errors.some((error) => error.startsWith(CLAUDE_CONVERSATION_NOT_FOUND))
   );
 }
@@ -4167,6 +4170,7 @@ function gatewayCooldownResetAt(
 function providerFailureFromResult(
   message: SDKResultMessage,
   completedAt: DateTime.Utc,
+  nativeThreadId: string,
   failureHint?: string,
   usageLimited = false,
 ): OrchestrationV2ProviderFailure | null {
@@ -4205,7 +4209,7 @@ function providerFailureFromResult(
       : terminalResultError(message.terminal_reason, failureHint ?? apiErrorMessage);
   if (message.subtype !== "success") {
     return makeProviderFailure({
-      message: isClaudeConversationNotFoundResult(message)
+      message: isClaudeConversationNotFoundResult(message, nativeThreadId)
         ? "Claude could not find this thread's earlier session. Send your message again to continue in a new Claude session with this thread's history."
         : (listedError ?? structuredError ?? message.errors.join("\n")),
       code: message.subtype,
@@ -10337,7 +10341,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     message: limitedCompaction.message ?? failureHint,
                     code: "compaction_failed",
                   })
-                : providerFailureFromResult(message, completedAt, failureHint, usageLimited);
+                : providerFailureFromResult(
+                    message,
+                    completedAt,
+                    context.nativeThreadId,
+                    failureHint,
+                    usageLimited,
+                  );
             // Houston: a distinct code lets provider readiness mark the instance signed out;
             // a failure with an HTTP status keeps its api_error_<status> code.
             const signedOut =
@@ -11419,7 +11429,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     }
                     // Before the turn settles, so the next send cannot reuse the missing session.
                     return (
-                      isClaudeConversationNotFoundResult(message)
+                      isClaudeConversationNotFoundResult(message, context.nativeThreadId)
                         ? markNativeThreadMissing(context.nativeThreadId)
                         : Effect.void
                     ).pipe(
