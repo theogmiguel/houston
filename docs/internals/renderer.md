@@ -56,6 +56,10 @@ The renderer re-reads the bootstraps and the server status when the host announc
 (`src/connection/desktopLocalTopology.ts`). A new reader subscribes there instead of starting
 its own timer. The host traces these reads only when they fail (`FAILURE_ONLY_TRACED_CHANNELS`
 in `apps/desktop/src/ipc/DesktopIpc.ts`), so that they do not fill the trace file.
+A registration build that cannot reach a server it was told of retries after 1, 2, 4, 8 and
+16 seconds, then leaves it to the safety poll (`PLATFORM_DISCOVERY_RETRY_DELAYS` in
+`src/connection/platform.ts`): a browser has no host to announce its server, and a failed
+discovery drops the environment until the next read.
 
 ## The terminal engine
 
