@@ -37,6 +37,10 @@ export const GITHUB_PUBLISH_CONFIG = {
   repo: "houston",
 } as const;
 export const DESKTOP_ARTIFACT_NAME = "Houston-${version}-${arch}.${ext}";
+// electron-updater replaces an installed AppImage in place only when its name
+// carries no version; a versioned name makes every update move the file and
+// break launchers that point at the old path.
+export const DESKTOP_LINUX_APPIMAGE_ARTIFACT_NAME = "Houston-${arch}.${ext}";
 export const DESKTOP_WINDOWS_ARTIFACT_NAME = "Houston-${version}-${arch}-setup.${ext}";
 // Setting `depends` replaces electron-builder's defaults, so Chromium's runtime
 // libraries are listed here too; libsecret backs the keychain-stored secrets.
@@ -430,6 +434,8 @@ export function createBuildConfig(input: {
       maintainer: DESKTOP_PUBLISHER,
       desktop: { entry: { StartupWMClass: DESKTOP_EXECUTABLE_NAME } },
     };
+    // The deb keeps the versioned top-level name; only the AppImage is stable in place.
+    buildConfig.appImage = { artifactName: DESKTOP_LINUX_APPIMAGE_ARTIFACT_NAME };
     buildConfig.deb = {
       depends: [...LINUX_DEB_DEPENDS],
       fpm: [
