@@ -3,9 +3,11 @@
 import { assert, describe, it } from "@effect/vitest";
 import { CommandId, MessageId } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
+import * as Queue from "effect/Queue";
 import { TestClock } from "effect/testing";
 
-import { latest, makeHarness, runWith } from "./messageDelivery.testkit.ts";
+import { ClaudeProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
+import { latest, makeHarness, runWith, type DoubleOptions } from "./messageDelivery.testkit.ts";
 
 describe("send intents at dispatch", () => {
   it.effect("each intent is recorded as accepted", () =>
@@ -430,5 +432,83 @@ describe("send intents at dispatch", () => {
         );
       }),
     ),
+  );
+
+  // regression: #747 a steer the provider took back unread was only marked dropped.
+  const droppedSteer = (
+    name: string,
+    options: DoubleOptions,
+    endedAs: "completed" | "interrupted",
+    check: (input: {
+      readonly harness: Effect.Success<ReturnType<typeof makeHarness>>;
+      readonly history: ReadonlyArray<NonNullable<ReturnType<typeof latest>>>;
+      readonly messageId: MessageId;
+    }) => void,
+  ) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness(name, options);
+        yield* runWith(harness, ({ send, startFirst, deliveries, settle, runningTurn, threadId }) =>
+          Effect.gen(function* () {
+            const runId = yield* startFirst;
+            const turn = yield* runningTurn;
+            const messageId = MessageId.make(`message:${name}`);
+            yield* send(messageId, "also report the slowest test", {
+              type: "steer_active",
+              targetRunId: runId,
+            });
+            yield* settle;
+            assert.lengthOf(harness.steered, 1);
+            yield* Queue.offer(harness.events, {
+              type: "message.delivery",
+              driver: harness.adapter.driver,
+              threadId,
+              providerThreadId: turn.providerThreadId,
+              providerTurnId: turn.id,
+              messageId,
+              state: "dropped",
+              evidence: null,
+              reason: "providerCancelled",
+            });
+            yield* settle;
+            yield* harness.endTurn(turn, endedAs);
+            yield* settle;
+            check({ harness, history: deliveries(messageId), messageId });
+          }),
+        );
+      }),
+    );
+  const claude = { driver: "claudeAgent", capabilities: ClaudeProviderCapabilitiesV2 } as const;
+
+  it.effect("a Claude steer dropped unread runs as the next turn", () =>
+    droppedSteer("claude-dropped-steer", claude, "completed", ({ harness, history, messageId }) => {
+      assert.isTrue(
+        history.some((delivery) => delivery.state === "dropped"),
+        JSON.stringify(history),
+      );
+      assert.lengthOf(harness.started, 2);
+      assert.equal(harness.started.at(-1)?.message.messageId, messageId);
+      assert.deepInclude(latest(history), {
+        intent: "steer",
+        route: "ownTurn",
+        rerouted: "turnEnded",
+        state: "adopted",
+        evidence: "turnStarted",
+      });
+    }),
+  );
+
+  it.effect("a Claude steer dropped by Stop is not sent again", () =>
+    droppedSteer("claude-stopped-steer", claude, "interrupted", ({ harness, history }) => {
+      assert.lengthOf(harness.started, 1);
+      assert.deepInclude(latest(history), { state: "dropped", reason: "providerCancelled" });
+    }),
+  );
+
+  it.effect("a steer another provider dropped stays dropped", () =>
+    droppedSteer("codex-dropped-steer", {}, "completed", ({ harness, history }) => {
+      assert.lengthOf(harness.started, 1);
+      assert.deepInclude(latest(history), { state: "dropped", reason: "providerCancelled" });
+    }),
   );
 });

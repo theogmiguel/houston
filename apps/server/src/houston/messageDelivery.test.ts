@@ -250,6 +250,32 @@ describe("message delivery transitions", () => {
     });
   });
 
+  it("reroutes a steer the provider took back, and no other drop", () => {
+    const takenBack = fold(deliveredSteer, [[report("dropped"), 2]]);
+    const rerouted = nextDelivery(takenBack, {
+      type: "rerouted",
+      reason: "turnEnded",
+      at: later(3),
+    });
+    expect(rerouted).toEqual({
+      intent: "steer",
+      route: "ownTurn",
+      rerouted: "turnEnded",
+      state: "accepted",
+      adoption: null,
+      evidence: null,
+      providerTurnId: null,
+      at: later(3),
+    });
+    const cancelled = nextDelivery(steer, { type: "cancelled", at: later(1) });
+    const failed = nextDelivery(steer, { type: "failed", message: "Refused.", at: later(1) });
+    for (const drop of [cancelled, failed]) {
+      expect(nextDelivery(drop, { type: "rerouted", reason: "turnEnded", at: later(3) })).toEqual(
+        drop,
+      );
+    }
+  });
+
   it("names the error of a failed effect", () => {
     expect(
       nextDelivery(steer, { type: "failed", message: "Codex rejected the steer.", at: later(1) }),

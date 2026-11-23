@@ -2585,7 +2585,7 @@ describe("ClaudeAdapterV2 attachments", () => {
             },
           });
 
-          assert.equal(offeredMessages[1]?.priority, "now");
+          assert.equal(offeredMessages[1]?.priority, "next");
           assert.deepEqual(offeredMessages[1]?.message.content, expectedContent);
           const documentPath = path.join(attachmentsDir, attachmentRelativePath(document)!);
           for (const scenario of [
@@ -5159,7 +5159,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           },
         });
         const attachmentNote = `\n\n[Attached file "requirements.pdf" is saved at: ${path.join(harness.attachmentsDir, attachmentRelativePath(attachment)!)}]`;
-        assert.equal(harness.offeredMessages[1]?.priority, "now");
+        assert.equal(harness.offeredMessages[1]?.priority, "next");
         assert.deepEqual(harness.offeredMessages[1]?.message.content, [
           { type: "text", text: `${leadingText}${attachmentNote}` },
           { type: "text", text: `/implement the fixes${attachmentNote}` },
@@ -7197,7 +7197,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
               attachments: [],
             },
           });
-          assert.equal(harness.offeredMessages[1]?.priority, "now");
+          assert.equal(harness.offeredMessages[1]?.priority, "next");
         }
         yield* harness.offerAndWait(
           makeResultFrame({
@@ -7276,6 +7276,163 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       ),
     ),
   );
+
+  // regression: #747 a steer cancelled the running tool calls, and a steer Claude had not read
+  // when its result arrived was lost with the turn.
+  describe("a steer Claude reads at its next safe point", () => {
+    const steerHarness = Effect.gen(function* () {
+      const harness = yield* makeWakeHarness;
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      const attemptId = RunAttemptId.make("attempt-steer-next");
+      const input = makeClaudeTestTurnInput({
+        threadId: harness.threadId,
+        providerThread: harness.providerThread,
+        now: yield* DateTime.now,
+        attemptId,
+        text: "Run the slow test suite.",
+        attachments: [],
+      });
+      yield* harness.runtime.startTurn(input);
+      const providerTurnId = idAllocator.derive.providerTurn({
+        driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
+        nativeTurnId: `turn:${attemptId}`,
+      });
+      const steer = (messageId: string) =>
+        harness.runtime.steerTurn({
+          threadId: harness.threadId,
+          runId: input.runId,
+          providerThread: harness.providerThread,
+          providerTurnId,
+          message: {
+            createdBy: "user",
+            creationSource: "web",
+            messageId: MessageId.make(messageId),
+            text: "Also report the slowest test.",
+            attachments: [],
+          },
+        });
+      const lifecycle = (index: number, state: string, uuid: string) =>
+        harness.offerAndWait(
+          claudeSdkFrame({
+            type: "command_lifecycle",
+            command_uuid: harness.promptUuid(index),
+            state,
+            uuid,
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+      const result = (index: number, uuid: string, text: string, inputTokens: number) =>
+        harness.offerAndWait(
+          claudeSdkFrame({
+            ...makeResultFrame({
+              uuid,
+              result: text,
+              usage: {
+                input_tokens: inputTokens,
+                output_tokens: 1,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+              },
+            }),
+            user_message_uuid: harness.promptUuid(index),
+          }),
+        );
+      const deliveries = () =>
+        harness.events.flatMap((event) =>
+          event.type === "message.delivery" ? [[event.messageId, event.state]] : [],
+        );
+      return { harness, steer, lifecycle, result, deliveries };
+    });
+    const layer = Layer.mergeAll(
+      IdAllocator.layer,
+      McpProviderSessions.layer,
+      NodeServices.layer,
+      NodeCrypto.layer,
+    );
+
+    it.effect("is offered with priority next, which leaves the running tool calls alone", () =>
+      Effect.gen(function* () {
+        const { harness, steer } = yield* steerHarness;
+        yield* steer("message-steer-priority");
+        // Claude Code cancels the tool calls in flight for a "now" input and reports the
+        // waiting ones as "The user doesn't want to take this action right now".
+        assert.equal(harness.offeredMessages[1]?.priority, "next");
+      }).pipe(Effect.scoped, Effect.provide(layer)),
+    );
+
+    it.effect("keeps the turn open until Claude starts a steer it had not read", () =>
+      Effect.gen(function* () {
+        const { harness, steer, lifecycle, result, deliveries } = yield* steerHarness;
+        yield* steer("message-steer-unread");
+        yield* lifecycle(0, "started", "00000000-0000-4000-8000-000000002401");
+        yield* result(0, "00000000-0000-4000-8000-000000002402", "Suite passed.", 10);
+        yield* lifecycle(1, "started", "00000000-0000-4000-8000-000000002403");
+        // Events arrive in order: a turn settled by the first result reports before the steer.
+        yield* harness.until(() => deliveries().length > 0);
+        assert.lengthOf(harness.terminalEvents(), 0, "the unread steer keeps the turn open");
+        assert.deepEqual(deliveries(), [["message-steer-unread", "adopted"]]);
+        yield* harness.offerAndWait(
+          makeAssistantTextFrame({
+            uuid: "00000000-0000-4000-8000-000000002404",
+            text: "The slowest test is the import suite.",
+          }),
+        );
+        yield* result(1, "00000000-0000-4000-8000-000000002405", "Reported.", 20);
+        yield* harness.awaitTerminal(1);
+        assert.lengthOf(harness.terminalEvents(), 1);
+        assert.equal(harness.terminalEvents()[0]?.status, "completed");
+        assert.isTrue(
+          harness.events.some(
+            (event) =>
+              event.type === "turn_item.updated" &&
+              event.turnItem.type === "assistant_message" &&
+              event.turnItem.text === "The slowest test is the import suite.",
+          ),
+        );
+        const completed = harness.events.findLast(
+          (event) => event.type === "provider_turn.updated",
+        );
+        assert.equal(
+          completed?.type === "provider_turn.updated"
+            ? completed.providerTurn.turnTokenUsage?.inputTokens
+            : undefined,
+          30,
+          "both native turns bill the one turn",
+        );
+      }).pipe(Effect.scoped, Effect.provide(layer)),
+    );
+
+    it.effect("settles the held turn and reports the steer dropped when Claude drops it", () =>
+      Effect.gen(function* () {
+        const { harness, steer, lifecycle, result, deliveries } = yield* steerHarness;
+        yield* steer("message-steer-dropped");
+        yield* lifecycle(0, "started", "00000000-0000-4000-8000-000000002411");
+        yield* result(0, "00000000-0000-4000-8000-000000002412", "Suite passed.", 10);
+        yield* lifecycle(1, "cancelled", "00000000-0000-4000-8000-000000002413");
+        yield* harness.awaitTerminal(1);
+        assert.equal(harness.terminalEvents()[0]?.status, "completed");
+        assert.deepEqual(deliveries(), [["message-steer-dropped", "dropped"]]);
+        // The drop is reported before the held result settles the turn.
+        assert.isBelow(
+          harness.events.findIndex((event) => event.type === "message.delivery"),
+          harness.events.findIndex((event) => event.type === "turn.terminal"),
+        );
+      }).pipe(Effect.scoped, Effect.provide(layer)),
+    );
+
+    it.effect("settles at once when Claude read the steer before its result", () =>
+      Effect.gen(function* () {
+        const { harness, steer, lifecycle, result, deliveries } = yield* steerHarness;
+        yield* steer("message-steer-read");
+        yield* lifecycle(0, "started", "00000000-0000-4000-8000-000000002421");
+        yield* lifecycle(1, "started", "00000000-0000-4000-8000-000000002422");
+        yield* result(0, "00000000-0000-4000-8000-000000002423", "Both done.", 10);
+        yield* harness.awaitTerminal(1);
+        assert.equal(harness.terminalEvents()[0]?.status, "completed");
+        assert.deepEqual(deliveries(), [["message-steer-read", "adopted"]]);
+      }).pipe(Effect.scoped, Effect.provide(layer)),
+    );
+  });
 
   it.effect("announces usage-limit pauses once per window and again on a new turn", () =>
     Effect.gen(function* () {

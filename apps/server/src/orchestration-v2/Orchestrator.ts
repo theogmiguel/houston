@@ -15090,6 +15090,69 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       : threadDispatch.withLock(parentThreadId, dispatch);
   });
 
+  // Houston: a steer Claude took back unread runs as the next turn, as a steer that arrives after
+  // its turn ended does. Only a completed run requeues: Stop and failures keep the drop visible.
+  const requeueDroppedSteers = Effect.fn("Orchestrator.requeueDroppedSteers")(function* (
+    threadId: ThreadId,
+    run: OrchestrationV2Run,
+  ) {
+    if (run.status !== "completed") return;
+    const { turnItems } = yield* projectionStore.getThreadRecords(threadId, ["turnItems"], {
+      turnItemTypes: ["user_message"],
+      turnItemRunIds: [run.id],
+    });
+    const dropped = turnItems.flatMap((item) =>
+      item.type === "user_message" &&
+      item.delivery?.route === "activeTurn" &&
+      item.delivery.state === "dropped" &&
+      item.delivery.reason === "providerCancelled"
+        ? [{ item, delivery: item.delivery }]
+        : [],
+    );
+    if (dropped.length === 0) return;
+    const { driver } = yield* providerAdapters.get(run.providerInstanceId);
+    if (driver !== "claudeAgent") return;
+    const { messages } = yield* projectionStore.getThreadRecords(threadId, ["messages"], {
+      messageIds: dropped.map(({ item }) => item.messageId),
+    });
+    for (const { item, delivery } of dropped) {
+      const message = messages.find((candidate) => candidate.id === item.messageId);
+      if (message === undefined || message.runId !== run.id) continue;
+      const now = yield* DateTime.now;
+      yield* writeSystemEvents([
+        {
+          type: "turn-item.updated",
+          threadId,
+          runId: run.id,
+          ...(item.nodeId === null ? {} : { nodeId: item.nodeId }),
+          providerInstanceId: run.providerInstanceId,
+          occurredAt: now,
+          payload: {
+            ...item,
+            delivery: nextDelivery(delivery, { type: "rerouted", reason: "turnEnded", at: now }),
+            updatedAt: now,
+          },
+        },
+      ]);
+      yield* dispatchWithReceiptEffect({
+        type: "message.dispatch",
+        commandId: CommandId.make(`command:dropped-steer:${run.id}:${message.id}`),
+        threadId,
+        messageId: message.id,
+        text: message.text,
+        ...(message.context ? { context: message.context } : {}),
+        attachments: message.attachments,
+        dispatchMode: { type: "start_immediately" },
+        createdBy: message.createdBy,
+        creationSource: message.creationSource,
+        ...(message.scheduledTaskId === undefined
+          ? {}
+          : { scheduledTaskId: message.scheduledTaskId }),
+        ...(message.senderThreadId === undefined ? {} : { senderThreadId: message.senderThreadId }),
+      });
+    }
+  });
+
   const handleRunUpdate = Effect.fn("Orchestrator.handleRunUpdate")(
     function* (stored: OrchestrationV2StoredEvent) {
       if (stored.event.type !== "run.updated") return;
@@ -15122,6 +15185,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               ? releaseUnattendedHolds(threadId, run.id)
               : Effect.void
             ).pipe(
+              Effect.andThen(
+                requeueDroppedSteers(threadId, run).pipe(
+                  Effect.catchCause((cause) =>
+                    Effect.logWarning("Failed to requeue a dropped steer", { threadId, cause }),
+                  ),
+                ),
+              ),
               Effect.andThen(
                 startNextQueuedRun(threadId, {
                   endedRunId: run.id,

@@ -103,6 +103,25 @@ const adopt = (
 // The next delivery, or `current` when the state diagram ignores `signal`. Only provider
 // evidence adopts: a report, or the message's own turn running.
 export function nextDelivery(current: MessageDelivery, signal: DeliverySignal): MessageDelivery {
+  // A steer the provider took back unread is sent again as a turn of its own.
+  if (
+    signal.type === "rerouted" &&
+    current.state === "dropped" &&
+    current.reason === "providerCancelled" &&
+    current.route === "activeTurn"
+  ) {
+    const { reason: _reason, message: _message, ...rest } = current;
+    return {
+      ...rest,
+      route: "ownTurn",
+      rerouted: signal.reason,
+      state: "accepted",
+      adoption: null,
+      evidence: null,
+      providerTurnId: null,
+      at: signal.at,
+    };
+  }
   if (current.state === "adopted" || current.state === "dropped") return current;
   const ownTurnRunning = signal.type === "turnRunning" && current.route === "ownTurn";
   if (current.state === "unconfirmed") {
