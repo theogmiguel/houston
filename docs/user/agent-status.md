@@ -25,9 +25,15 @@ running, a check for ready, a question mark for a question, a cross for failed, 
 for back.
 
 When a provider reports that it is retrying a request, the thread shows a **Provider retry**
-row. A turn that stays in retries for 10 minutes without recovering, not counting any wait the
-provider asked for before its next attempt, is stopped and fails with the retry's error.
-Retries on a usage limit are not counted; they follow the usage-limit settings below.
+row. A turn that stays in retries for 10 minutes without recovering is stopped and fails with
+the retry's error. A wait the provider asks for before its next attempt, or a usage-limit
+reset time it names, extends the limit by that wait; with Claude's usual backoff over its 10
+retries the turn ends after about 13 minutes. A usage-limit retry still fails as a usage limit,
+so the thread shows **Limited** and follows the usage-limit settings below.
+
+Claude, Codex, OpenCode, Pi and the Mistral Vibe ACP agent report retries this way. Muse Code
+shows its retries as notices, and Cursor, Grok, fx, Kiro, Antigravity and the other ACP
+registry agents do not report retries, so this limit does not apply to them.
 
 A child thread that is delegated work reports to its parent as well as appearing in its own
 tab. Its question or approval request shows in the parent's pending approvals; the parent

@@ -2586,7 +2586,7 @@ it.effect("ProviderSessionManagerV2 fails a turn whose provider retries outlast 
         }),
       });
       yield* TestClock.adjust("5 minutes");
-      // A later notice of the same retry does not move the deadline.
+      // A later attempt that states no delay does not move the deadline.
       yield* scenario.offer({
         type: "turn_item.updated",
         driver: CODEX_DRIVER,
@@ -2666,53 +2666,115 @@ it.effect("ProviderSessionManagerV2 fails a turn whose provider retries outlast 
   }),
 );
 
-it.effect("ProviderSessionManagerV2 waits out a stated retry delay before the budget counts", () =>
-  Effect.gen(function* () {
-    const state = yield* Ref.make(emptyState);
-    const interrupted = yield* Deferred.make<void>();
-    const effect = Effect.gen(function* () {
-      const scenario = yield* openRetryBudgetScenario(state, "retry-budget-stated-delay");
-      // A 429 with a 20 minute retry-after that the adapter did not classify as a usage limit.
-      yield* scenario.offer({
-        type: "turn_item.updated",
-        driver: CODEX_DRIVER,
-        turnItem: scenario.retryItem({
-          status: "running",
-          attempt: 1,
-          failure: transportRetryFailure,
-          updatedAt: scenario.now,
-          retryDelayMs: 20 * 60_000,
-        }),
-      });
-      yield* TestClock.adjust("29 minutes");
-      yield* TestClock.withLive(Effect.sleep("20 millis"));
-      assert.equal(yield* scenario.interruptCount, 0);
-      yield* TestClock.adjust("1 minute");
-      yield* TestClock.withLive(Deferred.await(interrupted).pipe(Effect.timeout("5 seconds")));
-      yield* scenario.endInterrupted(yield* DateTime.now);
-      const terminal = (yield* scenario.finish).find((event) => event.type === "turn.terminal");
-      assert.deepInclude(terminal?.type === "turn.terminal" ? terminal : {}, {
-        status: "failed",
-        failure: {
-          ...transportRetryFailure,
-          message:
-            "Connection failed: error sending request. The provider retried for 30 minutes without recovering, 20 minutes of it in waits it asked for; the retry limit is 10 minutes beyond those waits, so the turn was stopped.",
-          retryable: false,
-        },
-      });
-    });
+const usageLimitRetryFailure = (resetAt: string | null) =>
+  makeProviderFailure({
+    message: "exceeded retry limit, last status: 429 Too Many Requests",
+    code: "responseStreamDisconnected",
+    class: "usage_limit",
+    retryable: true,
+    resetAt,
+  });
 
-    yield* effect.pipe(
-      Effect.scoped,
-      Effect.provide(
-        layerTest({
+const withSentenceEnd = (message: string) => (message.endsWith(".") ? message : `${message}.`);
+
+// Each notice: minutes after the first one, its attempt and its stated delay in minutes.
+it.effect.each([
+  {
+    name: "a first attempt's stated delay",
+    notices: [{ atMinute: 0, attempt: 1, delayMinutes: 20 }],
+    resetInMinutes: null,
+    stopMinute: 30,
+    waited: "20 minutes",
+  },
+  {
+    name: "a later attempt's stated delay",
+    notices: [
+      { atMinute: 0, attempt: 1, delayMinutes: 5 },
+      { atMinute: 4, attempt: 2, delayMinutes: 5 },
+    ],
+    resetInMinutes: null,
+    stopMinute: 20,
+    waited: "10 minutes",
+  },
+  {
+    name: "one delay, not a repeated notice's copy of it",
+    notices: [
+      { atMinute: 0, attempt: 1, delayMinutes: 5 },
+      { atMinute: 2, attempt: 1, delayMinutes: 5 },
+    ],
+    resetInMinutes: null,
+    stopMinute: 15,
+    waited: "5 minutes",
+  },
+  {
+    name: "a usage-limit retry's reset time",
+    notices: [{ atMinute: 0, attempt: 1, delayMinutes: 0 }],
+    resetInMinutes: 30,
+    stopMinute: 40,
+    waited: "30 minutes",
+  },
+] as const)(
+  "ProviderSessionManagerV2 waits out $name before the retry budget counts",
+  ({ notices, resetInMinutes, stopMinute, waited }) =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const interrupted = yield* Deferred.make<void>();
+      const effect = Effect.gen(function* () {
+        const scenario = yield* openRetryBudgetScenario(
           state,
-          idleTimeoutMs: 2 * 60 * 60_000,
-          interruptTurn: Deferred.succeed(interrupted, undefined).pipe(Effect.asVoid),
-        }),
-      ),
-    );
-  }),
+          `retry-budget-wait-${stopMinute}-${notices.length}`,
+        );
+        const failure =
+          resetInMinutes === null
+            ? transportRetryFailure
+            : usageLimitRetryFailure(
+                DateTime.formatIso(DateTime.add(scenario.now, { minutes: resetInMinutes })),
+              );
+        let minute = 0;
+        for (const notice of notices) {
+          yield* TestClock.adjust(`${notice.atMinute - minute} minutes`);
+          minute = notice.atMinute;
+          yield* scenario.offer({
+            type: "turn_item.updated",
+            driver: CODEX_DRIVER,
+            turnItem: scenario.retryItem({
+              status: "running",
+              attempt: notice.attempt,
+              failure,
+              updatedAt: yield* DateTime.now,
+              retryDelayMs: notice.delayMinutes * 60_000,
+            }),
+          });
+        }
+        yield* TestClock.adjust(`${stopMinute - 1 - minute} minutes`);
+        yield* TestClock.withLive(Effect.sleep("20 millis"));
+        assert.equal(yield* scenario.interruptCount, 0);
+        yield* TestClock.adjust("1 minute");
+        yield* TestClock.withLive(Deferred.await(interrupted).pipe(Effect.timeout("5 seconds")));
+        assert.equal(yield* scenario.interruptCount, 1);
+        yield* scenario.endInterrupted(yield* DateTime.now);
+        const terminal = (yield* scenario.finish).find((event) => event.type === "turn.terminal");
+        assert.deepInclude(terminal?.type === "turn.terminal" ? terminal : {}, {
+          status: "failed",
+          failure: {
+            ...failure,
+            message: `${withSentenceEnd(failure.message)} The provider retried for ${stopMinute} minutes without recovering, ${waited} of it waiting as the provider asked; the retry limit is 10 minutes beyond that wait, so the turn was stopped.`,
+            retryable: false,
+          },
+        });
+      });
+
+      yield* effect.pipe(
+        Effect.scoped,
+        Effect.provide(
+          layerTest({
+            state,
+            idleTimeoutMs: 2 * 60 * 60_000,
+            interruptTurn: Deferred.succeed(interrupted, undefined).pipe(Effect.asVoid),
+          }),
+        ),
+      );
+    }),
 );
 
 it.effect.each(["recovers", "starts a tool call", "asks for approval"] as const)(
@@ -2776,38 +2838,55 @@ it.effect.each(["recovers", "starts a tool call", "asks for approval"] as const)
     }),
 );
 
-it.effect("ProviderSessionManagerV2 leaves a usage-limit retry to its reset", () =>
-  Effect.gen(function* () {
-    const state = yield* Ref.make(emptyState);
-    const effect = Effect.gen(function* () {
-      const scenario = yield* openRetryBudgetScenario(state, "retry-budget-usage-limit");
-      yield* scenario.offer({
-        type: "turn_item.updated",
-        driver: CODEX_DRIVER,
-        turnItem: scenario.retryItem({
-          status: "running",
-          attempt: 1,
-          failure: makeProviderFailure({
-            message: "Claude API rate limit.",
-            code: "api_error_429",
-            class: "usage_limit",
-            retryable: true,
+// The stall that otherwise hangs: a 429 retry notice with no reset time or delay, then silence.
+it.effect(
+  "ProviderSessionManagerV2 fails a usage-limit retry with no reset at the budget as limited",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const interrupted = yield* Deferred.make<void>();
+      const effect = Effect.gen(function* () {
+        const scenario = yield* openRetryBudgetScenario(state, "retry-budget-usage-limit");
+        const failure = usageLimitRetryFailure(null);
+        yield* scenario.offer({
+          type: "turn_item.updated",
+          driver: CODEX_DRIVER,
+          turnItem: scenario.retryItem({
+            status: "running",
+            attempt: 1,
+            failure,
+            updatedAt: scenario.now,
           }),
-          updatedAt: scenario.now,
-        }),
+        });
+        yield* TestClock.adjust("9 minutes");
+        yield* TestClock.withLive(Effect.sleep("20 millis"));
+        assert.equal(yield* scenario.interruptCount, 0);
+        yield* TestClock.adjust("1 minute");
+        yield* TestClock.withLive(Deferred.await(interrupted).pipe(Effect.timeout("5 seconds")));
+        yield* scenario.endInterrupted(yield* DateTime.now);
+        const terminal = (yield* scenario.finish).find((event) => event.type === "turn.terminal");
+        assert.deepInclude(terminal?.type === "turn.terminal" ? terminal : {}, {
+          status: "failed",
+          failure: {
+            ...failure,
+            message:
+              "exceeded retry limit, last status: 429 Too Many Requests. The provider retried for 10 minutes without recovering; the retry limit is 10 minutes, so the turn was stopped.",
+            retryable: false,
+          },
+        });
       });
-      yield* TestClock.adjust("1 hour");
-      yield* TestClock.withLive(Effect.sleep("20 millis"));
-      assert.equal(yield* scenario.interruptCount, 0);
-      yield* scenario.endInterrupted(yield* DateTime.now);
-      yield* scenario.finish;
-    });
 
-    yield* effect.pipe(
-      Effect.scoped,
-      Effect.provide(layerTest({ state, idleTimeoutMs: 2 * 60 * 60_000 })),
-    );
-  }),
+      yield* effect.pipe(
+        Effect.scoped,
+        Effect.provide(
+          layerTest({
+            state,
+            idleTimeoutMs: 60 * 60_000,
+            interruptTurn: Deferred.succeed(interrupted, undefined).pipe(Effect.asVoid),
+          }),
+        ),
+      );
+    }),
 );
 
 it.effect(
