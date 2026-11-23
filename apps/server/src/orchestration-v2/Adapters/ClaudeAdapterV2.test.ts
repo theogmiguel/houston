@@ -741,6 +741,8 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
     assert.include(systemPrompt.append ?? "", "Use `delegate_task`");
     assert.include(systemPrompt.append ?? "", "call `houston_background_wait`");
     assert.notInclude(systemPrompt.append ?? "", "## Houston devices");
+    assert.include(systemPrompt.append ?? "", "with no command likely to run over a few minutes");
+    assert.include(systemPrompt.append ?? "", "give it that child's last summary");
     const logged = ClaudeAdapterV2.loggedClaudeQueryOptions(options);
     assert.equal(logged.hasMcpServers, true);
     assert.notInclude(JSON.stringify(logged), "secret-claude-token");
