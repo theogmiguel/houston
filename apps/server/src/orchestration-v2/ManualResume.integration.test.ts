@@ -256,6 +256,12 @@ it.effect("Resume after a Stop the provider never saw resends the original messa
         const delivered = started[0]!.message;
         assert.include(delivered.text, "User message:\nFix the checkout page after [Terminal: log");
         assert.include(delivered.text, "error: checkout failed");
+        // The history copy is existing behaviour; a later change is expected to remove it.
+        const [history, request, ...rest] = delivered.text.split("\nUser message:\n");
+        assert.lengthOf(rest, 0);
+        assert.include(history, "[Historical user; user_message;");
+        assert.lengthOf(history!.split("Fix the checkout page").slice(1), 1);
+        assert.lengthOf(request!.split("Fix the checkout page").slice(1), 1);
         assert.notInclude(delivered.text, CONTINUE);
         assert.deepEqual(delivered.attachments, [screenshot]);
 
