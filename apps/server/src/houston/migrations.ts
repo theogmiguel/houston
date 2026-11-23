@@ -14,6 +14,7 @@ import {
   createTimelineReadIndexes,
   createTurnStartReadModels,
 } from "./projectionReadModels.ts";
+import { createNativeSessionHistory } from "./nativeSessionHistory.ts";
 
 // Upstream's migrator skips every id up to the highest it recorded, so Houston's schema keeps its
 // own history table and ids; upstream's table and ids stay untouched.
@@ -1407,6 +1408,7 @@ const houstonMigrationEntries = [
   [26, "IssueTrackerBindingProperties", IssueTrackerBindingProperties],
   [27, "NotionPagesAsTaskIssues", NotionPagesAsTaskIssues],
   [28, "PendingDeviceApprovals", PendingDeviceApprovals],
+  [29, "ProviderNativeSessions", createNativeSessionHistory],
 ] as const;
 
 /** Every Houston migration id this build knows, for callers that must not run beside an older schema. */
