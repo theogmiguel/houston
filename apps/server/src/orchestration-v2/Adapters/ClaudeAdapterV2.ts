@@ -10426,6 +10426,16 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           }
           const context = yield* Ref.get(activeTurn);
           const liveQuery = yield* Ref.get(queryContext);
+          // The API answering again is recovery; a long tool input block emits nothing else.
+          // Judged at intake, so held or buffered frames cannot settle a newer retry.
+          if (
+            context !== null &&
+            liveQuery?.query === input.query &&
+            message.type === "stream_event" &&
+            message.event.type === "message_start"
+          ) {
+            yield* completeProviderRetry(context, yield* DateTime.now);
+          }
           if (
             context?.promptUuid === null &&
             liveQuery?.query === input.query &&

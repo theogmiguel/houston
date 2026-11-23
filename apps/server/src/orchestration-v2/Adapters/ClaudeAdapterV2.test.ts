@@ -10890,6 +10890,71 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
+  // A long tool input streams with no other frame, so the reply starting is the recovery.
+  it.effect("settles an API retry once the reply starts streaming", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarness;
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("attempt-claude-api-retry-stream"),
+            text: "Write the report.",
+            attachments: [],
+          }),
+        );
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            type: "system",
+            subtype: "api_retry",
+            attempt: 1,
+            max_retries: 10,
+            retry_delay_ms: 600,
+            error_status: 503,
+            error: "server_error",
+            uuid: "00000000-0000-4000-8000-000000000211",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+        const retryItems = () =>
+          harness.events.flatMap((event) =>
+            event.type === "turn_item.updated" &&
+            event.turnItem.type === "error" &&
+            event.turnItem.retry !== undefined
+              ? [event.turnItem]
+              : [],
+          );
+        yield* harness.until(() => retryItems().length === 1);
+        yield* Queue.offer(
+          harness.sdkMessages,
+          claudeSdkFrame({
+            type: "stream_event",
+            event: { type: "message_start", message: { id: "api-retry-stream-message" } },
+            parent_tool_use_id: null,
+            session_id: WAKE_NATIVE_SESSION,
+            uuid: "00000000-0000-4000-8000-000000000212",
+          }),
+        );
+        yield* harness.until(() => retryItems().length === 2);
+        assert.equal(retryItems()[1]?.status, "completed");
+        assert.equal(retryItems()[1]?.title, "Provider recovered");
+        assert.lengthOf(harness.terminalEvents(), 0);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+    ),
+  );
+
   it.effect.each(["api_error", "overloaded_status"] as const)(
     "fails a success-shaped Claude result with %s",
     (terminalReason) =>
