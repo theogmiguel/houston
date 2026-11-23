@@ -1,9 +1,13 @@
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 
+import { DESKTOP_UPDATE_RESTART_MARKER_FILE } from "@houston-app/contracts";
 import * as NetService from "@houston-app/shared/Net";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as ElectronApp from "../electron/ElectronApp.ts";
@@ -44,6 +48,52 @@ import * as HostProcess from "@houston-app/shared/HostProcess";
 const DEFAULT_DESKTOP_BACKEND_PORT = 3773;
 const MAX_TCP_PORT = 65_535;
 const DESKTOP_BACKEND_PORT_PROBE_HOSTS = ["127.0.0.1", "0.0.0.0", "::"] as const;
+
+// Electron releases its single-instance object when a request fails, so the next
+// call is a fresh attempt. An update relaunch races the old process, which still
+// holds the lock while it exits.
+const UPDATE_RELAUNCH_LOCK_RETRY_WINDOW = Duration.seconds(15);
+const UPDATE_RELAUNCH_LOCK_RETRY_DELAY = Duration.millis(250);
+
+export const isUpdateRelaunchLaunch = (input: {
+  readonly appImageSilentInstall: string | undefined;
+  readonly restartMarkerExists: boolean;
+}): boolean => input.appImageSilentInstall === "true" || input.restartMarkerExists;
+
+const detectUpdateRelaunch = Effect.gen(function* () {
+  const environment = yield* DesktopEnvironment.DesktopEnvironment;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const env = yield* HostProcess.Environment;
+  const restartMarkerExists = yield* fileSystem
+    .exists(
+      environment.path.join(environment.baseDir, "runtime", DESKTOP_UPDATE_RESTART_MARKER_FILE),
+    )
+    .pipe(Effect.orElseSucceed(() => false));
+  return isUpdateRelaunchLaunch({
+    appImageSilentInstall: env.APPIMAGE_SILENT_INSTALL,
+    restartMarkerExists,
+  });
+});
+
+export const acquireDesktopSingleInstanceLock = Effect.fn("desktop.app.acquireSingleInstanceLock")(
+  function* (input: {
+    readonly updateRelaunch: boolean;
+    readonly requestLock: Effect.Effect<boolean>;
+    readonly retryWindow?: Duration.Input;
+  }): Effect.fn.Return<boolean> {
+    if (yield* input.requestLock) return true;
+    if (!input.updateRelaunch) return false;
+    const retryWindow = Duration.toNanosUnsafe(
+      input.retryWindow ?? UPDATE_RELAUNCH_LOCK_RETRY_WINDOW,
+    );
+    const startedAt = yield* Clock.monotonicTimeNanos;
+    while ((yield* Clock.monotonicTimeNanos) - startedAt < retryWindow) {
+      yield* Effect.sleep(UPDATE_RELAUNCH_LOCK_RETRY_DELAY);
+      if (yield* input.requestLock) return true;
+    }
+    return false;
+  },
+);
 
 const makeDesktopRunId = SecureRandom.SecureRandom.pipe(
   Effect.flatMap((random) => random.uuidV4()),
@@ -304,7 +354,12 @@ const startup = Effect.gen(function* () {
   yield* electronApp.setName(environment.appName);
   yield* electronApp.setPath("userData", userDataPath);
   // A second launch must focus the running window instead of opening another profile.
-  if (!(yield* electronApp.requestSingleInstanceLock)) {
+  const updateRelaunch = yield* detectUpdateRelaunch;
+  const hasSingleInstanceLock = yield* acquireDesktopSingleInstanceLock({
+    updateRelaunch,
+    requestLock: electronApp.requestSingleInstanceLock,
+  });
+  if (!hasSingleInstanceLock) {
     yield* electronApp.quit;
     return yield* Effect.interrupt;
   }
