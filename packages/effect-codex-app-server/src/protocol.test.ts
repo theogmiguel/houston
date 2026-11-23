@@ -904,16 +904,29 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
     );
 
     const defectSentinel = "codex-handler-defect-sentinel";
-    const makeDefect = () => Object.assign(new Error(defectSentinel), { name: defectSentinel });
+    // The sentinel sits everywhere a crash's own text can: message (including a line shaped
+    // like a stack frame), `name`, cause and a custom property.
+    const makeDefect = () =>
+      Object.assign(
+        new Error(`${defectSentinel}\n    at ${defectSentinel} (sentinel.ts:1:1)`, {
+          cause: new Error(defectSentinel),
+        }),
+        { name: defectSentinel, detail: defectSentinel },
+      );
 
-    const captureErrorLogs = (logged: Array<string>) =>
+    interface LoggedError {
+      readonly message: string;
+      readonly annotations: Record<string, unknown>;
+    }
+
+    const captureErrorLogs = (logged: Array<LoggedError>) =>
       Logger.layer([
         Logger.make(({ logLevel, message, fiber }) => {
           if (logLevel === "Error") {
-            logged.push(
-              String([message].flat()),
-              JSON.stringify(fiber.getRef(References.CurrentLogAnnotations)),
-            );
+            logged.push({
+              message: String([message].flat()),
+              annotations: { ...fiber.getRef(References.CurrentLogAnnotations) },
+            });
           }
         }),
       ]);
@@ -940,7 +953,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
       ({ outcome, method, loggedMethod }) =>
         Effect.gen(function* () {
           const { stdio, input, output } = yield* makeInMemoryStdio();
-          const logged: Array<string> = [];
+          const logged: Array<LoggedError> = [];
           let terminations = 0;
           yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
             stdio,
@@ -968,14 +981,15 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
             result: { answered: true },
           });
           assert.equal(terminations, 0);
-          assert.lengthOf(logged, 2);
-          assert.notInclude(logged.join(), defectSentinel);
-          assert.include(logged.join(), loggedMethod);
+          assert.lengthOf(logged, 1);
+          assert.notInclude(JSON.stringify(logged), defectSentinel);
+          assert.equal(logged[0]!.annotations.method, loggedMethod);
         }),
     );
 
     it.effect("retires the transport once when a notification handler dies", () =>
       Effect.gen(function* () {
+        const logged: Array<LoggedError> = [];
         const { stdio, input, output } = yield* makeInMemoryStdio();
         const terminations: Array<CodexError.CodexAppServerError> = [];
         const terminated = yield* Deferred.make<void>();
@@ -987,7 +1001,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
               Effect.andThen(Deferred.succeed(terminated, undefined)),
               Effect.asVoid,
             ),
-        });
+        }).pipe(Effect.provide(captureErrorLogs(logged)));
         const pending = yield* transport.request("thread/read", {}).pipe(Effect.forkScoped);
         yield* Queue.take(output);
 
@@ -1000,6 +1014,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         assert.equal(failure.operation, "read-input-stream");
         assert.include(String(failure.cause), "'turn/started'");
         assert.notInclude(String(failure.cause), defectSentinel);
+        assert.lengthOf(logged, 1);
+        assert.notInclude(JSON.stringify(logged), defectSentinel);
         assert.deepEqual(terminations, [failure]);
         assert.strictEqual(
           yield* expectTransportFailure(transport.request("thread/read", {})),
@@ -1010,13 +1026,14 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
 
     it.effect("names an unknown notification method without copying it into the failure", () =>
       Effect.gen(function* () {
+        const logged: Array<LoggedError> = [];
         const { stdio, input } = yield* makeInMemoryStdio();
         const terminated = yield* Deferred.make<CodexError.CodexAppServerError>();
         yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
           stdio,
           onNotification: () => Effect.die(makeDefect()),
           onTermination: (error) => Deferred.succeed(terminated, error).pipe(Effect.asVoid),
-        });
+        }).pipe(Effect.provide(captureErrorLogs(logged)));
 
         yield* Queue.offer(input, encodeJsonl({ method: defectSentinel, params: {} }));
 
@@ -1024,11 +1041,14 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         assert.instanceOf(failure, CodexError.CodexAppServerTransportError);
         assert.include(String(failure.cause), "'unknown'");
         assert.notInclude(String(failure.cause), defectSentinel);
+        assert.lengthOf(logged, 1);
+        assert.notInclude(JSON.stringify(logged), defectSentinel);
       }),
     );
 
     it.effect("retires the transport when the reader dies", () =>
       Effect.gen(function* () {
+        const logged: Array<LoggedError> = [];
         const { stdio: baseStdio, output } = yield* makeInMemoryStdio();
         const terminated = yield* Deferred.make<CodexError.CodexAppServerError>();
         const readerStarted = yield* Deferred.make<void>();
@@ -1040,7 +1060,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
             ),
           }),
           onTermination: (error) => Deferred.succeed(terminated, error).pipe(Effect.asVoid),
-        });
+        }).pipe(Effect.provide(captureErrorLogs(logged)));
         const pending = yield* transport.request("thread/read", {}).pipe(Effect.forkScoped);
         yield* Queue.take(output);
         yield* Deferred.succeed(readerStarted, undefined);
@@ -1049,12 +1069,15 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         assert.instanceOf(failure, CodexError.CodexAppServerTransportError);
         assert.equal(failure.operation, "read-input-stream");
         assert.notInclude(String(failure.cause), defectSentinel);
+        assert.lengthOf(logged, 1);
+        assert.notInclude(JSON.stringify(logged), defectSentinel);
         assert.strictEqual(yield* Deferred.await(terminated), failure);
       }),
     );
 
     it.effect("retires the transport when the writer dies", () =>
       Effect.gen(function* () {
+        const logged: Array<LoggedError> = [];
         const { stdio: baseStdio } = yield* makeInMemoryStdio();
         const terminated = yield* Deferred.make<CodexError.CodexAppServerError>();
         const transport = yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
@@ -1063,25 +1086,28 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
             stdout: () => Sink.forEach(() => Effect.die(makeDefect())),
           }),
           onTermination: (error) => Deferred.succeed(terminated, error).pipe(Effect.asVoid),
-        });
+        }).pipe(Effect.provide(captureErrorLogs(logged)));
 
         const failure = yield* expectTransportFailure(transport.request("thread/read", {}));
         assert.instanceOf(failure, CodexError.CodexAppServerTransportError);
         assert.equal(failure.operation, "write-output-stream");
         assert.notInclude(String(failure.cause), defectSentinel);
+        assert.lengthOf(logged, 1);
+        assert.notInclude(JSON.stringify(logged), defectSentinel);
         assert.strictEqual(yield* Deferred.await(terminated), failure);
       }),
     );
 
     it.effect("fails pending requests when the exit status lookup dies", () =>
       Effect.gen(function* () {
+        const logged: Array<LoggedError> = [];
         const { stdio, input, output } = yield* makeInMemoryStdio();
         const terminated = yield* Deferred.make<CodexError.CodexAppServerError>();
         const transport = yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
           stdio,
           terminationError: Effect.die(makeDefect()),
           onTermination: (error) => Deferred.succeed(terminated, error).pipe(Effect.asVoid),
-        });
+        }).pipe(Effect.provide(captureErrorLogs(logged)));
         const pending = yield* transport.request("thread/read", {}).pipe(Effect.forkScoped);
         yield* Queue.take(output);
 
@@ -1091,7 +1117,73 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         assert.instanceOf(failure, CodexError.CodexAppServerTransportError);
         assert.equal(failure.operation, "read-process-exit-status");
         assert.notInclude(String(failure.cause), defectSentinel);
+        assert.lengthOf(logged, 1);
+        assert.notInclude(JSON.stringify(logged), defectSentinel);
         assert.strictEqual(yield* Deferred.await(terminated), failure);
+      }),
+    );
+
+    it.effect.each([
+      { label: "an Error", makeCrash: makeDefect, kind: "Error" },
+      {
+        label: "a tagged error",
+        makeCrash: () => CodexError.CodexAppServerRequestError.internalError(defectSentinel),
+        kind: "CodexAppServerRequestError",
+      },
+    ] as const)(
+      "logs the kind and stack frames of $label, not its message",
+      ({ makeCrash, kind }) =>
+        Effect.gen(function* () {
+          const { stdio, input, output } = yield* makeInMemoryStdio();
+          const logged: Array<LoggedError> = [];
+          yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
+            stdio,
+            onRequest: () => Effect.die(makeCrash()),
+          }).pipe(Effect.provide(captureErrorLogs(logged)));
+
+          yield* Queue.offer(input, encodeJsonl({ id: 1, method: "item/tool/requestUserInput" }));
+          yield* Queue.take(output);
+
+          assert.lengthOf(logged, 1);
+          const { crashKind, crashFrames } = logged[0]!.annotations;
+          assert.equal(crashKind, kind);
+          assert.isArray(crashFrames);
+          const frames = crashFrames as ReadonlyArray<string>;
+          assert.isNotEmpty(frames);
+          assert.isAtMost(frames.length, 16);
+          for (const frame of frames) {
+            assert.match(frame, /^at /);
+            assert.isAtMost(frame.length, 256);
+          }
+          assert.isTrue(frames.some((frame) => frame.includes("protocol.test.ts")));
+          assert.notInclude(JSON.stringify(logged), defectSentinel);
+        }),
+    );
+
+    it.effect.each([
+      { label: "a string", crash: defectSentinel, kind: "string" },
+      { label: "a plain object", crash: { secret: defectSentinel }, kind: "Object" },
+      { label: "undefined", crash: undefined, kind: "undefined" },
+      { label: "null", crash: null, kind: "null" },
+    ] as const)("logs only a safe kind when the crash is $label", ({ crash, kind }) =>
+      Effect.gen(function* () {
+        const { stdio, input, output } = yield* makeInMemoryStdio();
+        const logged: Array<LoggedError> = [];
+        yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
+          stdio,
+          onRequest: () => Effect.die(crash),
+        }).pipe(Effect.provide(captureErrorLogs(logged)));
+
+        yield* Queue.offer(input, encodeJsonl({ id: 1, method: "item/tool/requestUserInput" }));
+        assert.deepEqual(yield* decodeJson(yield* Queue.take(output)), {
+          id: 1,
+          error: { code: -32603, message: "Internal error" },
+        });
+
+        assert.lengthOf(logged, 1);
+        assert.equal(logged[0]!.annotations.crashKind, kind);
+        assert.deepEqual(logged[0]!.annotations.crashFrames, []);
+        assert.notInclude(JSON.stringify(logged), defectSentinel);
       }),
     );
 
