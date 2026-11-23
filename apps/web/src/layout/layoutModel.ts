@@ -205,9 +205,29 @@ export function createLayoutTab(content: LayoutTabContent): LayoutTab {
   return { id: createLayoutId("tab"), content };
 }
 
-/** The default layout: one empty workspace, which the first opened tab fills. */
+/** A workspace with a launcher as its one tab, focused; the shape every blank workspace takes. */
+function withBlankTab(workspace: LayoutWorkspace): LayoutWorkspace {
+  const pane = createPane(createLayoutTab(createLayoutLauncherContent(null)));
+  return { ...workspace, columns: [createColumn(pane)], focusedPaneId: pane.id };
+}
+
+/**
+ * A workspace holding nothing but one launcher tab (or, before it is normalized, nothing): the
+ * spare at the bottom, or one whose tabs closed. Whatever opens in it takes the launcher's place.
+ */
+export function isBlankLayoutWorkspace(workspace: LayoutWorkspace): boolean {
+  const tabs = workspace.columns.flatMap((column) => column.panes).flatMap((pane) => pane.tabs);
+  return tabs.length === 0 || (tabs.length === 1 && tabs[0]!.content.kind === "launcher");
+}
+
+/** Real content opening in a blank workspace replaces its launcher instead of joining it. */
+function givesWayTo(workspace: LayoutWorkspace, tab: LayoutTab): boolean {
+  return tab.content.kind !== "launcher" && isBlankLayoutWorkspace(workspace);
+}
+
+/** The default layout: one blank workspace, which the first opened tab fills. */
 export function createLayoutState(): LayoutState {
-  const workspace = createWorkspace();
+  const workspace = withBlankTab(createWorkspace());
   return { workspaces: [workspace], focusedWorkspaceId: workspace.id };
 }
 
@@ -395,10 +415,11 @@ export function findLayoutPane(
   return findPane(state, paneId);
 }
 
-/** How many tabs the layout holds across every workspace. */
+/** How many tabs the layout holds across every workspace, blank ones aside. */
 export function countLayoutTabs(state: LayoutState): number {
   let count = 0;
   for (const workspace of state.workspaces) {
+    if (isBlankLayoutWorkspace(workspace)) continue;
     for (const column of workspace.columns) {
       for (const pane of column.panes) count += pane.tabs.length;
     }
@@ -590,7 +611,7 @@ export function normalizeLayout(state: LayoutState): LayoutState {
 
   workspaces = workspaces.filter(
     (workspace, index) =>
-      workspace.columns.length > 0 ||
+      !isBlankLayoutWorkspace(workspace) ||
       workspace.id === state.focusedWorkspaceId ||
       index === workspaces.length - 1 ||
       workspace.keepWhenEmpty === true ||
@@ -599,8 +620,8 @@ export function normalizeLayout(state: LayoutState): LayoutState {
   // Drop an empty, unfocused workspace that sits right above the trailing one.
   while (
     workspaces.length > 1 &&
-    workspaces.at(-1)!.columns.length === 0 &&
-    workspaces.at(-2)!.columns.length === 0 &&
+    isBlankLayoutWorkspace(workspaces.at(-1)!) &&
+    isBlankLayoutWorkspace(workspaces.at(-2)!) &&
     workspaces.at(-2)!.id !== state.focusedWorkspaceId &&
     workspaces.at(-2)!.keepWhenEmpty !== true &&
     !retainsEmptyWorkspace(workspaces.at(-2)!.id)
@@ -611,15 +632,20 @@ export function normalizeLayout(state: LayoutState): LayoutState {
   // closing everything leaves one empty workspace, not two.
   if (
     workspaces.length > 1 &&
-    workspaces.at(-1)!.columns.length === 0 &&
-    workspaces.at(-2)!.columns.length === 0 &&
+    isBlankLayoutWorkspace(workspaces.at(-1)!) &&
+    isBlankLayoutWorkspace(workspaces.at(-2)!) &&
     workspaces.at(-2)!.id === state.focusedWorkspaceId
   ) {
     workspaces.splice(workspaces.length - 1, 1);
   }
-  if (workspaces.length === 0 || workspaces.at(-1)!.columns.length > 0) {
+  if (workspaces.length === 0 || !isBlankLayoutWorkspace(workspaces.at(-1)!)) {
     workspaces.push(createWorkspace());
   }
+  workspaces = workspaces.map((workspace) =>
+    workspace.columns.length === 0
+      ? withBlankTab(workspace)
+      : dropLauncherThreadsOutOfView(workspace),
+  );
   const focusedWorkspaceId = workspaces.some(
     (workspace) => workspace.id === state.focusedWorkspaceId,
   )
@@ -631,6 +657,44 @@ export function normalizeLayout(state: LayoutState): LayoutState {
     workspaces.length === state.workspaces.length &&
     workspaces.every((workspace, index) => workspace === state.workspaces[index]);
   return unchanged ? state : { workspaces, focusedWorkspaceId };
+}
+
+/** A launcher offers surfaces of a thread only while a tab of its workspace shows that thread. */
+function dropLauncherThreadsOutOfView(workspace: LayoutWorkspace): LayoutWorkspace {
+  const tabs = workspace.columns.flatMap((column) => column.panes).flatMap((pane) => pane.tabs);
+  const inView = new Set(
+    tabs.flatMap((tab) =>
+      tab.content.kind === "chat"
+        ? [layoutTabContentKey(tab.content)]
+        : tab.content.kind === "surface"
+          ? [
+              layoutTabContentKey({
+                kind: "chat",
+                target: { kind: "server", threadRef: tab.content.threadRef },
+              }),
+            ]
+          : [],
+    ),
+  );
+  const outOfView = (tab: LayoutTab) =>
+    tab.content.kind === "launcher" &&
+    tab.content.context !== null &&
+    !inView.has(layoutTabContentKey({ kind: "chat", target: tab.content.context }));
+  if (!tabs.some(outOfView)) return workspace;
+  return {
+    ...workspace,
+    columns: workspace.columns.map((column) => ({
+      ...column,
+      panes: column.panes.map((pane) => ({
+        ...pane,
+        tabs: pane.tabs.map((tab) =>
+          outOfView(tab) && tab.content.kind === "launcher"
+            ? { ...tab, content: { ...tab.content, context: null } }
+            : tab,
+        ),
+      })),
+    })),
+  };
 }
 
 /**
@@ -942,7 +1006,7 @@ export function focusLayoutWorkspaceStep(state: LayoutState, delta: 1 | -1): Lay
   const index = state.workspaces.indexOf(workspace);
   const next = state.workspaces[index + delta];
   if (next) return focusLayoutWorkspace(state, next.id);
-  if (delta === 1 || workspace.columns.length === 0) return state;
+  if (delta === 1 || isBlankLayoutWorkspace(workspace)) return state;
   const empty = createWorkspace();
   return normalizeLayout({
     workspaces: [empty, ...state.workspaces],
@@ -965,7 +1029,7 @@ export function moveLayoutTabToWorkspace(state: LayoutState, delta: 1 | -1): Lay
   const tabsInWorkspace = chat.workspace.columns
     .flatMap((column) => column.panes)
     .flatMap((pane) => pane.tabs).length;
-  if (tabsInWorkspace === 1 && target.columns.length === 0) return state;
+  if (tabsInWorkspace === 1 && isBlankLayoutWorkspace(target)) return state;
   return moveLayoutTab(state, chat.tab.id, {
     kind: "column",
     workspaceId: target.id,
@@ -1109,7 +1173,7 @@ export function moveLayoutWorkspace(state: LayoutState, delta: 1 | -1): LayoutSt
   const index = state.workspaces.indexOf(workspace);
   const otherIndex = index + delta;
   const other = state.workspaces[otherIndex];
-  if (!other || workspace.columns.length === 0 || other.columns.length === 0) return state;
+  if (!other || isBlankLayoutWorkspace(workspace) || isBlankLayoutWorkspace(other)) return state;
   const workspaces = [...state.workspaces];
   workspaces[index] = other;
   workspaces[otherIndex] = workspace;
@@ -1125,8 +1189,11 @@ function insertTabIntoPane(
   index: number | "after-current" | "end",
   focus = true,
 ): LayoutState {
+  const fills = findPane(state, paneId)?.workspace;
+  const fillsBlank = fills !== undefined && givesWayTo(fills, tab);
   const inserted = mapPanes(state, (pane) => {
     if (pane.id !== paneId) return pane;
+    if (fillsBlank) return { ...pane, tabs: [tab], activeTabId: tab.id };
     const tabs = [...pane.tabs];
     const at =
       index === "end"
@@ -1137,7 +1204,9 @@ function insertTabIntoPane(
     tabs.splice(at, 0, tab);
     return { ...pane, tabs, activeTabId: tab.id };
   });
-  return focus ? focusLayoutPane(inserted, paneId) : inserted;
+  const placed = focus ? focusLayoutPane(inserted, paneId) : inserted;
+  // A filled blank workspace is no longer the spare, so the layout needs a new one at the bottom.
+  return fillsBlank ? normalizeLayout(placed) : placed;
 }
 
 function insertColumn(
@@ -1149,6 +1218,9 @@ function insertColumn(
 ): LayoutState {
   const inserted = mapWorkspaces(state, (workspace) => {
     if (workspace.id !== workspaceId) return workspace;
+    if (column.panes.some((pane) => pane.tabs.some((tab) => givesWayTo(workspace, tab)))) {
+      return { ...workspace, columns: [column] };
+    }
     const columns = [...workspace.columns];
     columns.splice(Math.max(0, Math.min(index, columns.length)), 0, column);
     return { ...workspace, columns };
@@ -1198,6 +1270,7 @@ function splitPaneWithTab(
 ): LayoutState {
   const found = findPane(state, paneId);
   if (!found) return state;
+  if (givesWayTo(found.workspace, tab)) return insertTabIntoPane(state, paneId, tab, "end", focus);
   if (side === "left" || side === "right") {
     const columnIndex = found.workspace.columns.indexOf(found.column);
     // Commands keep a chat beside its side panes; explicit drops use the previewed position.
@@ -1288,13 +1361,41 @@ export function replaceLayoutTabContent(
   content: LayoutTabContent,
   ghostOf?: ScopedThreadRef | null,
 ): LayoutState {
-  if (!findLayoutTab(state, (tab) => tab.id === tabId)) return state;
+  const replacing = findLayoutTab(state, (tab) => tab.id === tabId);
+  if (!replacing) return state;
   const key = layoutTabContentKey(content);
+  const promotedFrom =
+    replacing.tab.content.kind === "chat" &&
+    replacing.tab.content.target.kind === "draft" &&
+    content.kind === "chat"
+      ? layoutTabContentKey(replacing.tab.content)
+      : null;
+  const followsDraft = (tab: LayoutTab) =>
+    promotedFrom !== null &&
+    tab.content.kind === "launcher" &&
+    tab.content.context !== null &&
+    layoutTabContentKey({ kind: "chat", target: tab.content.context }) === promotedFrom;
+  // A launcher offering the draft's surfaces keeps offering them once the draft is a thread.
+  const followed =
+    promotedFrom === null || content.kind !== "chat"
+      ? state
+      : mapPanes(state, (pane) =>
+          pane.tabs.some(followsDraft)
+            ? {
+                ...pane,
+                tabs: pane.tabs.map((tab) =>
+                  followsDraft(tab) && tab.content.kind === "launcher"
+                    ? { ...tab, content: { ...tab.content, context: content.target } }
+                    : tab,
+                ),
+              }
+            : pane,
+        );
   const duplicate = findLayoutTab(
-    state,
+    followed,
     (tab) => tab.id !== tabId && layoutTabContentKey(tab.content) === key,
   );
-  const replaced = mapPanes(state, (pane) => {
+  const replaced = mapPanes(followed, (pane) => {
     const withoutDuplicate =
       duplicate && pane.id === duplicate.pane.id
         ? { ...pane, tabs: pane.tabs.filter((tab) => tab.id !== duplicate.tab.id) }
@@ -1334,6 +1435,19 @@ export function isLayoutGhostTabShown(state: LayoutState, tabId: string): boolea
   return (
     location !== null && isLayoutGhostTab(location.tab) && workspaceTabCount(location.workspace) > 1
   );
+}
+
+/** The focused tab's id when it is a ghost already showing `content`, else null. */
+export function selectFocusedLayoutGhostId(
+  state: LayoutState,
+  content: LayoutTabContent,
+): string | null {
+  const focused = selectFocusedTab(state);
+  return focused !== null &&
+    isLayoutGhostTab(focused) &&
+    layoutTabContentKey(focused.content) === layoutTabContentKey(content)
+    ? focused.id
+    : null;
 }
 
 function workspaceTabCount(workspace: LayoutWorkspace): number {
@@ -1497,19 +1611,24 @@ export function keepLayoutTab(state: LayoutState, tabId: string): LayoutState {
 }
 
 /**
- * Close a tab; its pane activates the neighboring tab, and empty panes
- * collapse. The window's last tab gives way to a launcher in its place, so
- * the window always keeps one pane; that lone launcher does not close and has
- * no context, because the thread it might offer surfaces for is closing.
+ * Close a tab; its pane takes the neighbor and empty panes collapse. A workspace's last tab gives
+ * way to a context-free launcher. Closing a launcher closes its workspace unless that one is
+ * named, stored or holds threads, and never the window's last.
  */
 export function closeLayoutTab(state: LayoutState, tabId: string): LayoutState {
   const location = findLayoutTab(state, (tab) => tab.id === tabId);
   if (!location) return state;
-  if (countLayoutTabs(state) === 1) {
-    if (location.tab.content.kind === "launcher") return state;
+  if (workspaceTabCount(location.workspace) === 1) {
+    if (location.tab.content.kind === "launcher") {
+      return closeLayoutBlankWorkspace(state, location.workspace);
+    }
     const launcher = createLayoutTab(createLayoutLauncherContent(null));
-    return mapPanes(state, (pane) =>
-      pane.id === location.pane.id ? { ...pane, tabs: [launcher], activeTabId: launcher.id } : pane,
+    return normalizeLayout(
+      mapPanes(state, (pane) =>
+        pane.id === location.pane.id
+          ? { ...pane, tabs: [launcher], activeTabId: launcher.id }
+          : pane,
+      ),
     );
   }
   // A ghost hands its place back to the chat it was opened from.
@@ -1548,6 +1667,34 @@ export function closeLayoutTab(state: LayoutState, tabId: string): LayoutState {
         )
       : closed;
   return normalizeLayout(refocused);
+}
+
+/** Whether closing a blank workspace removes it: not when it is named, stored or holds threads. */
+function isBlankWorkspaceRemovable(workspace: LayoutWorkspace): boolean {
+  return (
+    workspace.name === null &&
+    workspace.keepWhenEmpty !== true &&
+    !retainsEmptyWorkspace(workspace.id)
+  );
+}
+
+/**
+ * The window keeps its last workspace, and a workspace someone named or stored keeps its
+ * launcher; the spare at the bottom only hands focus to the workspace above.
+ */
+function closeLayoutBlankWorkspace(state: LayoutState, workspace: LayoutWorkspace): LayoutState {
+  const index = state.workspaces.indexOf(workspace);
+  const focused = state.focusedWorkspaceId === workspace.id;
+  const above = state.workspaces[index - 1];
+  if (index === state.workspaces.length - 1) {
+    return focused && above ? focusLayoutWorkspace(state, above.id) : state;
+  }
+  if (!isBlankWorkspaceRemovable(workspace)) return state;
+  const beside = above ?? state.workspaces[index + 1]!;
+  return normalizeLayout({
+    workspaces: state.workspaces.filter((candidate) => candidate !== workspace),
+    focusedWorkspaceId: focused ? beside.id : state.focusedWorkspaceId,
+  });
 }
 
 /** Activate the next (1) or previous (-1) tab of the focused pane, wrapping around. */
@@ -1952,6 +2099,35 @@ export function resizeLayoutColumnEdge(
       : candidate,
   );
   return arrangeLayoutWorkspaces(state, shared, cameraWidth);
+}
+
+/** Split a column's width evenly with the next one (the previous, for the last); the strip keeps its length. */
+export function evenLayoutColumnEdge(state: LayoutState, columnId: string): LayoutState {
+  return mapWorkspaces(state, (workspace) => {
+    const index = workspace.columns.findIndex((column) => column.id === columnId);
+    if (index < 0 || workspace.columns.length < 2) return workspace;
+    const neighborIndex = index + 1 < workspace.columns.length ? index + 1 : index - 1;
+    const half = (workspace.columns[index]!.width + workspace.columns[neighborIndex]!.width) / 2;
+    if (Math.abs(workspace.columns[index]!.width - half) < 1e-6) return workspace;
+    return {
+      ...workspace,
+      columns: workspace.columns.map((column, columnIndex) =>
+        columnIndex === index || columnIndex === neighborIndex
+          ? { ...column, width: half }
+          : column,
+      ),
+    };
+  });
+}
+
+/** Split the height a pane shares with the one below it (above it, for the last pane) evenly. */
+export function evenLayoutPaneEdge(state: LayoutState, paneId: string): LayoutState {
+  const found = findPane(state, paneId);
+  if (!found || found.column.panes.length < 2) return state;
+  const panes = found.column.panes;
+  const index = panes.indexOf(found.pane);
+  const neighbor = panes[index + 1 < panes.length ? index + 1 : index - 1]!;
+  return resizeLayoutPane(state, paneId, (found.pane.size + neighbor.size) / 2);
 }
 
 /** Step to the next width preset, wrapping from 2/3 back to 1/3. A lone column keeps filling the window. */

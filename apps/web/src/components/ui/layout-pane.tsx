@@ -1,5 +1,15 @@
 import { PlusIcon, XIcon } from "lucide-react";
-import type { CSSProperties, HTMLAttributes, ReactNode, Ref } from "react";
+import {
+  useLayoutEffect,
+  useRef,
+  type CSSProperties,
+  type HTMLAttributes,
+  type PointerEventHandler,
+  type ReactNode,
+  type Ref,
+  type RefObject,
+} from "react";
+import { createPortal } from "react-dom";
 
 import { cn } from "../../lib/utils";
 import { TooltipPopup } from "./tooltip";
@@ -291,13 +301,22 @@ export function LayoutTabClose({
 }
 
 /** The `+` button after the last tab. */
-export function LayoutTabAdd({ label, onClick }: { label: string; onClick: () => void }) {
+export function LayoutTabAdd({
+  label,
+  onClick,
+  onPointerDown,
+}: {
+  label: string;
+  onClick: () => void;
+  onPointerDown?: PointerEventHandler<HTMLButtonElement>;
+}) {
   return (
     <button
       type="button"
       aria-label={label}
       data-layout-tab-add=""
       onClick={onClick}
+      onPointerDown={onPointerDown}
       className="grid h-8 w-7 shrink-0 cursor-pointer place-items-center self-end rounded-(--r-ctl) text-muted-foreground outline-none transition-colors duration-(--motion-feedback) ease-standard hover:text-foreground focus-visible:ring-2 focus-visible:ring-(--accent-ink) focus-visible:ring-inset motion-reduce:transition-none [-webkit-app-region:no-drag]"
     >
       <PlusIcon aria-hidden className="size-3.5" />
@@ -609,11 +628,65 @@ export function LayoutStage({
 }
 
 /** A layer over its container that paints and takes no pointer input. */
-export function LayoutPassiveLayer({ children }: { children?: ReactNode }) {
+export function LayoutPassiveLayer({
+  ref,
+  children,
+}: {
+  ref?: Ref<HTMLDivElement>;
+  children?: ReactNode;
+}) {
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 z-40">
+    <div ref={ref} aria-hidden className="pointer-events-none absolute inset-0 z-40">
       {children}
     </div>
+  );
+}
+
+/** A passive layer over `anchor`, painted in the window and clipped to `clip`, so hosted webviews
+ * (fixed, z-30) cannot cover it as they cover anything in the strip's isolated stage. */
+export function LayoutWindowLayer({
+  anchor,
+  clip,
+  children,
+}: {
+  anchor: RefObject<HTMLElement | null>;
+  clip: RefObject<HTMLElement | null>;
+  children?: ReactNode;
+}) {
+  const clipRef = useRef<HTMLDivElement | null>(null);
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- places the window layer over its anchor before paint on every render, since the anchor moves with the strip
+  useLayoutEffect(() => {
+    const anchorRect = anchor.current?.getBoundingClientRect();
+    const clipRect = clip.current?.getBoundingClientRect();
+    const clipBox = clipRef.current;
+    const frame = frameRef.current;
+    if (!anchorRect || !clipRect || !clipBox || !frame) return;
+    Object.assign(clipBox.style, {
+      left: `${clipRect.left}px`,
+      top: `${clipRect.top}px`,
+      width: `${clipRect.width}px`,
+      height: `${clipRect.height}px`,
+    });
+    Object.assign(frame.style, {
+      left: `${anchorRect.left - clipRect.left}px`,
+      top: `${anchorRect.top - clipRect.top}px`,
+      width: `${anchorRect.width}px`,
+      height: `${anchorRect.height}px`,
+    });
+  });
+  return createPortal(
+    <div
+      ref={clipRef}
+      aria-hidden
+      data-layout-window-layer=""
+      className="pointer-events-none fixed z-40 overflow-hidden"
+    >
+      <div ref={frameRef} className="absolute">
+        {children}
+      </div>
+    </div>,
+    document.body,
   );
 }
 

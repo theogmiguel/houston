@@ -11,6 +11,7 @@ import {
   findLayoutTabByContent,
   focusLayoutPane,
   focusLayoutWorkspace,
+  isBlankLayoutWorkspace,
   isEmptyWorkspaceRetained,
   keepLayoutWorkspaceWhenEmpty,
   moveLayoutTab,
@@ -41,7 +42,7 @@ export interface WorkspaceResult {
 export function listLayoutWorkspaces(state: LayoutState): LayoutWorkspace[] {
   return state.workspaces.filter(
     (workspace) =>
-      workspace.columns.length > 0 ||
+      !isBlankLayoutWorkspace(workspace) ||
       workspace.keepWhenEmpty === true ||
       workspace.id === state.focusedWorkspaceId ||
       isEmptyWorkspaceRetained(workspace.id),
@@ -56,9 +57,11 @@ export function workspaceDisplayName(
 ): string {
   const named = workspace.name?.trim();
   if (named) return named;
-  const title = resolveTitle?.(workspace)?.trim();
+  // A blank workspace's only tab is a launcher, which says nothing about the workspace.
+  const blank = isBlankLayoutWorkspace(workspace);
+  const title = blank ? undefined : resolveTitle?.(workspace)?.trim();
   if (title) return title;
-  return workspace.columns.length === 0 ? "Empty workspace" : `Workspace ${position + 1}`;
+  return blank ? "Empty workspace" : `Workspace ${position + 1}`;
 }
 
 function describe(workspace: LayoutWorkspace, state: LayoutState): string {
@@ -120,7 +123,7 @@ export function moveLayoutWorkspaceById(
   const index = state.workspaces.findIndex((workspace) => workspace.id === workspaceId);
   const workspace = state.workspaces[index];
   const other = state.workspaces[index + delta];
-  if (!workspace || !other || workspace.columns.length === 0 || other.columns.length === 0) {
+  if (!workspace || !other || isBlankLayoutWorkspace(workspace) || isBlankLayoutWorkspace(other)) {
     return state;
   }
   const workspaces = [...state.workspaces];
@@ -246,10 +249,10 @@ export function reorderLayoutWorkspace(
   if (workspaceId === targetId) return state;
   const moving = state.workspaces.find((workspace) => workspace.id === workspaceId);
   const target = state.workspaces.find((workspace) => workspace.id === targetId);
-  if (!moving || !target || moving.columns.length === 0) return state;
+  if (!moving || !target || isBlankLayoutWorkspace(moving)) return state;
   const rest = state.workspaces.filter((workspace) => workspace.id !== workspaceId);
   let index = rest.indexOf(target) + (side === "after" ? 1 : 0);
-  if (rest.at(-1)?.columns.length === 0) index = Math.min(index, rest.length - 1);
+  if (isBlankLayoutWorkspace(rest.at(-1)!)) index = Math.min(index, rest.length - 1);
   const workspaces = [...rest.slice(0, index), moving, ...rest.slice(index)];
   return workspaces.every((workspace, i) => workspace === state.workspaces[i])
     ? state

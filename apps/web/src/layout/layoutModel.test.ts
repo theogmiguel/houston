@@ -5,8 +5,13 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   closeLayoutTab,
   createLayoutState,
+  countLayoutTabs,
+  evenLayoutColumnEdge,
   focusLayoutTab,
+  isBlankLayoutWorkspace,
+  keepLayoutTab,
   layoutChatSwaps,
+  normalizeLayout,
   moveLayoutTab,
   moveLayoutTabToWorkspace,
   openLayoutGhostChat,
@@ -18,6 +23,7 @@ import {
   fitLayoutColumns,
   resizeLayoutColumnEdge,
   selectFocusedChatTarget,
+  selectFocusedLayoutGhostId,
   selectFocusedTab,
   selectFocusedWorkspace,
   selectLayoutPaneSlots,
@@ -110,7 +116,7 @@ function layoutOf(...shapes: Shape[]): LayoutState {
 function shapeOf(state: LayoutState): Shape[] {
   const focused = selectFocusedTab(state);
   return state.workspaces
-    .filter((workspace) => workspace.columns.length > 0)
+    .filter((workspace) => !isBlankLayoutWorkspace(workspace))
     .map((workspace) =>
       workspace.columns.map((column) =>
         column.panes.map((pane) =>
@@ -390,6 +396,27 @@ describe("ghost tabs", () => {
     expect(shapeOf(promoted)).toEqual([[[["~D!"]]]]);
   });
 
+  it("stay kept when a sent first message promotes their draft", () => {
+    const state = showLayoutContent(createLayoutState(), draftOf("draft"));
+    const tabId = selectFocusedTab(state)!.id;
+    const promoted = replaceLayoutTabContent(keepLayoutTab(state, tabId), tabId, chatOf("D"));
+    expect(shapeOf(promoted)).toEqual([[[["D!"]]]]);
+  });
+
+  it("name the focused ghost that already shows the content, and nothing else", () => {
+    const ghostOfD = (layout: LayoutState) => selectFocusedLayoutGhostId(layout, chatOf("D"));
+    expect(ghostOfD(layoutOf([[["A", "~D!"]]]))).toBe("D");
+    expect(ghostOfD(layoutOf([[["~D!"]]]))).toBe("D");
+    expect(ghostOfD(layoutOf([[["~D"]], [["A!"]]]))).toBeNull();
+    expect(ghostOfD(layoutOf([[["~A!", "D"]]]))).toBeNull();
+    expect(ghostOfD(layoutOf([[["A", "D!"]]]))).toBeNull();
+    const lineage = openLayoutGhostChat(layoutOf([[["A!"]]]), refOf("A"), {
+      kind: "server",
+      threadRef: refOf("D"),
+    })!;
+    expect(ghostOfD(lineage)).toBe(selectFocusedTab(lineage)!.id);
+  });
+
   it("keep a plain ghost parent when its lineage child opens beside it", () => {
     const opened = openLayoutGhostChat(layoutOf([[["~A!"]]]), refOf("A"), {
       kind: "server",
@@ -569,6 +596,32 @@ describe("resizeLayoutColumnEdge", () => {
   });
 });
 
+describe("evenLayoutColumnEdge", () => {
+  const strip = (...columns: ReturnType<typeof column>[]): LayoutState => ({
+    focusedWorkspaceId: "workspace",
+    workspaces: [{ id: "workspace", name: null, focusedPaneId: null, cameraWidth: 1000, columns }],
+  });
+  const widths = (state: LayoutState) => state.workspaces[0]!.columns.map((entry) => entry.width);
+
+  it("splits a column's width evenly with the next column and leaves the others", () => {
+    const evened = evenLayoutColumnEdge(
+      strip(column("a", 0.2), column("b", 0.6), column("c", 0.4)),
+      "a",
+    );
+    expect(widths(evened)).toEqual([0.4, 0.4, 0.4]);
+  });
+
+  it("splits the last column's width evenly with the previous one", () => {
+    const evened = evenLayoutColumnEdge(strip(column("a", 0.7), column("b", 0.3)), "b");
+    expect(widths(evened)).toEqual([0.5, 0.5]);
+  });
+
+  it("leaves a lone column as it is", () => {
+    const lone = strip(column("a", 0.7));
+    expect(evenLayoutColumnEdge(lone, "a")).toBe(lone);
+  });
+});
+
 describe("fitLayoutColumns", () => {
   const strip = (...columns: ReturnType<typeof column>[]): LayoutState => ({
     focusedWorkspaceId: "workspace",
@@ -613,7 +666,11 @@ describe("moveLayoutTabToWorkspace", () => {
 
     const moved = moveLayoutTabToWorkspace(state, -1);
 
-    expect(tabContents(moved)).toEqual([[second], [first], []]);
+    expect(tabContents(moved)).toEqual([
+      [second],
+      [first],
+      [{ kind: "launcher", id: expect.any(String), context: null }],
+    ]);
     expect(selectFocusedWorkspace(moved)).toBe(moved.workspaces[0]);
     expect(selectFocusedTab(moved)?.content).toBe(second);
   });
@@ -640,5 +697,240 @@ describe("selectFocusedChatTarget", () => {
     );
     expect(selectFocusedTab(refocused)?.id).toBe(tasksTab.id);
     expect(selectFocusedWorkspace(refocused).columns[0]!.panes[0]!.tabs).toHaveLength(2);
+  });
+});
+
+const launcherOf = (id: string, context: ThreadRouteTarget | null = null): LayoutTab => ({
+  id,
+  content: { kind: "launcher", id, context },
+});
+
+const rawTabs = (workspace: LayoutState["workspaces"][number]) =>
+  workspace.columns.flatMap((column) => column.panes).flatMap((pane) => pane.tabs);
+
+describe("isBlankLayoutWorkspace", () => {
+  const blank = createLayoutState().workspaces[0]!;
+  const withTabs = (tabs: LayoutTab[]) => ({
+    ...blank,
+    columns: [
+      {
+        id: "c",
+        width: 1,
+        panes: [{ id: "p", size: 1, tabs, activeTabId: tabs[0]?.id ?? null }],
+      },
+    ],
+  });
+
+  it("holds for a workspace with no columns and for one with a lone launcher", () => {
+    expect(isBlankLayoutWorkspace({ ...blank, columns: [] })).toBe(true);
+    expect(isBlankLayoutWorkspace(withTabs([launcherOf("l")]))).toBe(true);
+  });
+
+  it("fails for a lone real tab and for a launcher beside another tab", () => {
+    expect(isBlankLayoutWorkspace(withTabs([tabOf("A")]))).toBe(false);
+    expect(isBlankLayoutWorkspace(withTabs([launcherOf("l"), tabOf("A")]))).toBe(false);
+  });
+});
+
+describe("a blank workspace is a workspace with one launcher tab", () => {
+  it("is what the default layout holds", () => {
+    const [workspace] = createLayoutState().workspaces;
+    expect(rawTabs(workspace!).map((tab) => tab.content.kind)).toEqual(["launcher"]);
+    expect(workspace!.focusedPaneId).toBe(workspace!.columns[0]!.panes[0]!.id);
+  });
+
+  it("is what normalising gives a workspace with no columns", () => {
+    const state = layoutOf([[["A!"]]]);
+    const stored = {
+      workspaces: [...state.workspaces, { ...state.workspaces[0]!, id: "kept", columns: [] }],
+      focusedWorkspaceId: "w0",
+    };
+    const normalized = normalizeLayout({
+      ...stored,
+      workspaces: stored.workspaces.map((w) =>
+        w.id === "kept" ? { ...w, keepWhenEmpty: true } : w,
+      ),
+    });
+    const kept = normalized.workspaces.find((workspace) => workspace.id === "kept")!;
+    expect(rawTabs(kept).map((tab) => tab.content.kind)).toEqual(["launcher"]);
+    expect(kept.focusedPaneId).not.toBeNull();
+    expect(normalizeLayout(normalized)).toBe(normalized);
+  });
+
+  it("keeps the spare workspace at the bottom with its launcher", () => {
+    const state = normalizeLayout(layoutOf([[["A!"]]]));
+    expect(state.workspaces).toHaveLength(2);
+    expect(isBlankLayoutWorkspace(state.workspaces[1]!)).toBe(true);
+    expect(rawTabs(state.workspaces[1]!)).toHaveLength(1);
+  });
+
+  it("does not count toward the layout's tabs", () => {
+    expect(countLayoutTabs(createLayoutState())).toBe(0);
+    expect(countLayoutTabs(normalizeLayout(layoutOf([[["A!", "B"]]])))).toBe(2);
+  });
+});
+
+describe("closing a workspace's last tab", () => {
+  it("leaves a launcher without context in that workspace while another workspace holds tabs", () => {
+    const state = normalizeLayout(layoutOf([[["A!"]]], [[["B"]]]));
+    const closed = closeLayoutTab(state, "A");
+    const workspace = closed.workspaces[0]!;
+    expect(workspace.id).toBe("w0");
+    expect(rawTabs(workspace)).toEqual([
+      {
+        id: expect.any(String),
+        content: { kind: "launcher", id: expect.any(String), context: null },
+      },
+    ]);
+    expect(closed.focusedWorkspaceId).toBe("w0");
+    expect(shapeOf(closed)).toEqual([[[["B"]]]]);
+  });
+
+  it("leaves a launcher in a workspace the server stores", () => {
+    const state = layoutOf([[["A!"]]], [[["B"]]]);
+    const kept = {
+      ...state,
+      workspaces: state.workspaces.map((w) => ({ ...w, keepWhenEmpty: true })),
+    };
+    const closed = closeLayoutTab(normalizeLayout(kept), "B");
+    expect(rawTabs(closed.workspaces[1]!).map((tab) => tab.content.kind)).toEqual(["launcher"]);
+  });
+
+  it("keeps closing a named, stored or thread-holding workspace's launcher from removing it", () => {
+    const state = layoutOf([[["A!"]]], [[["B"]]]);
+    const stored = normalizeLayout({
+      ...state,
+      workspaces: state.workspaces.map((w) => ({
+        ...w,
+        name: `Named ${w.id}`,
+        keepWhenEmpty: true,
+      })),
+    });
+    const blank = closeLayoutTab(stored, "B");
+    const launcher = rawTabs(blank.workspaces[1]!)[0]!;
+    expect(closeLayoutTab(blank, launcher.id)).toBe(blank);
+  });
+
+  it("closes an unnamed blank workspace's launcher by removing it and focusing its neighbour", () => {
+    const state = normalizeLayout(layoutOf([[["A"]]], [[["B!"]]], [[["C"]]]));
+    const blank = closeLayoutTab(state, "B");
+    const launcher = rawTabs(blank.workspaces.find((w) => w.id === "w1")!)[0]!;
+    const closed = closeLayoutTab(blank, launcher.id);
+    expect(closed.workspaces.map((w) => w.id)).not.toContain("w1");
+    expect(closed.focusedWorkspaceId).toBe("w0");
+  });
+
+  it("hands focus to the workspace above when the spare's launcher closes, and keeps the spare", () => {
+    const state = normalizeLayout(layoutOf([[["A"]]], [[["B!"]]]));
+    const blank = closeLayoutTab(state, "B");
+    const spare = blank.workspaces.at(-1)!;
+    const closed = closeLayoutTab(blank, rawTabs(spare)[0]!.id);
+    expect(closed.focusedWorkspaceId).toBe("w0");
+    expect(closed.workspaces.at(-1)!.id).toBe(spare.id);
+  });
+
+  it("does not close the window's lone launcher", () => {
+    const state = createLayoutState();
+    expect(closeLayoutTab(state, rawTabs(state.workspaces[0]!)[0]!.id)).toBe(state);
+  });
+});
+
+describe("opening content into a blank workspace", () => {
+  const blankState = () => createLayoutState();
+
+  it("replaces the launcher instead of sitting beside it", () => {
+    expect(shapeOf(openLayoutTab(blankState(), chat))).toEqual([[[["thread!"]]]]);
+  });
+
+  it.each<{ case: string; placement: "new-column" | "split-down" }>([
+    { case: "a new column", placement: "new-column" },
+    { case: "a split below", placement: "split-down" },
+  ])("replaces the launcher when it is asked to open in $case", ({ placement }) => {
+    const opened = openLayoutTab(blankState(), chat, { placement });
+    expect(shapeOf(opened)).toEqual([[[["thread!"]]]]);
+  });
+
+  it("replaces the launcher of a blank workspace a tab is moved into", () => {
+    const state = normalizeLayout(layoutOf([[["A!", "B"]]]));
+    const spare = state.workspaces[1]!;
+    const moved = moveLayoutTab(state, "B", { kind: "column", workspaceId: spare.id, index: 0 });
+    const target = moved.workspaces.find((workspace) => workspace.id === spare.id)!;
+    expect(rawTabs(target).map((tab) => tab.id)).toEqual(["B"]);
+  });
+
+  it("replaces the launcher of a blank workspace a tab is placed in", () => {
+    const state = normalizeLayout(layoutOf([[["A!"]]]));
+    const spare = state.workspaces[1]!;
+    const placed = placeLayoutTabs(
+      state,
+      [{ id: "diff", content: diff }],
+      { kind: "column", workspaceId: spare.id, index: 0 },
+      { activate: null, focus: false },
+    );
+    const target = placed.workspaces.find((workspace) => workspace.id === spare.id)!;
+    expect(rawTabs(target).map((tab) => tab.id)).toEqual(["diff"]);
+  });
+
+  it("leaves a workspace that already holds a real tab alone", () => {
+    const opened = openLayoutTab(layoutOf([[["A!"]]]), chat, { placement: "new-column" });
+    expect(shapeOf(opened)).toEqual([[[["A"]], [["thread!"]]]]);
+  });
+});
+
+describe("a launcher's thread context", () => {
+  it("follows its draft when the draft is promoted to a thread", () => {
+    const state = layoutOf([[["~D!"]]]);
+    const draftTarget: ThreadRouteTarget = { kind: "draft", draftId: "draft" as DraftId };
+    const withLauncher: LayoutState = {
+      ...state,
+      workspaces: state.workspaces.map((workspace) => ({
+        ...workspace,
+        columns: workspace.columns.map((column) => ({
+          ...column,
+          panes: [
+            {
+              ...column.panes[0]!,
+              tabs: [
+                { id: "D", content: draftOf("draft"), ghostOf: null },
+                launcherOf("l", draftTarget),
+              ],
+            },
+          ],
+        })),
+      })),
+    };
+    const promoted = replaceLayoutTabContent(withLauncher, "D", chatOf("D"));
+    const launcher = rawTabs(promoted.workspaces[0]!).find(
+      (tab) => tab.content.kind === "launcher",
+    );
+    expect(launcher?.content).toEqual({
+      kind: "launcher",
+      id: "l",
+      context: { kind: "server", threadRef: refOf("D") },
+    });
+  });
+
+  it("is cleared once its thread is no longer in view in its workspace", () => {
+    const state = layoutOf([[["A!", "+"]]]);
+    const aTarget: ThreadRouteTarget = { kind: "server", threadRef: refOf("A") };
+    const withContext: LayoutState = {
+      ...state,
+      workspaces: state.workspaces.map((workspace) => ({
+        ...workspace,
+        columns: workspace.columns.map((column) => ({
+          ...column,
+          panes: column.panes.map((pane) => ({
+            ...pane,
+            tabs: pane.tabs.map((tab) => (tab.id === "+" ? launcherOf("+", aTarget) : tab)),
+          })),
+        })),
+      })),
+    };
+    expect(rawTabs(normalizeLayout(withContext).workspaces[0]!)[1]!.content).toMatchObject({
+      context: aTarget,
+    });
+    const closed = closeLayoutTab(withContext, "A");
+    const launcher = rawTabs(closed.workspaces[0]!)[0]!;
+    expect(launcher.content).toMatchObject({ kind: "launcher", context: null });
   });
 });
