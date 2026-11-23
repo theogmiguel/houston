@@ -24,6 +24,13 @@ export const appImageCloseInheritedFdsCommand = (
   args: ["-c", APPIMAGE_CLOSE_INHERITED_FDS_SCRIPT, "bash", command, ...args],
 });
 
+export const APPIMAGE_FILENAME_UPDATED_LOG = "AppImage filename updated after an update install.";
+
+export const logAppImageFilenameUpdated =
+  (log: (message: string) => void): ((path: string) => void) =>
+  () =>
+    log(APPIMAGE_FILENAME_UPDATED_LOG);
+
 const APPIMAGE_SPAWN_PATCHED = Symbol.for("@houston-app/desktop/appimage-spawn-patched");
 
 interface AppImageUpdaterPrototype {
@@ -70,6 +77,11 @@ const loadAutoUpdater = () =>
   (autoUpdaterPromise ??= import("electron-updater").then((module) => {
     const autoUpdater = module.autoUpdater;
     patchAppImageSpawnLog(module, autoUpdater);
+    // The path is local state, so it stays out of logs and telemetry.
+    autoUpdater.on(
+      "appimage-filename-updated",
+      logAppImageFilenameUpdated((message) => autoUpdater.logger?.info(message)),
+    );
     return autoUpdater;
   }));
 const withAutoUpdater = <A, E = never, R = never>(
