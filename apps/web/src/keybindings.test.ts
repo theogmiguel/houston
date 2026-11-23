@@ -1104,3 +1104,62 @@ describe("attention keybinding commands", () => {
     );
   });
 });
+
+describe("keybinding lookups", () => {
+  /** The rules, each counting how often a lookup evaluates its `when` clause. */
+  function countingBindings() {
+    const evaluations = { count: 0 };
+    const rules = compileResolvedKeybindingsConfig([
+      { key: "mod+k", command: "pullRequest.copyNumber", when: "!terminalFocus" },
+      { key: "mod+8", command: "thread.copyReference", when: "!terminalFocus" },
+      { key: "mod+j", command: "terminal.toggle", when: "!terminalFocus" },
+    ]).map((rule) => {
+      const counted = { ...rule };
+      Object.defineProperty(counted, "whenAst", {
+        get() {
+          evaluations.count += 1;
+          return rule.whenAst;
+        },
+      });
+      return counted;
+    }) as ResolvedKeybindingsConfig;
+    return { rules, evaluations };
+  }
+
+  it("walks the keybindings once for any number of label lookups", () => {
+    const { rules, evaluations } = countingBindings();
+    const options = { platform: "MacIntel" };
+    const first = shortcutLabelForCommand(rules, "thread.copyReference", options);
+    const walked = evaluations.count;
+    for (let lookup = 0; lookup < 5; lookup += 1) {
+      assert.strictEqual(shortcutLabelForCommand(rules, "thread.copyReference", options), first);
+      shortcutLabelForCommand(rules, "pullRequest.copyNumber", options);
+    }
+    assert.strictEqual(walked, rules.length);
+    assert.strictEqual(evaluations.count, walked);
+  });
+
+  it("walks again for another context", () => {
+    const { rules, evaluations } = countingBindings();
+    shortcutLabelForCommand(rules, "thread.copyReference", { platform: "MacIntel" });
+    const walked = evaluations.count;
+    shortcutLabelForCommand(rules, "thread.copyReference", {
+      platform: "MacIntel",
+      context: { terminalFocus: true },
+    });
+    assert.strictEqual(evaluations.count, walked + rules.length);
+  });
+
+  it("evaluates no when clause for a key no rule binds", () => {
+    const { rules, evaluations } = countingBindings();
+    const resolved = resolveShortcutCommand(event({ key: "q", metaKey: true }), rules, {
+      platform: "MacIntel",
+    });
+    assert.strictEqual(resolved, null);
+    assert.strictEqual(evaluations.count, 0);
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "8", metaKey: true }), rules, { platform: "MacIntel" }),
+      "thread.copyReference",
+    );
+  });
+});

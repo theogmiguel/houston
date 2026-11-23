@@ -739,7 +739,10 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
     assert.equal(systemPrompt.type, "preset");
     assert.equal(systemPrompt.preset, "claude_code");
     assert.include(systemPrompt.append ?? "", "Use `delegate_task`");
-    assert.include(systemPrompt.append ?? "", "call `houston_background_wait`");
+    assert.include(
+      systemPrompt.append ?? "",
+      "call `houston_background_wait` with `taskIds: [id]`",
+    );
     assert.notInclude(systemPrompt.append ?? "", "## Houston devices");
     assert.include(systemPrompt.append ?? "", "with no command likely to run over a few minutes");
     assert.include(systemPrompt.append ?? "", "give it that child's last summary");

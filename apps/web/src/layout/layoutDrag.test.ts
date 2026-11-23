@@ -12,9 +12,11 @@ import {
   type LayoutDragPane,
 } from "./layoutDrag";
 import {
+  createLayoutLauncherContent,
   createLayoutState,
   findLayoutTab,
   selectFocusedTab,
+  selectFocusedWorkspace,
   type LayoutState,
   type LayoutTabContent,
 } from "./layoutModel";
@@ -188,6 +190,19 @@ describe("isLayoutDropUseful", () => {
     ).toBe(true);
   });
 
+  it("accepts dragged content anywhere a destination exists, even onto the only pane", () => {
+    open(chat("one"), "active-pane");
+    const paneId = tabOf(chat("one")).pane.id;
+    const source = { kind: "content", content: createLayoutLauncherContent(null) } as const;
+    for (const target of [
+      { kind: "side", paneId, side: "left" },
+      { kind: "into", paneId },
+      { kind: "extend", edge: "right" },
+    ] as const) {
+      expect(isLayoutDropUseful(layout(), source, target)).toBe(true);
+    }
+  });
+
   it("rejects a tab the layout no longer holds", () => {
     expect(
       isLayoutDropUseful(
@@ -216,7 +231,7 @@ describe("open to the side", () => {
     openThreadToTheSide(ref("two"));
     const second = tabOf(chat("two"));
     expect(second.pane.id).not.toBe(first.pane.id);
-    expect(layout().workspaces.flatMap((workspace) => workspace.columns)).toHaveLength(2);
+    expect(selectFocusedWorkspace(layout()).columns).toHaveLength(2);
     expect(selectFocusedTab(layout())?.id).toBe(second.tab.id);
   });
 
