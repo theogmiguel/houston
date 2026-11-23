@@ -761,7 +761,7 @@ function queuedMessageDelivery(
   command: {
     readonly messageId: OrchestrationV2ConversationMessage["id"];
     readonly notification?: unknown;
-    readonly steerFollowUpOfRunId?: RunId;
+    readonly steerFollowUpOfRunId?: RunId | undefined;
   },
   delegatedCompletion: unknown,
   input: {
