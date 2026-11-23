@@ -407,6 +407,13 @@ const loadPrimaryConnectionRegistration = Effect.fn(
   });
 });
 
+/** A stopped or starting backend is listed without an endpoint; the host announces it later. */
+function hasSecondaryEndpoint(entry: DesktopEnvironmentBootstrap): boolean {
+  return (
+    entry.httpBaseUrl !== null && entry.wsBaseUrl !== null && entry.bootstrapToken !== undefined
+  );
+}
+
 const loadSecondaryConnectionRegistration = Effect.fn(
   "web.connectionPlatform.loadSecondaryConnectionRegistration",
 )(function* (entry: DesktopEnvironmentBootstrap) {
@@ -472,6 +479,7 @@ export function platformRegistrationTriggers(
 /**
  * After a build that could not reach a server it was told of, re-read sooner than the safety
  * poll: a browser has no host to announce its server. A settled build resets the delays.
+ * They sum to about 31 s, so the retries end at roughly the safety poll's interval.
  */
 const PLATFORM_DISCOVERY_RETRY_DELAYS: ReadonlyArray<Duration.Input> = [
   "1 second",
@@ -790,10 +798,7 @@ const layerPlatformConnectionSource = Layer.effect(
                       ),
                     ),
                   )
-                : // A rejected credential has its own backoff; any other failure retries soon.
-                  Effect.sync(() => {
-                    settled = false;
-                  }),
+                : Effect.void,
             ),
             Effect.option,
           );
@@ -817,6 +822,9 @@ const layerPlatformConnectionSource = Layer.effect(
           ) {
             next.set(bootstrap.id, cached);
             registrations.push(cached.registration);
+          } else if (hasSecondaryEndpoint(bootstrap) && !nextRejected.has(bootstrap.id)) {
+            // A rejected credential keeps its own backoff; a failed reachable backend retries soon.
+            settled = false;
           }
         }
         yield* Ref.set(rejectedRef, nextRejected);
