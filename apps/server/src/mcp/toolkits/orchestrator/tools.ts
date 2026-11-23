@@ -153,7 +153,7 @@ const backgroundWaitShape = { message: `Expected ${BACKGROUND_WAIT_SHAPE}` };
 // agent first calls the tool; the handler refuses a call that names neither.
 const BackgroundWaitTool = Tool.make("houston_background_wait", {
   description:
-    "Keep this thread in Working while background work runs. Pass `taskIds` (or one `taskId`) after starting it. Not for work left running (dev server, watcher). `waiting=false` clears. Does not stop the task. Claude only.",
+    "Keep this thread in Working while background work runs. Pass its task ID once started. Not for work left running (dev server, watcher). `waiting=false` clears. Does not stop the task. Claude only.",
   parameters: Schema.Struct({
     taskIds: Schema.optionalKey(
       Schema.Array(TrimmedNonEmptyString)
