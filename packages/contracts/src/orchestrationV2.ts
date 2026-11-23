@@ -48,6 +48,7 @@ import {
 import { HoustonBlockingBackgroundWork } from "./houston/backgroundWork.ts";
 import { HoustonSideThread, makeHoustonSideThreadCommands } from "./houston/sideThreads.ts";
 import { HoustonMergeQueueNotifyCommand } from "./houston/mergeQueue.ts";
+import { RuntimeRequestAnsweredBy } from "./houston/runtimeRequestAuthor.ts";
 import { HoustonSlackAnswerCommand } from "./houston/slack.ts";
 import { ChatAttachment } from "./chatAttachment.ts";
 import { StoredThreadTags, ThreadTag } from "./threadTags.ts";
@@ -3358,6 +3359,9 @@ export const OrchestrationV2Command = Schema.Union([
     feedback: Schema.optional(Schema.String),
     answers: Schema.optional(ProviderUserInputAnswers),
     attachmentsByQuestionId: Schema.optional(UserInputAttachments),
+    // Houston: who answered and, for an agent, its thread; the server refuses both from a client.
+    answeredBy: Schema.optional(RuntimeRequestAnsweredBy),
+    senderThreadId: Schema.optional(ThreadId),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.user-input.dismiss"),
