@@ -128,7 +128,8 @@ it("opens a thread from the home as the pane that holds its chat", async () => {
   // The thread sits in the layout's focused pane, and nothing on the phone reads a grid.
   const tabs = useLayoutStore
     .getState()
-    .layout.workspaces.flatMap((workspace) =>
+    .layout.workspaces.filter((workspace) => !isBlankLayoutWorkspace(workspace))
+    .flatMap((workspace) =>
       workspace.columns.flatMap((column) => column.panes.flatMap((pane) => pane.tabs)),
     );
   expect(tabs.map((tab) => tab.content.kind)).toEqual(["chat"]);
