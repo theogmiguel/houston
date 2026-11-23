@@ -7,6 +7,7 @@ import {
   getDesktopUpdateButtonTooltip,
   getDesktopUpdateReleaseHistoryUrl,
   getDesktopUpdateReleaseUrl,
+  getDesktopUpdateRowActionLabel,
   resolveDesktopUpdateButtonAction,
 } from "./desktopUpdate.logic";
 
@@ -135,6 +136,30 @@ describe("desktop update UI helpers", () => {
       );
     },
   );
+});
+
+describe("getDesktopUpdateRowActionLabel", () => {
+  it("names the row's download action with its version, not the footer's status summary", () => {
+    expect(
+      getDesktopUpdateRowActionLabel(
+        { ...baseState, status: "available", availableVersion: "1.1.0" },
+        "download",
+      ),
+    ).toBe("Download update 1.1.0");
+  });
+
+  it("names the row's install action so it differs from the footer's restart summary", () => {
+    expect(
+      getDesktopUpdateRowActionLabel(
+        { ...baseState, status: "downloaded", downloadedVersion: "1.1.0" },
+        "install",
+      ),
+    ).toBe("Restart to update");
+  });
+
+  it("returns no action name while the row only reports status", () => {
+    expect(getDesktopUpdateRowActionLabel(baseState, "none")).toBeNull();
+  });
 });
 
 describe("canCheckForUpdate", () => {

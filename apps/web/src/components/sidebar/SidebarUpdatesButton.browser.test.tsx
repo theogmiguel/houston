@@ -236,9 +236,7 @@ describe("SidebarUpdatesButton", () => {
     expect(popup.textContent).toContain("Updating Claude");
     expect(downloadUpdate).not.toHaveBeenCalled();
 
-    await userEvent.click(
-      page.getByRole("button", { name: "Update 0.9.4 ready to download" }).element(),
-    );
+    await userEvent.click(page.getByRole("button", { name: "Download update 0.9.4" }).element());
     expect(downloadUpdate).toHaveBeenCalledOnce();
   });
 
@@ -255,9 +253,7 @@ describe("SidebarUpdatesButton", () => {
     const popup = document.querySelector('[role="dialog"]')!;
     await vi.waitFor(() => expect(popup.textContent).toContain("Update 0.9.4"));
 
-    await userEvent.click(
-      page.getByRole("button", { name: "Update 0.9.4 ready to download" }).element(),
-    );
+    await userEvent.click(page.getByRole("button", { name: "Download update 0.9.4" }).element());
     expect(downloadUpdate).toHaveBeenCalledOnce();
     expect(document.querySelector('[role="alertdialog"]')).toBeNull();
     await expect.element(page.getByRole("button", { name: "Update everything" })).toBeVisible();
@@ -289,9 +285,7 @@ describe("SidebarUpdatesButton", () => {
     using _env = setup(updateState());
     await using _screen = await renderButton();
     await userEvent.click(updatesButton()!);
-    await userEvent.click(
-      page.getByRole("button", { name: "Update 0.9.4 ready to download" }).element(),
-    );
+    await userEvent.click(page.getByRole("button", { name: "Download update 0.9.4" }).element());
     await vi.waitFor(() =>
       expect(
         add.mock.calls.some(
@@ -319,9 +313,7 @@ describe("SidebarUpdatesButton", () => {
     using _env = setup(updateState({ status: "checking", downloadedVersion: "0.9.4" }));
     await using _screen = await renderButton();
     await userEvent.click(updatesButton()!);
-    await userEvent.click(
-      page.getByRole("button", { name: "Update ready: restart to install" }).element(),
-    );
+    await userEvent.click(page.getByRole("button", { name: "Restart to update" }).element());
     await vi.waitFor(() => expect(installUpdate).toHaveBeenCalledOnce());
     await vi.waitFor(() =>
       expect(

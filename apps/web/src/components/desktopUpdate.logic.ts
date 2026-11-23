@@ -68,6 +68,19 @@ export function resolveDesktopUpdateButtonAction(
   return "none";
 }
 
+/** The app row's own action, named after what it does rather than the status it summarises. */
+export function getDesktopUpdateRowActionLabel(
+  state: DesktopUpdateState,
+  action: DesktopUpdateButtonAction,
+): string | null {
+  if (action === "install") return "Restart to update";
+  if (action === "download") {
+    const version = getDesktopUpdateDownloadedVersion(state);
+    return version ? `Download update ${version}` : "Download update";
+  }
+  return null;
+}
+
 export function shouldShowArm64IntelBuildWarning(state: DesktopUpdateState | null): boolean {
   return state?.hostArch === "arm64" && state.appArch === "x64";
 }

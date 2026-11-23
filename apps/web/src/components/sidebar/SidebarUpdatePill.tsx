@@ -12,6 +12,7 @@ import {
   getDesktopUpdateButtonTooltip,
   getDesktopUpdateDownloadedVersion,
   getDesktopUpdateIdleTooltip,
+  getDesktopUpdateRowActionLabel,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
   shouldShowArm64IntelBuildWarning,
@@ -198,9 +199,11 @@ export function useSidebarUpdate() {
       ? getDesktopUpdateButtonTooltip(state)
       : offersEverything
         ? everything.summary
-        : showCheckIcon
-          ? "Checking for updates…"
-          : (idleTooltip?.title ?? "Check for updates");
+        : showUpdateDetails && state
+          ? getDesktopUpdateButtonTooltip(state)
+          : showCheckIcon
+            ? "Checking for updates…"
+            : (idleTooltip?.title ?? "Check for updates");
   const isInteractionDisabled =
     isRunningEverything ||
     isActionPending ||
@@ -380,6 +383,7 @@ export function SidebarUpdateRow({
   const hasNotes = state !== null && state.releaseNotes.length > 0;
   const offersNotesAction = hasNotes && action !== "none";
   const offersEverythingAction = model.offersEverything && action !== "none";
+  const rowActionLabel = state === null ? null : getDesktopUpdateRowActionLabel(state, action);
   return (
     <div className="flex min-w-0 flex-col gap-3">
       {hasNotes && state !== null ? (
@@ -395,7 +399,7 @@ export function SidebarUpdateRow({
       {offersNotesAction ? null : (
         <button
           type="button"
-          aria-label={model.summary ?? model.tooltip}
+          aria-label={rowActionLabel ?? undefined}
           aria-disabled={model.isInteractionDisabled || undefined}
           className={cn(
             "flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-headline leading-4.5 font-medium outline-hidden ring-ring transition-colors focus-visible:ring-2 focus-visible:ring-inset",
