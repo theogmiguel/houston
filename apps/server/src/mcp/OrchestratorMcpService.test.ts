@@ -3784,6 +3784,110 @@ describe("OrchestratorMcpService provider resolution", () => {
     }),
   );
 
+  it.effect(
+    "resolves a model alias the provider reports and names the accepted ids when it refuses one",
+    () =>
+      Effect.gen(function* () {
+        const inherited = { instanceId: codexInstanceId, model: "orbit-small-2" } as const;
+        const commands: Array<{ readonly modelSelection?: unknown }> = [];
+        const task = {
+          id: taskId,
+          threadId: parentThreadId,
+          origin: "app_owned",
+          childThreadId,
+          providerInstanceId: codexInstanceId,
+          model: "orbit-large-2",
+          status: "running",
+          result: null,
+        };
+        const model = (slug: string, aliases?: ReadonlyArray<string>) => ({
+          slug,
+          name: slug,
+          ...(aliases === undefined ? {} : { aliases }),
+          isCustom: false,
+          capabilities: null,
+        });
+        const dependencies = Layer.mergeAll(
+          NodeServices.layer,
+          NodeCrypto.layer,
+          Layer.mock(ThreadManagementService.ThreadManagementService)({
+            hasReceipt: () => Effect.succeed(false),
+            assertProviderInstanceEnabled: () => Effect.void,
+            getThreadRecords: (threadId) =>
+              Effect.succeed(
+                threadId === parentThreadId
+                  ? parentProjection(commands.length > 0 ? [task] : [], inherited)
+                  : childProjection,
+              ),
+            dispatch: (command) =>
+              Effect.sync(() => {
+                commands.push(command as { readonly modelSelection?: unknown });
+                return {
+                  sequence: 1,
+                  storedEvents: [{ event: { type: "subagent.updated", payload: task } }],
+                } as never;
+              }),
+          }),
+          ServerSettings.layerTest(),
+          providerRegistryLayer([
+            {
+              ...providerSnapshot({
+                instanceId: codexInstanceId,
+                driver: ProviderDriverKind.make("codex"),
+              }),
+              models: [
+                model("orbit-large-2", ["orbit-large", "large"]),
+                model("orbit-small-2", ["orbit-small"]),
+                model("comet-large-1", ["large"]),
+                ...Array.from({ length: 8 }, (_, index) => model(`filler-${index + 1}`)),
+              ],
+            },
+          ]),
+          adapterRegistryLayer([codexInstanceId]),
+          Layer.mock(ProjectService.ProjectService)({}),
+          Layer.mock(SecretRequests.SecretRequests)({}),
+          Layer.mock(RemoteDelegation.RemoteDelegation)({}),
+          Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+        );
+        yield* Effect.gen(function* () {
+          const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+          const delegate = (requested: string) =>
+            Effect.gen(function* () {
+              return yield* service.delegateTask(scope, {
+                task: "Review the change.",
+                target: yield* decodeTarget({ model: requested }),
+                mode: "async",
+                clientRequestId: requested,
+              });
+            });
+
+          const unknown = yield* delegate("nebula").pipe(Effect.flip);
+          assert.equal(unknown.code, "model_unavailable");
+          assert.include(unknown.message, "nebula");
+          assert.include(
+            unknown.message,
+            "orbit-large-2, orbit-small-2, comet-large-1, filler-1, filler-2, filler-3, filler-4, filler-5",
+          );
+          assert.notInclude(unknown.message, "filler-6");
+          assert.include(unknown.message, "3 more");
+          assert.include(unknown.message, "orchestrator_capabilities");
+          assert.include(unknown.message, "search");
+
+          const ambiguous = yield* delegate("large").pipe(Effect.flip);
+          assert.equal(ambiguous.code, "model_unavailable");
+          assert.include(ambiguous.message, "large");
+          assert.include(ambiguous.message, "orbit-large-2, comet-large-1");
+          assert.equal(commands.length, 0);
+
+          yield* delegate("Orbit-Large");
+          assert.deepEqual(commands[0]?.modelSelection, {
+            instanceId: codexInstanceId,
+            model: "orbit-large-2",
+          });
+        }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(dependencies))));
+      }),
+  );
+
   describe("resolveRuntimeMode", () => {
     const muse = {
       modelSelection: { instanceId: ProviderInstanceId.make("muse"), model: "muse-model" },
