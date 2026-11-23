@@ -51,6 +51,12 @@ The renderer asks `window.hostBridge.getLocalEnvironmentBootstraps()`
 origin with the credential the server issues for it. The token comes only from the host
 bridge. The messages are typed in `packages/contracts`; the renderer defines none of its own.
 
+The renderer re-reads the bootstraps and the server status when the host announces a change
+(`onLocalEnvironmentBootstrapsChanged`, `onServerStatus`) and on one shared safety poll
+(`src/connection/desktopLocalTopology.ts`). A new reader subscribes there instead of starting
+its own timer. The host traces these reads only when they fail (`FAILURE_ONLY_TRACED_CHANNELS`
+in `apps/desktop/src/ipc/DesktopIpc.ts`), so that they do not fill the trace file.
+
 ## The terminal engine
 
 `terminal/ghostty/` is Houston's own engine; its README lists each file's job. The WASM is

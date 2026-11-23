@@ -33,7 +33,6 @@ import {
 } from "@houston-app/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -61,6 +60,10 @@ import {
   readDesktopSecondaryBootstrapsResult,
   type DesktopSecondaryBootstrapsRead,
 } from "./desktopLocal";
+import {
+  DESKTOP_LOCAL_TOPOLOGY_SAFETY_POLL_MS,
+  subscribeDesktopLocalTopology,
+} from "./desktopLocalTopology";
 import * as ConnectionStorage from "./storage";
 import { clientPresentationMetadata } from "./clientMetadata";
 
@@ -452,28 +455,21 @@ const loadSecondaryConnectionRegistration = Effect.fn(
   };
 });
 
-// Fallback for a missed server status event and for secondary backends, which have no event.
-// Registrations stay cached until bearer credentials near expiry.
-const PLATFORM_POLL_INTERVAL = "3 seconds";
-
-/** Ticks on the poll and whenever the desktop host reports its local server ready. */
+/** Ticks once at start, on each host topology notice and on the shared safety poll. */
 export function platformRegistrationTriggers(
-  bridge: Pick<HostBridge, "onServerStatus"> | undefined,
-  pollInterval: Duration.Input = PLATFORM_POLL_INTERVAL,
+  subscribe: (listener: () => void) => () => void = subscribeDesktopLocalTopology,
 ): Stream.Stream<void> {
-  const serverReady = Stream.callback<void>((queue) =>
+  const changes = Stream.callback<void>((queue) =>
     Effect.acquireRelease(
-      Effect.sync(() =>
-        bridge?.onServerStatus?.((status) => {
-          if (status.state === "ready") Queue.offerUnsafe(queue, undefined);
-        }),
-      ),
-      (unsubscribe) => Effect.sync(() => unsubscribe?.()),
+      Effect.sync(() => subscribe(() => Queue.offerUnsafe(queue, undefined))),
+      (unsubscribe) => Effect.sync(unsubscribe),
     ),
   );
-  return Stream.merge(Stream.tick(pollInterval), serverReady);
+  return Stream.merge(Stream.succeed(undefined), changes);
 }
-const SECONDARY_BEARER_REFRESH_SKEW_MS = 5_000;
+// Registrations stay cached until bearer credentials near expiry; two safety polls of skew
+// mean a poll always refreshes a bearer before it expires.
+const SECONDARY_BEARER_REFRESH_SKEW_MS = 2 * DESKTOP_LOCAL_TOPOLOGY_SAFETY_POLL_MS;
 
 function secondaryBearerExpiresAtEpochMs(
   issuedAtEpochMs: number,
@@ -769,7 +765,7 @@ const layerPlatformConnectionSource = Layer.effect(
     }).pipe(Effect.provide(FetchHttpClient.layer));
 
     return PlatformConnectionSource.PlatformConnectionSource.of({
-      registrations: platformRegistrationTriggers(window.hostBridge).pipe(
+      registrations: platformRegistrationTriggers().pipe(
         Stream.mapEffect(() => buildPlatformRegistrations),
       ),
     });
