@@ -39,21 +39,16 @@ export function createLocalApi(): LocalApi {
         }
       },
     },
+    // Drawn in the page on every host: native menus on Linux and Windows drop item icons
+    // and section headers.
     contextMenu: {
       show: async <T extends string>(
         items: readonly ContextMenuItem<T>[],
         position?: { x: number; y: number },
-      ): Promise<T | null> => {
-        if (window.hostBridge) {
-          return window.hostBridge.showContextMenu(items, position) as Promise<T | null>;
-        }
-        return showContextMenuFallback(items, position);
-      },
-      // Unlike native menus, the DOM fallback needs dismissal when underlying state disappears.
+      ): Promise<T | null> => showContextMenuFallback(items, position),
+      // The page menu needs dismissal when the state underneath it disappears.
       close: async () => {
-        if (!window.hostBridge) {
-          dismissContextMenu();
-        }
+        dismissContextMenu();
       },
     },
     persistence: {

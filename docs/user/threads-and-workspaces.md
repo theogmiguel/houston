@@ -86,8 +86,9 @@ as a card above the layout.
   recent one.
 - **Fill the window** gives the focused pane the whole window, and the same command undoes it.
   **Column width** cycles ⅓, ½, ⅔ and full width; **Center column**, **Pull pane into the left
-  column** and **Push pane out to its own column** rearrange the strip. The workspaces overview
-  zooms out to every workspace.
+  column** and **Push pane out to its own column** rearrange the strip. Drag the edge between
+  two columns or stacked panes to resize them, or double-click it to split their room evenly.
+  The workspaces overview zooms out to every workspace.
 - Columns always fill at least the window's width. **Settings ▸ Appearance ▸ Behavior** sets
   what happens when a new pane has no room (**When it doesn't fit**): **Shrink, then scroll**
   (the default) narrows columns to 420px before the strip scrolls, **Always shrink** keeps every

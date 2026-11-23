@@ -13,6 +13,7 @@ import {
   LayoutPill,
   LayoutResizeGuide,
   LayoutResizeGutter,
+  LayoutWindowLayer,
 } from "../components/ui/layout-pane";
 import { settleStripCamera } from "../motion/stripCamera";
 import {
@@ -150,7 +151,8 @@ function presetAt(value: number): number | null {
 
 /**
  * Resize columns independently and stacked panes within their column.
- * Preview during the drag, then persist once on release; keyboard resizing uses presets.
+ * Preview during the drag, then persist once on release; keyboard resizing uses presets, and a
+ * double-click evens the edge's two sides.
  * Handles live in the scrolling strip so they stay aligned with pane edges.
  */
 export function LayoutResizeHandles({
@@ -178,6 +180,7 @@ export function LayoutResizeHandles({
   const frameRef = useRef<number | null>(null);
   const pointerRef = useRef({ x: 0, y: 0, scrollLeft: 0 });
   const heldStripPxRef = useRef(0);
+  const stageAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const cancelFrame = () => {
     if (frameRef.current === null) return;
@@ -402,6 +405,7 @@ export function LayoutResizeHandles({
             });
           }}
           {...keyboardFocusProps(`pane:${pane.id}`)}
+          onDoubleClick={() => useLayoutStore.getState().evenPaneEdge(pane.id)}
           onPointerMove={moveDrag}
           onPointerUp={endDrag}
           onPointerCancel={() => finishDrag()}
@@ -465,6 +469,7 @@ export function LayoutResizeHandles({
           });
         }}
         {...keyboardFocusProps(`column:${column.id}`)}
+        onDoubleClick={() => useLayoutStore.getState().evenColumnEdge(column.id)}
         onPointerMove={moveDrag}
         onPointerUp={endDrag}
         onPointerCancel={() => finishDrag()}
@@ -488,18 +493,23 @@ export function LayoutResizeHandles({
   return (
     <>
       {handles}
-      {guide ? <ResizeFeedback drag={guide} stripWidth={stripWidth} /> : null}
+      <LayoutPassiveLayer ref={stageAnchorRef} />
+      {guide ? (
+        <LayoutWindowLayer anchor={stageAnchorRef} clip={scrollerRef}>
+          <ResizeFeedback drag={guide} stripWidth={stripWidth} />
+        </LayoutWindowLayer>
+      ) : null}
     </>
   );
 }
 
-/** The drag's guide line on the moving edge and the pill naming the size. Static paint that follows the pointer. */
+/** The drag's guide line on the moving edge and the pill naming the size, in strip coordinates. */
 function ResizeFeedback({ drag, stripWidth }: { drag: ResizeGuide; stripWidth: number }) {
   if (drag.kind === "column") {
     const edge = drag.columnLeft + drag.value;
     const toPct = (viewportUnits: number) => `${(viewportUnits / stripWidth) * 100}%`;
     return (
-      <LayoutPassiveLayer>
+      <>
         <LayoutResizeGuide
           orientation="vertical"
           style={{ left: toPct(edge), top: 0, bottom: 0 }}
@@ -510,14 +520,14 @@ function ResizeFeedback({ drag, stripWidth }: { drag: ResizeGuide; stripWidth: n
         >
           {`${fractionLabel(drag.value, drag.snapped)} width`}
         </LayoutPill>
-      </LayoutPassiveLayer>
+      </>
     );
   }
   const edge = drag.paneTop + drag.value;
   const left = `${(drag.columnLeft / stripWidth) * 100}%`;
   const width = `${(drag.columnWidth / stripWidth) * 100}%`;
   return (
-    <LayoutPassiveLayer>
+    <>
       <LayoutResizeGuide
         orientation="horizontal"
         style={{
@@ -532,6 +542,6 @@ function ResizeFeedback({ drag, stripWidth }: { drag: ResizeGuide; stripWidth: n
       >
         {`${fractionLabel(drag.value, drag.snapped)} height`}
       </LayoutPill>
-    </LayoutPassiveLayer>
+    </>
   );
 }
