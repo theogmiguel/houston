@@ -150,6 +150,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import * as TraceContext from "../../houston/observability/TraceContext.ts";
+import { CLAUDE_MODEL_USAGE_LIMIT_CODE } from "../../houston/providerReadiness.ts";
 import { snapshotMcpApp } from "../../mcpApps/McpAppSnapshot.ts";
 import { resolveClaudeSdkExecutablePath } from "../../provider/Drivers/ClaudeExecutable.ts";
 import {
@@ -4336,6 +4337,13 @@ const CLAUDE_USAGE_LIMIT_WINDOWS = {
   seven_day_overage_included: "7-day model",
   overage: "overage",
 } satisfies Record<NonNullable<SDKRateLimitInfo["rateLimitType"]>, string>;
+
+// Houston: windows that limit one model; the account can still serve its other models.
+const CLAUDE_MODEL_SCOPED_LIMIT_WINDOWS: ReadonlySet<string> = new Set([
+  "seven_day_opus",
+  "seven_day_sonnet",
+  "seven_day_overage_included",
+] satisfies ReadonlyArray<NonNullable<SDKRateLimitInfo["rateLimitType"]>>);
 
 const CLAUDE_USAGE_LIMIT_MAX_WAIT_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -10313,9 +10321,23 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               (message.subtype !== "success" || message.api_error_status == null) &&
               resultFailure?.message ===
                 makeProviderFailure({ message: context.authenticationFailureMessage }).message;
+            // Houston: a limit on one model must not mark the whole instance out of usage.
+            const limitWindows = [
+              ...context.rejectedRateLimitTypes,
+              ...(assistantLimit === null ? [] : [assistantLimit.type]),
+            ];
+            const modelScopedLimit =
+              limitWindows.length > 0 &&
+              limitWindows.every(
+                (window) => window !== null && CLAUDE_MODEL_SCOPED_LIMIT_WINDOWS.has(window),
+              );
             const terminalFailure =
               resultFailure?.class === "usage_limit"
-                ? { ...resultFailure, resetAt: resetAt ?? resultFailure.resetAt ?? null }
+                ? {
+                    ...resultFailure,
+                    ...(modelScopedLimit ? { code: CLAUDE_MODEL_USAGE_LIMIT_CODE } : {}),
+                    resetAt: resetAt ?? resultFailure.resetAt ?? null,
+                  }
                 : signedOut && resultFailure !== null
                   ? { ...resultFailure, code: "authentication_failed" }
                   : resultFailure;

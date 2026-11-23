@@ -30,6 +30,12 @@ export type TurnReadiness =
   | { readonly state: "outOfUsage"; readonly resetsAt: string | null; readonly message: string }
   | { readonly state: "none" };
 
+/**
+ * The Claude adapter stamps this on a usage limit whose rejected windows are all per-model
+ * (the weekly Opus window, for example): the account can still serve its other models.
+ */
+export const CLAUDE_MODEL_USAGE_LIMIT_CODE = "model_usage_limit";
+
 interface FamilyCodes {
   readonly signedOut: ReadonlySet<string>;
   readonly rejected: (failure: OrchestrationV2ProviderFailure) => boolean;
@@ -80,7 +86,7 @@ export function classifyTurnFailure(
   const family = FAMILY_CODES[driver];
   if (family === undefined) return { state: "none" };
   if (failure.class === "usage_limit") {
-    return family.usageLimit
+    return family.usageLimit && failure.code !== CLAUDE_MODEL_USAGE_LIMIT_CODE
       ? { state: "outOfUsage", resetsAt: failure.resetAt ?? null, message: failure.message }
       : { state: "none" };
   }

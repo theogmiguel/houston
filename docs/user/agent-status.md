@@ -42,7 +42,8 @@ and a thread banner show one readiness state and one action:
 - **Signed out** — sign in with the provider again.
 - **Credentials rejected** — the provider refused the stored credentials.
 - **Out of usage** — the account reached its limit; the reset time is shown when the
-  provider reports it.
+  provider reports it. A limit on one model, such as Claude's weekly Opus limit, stops only
+  the thread that hit it; the provider stays ready for its other models.
 - **Ready** — the provider can run threads.
 
 A thread cannot start on a provider that is not ready. The refusal names the provider and

@@ -24,6 +24,7 @@ import { classifyCodexManagedError } from "../provider/CodexManagedErrors.ts";
 import { claudeSignedOutMessage } from "../provider/Drivers/ClaudeHome.ts";
 import type * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import {
+  CLAUDE_MODEL_USAGE_LIMIT_CODE,
   classifyTurnFailure,
   decorateProviderRegistry,
   layerReadinessLedger,
@@ -373,6 +374,21 @@ describe("usage limits by family", () => {
           resetsAt: null,
           message: "Mistral Vibe did not say when its limit resets",
           at: "2026-10-29T12:00:00.000Z",
+        });
+      }),
+    ),
+  );
+
+  it.effect("a Claude limit on one model leaves the instance ready for its other models", () =>
+    withLedger(
+      Effect.gen(function* () {
+        const claude = makeProvider("claudeAgent");
+        const { readinessAfter } = yield* makeHarness([claude]);
+        const modelLimit = failure({ ...CLAUDE_USAGE_LIMIT, code: CLAUDE_MODEL_USAGE_LIMIT_CODE });
+
+        assert.deepEqual(classifyTurnFailure(claude.driver, modelLimit), { state: "none" });
+        assert.deepEqual(yield* readinessAfter(claude, [failed(claude, modelLimit)]), {
+          state: "ready",
         });
       }),
     ),
