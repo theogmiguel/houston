@@ -4,6 +4,7 @@ import {
   useRef,
   type CSSProperties,
   type HTMLAttributes,
+  type PointerEventHandler,
   type ReactNode,
   type Ref,
   type RefObject,
@@ -300,13 +301,22 @@ export function LayoutTabClose({
 }
 
 /** The `+` button after the last tab. */
-export function LayoutTabAdd({ label, onClick }: { label: string; onClick: () => void }) {
+export function LayoutTabAdd({
+  label,
+  onClick,
+  onPointerDown,
+}: {
+  label: string;
+  onClick: () => void;
+  onPointerDown?: PointerEventHandler<HTMLButtonElement>;
+}) {
   return (
     <button
       type="button"
       aria-label={label}
       data-layout-tab-add=""
       onClick={onClick}
+      onPointerDown={onPointerDown}
       className="grid h-8 w-7 shrink-0 cursor-pointer place-items-center self-end rounded-(--r-ctl) text-muted-foreground outline-none transition-colors duration-(--motion-feedback) ease-standard hover:text-foreground focus-visible:ring-2 focus-visible:ring-(--accent-ink) focus-visible:ring-inset motion-reduce:transition-none [-webkit-app-region:no-drag]"
     >
       <PlusIcon aria-hidden className="size-3.5" />

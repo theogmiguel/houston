@@ -21,7 +21,7 @@ import { useClosedViewStore } from "../closedViewStore";
 import { openThreadInLayout } from "../threads/openThreadInLayout";
 import { closeLayoutTabByUser } from "./layoutActions";
 import { buildLayout } from "./layoutFixtures";
-import { selectFocusedTab, type LayoutState } from "./layoutModel";
+import { countLayoutTabs, selectFocusedTab, type LayoutState } from "./layoutModel";
 import { useLayoutStore } from "./layoutStore";
 import { setThreadMemberships } from "./threadMembership";
 
@@ -84,19 +84,7 @@ function layoutOf(shape: string[][][][]): LayoutState {
 }
 
 const focusedTabId = () => selectFocusedTab(useLayoutStore.getState().layout)?.id ?? null;
-const tabCount = () =>
-  useLayoutStore
-    .getState()
-    .layout.workspaces.reduce(
-      (total, workspace) =>
-        total +
-        workspace.columns.reduce(
-          (inColumn, column) =>
-            inColumn + column.panes.reduce((inPane, pane) => inPane + pane.tabs.length, 0),
-          0,
-        ),
-      0,
-    );
+const tabCount = () => countLayoutTabs(useLayoutStore.getState().layout);
 
 async function bootAt(path: string, shape: string[][][][] = [[]]) {
   useLayoutStore.getState().reset();
