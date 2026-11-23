@@ -5,6 +5,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
 
 import { codexAuthDeliveryUrl, readCodexAuthHandoff } from "@houston-app/shared/codexAuthHandoff";
@@ -17,6 +18,7 @@ import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import { CodexAuthCallbackError, receiveCodexAuthCallback } from "./CodexAuthCallback.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopAppActivation from "./DesktopAppActivation.ts";
+import * as DesktopState from "./DesktopState.ts";
 import { isDeepLink, resolveLaunchTargets } from "./DesktopLaunchTargets.ts";
 import * as DesktopWebLinks from "./DesktopWebLinks.ts";
 
@@ -34,15 +36,19 @@ export class DesktopAppLinks extends Context.Service<
   }
 >()("@houston-app/desktop/app/DesktopAppLinks") {}
 
+export const shouldHandleSecondInstance = (quitting: boolean): boolean => !quitting;
+
 /** @public */
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const electronApp = yield* ElectronApp.ElectronApp;
   const shell = yield* ElectronShell.ElectronShell;
+  const desktopState = yield* DesktopState.DesktopState;
 
   const pendingSecondInstances: Array<{ readonly argv: readonly string[]; readonly cwd: string }> =
     [];
   let handleSecondInstance = (argv: readonly string[], cwd: string) => {
+    if (!shouldHandleSecondInstance(Ref.getUnsafe(desktopState.quitting))) return;
     pendingSecondInstances.push({ argv, cwd });
   };
   yield* electronApp.on(
@@ -148,6 +154,7 @@ export const make = Effect.gen(function* () {
         }
       };
       handleSecondInstance = (argv, cwd) => {
+        if (!shouldHandleSecondInstance(Ref.getUnsafe(desktopState.quitting))) return;
         openLaunchTargets(argv, cwd);
         void runPromise(
           Effect.gen(function* () {

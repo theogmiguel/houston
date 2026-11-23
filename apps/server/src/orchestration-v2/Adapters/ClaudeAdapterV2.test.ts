@@ -739,7 +739,10 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
     assert.equal(systemPrompt.type, "preset");
     assert.equal(systemPrompt.preset, "claude_code");
     assert.include(systemPrompt.append ?? "", "Use `delegate_task`");
-    assert.include(systemPrompt.append ?? "", "call `houston_background_wait`");
+    assert.include(
+      systemPrompt.append ?? "",
+      "call `houston_background_wait` with `taskIds: [id]`",
+    );
     assert.notInclude(systemPrompt.append ?? "", "## Houston devices");
     const logged = ClaudeAdapterV2.loggedClaudeQueryOptions(options);
     assert.equal(logged.hasMcpServers, true);

@@ -1713,7 +1713,7 @@ const CLAUDE_BACKGROUND_WAIT_INSTRUCTIONS = `
 
 ### Background work you wait on
 
-To wait for a background command or Monitor you started (tests, a build), call \`houston_background_wait\` with its task ID before you end your turn. Do not mark work you leave running, or PRs. Houston MCP tools are deferred: load one with ToolSearch before you call it.
+To wait for a background command or Monitor you started (tests, a build), call \`houston_background_wait\` with \`taskIds: [id]\` before you end your turn. Do not mark work you leave running, or PRs. Houston MCP tools are deferred: load one with ToolSearch first.
 `;
 
 // Native subagents start from their task, not this session's system prompt.
