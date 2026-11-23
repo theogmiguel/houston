@@ -211,5 +211,3 @@ export function useDesktopUpdateActions() {
     check,
   } as const;
 }
-
-export type DesktopUpdateActions = ReturnType<typeof useDesktopUpdateActions>;

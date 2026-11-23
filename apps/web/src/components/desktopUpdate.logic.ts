@@ -2,7 +2,7 @@ import type { DesktopUpdateActionResult, DesktopUpdateState } from "@houston-app
 
 export type DesktopUpdateButtonAction = "download" | "install" | "none";
 
-export type DesktopUpdateAction = "download" | "install";
+type DesktopUpdateAction = "download" | "install";
 
 export type ReportLocalUpdateError = (title: string, description: string) => void;
 

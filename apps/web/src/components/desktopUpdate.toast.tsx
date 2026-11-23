@@ -65,7 +65,7 @@ export function showDesktopUpdateDownloadedToast(
 }
 
 /** A failed quit or relaunch reports after the install call has already returned accepted. */
-export const DESKTOP_UPDATE_INSTALL_FAILURE_WATCH_MS = 30_000;
+const DESKTOP_UPDATE_INSTALL_FAILURE_WATCH_MS = 30_000;
 
 export function watchDesktopUpdateInstallFailure(baselineMessage: string | null): () => void {
   if (typeof window === "undefined") return () => {};
