@@ -1061,15 +1061,41 @@ export const make = Effect.gen(function* () {
 
     if (Option.isNone(activeAction)) {
       const checkedAt = yield* currentIsoTimestamp;
-      yield* updateState((current) => ({
-        ...current,
-        status: "error",
-        message: error.message,
-        checkedAt,
-        downloadPercent: null,
-        errorContext: current.errorContext,
-        canRetry: getCanRetryFromState(current),
-      }));
+      yield* updateState((current) => {
+        // A background error describes no user action, so it must not leave a stale action context
+        // that offers a click the main process would refuse.
+        if (current.downloadedVersion !== null) {
+          return {
+            ...current,
+            status: "downloaded",
+            message: null,
+            checkedAt,
+            downloadPercent: 100,
+            errorContext: null,
+            canRetry: true,
+          };
+        }
+        if (current.availableVersion !== null) {
+          return {
+            ...current,
+            status: "available",
+            message: error.message,
+            checkedAt,
+            downloadPercent: null,
+            errorContext: null,
+            canRetry: true,
+          };
+        }
+        return {
+          ...current,
+          status: "error",
+          message: error.message,
+          checkedAt,
+          downloadPercent: null,
+          errorContext: null,
+          canRetry: getCanRetryFromState(current),
+        };
+      });
     }
 
     yield* logUpdaterError(error.message, {
