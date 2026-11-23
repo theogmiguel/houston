@@ -38,6 +38,10 @@ import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
+import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
+import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
+import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
+import { checkpointWorkspace } from "@houston-app/provider-testing/replayWorkspace";
 
 it("stamps authoritative provenance on commands that create threads or messages", () => {
   const command: OrchestrationV2Command = {
@@ -916,4 +920,99 @@ it.effect("Force stop refuses once a newer run has started, before killing anyth
     expect(error.reason).toBe("superseded");
     expect(killed).toBe(false);
   }),
+);
+
+it.effect("a send that cannot steer names the modes that deliver it in each thread state", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const name = "thread-management-no-steerable-run";
+      const cwd = yield* checkpointWorkspace(name);
+      const projectId = ProjectId.make(`project:${name}`);
+      const threadId = ThreadId.make(`thread:${name}`);
+      const instanceId = ProviderInstanceId.make("codex");
+      const modelSelection = { instanceId, model: "test-model" };
+      // The effect worker never runs, so no provider session opens and no turn starts.
+      const adapter = {
+        instanceId,
+        driver: ProviderDriverKind.make("codex"),
+        getCapabilities: () => Effect.succeed(CodexProviderCapabilitiesV2),
+        planSelectionTransition: () => Effect.succeed({ type: "apply_on_next_turn" }),
+        openSession: () => Effect.die("unused"),
+      } as unknown as ProviderAdapter.ProviderAdapterV2["Service"];
+      const layerOrchestrator = ProviderReplayHarness.layerWithRegistry(
+        { name },
+        ProviderAdapterRegistry.layerSingle(adapter),
+        { runEffectWorker: false },
+      );
+      const layerTest = Layer.merge(
+        layerOrchestrator,
+        ThreadManagementService.layer.pipe(
+          Layer.provide(layerOrchestrator),
+          Layer.provide(ServerSettings.layerTest()),
+          Layer.provide(layerReceiptsTest),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const threads = yield* ThreadManagementService.ThreadManagementService;
+        const send = (id: string, mode: ThreadManagementService.ThreadManagementSendMode) =>
+          threads.sendToThread({
+            projectId,
+            threadId,
+            commandId: CommandId.make(`command:${name}:${id}`),
+            messageId: MessageId.make(`message:${name}:${id}`),
+            text: id,
+            attachments: [],
+            mode,
+            createdBy: "agent",
+            creationSource: "mcp",
+          });
+        const refusal = (id: string, mode: ThreadManagementService.ThreadManagementSendMode) =>
+          send(id, mode).pipe(
+            Effect.flip,
+            Effect.map((error) => error.message),
+          );
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make(`command:${name}:create`),
+          threadId,
+          projectId,
+          title: "No steerable run",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: cwd,
+          createdBy: "user",
+          creationSource: "web",
+        });
+
+        expect(yield* refusal("steer-no-run", "steer")).toBe(
+          `Thread ${threadId} has no running turn for mode "steer" (no runs yet). Use mode "auto" to deliver now (it starts the idle thread), or mode "queue" for a new turn.`,
+        );
+        expect(yield* refusal("restart-no-run", "restart")).toBe(
+          `Thread ${threadId} has no running turn for mode "restart" (no runs yet). Use mode "auto" to deliver now (it starts the idle thread), or mode "queue" for a new turn.`,
+        );
+
+        const first = yield* send("first", "auto");
+        expect(first.delivery).toBe("started");
+        // Its run is starting: no provider turn yet to steer.
+        expect(first.run.status).toBe("starting");
+
+        expect(yield* refusal("steer-not-started", "steer")).toBe(
+          `Thread ${threadId} has no running turn for mode "steer": its run is starting with no turn that can be steered. Use mode "auto" or mode "queue" to deliver the message as a turn after that run.`,
+        );
+        expect(yield* refusal("restart-not-started", "restart")).toBe(
+          `Thread ${threadId} has no running turn for mode "restart": its run is starting with no turn that can be restarted. Use mode "auto" or mode "queue" to deliver the message as a turn after that run.`,
+        );
+        const after = yield* send("auto-not-started", "auto");
+        expect(after).toMatchObject({ delivery: "queued", run: { status: "queued" } });
+        const runs = (yield* orchestrator.getThreadProjection(threadId)).runs;
+        expect(runs.map((run) => [run.id, run.status])).toEqual([
+          [first.run.id, "starting"],
+          [after.run.id, "queued"],
+        ]);
+      }).pipe(Effect.provide(layerTest));
+    }),
+  ),
 );

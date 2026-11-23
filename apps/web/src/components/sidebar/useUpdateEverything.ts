@@ -9,9 +9,10 @@ import { useReleasePublished } from "~/state/releasePublication";
 import { environmentIdsKey } from "~/state/environmentAtomList";
 import { environmentUpdateStatesAtom } from "~/state/server";
 import { environmentSessionStatesAtom } from "~/state/session";
+import type { ReportLocalUpdateError } from "../desktopUpdate.logic";
 import { getProviderUpdateRunOutcome } from "../ProviderUpdateLaunchNotification.logic";
 import { useProviderUpdates } from "../ProviderUpdatesAction";
-import { canUpdateServer, type ServerUpdateOutcome, useServerUpdate } from "../ServerUpdateAction";
+import { canUpdateServer, useServerUpdate } from "../ServerUpdateAction";
 import {
   type ChannelSwitchRelease,
   closeFinishedUpdateRun,
@@ -26,11 +27,12 @@ import {
 } from "./updateEverything.logic";
 import {
   clearSavedUpdateEverythingResult,
+  getUpdateEverythingRun,
   saveUpdateEverythingResult,
   setUpdateEverythingRun,
   settleUpdateRunMachine,
   showUpdateEverythingResult,
-  waitForServerUpdateHandoff,
+  waitForServerUpdateStarted,
   waitForUpdateRestart,
 } from "./updateEverythingRun";
 
@@ -46,8 +48,6 @@ export function isHostedByThisApp(
       isDesktopLocalConnectionTarget(environment.entry.target))
   );
 }
-
-export type ReportLocalUpdateError = (title: string, description: string) => void;
 
 /** `channelSwitch` makes the run move the fleet to that release's track instead of updating it. */
 export function useUpdateEverything(
@@ -119,9 +119,11 @@ export function useUpdateEverything(
     run: async ({
       downloadLocal,
       installLocal,
+      localVersion: requestedLocalVersion,
     }: {
       downloadLocal?: (reportError: ReportLocalUpdateError) => Promise<boolean>;
       installLocal?: (reportError: ReportLocalUpdateError) => Promise<boolean>;
+      localVersion?: string | null;
     }) => {
       const localFailures: Array<string> = [];
       const reportLocalError: ReportLocalUpdateError = (title, description) => {
@@ -156,7 +158,12 @@ export function useUpdateEverything(
           providerFailure: null,
         });
       }
-      const localVersion = installLocal ? localUpdateVersion : null;
+      const localVersion =
+        installLocal === undefined
+          ? null
+          : requestedLocalVersion !== undefined
+            ? requestedLocalVersion
+            : localUpdateVersion;
       setUpdateEverythingRun(() => ({
         ...(channelSwitch ? { trackSwitch: true } : {}),
         localVersion,
@@ -165,100 +172,135 @@ export function useUpdateEverything(
         machines: Array.from(machinesById.values()),
       }));
       const providerFailures = new Map<UpdateRunMachine["environmentId"], string>();
-      const finishedServers: Array<{ label: string; outcome: ServerUpdateOutcome }> = [];
-      try {
-        const outcome = await runUpdateEverything({
-          ...(downloadLocal ? { downloadLocal: () => downloadLocal(reportLocalError) } : {}),
-          updateProviders: async () => {
-            const runs = await providers.updateAll({ quiet: true });
-            const outcomes = runs.map((run) => {
-              const runOutcome = getProviderUpdateRunOutcome(run);
-              if (runOutcome.status !== "updated") {
-                providerFailures.set(
-                  run.environmentId,
-                  runOutcome.status === "failed" ? runOutcome.line : "Provider update interrupted",
-                );
-              }
-              return runOutcome;
-            });
-            for (const machine of machinesById.values()) {
-              if (machine.server === null) {
-                settleUpdateRunMachine(
-                  machine.environmentId,
-                  providerFailures.get(machine.environmentId) ?? null,
-                );
-              }
+      let releaseTriggers: () => void = () => {};
+      const triggersStarted = new Promise<void>((resolve) => {
+        releaseTriggers = resolve;
+      });
+
+      const updateServers = async () => {
+        const runs = servers.map(async (server) => {
+          const serverOutcome = await updateServer(server, { quiet: true });
+          settleUpdateRunMachine(
+            server.environmentId,
+            serverOutcome.status === "failed"
+              ? serverOutcome.message
+              : (providerFailures.get(server.environmentId) ?? null),
+            {
+              serverUpdated: serverOutcome.status !== "failed",
+              providerFailure: providerFailures.get(server.environmentId) ?? null,
+            },
+          );
+          return { label: server.serverLabel, outcome: serverOutcome };
+        });
+        // This app's restart only needs every remote trigger sent, not its handoff finished.
+        await Promise.all(
+          servers.map((server, index) =>
+            waitForServerUpdateStarted(server.environmentId, runs[index]!),
+          ),
+        );
+        releaseTriggers();
+        return runs;
+      };
+
+      const remotePath = runUpdateEverything({
+        updateProviders: async () => {
+          const runs = await providers.updateAll({ quiet: true });
+          const outcomes = runs.map((run) => {
+            const runOutcome = getProviderUpdateRunOutcome(run);
+            if (runOutcome.status !== "updated") {
+              providerFailures.set(
+                run.environmentId,
+                runOutcome.status === "failed" ? runOutcome.line : "Provider update interrupted",
+              );
             }
-            const serversStartedAt = Date.now();
-            setUpdateEverythingRun(
-              (run) =>
-                run && {
+            return runOutcome;
+          });
+          for (const machine of machinesById.values()) {
+            if (machine.server === null) {
+              settleUpdateRunMachine(
+                machine.environmentId,
+                providerFailures.get(machine.environmentId) ?? null,
+              );
+            }
+          }
+          const serversStartedAt = Date.now();
+          setUpdateEverythingRun((run) =>
+            run && run.phase === "providers"
+              ? {
                   ...run,
                   phase: "servers",
                   machines: run.machines.map((machine) =>
                     machine.server === null ? machine : { ...machine, startedAt: serversStartedAt },
                   ),
-                },
-            );
-            return outcomes;
-          },
-          updateServers: async () => {
-            const runs = servers.map(async (server) => {
-              const serverOutcome = await updateServer(server, { quiet: true });
-              settleUpdateRunMachine(
-                server.environmentId,
-                serverOutcome.status === "failed"
-                  ? serverOutcome.message
-                  : (providerFailures.get(server.environmentId) ?? null),
-                {
-                  serverUpdated: serverOutcome.status !== "failed",
-                  providerFailure: providerFailures.get(server.environmentId) ?? null,
-                },
-              );
-              const finished = { label: server.serverLabel, outcome: serverOutcome };
-              finishedServers.push(finished);
-              return finished;
-            });
-            await Promise.all(
-              servers.map((server, index) =>
-                waitForServerUpdateHandoff(server.environmentId, runs[index]!),
-              ),
-            );
-            return runs;
-          },
-        });
-        const result = (finished: ReadonlyArray<{ label: string; outcome: ServerUpdateOutcome }>) =>
-          collectUpdateEverythingResult({
-            localVersion: null,
-            localFailures,
-            servers: finished,
-            providers: outcome.providers,
-          });
-        if (outcome.localReady && installLocal) {
-          if (await waitForUpdateRestart(UPDATE_RESTART_DELAY_MS)) {
-            setUpdateEverythingRun(
-              (run) => run && { ...run, phase: "installing", restartAt: null },
-            );
-            saveUpdateEverythingResult({ ...result(finishedServers), localVersion });
-            if (await installLocal(reportLocalError)) return;
-            clearSavedUpdateEverythingResult();
-          }
-        }
-        setUpdateEverythingRun(
-          (run) =>
-            run &&
-            closeFinishedUpdateRun({
+                }
+              : run,
+          );
+          return outcomes;
+        },
+        updateServers,
+      })
+        .then(async (outcome) => {
+          const finishedServers = await Promise.all(outcome.servers);
+          showUpdateEverythingResult(
+            collectUpdateEverythingResult({
+              localVersion: null,
+              localFailures,
+              servers: finishedServers,
+              providers: outcome.providers,
+            }),
+          );
+          setUpdateEverythingRun((run) => {
+            if (!run || run.phase === "countdown" || run.phase === "installing") return run;
+            return closeFinishedUpdateRun({
               ...run,
               phase: "servers",
               restartAt: null,
               localVersion: null,
-            }),
-        );
-        showUpdateEverythingResult(result(await Promise.all(outcome.servers)));
-      } catch (error) {
-        setUpdateEverythingRun(() => null);
-        throw error;
-      }
+            });
+          });
+        })
+        .catch((error: unknown) => {
+          releaseTriggers();
+          setUpdateEverythingRun((run) =>
+            run && run.phase !== "countdown" && run.phase !== "installing"
+              ? { ...run, phase: "servers" }
+              : run,
+          );
+          throw error;
+        });
+
+      const localPath = async () => {
+        if (installLocal === undefined || localVersion === null) return;
+        const ready = downloadLocal === undefined ? true : await downloadLocal(reportLocalError);
+        if (!ready) {
+          setUpdateEverythingRun((run) => run && { ...run, localVersion: null });
+          return;
+        }
+        // Remote triggers go out first; their handoffs keep running on the remote machines.
+        await triggersStarted;
+        if (!(await waitForUpdateRestart(UPDATE_RESTART_DELAY_MS))) {
+          setUpdateEverythingRun((run) => run && { ...run, localVersion: null, restartAt: null });
+          return;
+        }
+        setUpdateEverythingRun((run) => run && { ...run, phase: "installing", restartAt: null });
+        saveUpdateEverythingResult({
+          localVersion,
+          updatedServers: 0,
+          updatedProviders: 0,
+          failures: [
+            ...localFailures,
+            ...(getUpdateEverythingRun()?.machines.flatMap((machine) =>
+              machine.failure === null ? [] : [`${machine.label}: ${machine.failure}`],
+            ) ?? []),
+          ],
+          restarting: [],
+        });
+        if (await installLocal(reportLocalError)) return;
+        clearSavedUpdateEverythingResult();
+        setUpdateEverythingRun((run) => run && { ...run, localVersion: null });
+      };
+
+      await Promise.all([localPath(), remotePath]);
     },
   };
 }
