@@ -15,7 +15,7 @@ import { formatDuration } from "@houston-app/shared/orchestrationTiming";
 import { tickTextContent } from "~/lib/tickTextContent";
 import { cn, isMacPlatform } from "~/lib/utils";
 import { useT } from "~/i18n/useT";
-import { useShortcutModifierState } from "../../shortcutModifierState";
+import { useShortcutModifierSelector } from "../../shortcutModifierState";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -205,15 +205,16 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     ? { onPointerDown: preventPointerFocus }
     : undefined;
   const t = useT();
-  const shortcutModifiers = useShortcutModifierState();
-  const isQueuing =
-    !isEditingQueuedMessage &&
-    resolveComposerDispatchMode({
-      running: isRunning,
-      activeTurnDefault: followUpBehavior,
-      canSteer,
-      alternateModifier: shortcutModifiers.metaKey || shortcutModifiers.ctrlKey,
-    }) === "queue";
+  const isQueuing = useShortcutModifierSelector(
+    (shortcutModifiers) =>
+      !isEditingQueuedMessage &&
+      resolveComposerDispatchMode({
+        running: isRunning,
+        activeTurnDefault: followUpBehavior,
+        canSteer,
+        alternateModifier: shortcutModifiers.metaKey || shortcutModifiers.ctrlKey,
+      }) === "queue",
+  );
   const alternateAction = alternateComposerDispatchAction(followUpBehavior);
   const isSendDisabled = !canOperateThread || sendDisabledReason !== null;
 
