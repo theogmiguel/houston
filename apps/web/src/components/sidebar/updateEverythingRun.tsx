@@ -30,10 +30,15 @@ export function useUpdateEverythingRun(): UpdateEverythingRun | null {
   return useAtomValue(updateEverythingRunAtom);
 }
 
+export function getUpdateEverythingRun(): UpdateEverythingRun | null {
+  return appAtomRegistry.get(updateEverythingRunAtom);
+}
+
 export function setUpdateEverythingRun(
   update: (run: UpdateEverythingRun | null) => UpdateEverythingRun | null,
 ): void {
   appAtomRegistry.update(updateEverythingRunAtom, update);
+  persistUpdateEverythingRun(getUpdateEverythingRun());
 }
 
 function updateRunMachines(update: (machine: UpdateRunMachine) => UpdateRunMachine): void {
@@ -132,6 +137,30 @@ export function waitForServerUpdateHandoff(
   });
 }
 
+/** Resolves once the host has accepted the update trigger, not when the server returns. */
+export function waitForServerUpdateStarted(
+  environmentId: EnvironmentId,
+  finished: Promise<unknown>,
+): Promise<void> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      queueMicrotask(() => unsubscribe());
+      resolve();
+    };
+    const unsubscribe = appAtomRegistry.subscribe(
+      serverEnvironment.updateStateAtom(environmentId),
+      (state) => {
+        if (state.status === "running") finish();
+      },
+      { immediate: true },
+    );
+    void finished.then(finish, finish);
+  });
+}
+
 let decideRestart: ((restart: boolean) => void) | null = null;
 
 export function waitForUpdateRestart(delayMs: number): Promise<boolean> {
@@ -154,6 +183,7 @@ export function postponeUpdateRestart(): void {
 }
 
 const SAVED_RESULT_KEY = "houston:update-everything-result:v1";
+const SAVED_RUN_KEY = "houston:update-everything-run:v1";
 const SAVED_RESULT_MAX_AGE_MS = 10 * 60 * 1000;
 // Covers a background service's 30-minute trial start, like the server update itself.
 const HANDOFF_TIMEOUT_MS = 32 * 60 * 1000;
@@ -166,6 +196,69 @@ const HandedOffServer = Schema.Struct({
 });
 type HandedOffServer = typeof HandedOffServer.Type;
 
+const SavedRun = Schema.Struct({
+  savedAt: Schema.Number,
+  handedOff: Schema.Array(HandedOffServer),
+});
+const decodeSavedRun = Schema.decodeUnknownOption(Schema.fromJsonString(SavedRun));
+
+function collectHandedOffServers(
+  run: UpdateEverythingRun | null,
+  requireRunning: boolean,
+): HandedOffServer[] {
+  return (run?.machines ?? []).flatMap((machine): HandedOffServer[] => {
+    if (machine.result !== null) return [];
+    const state = appAtomRegistry.get(serverEnvironment.updateStateAtom(machine.environmentId));
+    const running = state.status === "running";
+    if (requireRunning && !running && machine.handedOffVersion === null) return [];
+    // Only the desktop-managed server's update state knows its own feed version.
+    const targetVersion =
+      machine.handedOffVersion ?? (running ? state.targetVersion : machine.server?.targetVersion);
+    if (targetVersion === undefined) return [];
+    return [
+      {
+        environmentId: machine.environmentId,
+        label: machine.label,
+        targetVersion,
+        startedAt: machine.startedAt,
+      },
+    ];
+  });
+}
+
+/** Keeps a run's unfinished servers across a reload; provider-only work is reported by its own row. */
+function persistUpdateEverythingRun(run: UpdateEverythingRun | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    const handedOff = collectHandedOffServers(run, true);
+    if (handedOff.length === 0) {
+      window.localStorage.removeItem(SAVED_RUN_KEY);
+      return;
+    }
+    window.localStorage.setItem(
+      SAVED_RUN_KEY,
+      JSON.stringify({ savedAt: Date.now(), handedOff } satisfies typeof SavedRun.Type),
+    );
+  } catch {}
+}
+
+function takeSavedUpdateEverythingRun(): ReadonlyArray<HandedOffServer> {
+  try {
+    const raw = window.localStorage.getItem(SAVED_RUN_KEY);
+    if (raw === null) return [];
+    window.localStorage.removeItem(SAVED_RUN_KEY);
+    const saved = Option.getOrNull(
+      Option.filter(
+        decodeSavedRun(raw),
+        (value) => Date.now() - value.savedAt < HANDOFF_TIMEOUT_MS,
+      ),
+    );
+    return saved?.handedOff ?? [];
+  } catch {
+    return [];
+  }
+}
+
 const SavedResult = Schema.Struct({
   savedAt: Schema.Number,
   localVersion: Schema.NullOr(Schema.String),
@@ -177,24 +270,7 @@ const SavedResult = Schema.Struct({
 const decodeSavedResult = Schema.decodeUnknownOption(Schema.fromJsonString(SavedResult));
 
 export function saveUpdateEverythingResult(result: UpdateEverythingResult): void {
-  const run = appAtomRegistry.get(updateEverythingRunAtom);
-  const handedOff = (run?.machines ?? []).flatMap((machine): HandedOffServer[] => {
-    if (machine.result !== null) return [];
-    const state = appAtomRegistry.get(serverEnvironment.updateStateAtom(machine.environmentId));
-    // Only the desktop-managed server's update state knows its own feed version.
-    const targetVersion =
-      machine.handedOffVersion ??
-      (state.status === "running" ? state.targetVersion : machine.server?.targetVersion);
-    if (targetVersion === undefined) return [];
-    return [
-      {
-        environmentId: machine.environmentId,
-        label: machine.label,
-        targetVersion,
-        startedAt: machine.startedAt,
-      },
-    ];
-  });
+  const handedOff = collectHandedOffServers(appAtomRegistry.get(updateEverythingRunAtom), false);
   try {
     window.localStorage.setItem(
       SAVED_RESULT_KEY,
@@ -325,9 +401,17 @@ function followHandedOffServers(servers: ReadonlyArray<HandedOffServer>): void {
 export function startDesktopUpdateLaunchNotice(): () => void {
   const saved = takeSavedUpdateEverythingResult();
   if (saved) {
+    // The restart for install also persisted the run; its result already names the servers.
+    try {
+      window.localStorage.removeItem(SAVED_RUN_KEY);
+    } catch {}
     const handedOff = saved.handedOff ?? [];
     showUpdateEverythingResult({ ...saved, restarting: handedOff.map((server) => server.label) });
     followHandedOffServers(handedOff);
+  } else {
+    // A plain window reload mid-run: resume the servers the run had already triggered.
+    const handedOff = takeSavedUpdateEverythingRun();
+    if (handedOff.length > 0) followHandedOffServers(handedOff);
   }
 
   let notifiedNotAppliedVersion: string | null = null;
