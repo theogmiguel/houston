@@ -71,4 +71,23 @@ describe("LocalApi", () => {
 
     await expect(createLocalApi().dialogs.confirm("Delete this thread?")).resolves.toBe(false);
   });
+
+  it("draws context menus in the page on the desktop host, so their icons and headers show", async () => {
+    const hostShowContextMenu = vi.fn(async () => "rename");
+    Object.defineProperty(testWindow(), "hostBridge", {
+      configurable: true,
+      value: { showContextMenu: hostShowContextMenu },
+    });
+    showContextMenuFallbackMock.mockResolvedValue("archive");
+    const { createLocalApi } = await import("./localApi");
+    const items: ContextMenuItem[] = [{ id: "archive", label: "Archive", icon: "archive" }];
+
+    const api = createLocalApi();
+    await expect(api.contextMenu.show(items, { x: 4, y: 8 })).resolves.toBe("archive");
+    await api.contextMenu.close();
+
+    expect(showContextMenuFallbackMock).toHaveBeenCalledWith(items, { x: 4, y: 8 });
+    expect(hostShowContextMenu).not.toHaveBeenCalled();
+    expect(dismissContextMenuMock).toHaveBeenCalledOnce();
+  });
 });
