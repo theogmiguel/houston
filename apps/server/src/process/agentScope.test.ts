@@ -477,7 +477,9 @@ describe("AgentScope service", () => {
     ),
   );
 
-  it.effect("lifts MemoryHigh and keeps MemoryMax on a host without swap", () => {
+  // The agent scope layer is Linux-only.
+  const linuxTest = it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32");
+  linuxTest("lifts MemoryHigh and keeps MemoryMax on a host without swap", () => {
     memory.total = 16 * GiB;
     return withFakeSystemd(({ scope, calls, procRoot }) =>
       Effect.gen(function* () {
@@ -488,7 +490,7 @@ describe("AgentScope service", () => {
     );
   });
 
-  it.effect("keeps both memory limits on a host with swap", () => {
+  linuxTest("keeps both memory limits on a host with swap", () => {
     memory.total = 16 * GiB;
     return withFakeSystemd(({ scope, calls, procRoot }) =>
       Effect.gen(function* () {
@@ -501,7 +503,7 @@ describe("AgentScope service", () => {
     );
   });
 
-  it.effect("applies the memory limits again when swap is removed or added", () => {
+  linuxTest("applies the memory limits again when swap is removed or added", () => {
     memory.total = 16 * GiB;
     return withFakeSystemd(({ scope, calls, procRoot }) =>
       Effect.gen(function* () {
@@ -521,24 +523,31 @@ describe("AgentScope service", () => {
     );
   });
 
-  it.effect.each<{ readonly label: string; readonly meminfo: string | undefined }>([
+  const unreadableMeminfo: ReadonlyArray<{
+    readonly label: string;
+    readonly meminfo: string | undefined;
+  }> = [
     { label: "an unreadable memory reading", meminfo: undefined },
     { label: "a memory reading without SwapTotal", meminfo: "MemTotal:       16777216 kB\n" },
     { label: "a malformed memory reading", meminfo: "SwapTotal:      none kB\n" },
-  ])("keeps the throttle on $label", ({ meminfo }) => {
-    memory.total = 16 * GiB;
-    return withFakeSystemd(({ scope, calls, procRoot }) =>
-      Effect.gen(function* () {
-        if (meminfo !== undefined) writeMeminfo(procRoot, meminfo);
-        yield* scope.wrap({ command: "agent", args: [], name: "t", threadId: "a" });
-        expect(memoryLimitsOf(calls)).toEqual([
-          [`MemoryHigh=${10 * GiB}`, `MemoryMax=${12 * GiB}`],
-        ]);
-      }),
-    );
-  });
+  ];
+  // Tests made by skipIf have no each().
+  for (const { label, meminfo } of unreadableMeminfo) {
+    linuxTest(`keeps the throttle on ${label}`, () => {
+      memory.total = 16 * GiB;
+      return withFakeSystemd(({ scope, calls, procRoot }) =>
+        Effect.gen(function* () {
+          if (meminfo !== undefined) writeMeminfo(procRoot, meminfo);
+          yield* scope.wrap({ command: "agent", args: [], name: "t", threadId: "a" });
+          expect(memoryLimitsOf(calls)).toEqual([
+            [`MemoryHigh=${10 * GiB}`, `MemoryMax=${12 * GiB}`],
+          ]);
+        }),
+      );
+    });
+  }
 
-  it.effect("follows a live memory change and warns once while the update fails", () => {
+  linuxTest("follows a live memory change and warns once while the update fails", () => {
     memory.total = 16 * GiB;
     const warnings: Array<unknown> = [];
     const logger = Logger.make(({ message, logLevel }) => {
