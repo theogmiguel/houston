@@ -4,9 +4,10 @@ Houston checks for a newer release and installs it when you click.
 
 ## The check
 
-**Settings ▸ About** shows the version and whether a newer release is published. Houston
-checks about 15 seconds after start and then every four minutes, and **Check for Updates**
-runs one now. Checking is passive: installing always needs your click.
+**Settings ▸ About** and the update button in the sidebar footer show whether a newer release
+is published; both offer the same actions. Houston checks about 15 seconds after start and then
+every four hours, and **Check for Updates** runs one now. Checking is passive: installing always
+needs your click, and a check never hides an update that is already offered or downloaded.
 
 The request reads the public `latest*.yml` update feed attached to the project's GitHub
 releases. It carries nothing about you and ignores prereleases.
@@ -18,8 +19,19 @@ silently doing nothing.
 ## Installing
 
 **Download** fetches the update for this platform and installer and checks it against the
-checksum in the update feed. **Install** asks for confirmation and restarts the app on the
-new version. A failed download or install shows the cause.
+checksum in the update feed. **Install** (**Restart to update** in the sidebar) asks for
+confirmation and restarts the app on the new version. A download or install that is refused or
+fails says so and names the cause, including an install that fails after the app began to quit.
+When a newer release appears after a download, the downloaded build stays installable and the
+newer one is offered after the restart.
+
+The sidebar's update popover keeps the app's own action separate from **Update everything**,
+which also updates agent providers and connected servers. Restarting the app never waits for a
+remote server to finish its update; that update continues on its own machine.
+
+On Linux, the AppImage keeps the name `Houston-<arch>.AppImage`, so an update replaces the file
+in place and launchers that point at it keep working. An install from an earlier build with the
+version in its file name moves to that name once, on its next update.
 
 Installing restarts Houston, which stops the server it started and ends its running agents;
 finish work you want to keep first. If a server from another build is still

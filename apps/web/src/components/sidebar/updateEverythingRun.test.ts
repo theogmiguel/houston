@@ -1,9 +1,14 @@
 import { EnvironmentId } from "@houston-app/contracts";
+import { serverUpdateStateAtom } from "@houston-app/client-runtime/state/server";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { serverEnvironment } from "~/state/server";
-import { startDesktopUpdateLaunchNotice } from "./updateEverythingRun";
+import {
+  setUpdateEverythingRun,
+  startDesktopUpdateLaunchNotice,
+  waitForServerUpdateStarted,
+} from "./updateEverythingRun";
 
 function relaunchWhileRestarting(environmentId: EnvironmentId) {
   const now = 1_800_000_000_000;
@@ -24,6 +29,7 @@ function relaunchWhileRestarting(environmentId: EnvironmentId) {
   vi.stubGlobal("window", {
     localStorage: {
       getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => store.set(key, value),
       removeItem: (key: string) => store.delete(key),
     },
   });
@@ -32,6 +38,7 @@ function relaunchWhileRestarting(environmentId: EnvironmentId) {
 
 describe("startDesktopUpdateLaunchNotice", () => {
   afterEach(() => {
+    setUpdateEverythingRun(() => null);
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
@@ -50,6 +57,67 @@ describe("startDesktopUpdateLaunchNotice", () => {
     } finally {
       await vi.advanceTimersByTimeAsync(32 * 60 * 1000);
       stop();
+    }
+  });
+
+  it("resumes the servers a window reload saved mid-run", async () => {
+    const environmentId = EnvironmentId.make("reloading-machine");
+    const now = 1_800_000_000_000;
+    vi.useFakeTimers({ now });
+    const store = new Map([
+      [
+        "houston:update-everything-run:v1",
+        JSON.stringify({
+          savedAt: now,
+          handedOff: [
+            { environmentId, label: "Reloading", targetVersion: "9.9.9", startedAt: now },
+          ],
+        }),
+      ],
+    ]);
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => store.get(key) ?? null,
+        setItem: (key: string, value: string) => store.set(key, value),
+        removeItem: (key: string) => store.delete(key),
+      },
+    });
+    const stop = startDesktopUpdateLaunchNotice();
+    try {
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(appAtomRegistry.get(serverEnvironment.updateStateAtom(environmentId))).toMatchObject({
+        status: "running",
+        stage: "resuming",
+        targetVersion: "9.9.9",
+      });
+      expect(store.has("houston:update-everything-run:v1")).toBe(true);
+    } finally {
+      await vi.advanceTimersByTimeAsync(32 * 60 * 1000);
+      stop();
+    }
+  });
+
+  it("reports a server trigger as started without waiting for its handoff", async () => {
+    const environmentId = EnvironmentId.make("triggered-machine");
+    let finishHandoff = () => {};
+    const handoff = new Promise<void>((resolve) => {
+      finishHandoff = resolve;
+    });
+    const stateAtom = serverUpdateStateAtom(environmentId);
+    const release = appAtomRegistry.mount(stateAtom);
+    try {
+      const started = waitForServerUpdateStarted(environmentId, handoff);
+      appAtomRegistry.set(stateAtom, {
+        status: "running",
+        stage: "downloading",
+        fromVersion: "1.0.0",
+        targetVersion: "9.9.9",
+      });
+      await expect(started).resolves.toBeUndefined();
+      expect(appAtomRegistry.get(stateAtom)).toMatchObject({ stage: "downloading" });
+    } finally {
+      finishHandoff();
+      release();
     }
   });
 

@@ -12,6 +12,7 @@ import { beginThreadDragAt, endThreadDrag } from "../../threads/threadDrag";
 import {
   createLayoutState,
   findLayoutTabByContent,
+  isBlankLayoutWorkspace,
   normalizeLayout,
   openLayoutTab,
   selectFocusedTab,
@@ -572,7 +573,7 @@ describe("ThreadSidebar workspaces", () => {
     const fresh = listLayoutWorkspaces(useLayoutStore.getState().layout).find(
       (workspace) => workspace.name === "Fresh",
     )!;
-    expect(fresh.columns).toHaveLength(0);
+    expect(isBlankLayoutWorkspace(fresh)).toBe(true);
     expect(openedThreads.refs).toHaveLength(1);
   });
 

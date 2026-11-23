@@ -6,7 +6,7 @@ import { render } from "../../test/render";
 import { configureMotion } from "../motion/registry";
 import { finishWorkspaceSwitch } from "../motion/workspaceSwitch";
 import { buildLayout } from "./layoutFixtures";
-import { selectFocusedTab } from "./layoutModel";
+import { isBlankLayoutWorkspace, selectFocusedTab } from "./layoutModel";
 import { useLayoutStore } from "./layoutStore";
 import { LayoutOverview } from "./LayoutOverview";
 import { getOverviewPhase, setOverviewPhase } from "./overviewPhase";
@@ -143,7 +143,10 @@ describe("the overview on the strip", () => {
     const tabsOf = (workspace: { columns: { panes: { activeTabId: string | null }[] }[] }) =>
       workspace.columns.flatMap((column) => column.panes.map((p) => p.activeTabId));
     await userEvent.dragAndDrop(pane, host, { targetPosition: { x: 500, y: 6 } });
-    const workspaces = useLayoutStore.getState().layout.workspaces.map(tabsOf);
+    const workspaces = useLayoutStore
+      .getState()
+      .layout.workspaces.filter((workspace) => !isBlankLayoutWorkspace(workspace))
+      .map(tabsOf);
     expect(workspaces[0]).toEqual(["b"]);
     expect(workspaces.flat().toSorted()).toEqual(["a", "b", "c"]);
   });

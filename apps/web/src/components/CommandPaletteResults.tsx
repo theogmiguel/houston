@@ -2,10 +2,13 @@ import { type ResolvedKeybindingsConfig } from "@houston-app/contracts";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { ChevronRightIcon } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useState } from "react";
+import { flushSync } from "react-dom";
 import { cn } from "~/lib/utils";
 import { observeResize } from "~/lib/observeResize";
 import { textDirection } from "~/textDirection";
+import { dispatchCommandPalette } from "../commandPaletteStore";
 import { shortcutLabelForCommand } from "../keybindings";
+import { beginLayoutThreadDrag } from "../layout/layoutTabDrag";
 import {
   type CommandPaletteActionItem,
   type CommandPaletteGroup,
@@ -308,6 +311,19 @@ function CommandPaletteResultRow(props: {
       active={props.isActive}
       onMouseDown={(event) => {
         event.preventDefault();
+      }}
+      onPointerDown={(event) => {
+        const { dragThread } = props.item;
+        if (dragThread === undefined) return;
+        beginLayoutThreadDrag(
+          event,
+          { kind: "thread", ...dragThread },
+          // The palette is modal: it closes once the drag starts so the layout shows beneath.
+          {
+            onStart: () =>
+              flushSync(() => dispatchCommandPalette({ _tag: "SetOpen", open: false })),
+          },
+        );
       }}
       onClick={() => {
         props.onExecuteItem(props.item);

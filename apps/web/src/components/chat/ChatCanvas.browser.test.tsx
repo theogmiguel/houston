@@ -5,6 +5,7 @@ import "~/index.css";
 import { render } from "../../../test/render";
 import { ChatCanvas } from "./ChatCanvas";
 import { createChatCanvasStore } from "./canvasStore";
+import { useChatCanvas, useRegisterChatCanvasTimeline } from "./ChatCanvasContext";
 import { SubagentParentHeader } from "./SubagentParentHeader";
 
 const threadRef = {
@@ -56,4 +57,53 @@ it.each([
   const lane = getComputedStyle(screen.container.querySelector<HTMLElement>("[data-lane]")!);
   expect([lane.paddingLeft, lane.paddingRight]).toEqual([`${gutter}px`, `${gutter}px`]);
   await expect.poll(() => store.getState().measurements.padding).toBe(gutter);
+});
+
+function Probe({ onRender, hook }: { onRender: () => void; hook: () => unknown }) {
+  hook();
+  onRender();
+  return null;
+}
+
+/** Mounts a canvas around one probe, and resizes it by style so React itself renders nothing. */
+async function mountCanvas(hook: () => unknown) {
+  const store = createChatCanvasStore();
+  const renders = { count: 0 };
+  const screen = await render(
+    <div data-sized style={{ width: 1200, height: 800, display: "flex" }}>
+      <ChatCanvas store={store} threadRef={threadRef} preview={null} composerOverlayElement={null}>
+        <Probe hook={hook} onRender={() => (renders.count += 1)} />
+      </ChatCanvas>
+    </div>,
+  );
+  const sized = screen.container.querySelector<HTMLElement>("[data-sized]")!;
+  await expect.poll(() => store.getState().measurements.height).toBe(800);
+  return { screen, store, renders, sized };
+}
+
+it("does not re-render its consumers for a resize that moves nothing they draw", async () => {
+  const { screen, store, renders, sized } = await mountCanvas(useChatCanvas);
+  await using _screen = screen;
+  const settled = renders.count;
+  sized.style.width = "1230px";
+  await expect.poll(() => store.getState().measurements.width).toBe(1230);
+  expect(renders.count).toBe(settled);
+});
+
+it("re-renders its consumers when a resize changes the height they draw in", async () => {
+  const { screen, store, renders, sized } = await mountCanvas(useChatCanvas);
+  await using _screen = screen;
+  const settled = renders.count;
+  sized.style.height = "700px";
+  await expect.poll(() => store.getState().measurements.height).toBe(700);
+  await expect.poll(() => renders.count).toBeGreaterThan(settled);
+});
+
+it("does not re-render the timeline's registration consumer for any canvas change", async () => {
+  const { screen, store, renders, sized } = await mountCanvas(useRegisterChatCanvasTimeline);
+  await using _screen = screen;
+  const settled = renders.count;
+  sized.style.height = "700px";
+  await expect.poll(() => store.getState().measurements.height).toBe(700);
+  expect(renders.count).toBe(settled);
 });
