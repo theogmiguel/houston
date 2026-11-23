@@ -54,24 +54,34 @@ const DESKTOP_BACKEND_PORT_PROBE_HOSTS = ["127.0.0.1", "0.0.0.0", "::"] as const
 // holds the lock while it exits.
 const UPDATE_RELAUNCH_LOCK_RETRY_WINDOW = Duration.seconds(15);
 const UPDATE_RELAUNCH_LOCK_RETRY_DELAY = Duration.millis(250);
+// Matches the server's restart-marker TTL: an older marker is left over from a failed install, and
+// trusting it would make an ordinary second launch spin on the lock.
+const UPDATE_RESTART_MARKER_FRESHNESS = Duration.minutes(1);
 
 export const isUpdateRelaunchLaunch = (input: {
   readonly appImageSilentInstall: string | undefined;
-  readonly restartMarkerExists: boolean;
-}): boolean => input.appImageSilentInstall === "true" || input.restartMarkerExists;
+  readonly restartMarkerFresh: boolean;
+}): boolean => input.appImageSilentInstall === "true" || input.restartMarkerFresh;
 
 const detectUpdateRelaunch = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
   const env = yield* HostProcess.Environment;
-  const restartMarkerExists = yield* fileSystem
-    .exists(
-      environment.path.join(environment.baseDir, "runtime", DESKTOP_UPDATE_RESTART_MARKER_FILE),
-    )
-    .pipe(Effect.orElseSucceed(() => false));
+  const marker = yield* fileSystem
+    .stat(environment.path.join(environment.baseDir, "runtime", DESKTOP_UPDATE_RESTART_MARKER_FILE))
+    .pipe(Effect.option);
+  const now = yield* Clock.currentTimeMillis;
+  const restartMarkerFresh = Option.match(
+    Option.flatMap(marker, (info) => info.mtime),
+    {
+      onNone: () => false,
+      onSome: (writtenAt) =>
+        now - writtenAt.getTime() < Duration.toMillis(UPDATE_RESTART_MARKER_FRESHNESS),
+    },
+  );
   return isUpdateRelaunchLaunch({
     appImageSilentInstall: env.APPIMAGE_SILENT_INSTALL,
-    restartMarkerExists,
+    restartMarkerFresh,
   });
 });
 

@@ -8,22 +8,22 @@ import { acquireDesktopSingleInstanceLock, isUpdateRelaunchLaunch } from "./Desk
 describe("update relaunch detection", () => {
   it("recognises the environment electron-updater passes to the new AppImage", () => {
     assert.isTrue(
-      isUpdateRelaunchLaunch({ appImageSilentInstall: "true", restartMarkerExists: false }),
+      isUpdateRelaunchLaunch({ appImageSilentInstall: "true", restartMarkerFresh: false }),
     );
   });
 
   it("recognises the restart marker the install writes before quitting", () => {
     assert.isTrue(
-      isUpdateRelaunchLaunch({ appImageSilentInstall: undefined, restartMarkerExists: true }),
+      isUpdateRelaunchLaunch({ appImageSilentInstall: undefined, restartMarkerFresh: true }),
     );
   });
 
   it("treats any other launch as an ordinary one", () => {
     assert.isFalse(
-      isUpdateRelaunchLaunch({ appImageSilentInstall: undefined, restartMarkerExists: false }),
+      isUpdateRelaunchLaunch({ appImageSilentInstall: undefined, restartMarkerFresh: false }),
     );
     assert.isFalse(
-      isUpdateRelaunchLaunch({ appImageSilentInstall: "false", restartMarkerExists: false }),
+      isUpdateRelaunchLaunch({ appImageSilentInstall: "false", restartMarkerFresh: false }),
     );
   });
 });

@@ -270,6 +270,7 @@ export const make = DesktopLifecycle.of({
     const context = yield* Effect.context<DesktopLifecycleRegistrationServices>();
     const runEffect = Effect.runPromiseWith(context);
     const quit: QuitState = { phase: "running", waitingSinceNanos: 0n };
+    let quittingForUpdate = false;
     yield* electronTheme.onUpdated(() => {
       void runEffect(
         desktopWindow.syncAppearance.pipe(Effect.withSpan("desktop.lifecycle.themeUpdated")),
@@ -280,6 +281,7 @@ export const make = DesktopLifecycle.of({
       // Cancelling the following app "before-quit" event breaks that sequence,
       // most visibly on macOS where the native updater performs the relaunch.
       quit.phase = "allowed";
+      quittingForUpdate = true;
       // This event is synchronous and the updater's quit proceeds as soon as
       // the listener returns, so a forked destroyAll would race the quit
       // and windows could still be open when the process exits (visible on
@@ -320,8 +322,10 @@ export const make = DesktopLifecycle.of({
 
     if (environment.platform === "linux") {
       // A leftover zygote or renderer can keep the old AppImage mount and the
-      // single-instance lock alive after the main process exits.
+      // single-instance lock alive after the main process exits. Only an update
+      // quit relaunches, so an ordinary quit keeps Electron's own teardown.
       yield* electronApp.on("quit", () => {
+        if (!quittingForUpdate) return;
         const metrics = Effect.runSyncWith(context)(electronApp.getAppMetrics);
         terminateLeftoverLinuxChildren({
           metrics,
