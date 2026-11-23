@@ -44,6 +44,16 @@ export function reduceDesktopUpdateStateOnCheckStart(
   state: DesktopUpdateState,
   checkedAt: string,
 ): DesktopUpdateState {
+  // A background check must not hide an offered build or its download/install action.
+  if (state.status === "available" || state.status === "downloaded") {
+    return {
+      ...state,
+      checkedAt,
+      message: null,
+      errorContext: null,
+    };
+  }
+
   const hasDownloadedUpdate = state.downloadedVersion !== null;
   return {
     ...state,
