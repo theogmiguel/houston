@@ -1,3 +1,5 @@
+// @effect-diagnostics nodeBuiltinImport:off -- the updater relaunch spawns bash synchronously through its own patch.
+import * as NodeChildProcess from "node:child_process";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -8,10 +10,68 @@ import type { AppUpdater } from "electron-updater";
 
 type AutoUpdater = AppUpdater;
 
+// AppImageUpdater relaunches the new AppImage while this process and its
+// keepalive pipes are still alive. Closing every descriptor Electron inherited
+// lets the old AppImage mount exit; exec keeps the detached spawn semantics.
+const APPIMAGE_CLOSE_INHERITED_FDS_SCRIPT =
+  'for fd in /proc/self/fd/*; do fd=${fd##*/}; case $fd in 0|1|2) ;; *) eval "exec $fd>&-" 2>/dev/null ;; esac; done; exec "$@"';
+
+export const appImageCloseInheritedFdsCommand = (
+  command: string,
+  args: readonly string[] = [],
+): { readonly command: "bash"; readonly args: ReadonlyArray<string> } => ({
+  command: "bash",
+  args: ["-c", APPIMAGE_CLOSE_INHERITED_FDS_SCRIPT, "bash", command, ...args],
+});
+
+const APPIMAGE_SPAWN_PATCHED = Symbol.for("@houston-app/desktop/appimage-spawn-patched");
+
+interface AppImageUpdaterPrototype {
+  spawnLog?: (
+    cmd: string,
+    args?: string[],
+    env?: NodeJS.ProcessEnv,
+    stdio?: NodeChildProcess.StdioOptions,
+  ) => Promise<boolean>;
+  [APPIMAGE_SPAWN_PATCHED]?: boolean;
+}
+
+const patchAppImageSpawnLog = (
+  module: typeof import("electron-updater"),
+  autoUpdater: AutoUpdater,
+): void => {
+  // oxlint-disable-next-line houston/no-global-process-runtime -- the updater patch runs before the Effect runtime exists.
+  if (process.platform !== "linux" || !(autoUpdater instanceof module.AppImageUpdater)) return;
+  const prototype = module.AppImageUpdater.prototype as unknown as AppImageUpdaterPrototype;
+  if (prototype[APPIMAGE_SPAWN_PATCHED] === true) return;
+  prototype.spawnLog = function (cmd, args = [], env, stdio = "ignore") {
+    const wrapped = appImageCloseInheritedFdsCommand(cmd, args);
+    return new Promise<boolean>((resolve, reject) => {
+      try {
+        const child = NodeChildProcess.spawn(wrapped.command, [...wrapped.args], {
+          stdio,
+          env,
+          detached: true,
+        });
+        child.on("error", reject);
+        child.unref();
+        if (child.pid !== undefined) resolve(true);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  };
+  prototype[APPIMAGE_SPAWN_PATCHED] = true;
+};
+
 // electron-updater and its dependencies are evaluated on first use, not at launch.
 let autoUpdaterPromise: Promise<AutoUpdater> | undefined;
 const loadAutoUpdater = () =>
-  (autoUpdaterPromise ??= import("electron-updater").then((module) => module.autoUpdater));
+  (autoUpdaterPromise ??= import("electron-updater").then((module) => {
+    const autoUpdater = module.autoUpdater;
+    patchAppImageSpawnLog(module, autoUpdater);
+    return autoUpdater;
+  }));
 const withAutoUpdater = <A, E = never, R = never>(
   f: (updater: AutoUpdater) => Effect.Effect<A, E, R>,
 ) => Effect.promise(loadAutoUpdater).pipe(Effect.flatMap(f));
