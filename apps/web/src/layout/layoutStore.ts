@@ -13,6 +13,8 @@ import {
   closeLayoutTabsWhere,
   createLayoutState,
   cycleLayoutColumnWidth,
+  evenLayoutColumnEdge,
+  evenLayoutPaneEdge,
   findLayoutTabByContent,
   isLayoutTabInFocusedGroup,
   keepLayoutTab,
@@ -292,6 +294,9 @@ export interface LayoutStoreState {
   resizeColumn: (columnId: string, width: number) => void;
   cycleColumnWidth: (columnId: string) => void;
   resizePane: (paneId: string, size: number) => void;
+  /** Split the edge after this column or pane evenly with its neighbor. */
+  evenColumnEdge: (columnId: string) => void;
+  evenPaneEdge: (paneId: string) => void;
   // The keyboard map (layoutCommands.ts).
   focusColumnEdge: (edge: "first" | "last") => void;
   moveFocused: (direction: LayoutDirection) => void;
@@ -482,6 +487,8 @@ export const useLayoutStore = create<LayoutStoreState>()((set) => {
       apply((layout) => resizeLayoutColumn(layout, columnId, width), true),
     cycleColumnWidth: (columnId) => apply((layout) => cycleLayoutColumnWidth(layout, columnId)),
     resizePane: (paneId, size) => apply((layout) => resizeLayoutPane(layout, paneId, size)),
+    evenColumnEdge: (columnId) => apply((layout) => evenLayoutColumnEdge(layout, columnId), true),
+    evenPaneEdge: (paneId) => apply((layout) => evenLayoutPaneEdge(layout, paneId)),
     focusColumnEdge: (edge) => focusSoon((layout) => focusLayoutColumnEdge(layout, edge)),
     moveFocused: (direction) => apply((layout) => moveLayoutFocused(layout, direction)),
     pullPane: (side) => apply((layout) => pullLayoutPane(layout, side)),
