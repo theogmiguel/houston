@@ -11498,6 +11498,130 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       ),
   );
 
+  // Composed: Claude Code's result for a --resume whose session it no longer has.
+  const resumeResultFrame = (errors: ReadonlyArray<string>) =>
+    makeResultFrame({
+      uuid: "00000000-0000-4000-8000-000000000a61",
+      result: "",
+      subtype: "error_during_execution",
+      isError: true,
+      numTurns: 0,
+      errors,
+      terminalReason: null,
+    });
+  const failFirstResume = Effect.fnUntraced(function* (errors: ReadonlyArray<string>) {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const configDir = yield* fileSystem.makeTempDirectoryScoped({
+      prefix: "houston-claude-missing-session-",
+    });
+    const sessionIds = [WAKE_NATIVE_SESSION, "native-session-fresh"];
+    const harness = yield* makeWakeHarnessWithOptions({
+      environment: { CLAUDE_CONFIG_DIR: configDir },
+      allocateSessionId: Effect.sync(() => sessionIds.shift() ?? "native-session-extra"),
+      freshQueueOnReopen: true,
+    });
+    yield* harness.runtime.startTurn(
+      makeClaudeTestTurnInput({
+        threadId: harness.threadId,
+        providerThread: harness.providerThread,
+        now: yield* DateTime.now,
+        attemptId: RunAttemptId.make("missing-session-resume"),
+        text: "Continue.",
+        attachments: [],
+      }),
+    );
+    yield* harness.offerAndWait(resumeResultFrame(errors));
+    const terminal = yield* Queue.take(harness.terminalReceipts);
+    const erroredThreads = harness.events.filter(
+      (event) =>
+        event.type === "provider_thread.updated" && event.providerThread.status === "error",
+    );
+    const resumed = yield* harness.runtime
+      .resumeThread({ providerThread: harness.providerThread })
+      .pipe(Effect.exit);
+    return { harness, terminal, erroredThreads, resumed };
+  });
+
+  it.effect("starts a fresh session after Claude Code reports the resumed conversation gone", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { harness, terminal, erroredThreads, resumed } = yield* failFirstResume([
+          `No conversation found with session ID: ${WAKE_NATIVE_SESSION}`,
+        ]);
+        assert.equal(terminal.status, "failed");
+        if (terminal.status !== "failed") return;
+        assert.include(terminal.failure.message, "could not find this thread's earlier session");
+        assert.notInclude(terminal.failure.message, WAKE_NATIVE_SESSION);
+        // The session manager drops a thread in error from its loaded cache.
+        assert.lengthOf(erroredThreads, 1);
+        assert.isTrue(Exit.isFailure(resumed));
+
+        const fresh = yield* harness.runtime.ensureThread({
+          threadId: harness.threadId,
+          modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+          runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
+          existingProviderThread: { ...harness.providerThread, nativeThreadRef: null },
+          forceNewNativeThread: true,
+        });
+        assert.equal(fresh.nativeThreadRef?.nativeId, "native-session-fresh");
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: fresh,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("missing-session-fresh"),
+            text: "Continue.",
+            attachments: [],
+          }),
+        );
+        const notice = yield* Queue.take(harness.systemNoticeReceipts);
+        assert.equal(notice.turnItem.providerThreadId, fresh.id);
+        assert.include(
+          notice.turnItem.type === "system_notice" ? notice.turnItem.title : "",
+          "started a new Claude session",
+        );
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("keeps resuming a Claude session after an unrelated failed result", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { harness, terminal, erroredThreads, resumed } = yield* failFirstResume([
+          "Error: the model request failed",
+        ]);
+        assert.equal(terminal.status, "failed");
+        assert.lengthOf(erroredThreads, 0);
+        assert.isTrue(Exit.isSuccess(resumed));
+        assert.lengthOf(
+          harness.events.filter(
+            (event) =>
+              event.type === "turn_item.updated" && event.turnItem.type === "system_notice",
+          ),
+          0,
+        );
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+    ),
+  );
+
   it.effect("lets the native SDK acknowledge Stop before closing its own query", () =>
     Effect.scoped(
       Effect.gen(function* () {
