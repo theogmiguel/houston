@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off - the service launcher runs without Effect.
+// @effect-diagnostics nodeBuiltinImport:off globalDate:off - the service launcher runs without Effect.
 import * as NodeFS from "node:fs";
 
 import { outputErrorCode } from "./outputGuard.ts";
@@ -33,32 +33,47 @@ export function isRegularFile(fd: number): boolean {
   }
 }
 
+/** The descriptors `main` hands the service child's output to: those that are regular files. */
+export function appendTargets(isFile: (fd: number) => boolean = isRegularFile): {
+  readonly stdout?: number;
+  readonly stderr?: number;
+} {
+  return { ...(isFile(1) ? { stdout: 1 } : {}), ...(isFile(2) ? { stderr: 2 } : {}) };
+}
+
 // Reads `source` as fast as it arrives and appends it to `fd` with asynchronous writes, so the
-// writer behind `source` never waits on the disk. A failed write drops that output; the first
-// failure is reported once, and the next successful write starts with a line counting the drops.
+// writer behind `source` never waits on the disk. Output that cannot be written is dropped and
+// counted; the next successful write starts with one line saying how much, since when and why.
 export function appendOutput(
   source: OutputSource,
   fd: number,
   options: {
+    readonly name?: "stdout" | "stderr";
     readonly write?: WriteOutput;
-    readonly report?: (line: string) => void;
     readonly maxPendingBytes?: number;
+    readonly now?: () => number;
   } = {},
 ): OutputAppender {
+  const name = options.name ?? "stdout";
   const write: WriteOutput =
     options.write ?? ((target, buffer, done) => NodeFS.write(target, buffer, done));
-  const report = options.report ?? ((line: string) => void process.stderr.write(line));
   const maxPendingBytes = options.maxPendingBytes ?? MAX_PENDING_OUTPUT_BYTES;
+  const now = options.now ?? Date.now;
   let pending: Array<Buffer> = [];
   let pendingBytes = 0;
   let writing = false;
   let droppedBytes = 0;
-  let unannouncedDrops = 0;
-  let failureReported = false;
+  // The outage not yet recorded in the log. Nothing is written elsewhere: under a service
+  // manager stderr is usually this same file, and a failed write would destroy that stream.
+  let outage: { bytes: number; readonly since: number; readonly reason: string } | undefined;
 
-  const drop = (bytes: number) => {
+  const drop = (bytes: number, reason: string) => {
     droppedBytes += bytes;
-    unannouncedDrops += bytes;
+    outage = {
+      bytes: (outage?.bytes ?? 0) + bytes,
+      since: outage?.since ?? now(),
+      reason: outage?.reason ?? reason,
+    };
   };
 
   const flush = (): void => {
@@ -67,30 +82,23 @@ export function appendOutput(
     const output = Buffer.concat(pending, pendingBytes);
     pending = [];
     pendingBytes = 0;
-    const announced = unannouncedDrops;
+    const announced = outage;
     const notice =
-      announced === 0
+      announced === undefined
         ? undefined
         : Buffer.from(
-            `houston: ${announced} bytes of server output were dropped while this log could not be written\n`,
+            `houston: ${announced.bytes} bytes of server ${name} were dropped from this log since ${new Date(announced.since).toISOString()} (${announced.reason})\n`,
           );
     const chunk = notice === undefined ? output : Buffer.concat([notice, output]);
     write(fd, chunk, (error, written) => {
       if (error !== null) {
-        drop(output.length);
-        if (!failureReported) {
-          failureReported = true;
-          try {
-            report(
-              `houston: appending server output to the service log failed (${outputErrorCode(error)}); output is dropped until a write succeeds\n`,
-            );
-          } catch {
-            // The launcher's own output guard takes a failure of the report itself.
-          }
-        }
+        drop(output.length, outputErrorCode(error));
       } else {
-        unannouncedDrops -= announced;
-        failureReported = false;
+        // Drops made while this write was in flight start a new outage after the recorded one.
+        if (announced !== undefined && outage !== undefined) {
+          const later = outage.bytes - announced.bytes;
+          outage = later > 0 ? { ...outage, bytes: later } : undefined;
+        }
         const unwritten = chunk.length - written;
         if (unwritten > 0) {
           const rest = chunk.subarray(written);
@@ -105,7 +113,7 @@ export function appendOutput(
   source.on("data", (data: Buffer | string) => {
     const chunk = typeof data === "string" ? Buffer.from(data) : data;
     if (pendingBytes + chunk.length > maxPendingBytes) {
-      drop(chunk.length);
+      drop(chunk.length, `more than ${maxPendingBytes} bytes waiting`);
       return;
     }
     pending.push(chunk);
