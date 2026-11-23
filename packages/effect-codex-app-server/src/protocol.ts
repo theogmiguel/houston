@@ -12,6 +12,7 @@ import * as Schema from "effect/Schema";
 import * as Stdio from "effect/Stdio";
 import * as Stream from "effect/Stream";
 
+import * as CodexRpc from "./_generated/meta.gen.ts";
 import * as CodexError from "./errors.ts";
 import { JsonRpcId, JsonRpcResponseEnvelope } from "./_internal/shared.ts";
 const isJsonRpcId = Schema.is(JsonRpcId);
@@ -175,6 +176,23 @@ const toProtocolMessage = (
 });
 
 const TRAILING_CARRIAGE_RETURN = /\r$/;
+
+// Adapter handlers end in Effect.orDie, so a defect is how they usually crash. Its text can
+// carry anything the handler held, so only a method from the generated schema is named.
+const knownMethod = (method: string, methods: object) => (method in methods ? method : "unknown");
+
+const notificationHandlerDefect = (method: string) =>
+  new Error(
+    `Codex notification handler for '${method}' died; expected it to succeed or fail with a CodexAppServerError.`,
+  );
+
+const transportDefect = (operation: CodexError.CodexAppServerTransportOperation) =>
+  new CodexError.CodexAppServerTransportError({
+    operation,
+    cause: new Error(
+      `Codex App Server '${operation}' died; expected it to end or fail with a CodexAppServerError.`,
+    ),
+  });
 
 export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPatchedProtocol")(
   function* (
@@ -345,7 +363,18 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
                 );
               }
 
-              return handler(request).pipe(
+              return Effect.suspend(() => handler(request)).pipe(
+                // Codex waits for an answer, so a crashed handler still replies.
+                Effect.catchDefect(() =>
+                  Effect.logError("Codex request handler died").pipe(
+                    Effect.annotateLogs({
+                      method: knownMethod(request.method, CodexRpc.SERVER_REQUEST_PARAMS),
+                    }),
+                    Effect.andThen(
+                      Effect.fail(CodexError.CodexAppServerRequestError.internalError()),
+                    ),
+                  ),
+                ),
                 Effect.matchEffect({
                   onFailure: (error) =>
                     respondError(
@@ -386,7 +415,18 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
     const handleNotification = (notification: CodexAppServerIncomingNotification) =>
       releaseResolvedRequest(notification).pipe(
         Effect.andThen(Queue.offer(incomingNotifications, notification)),
-        Effect.andThen(options.onNotification ? options.onNotification(notification) : Effect.void),
+        Effect.andThen(Effect.suspend(() => options.onNotification?.(notification) ?? Effect.void)),
+        // Reading on could drop the turn/completed that ends a turn, so the session ends.
+        Effect.catchDefect(() =>
+          Effect.fail(
+            new CodexError.CodexAppServerTransportError({
+              operation: "read-input-stream",
+              cause: notificationHandlerDefect(
+                knownMethod(notification.method, CodexRpc.SERVER_NOTIFICATION_PARAMS),
+              ),
+            }),
+          ),
+        ),
         Effect.asVoid,
       );
 
@@ -490,11 +530,18 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
                           duration: EXIT_STATUS_GRACE,
                           orElse: () => Effect.succeed(ended),
                         }),
+                        // Termination is already marked handled, so a defect must still classify.
+                        Effect.catchDefect(() =>
+                          Effect.succeed(transportDefect("read-process-exit-status")),
+                        ),
                       );
                 }),
             }),
           ),
       }),
+      Effect.catchDefect(() =>
+        handleTermination(() => Effect.succeed(transportDefect("read-input-stream"))),
+      ),
       Effect.forkScoped,
     );
 
@@ -509,6 +556,9 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
             }),
           ),
         ),
+      ),
+      Effect.catchDefect(() =>
+        handleTermination(() => Effect.succeed(transportDefect("write-output-stream"))),
       ),
       Effect.forkScoped,
     );
