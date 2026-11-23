@@ -7299,7 +7299,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
         nativeTurnId: `turn:${attemptId}`,
       });
-      const steer = (messageId: string) =>
+      const steer = (messageId: string, attachments: ReadonlyArray<ChatAttachment> = []) =>
         harness.runtime.steerTurn({
           threadId: harness.threadId,
           runId: input.runId,
@@ -7310,7 +7310,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             creationSource: "web",
             messageId: MessageId.make(messageId),
             text: "Also report the slowest test.",
-            attachments: [],
+            attachments,
           },
         });
       const lifecycle = (index: number, state: string, uuid: string) =>
@@ -7351,7 +7351,15 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           ? completed.providerTurn.turnTokenUsage?.inputTokens
           : undefined;
       };
-      return { harness, providerTurnId, steer, lifecycle, result, deliveries, turnInputTokens };
+      return {
+        harness,
+        providerTurnId,
+        steer,
+        lifecycle,
+        result,
+        deliveries,
+        turnInputTokens,
+      };
     });
     const layer = Layer.mergeAll(
       IdAllocator.layer,
@@ -7465,6 +7473,72 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           ),
           ["Suite passed.\n\nSlowest: imports."],
         );
+      }).pipe(Effect.scoped, Effect.provide(layer)),
+    );
+
+    it.effect("refunds a dropped steer's PDF so its requeued turn reserves it once", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const { harness, steer, lifecycle, result } = yield* steerHarness;
+        const document = ChatFileAttachment.make({
+          type: "file",
+          id: ChatAttachmentId.make("dropped-steer-document"),
+          name: "report.pdf",
+          mimeType: "application/pdf",
+          sizeBytes: 64 * 1024,
+        });
+        // 60 of the session's 100 pages: a second reservation of the same file does not fit.
+        const pages = Buffer.from(
+          `%PDF-1.7\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Count 60 >> endobj\n${Array.from({ length: 60 }, (_, i) => `${i + 3} 0 obj << /Type /Page /Parent 2 0 R >> endobj`).join("\n")}\n`,
+        );
+        yield* fileSystem.writeFile(
+          path.join(harness.attachmentsDir, attachmentRelativePath(document)!),
+          Buffer.concat([
+            pages,
+            Buffer.alloc(document.sizeBytes - pages.length - 5, 32),
+            Buffer.from("%%EOF"),
+          ]),
+        );
+        const budget = () =>
+          harness.events.findLast((event) => event.type === "provider_thread.updated");
+        const pagesUsed = () => {
+          const updated = budget();
+          return updated?.type === "provider_thread.updated"
+            ? updated.providerThread.nativeMetadata?.claudeAttachmentBudget?.pagesUsed
+            : undefined;
+        };
+        yield* steer("message-steer-pdf", [document]);
+        assert.include(JSON.stringify(harness.offeredMessages[1]?.message.content), '"document"');
+        yield* lifecycle(0, "started", "00000000-0000-4000-8000-000000002451");
+        yield* result(0, "00000000-0000-4000-8000-000000002452", "Suite passed.", 10);
+        yield* lifecycle(1, "cancelled", "00000000-0000-4000-8000-000000002453");
+        yield* harness.awaitTerminal(1);
+        assert.equal(pagesUsed() ?? 0, 0, "the dropped steer's pages are refunded");
+        const updated = budget();
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread:
+              updated?.type === "provider_thread.updated"
+                ? updated.providerThread
+                : harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("attempt-steer-requeued"),
+            providerTurnOrdinal: 2,
+            nativeThreadHasTurns: true,
+            text: "Also report the slowest test.",
+            attachments: [document],
+          }),
+        );
+        assert.include(
+          JSON.stringify(harness.offeredMessages.at(-1)?.message.content),
+          '"document"',
+          "the requeued turn still fits the PDF",
+        );
+        yield* result(2, "00000000-0000-4000-8000-000000002454", "Read.", 1);
+        yield* harness.awaitTerminal(2);
+        assert.equal(pagesUsed(), 60);
       }).pipe(Effect.scoped, Effect.provide(layer)),
     );
 

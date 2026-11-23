@@ -511,4 +511,76 @@ describe("send intents at dispatch", () => {
       assert.deepInclude(latest(history), { state: "dropped", reason: "providerCancelled" });
     }),
   );
+
+  // A dropped steer keeps its place: behind messages queued before it, ahead of later ones.
+  const dropOrder = (
+    name: string,
+    sends: ReadonlyArray<"queue" | "steer" | "agent steer">,
+    expected: ReadonlyArray<"queue" | "steer" | "agent steer">,
+  ) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness(name, claude);
+        yield* runWith(
+          harness,
+          ({ send, startFirst, settle, runningTurn, orchestrator, threadId }) =>
+            Effect.gen(function* () {
+              const runId = yield* startFirst;
+              const turn = yield* runningTurn;
+              const idOf = (kind: string) => MessageId.make(`message:${name}:${kind}`);
+              for (const kind of sends) {
+                if (kind === "queue") {
+                  yield* send(idOf(kind), "queued", { type: "queue_after_active" });
+                } else {
+                  yield* orchestrator.dispatch({
+                    type: "message.dispatch",
+                    commandId: CommandId.make(`send:${name}:${kind}`),
+                    threadId,
+                    messageId: idOf(kind),
+                    text: "steered",
+                    attachments: [],
+                    dispatchMode: { type: "steer_active", targetRunId: runId },
+                    createdBy: kind === "steer" ? "user" : "agent",
+                    creationSource: kind === "steer" ? "web" : "mcp",
+                  });
+                }
+                yield* settle;
+              }
+              const steered = sends.find((kind) => kind !== "queue")!;
+              yield* Queue.offer(harness.events, {
+                type: "message.delivery",
+                driver: harness.adapter.driver,
+                threadId,
+                providerThreadId: turn.providerThreadId,
+                providerTurnId: turn.id,
+                messageId: idOf(steered),
+                state: "dropped",
+                evidence: null,
+                reason: "providerCancelled",
+              });
+              yield* settle;
+              yield* harness.endTurn(turn, "completed");
+              yield* settle;
+              yield* harness.endTurn(yield* runningTurn, "completed");
+              yield* settle;
+              assert.deepEqual(
+                harness.started.map((started) => started.message.messageId),
+                [MessageId.make("message:first"), ...expected.map(idOf)],
+              );
+            }),
+        );
+      }),
+    );
+
+  it.effect("a dropped steer runs ahead of a message queued after it", () =>
+    dropOrder("steer-then-queue", ["steer", "queue"], ["steer", "queue"]),
+  );
+
+  it.effect("a dropped steer runs behind a message queued before it", () =>
+    dropOrder("queue-then-steer", ["queue", "steer"], ["queue", "steer"]),
+  );
+
+  it.effect("a dropped agent steer does not jump ahead of earlier queued messages", () =>
+    dropOrder("queue-then-agent-steer", ["queue", "agent steer"], ["queue", "agent steer"]),
+  );
 });

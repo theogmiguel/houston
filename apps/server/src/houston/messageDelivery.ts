@@ -188,8 +188,10 @@ export function steerFollowUpCommand(input: {
   readonly commandId: CommandId;
   readonly message: OrchestrationV2ConversationMessage;
   readonly run: Pick<OrchestrationV2Run, "modelSelection">;
+  /** For a steer the provider dropped: its ended run, and the last run queued before it. */
+  readonly placement?: { readonly ofRunId: RunId; readonly afterRunOrdinal: number };
 }): Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }> {
-  const { message } = input;
+  const { message, placement } = input;
   const queued = message.delegatedCompletion !== undefined || message.notification !== undefined;
   return {
     type: "message.dispatch",
@@ -211,6 +213,12 @@ export function steerFollowUpCommand(input: {
     ...(message.notification === undefined ? {} : { notification: message.notification }),
     ...(message.scheduledTaskId === undefined ? {} : { scheduledTaskId: message.scheduledTaskId }),
     ...(message.senderThreadId === undefined ? {} : { senderThreadId: message.senderThreadId }),
+    ...(placement === undefined
+      ? {}
+      : {
+          steerFollowUpOfRunId: placement.ofRunId,
+          steerFollowUpAfterRunOrdinal: placement.afterRunOrdinal,
+        }),
   };
 }
 

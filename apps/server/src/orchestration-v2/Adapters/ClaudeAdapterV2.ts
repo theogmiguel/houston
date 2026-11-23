@@ -2537,6 +2537,7 @@ const reserveClaudePdfBudget = (
       pages: 0,
       bytes: 0,
       delivered: false,
+      refunded: false,
       commit() {
         if (this.delivered) return;
         this.delivered = true;
@@ -2544,6 +2545,13 @@ const reserveClaudePdfBudget = (
         budget.pending.bytes -= this.bytes;
         budget.committed.pages += this.pages;
         budget.committed.bytes += this.bytes;
+      },
+      // Claude dropped the message unread, so its files never entered the session.
+      refund() {
+        if (!this.delivered || this.refunded) return;
+        this.refunded = true;
+        budget.committed.pages -= this.pages;
+        budget.committed.bytes -= this.bytes;
       },
     })),
     (reservation) =>
@@ -5221,6 +5229,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             readonly providerThreadId: OrchestrationV2ProviderThread["id"];
             readonly providerTurnId: OrchestrationV2ProviderTurn["id"];
             readonly messageId: MessageId;
+            readonly nativeThreadId: string;
+            readonly pdfReservation: Effect.Success<ReturnType<typeof reserveClaudePdfBudget>>;
           }
         >();
         const hasUnreadSteer = (providerTurnId: OrchestrationV2ProviderTurn["id"]) =>
@@ -10461,6 +10471,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               if (evidence === null && !dropped) continue;
               pendingSteers.delete(uuid);
               const steeredTurn = yield* Ref.get(activeTurn);
+              const { nativeThreadId, pdfReservation, ...target } = steer;
               if (evidence !== null) {
                 // Claude now answers this steer, and that answer's result settles the turn.
                 if (steeredTurn?.providerTurnId === steer.providerTurnId) {
@@ -10469,17 +10480,22 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 yield* emitProviderEvent({
                   type: "message.delivery",
                   driver: CLAUDE_PROVIDER,
-                  ...steer,
+                  ...target,
                   state: "adopted",
                   evidence,
                 });
                 continue;
               }
-              // Claude removed the steer unread; the orchestrator sends it as the next turn.
+              // Claude removed the steer unread; the orchestrator sends it, files included, as the
+              // next turn, so its PDFs leave the session's budget.
+              if (pdfReservation.delivered && !pdfReservation.refunded) {
+                pdfReservation.refund();
+                yield* persistAttachmentBudget(nativeThreadId);
+              }
               yield* emitProviderEvent({
                 type: "message.delivery",
                 driver: CLAUDE_PROVIDER,
-                ...steer,
+                ...target,
                 state: "dropped",
                 evidence: null,
                 reason: "providerCancelled",
@@ -12090,6 +12106,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               providerThreadId: turnInput.providerThread.id,
               providerTurnId: turnInput.providerTurnId,
               messageId: turnInput.message.messageId,
+              nativeThreadId: existing.nativeThreadId,
+              pdfReservation,
             });
             yield* Effect.uninterruptibleMask((restore) =>
               restore(
