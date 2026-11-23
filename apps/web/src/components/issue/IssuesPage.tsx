@@ -72,6 +72,7 @@ import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "~/c
 import { SidebarInset } from "~/components/ui/sidebar";
 import { isDesktopHost } from "~/env";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
+import { useStableCallback } from "~/hooks/useStableCallback";
 import { shortcutLabelForCommand } from "~/keybindings";
 import { isTerminalFocused } from "~/lib/terminalFocus";
 import { LayoutPageLocationContext } from "~/layout/pageNavigation";
@@ -307,7 +308,8 @@ export function IssuesPage() {
         : clearedSelection,
     );
 
-  const selectEntry = (entry: IssueRowTarget) => {
+  // Stable, so the memoized rows skip the page's re-renders.
+  const selectEntry = useStableCallback((entry: IssueRowTarget) => {
     if (rightPanelRef === null) return;
     useRightPanelStore.getState().openIssue(rightPanelRef, entry);
     updateSearch({
@@ -318,7 +320,7 @@ export function IssuesPage() {
       scope: entry.scope,
       key: entry.key,
     });
-  };
+  });
 
   // A link into the page names an issue before any row was pressed.
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- opens the URL-linked issue in the right panel store
