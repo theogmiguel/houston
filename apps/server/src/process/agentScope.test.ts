@@ -13,6 +13,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
+import { afterEach, vi } from "vite-plus/test";
 
 import * as ServerConfig from "../config.ts";
 import { makeCodexAppServerSpawnCommand } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
@@ -27,6 +28,17 @@ import {
   type ProcessStat,
   type ScopeState,
 } from "./agentScope.ts";
+
+const GiB = 1024 ** 3;
+// The slice limits come from total RAM; tests set it instead of reading the host's.
+const memory = vi.hoisted(() => ({ total: 16 * 1024 ** 3 }));
+vi.mock("node:os", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:os")>()),
+  totalmem: () => memory.total,
+}));
+afterEach(() => {
+  memory.total = 16 * GiB;
+});
 
 const running: ScopeState = {
   loadState: "loaded",
@@ -138,6 +150,7 @@ const withFakeSystemd = <A, E>(
     readonly stateDir: string;
     readonly cgroupRoot: string;
     readonly procRoot: string;
+    readonly failingVerbs: Set<string>;
   }) => Effect.Effect<A, E>,
   // A user manager older than systemd 253 rejects OOMPolicy on scopes.
   {
@@ -160,6 +173,7 @@ const withFakeSystemd = <A, E>(
     NodeFS.mkdirSync(procRoot, { recursive: true });
     const units = new Map<string, FakeUnit>();
     const calls: Array<ReadonlyArray<string>> = [];
+    const failingVerbs = new Set<string>();
     const remap = (filePath: string) =>
       filePath.startsWith("/proc/")
         ? NodePath.join(procRoot, filePath.slice("/proc/".length))
@@ -190,6 +204,7 @@ const withFakeSystemd = <A, E>(
             return output("", 1);
           }
           const [, verb, unit = ""] = args;
+          if (verb !== undefined && failingVerbs.has(verb)) return output("", 1);
           if (stopFails && verb === "stop") {
             return {
               ...output(""),
@@ -223,7 +238,7 @@ const withFakeSystemd = <A, E>(
       }),
     );
     const { stateDir } = yield* ServerConfig.ServerConfig;
-    return yield* body({ scope, units, calls, stateDir, cgroupRoot, procRoot }).pipe(
+    return yield* body({ scope, units, calls, stateDir, cgroupRoot, procRoot, failingVerbs }).pipe(
       Effect.ensuring(Effect.sync(() => NodeFS.rmSync(bin, { recursive: true, force: true }))),
     );
   }).pipe(
@@ -295,6 +310,20 @@ const writeProcess = (
     `${pid} (agent) ${state} ${ppid} ${ppid} ${session} 0 0 0 0 0 0 0 0 0 0 0 0 0 20 0 ${startTime}\n`,
   );
 };
+
+/** Writes /proc/meminfo in the kernel's layout; a string replaces it whole. */
+const writeMeminfo = (procRoot: string, swap: number | string) =>
+  NodeFS.writeFileSync(
+    NodePath.join(procRoot, "meminfo"),
+    typeof swap === "string"
+      ? swap
+      : `MemTotal:       16777216 kB\nSwapTotal:      ${swap} kB\nSwapFree:       ${swap} kB\n`,
+  );
+
+const memoryLimitsOf = (calls: ReadonlyArray<ReadonlyArray<string>>) =>
+  calls
+    .filter(([, verb, , slice]) => verb === "set-property" && slice === "app-houston-agents.slice")
+    .map((args) => args.slice(4));
 
 const writeCgroup = (cgroupRoot: string, controlGroup: string, pids: ReadonlyArray<number>) => {
   const directory = NodePath.join(cgroupRoot, controlGroup.replace(/^\//, ""));
@@ -447,6 +476,101 @@ describe("AgentScope service", () => {
       }),
     ),
   );
+
+  it.effect("lifts MemoryHigh and keeps MemoryMax on a host without swap", () => {
+    memory.total = 16 * GiB;
+    return withFakeSystemd(({ scope, calls, procRoot }) =>
+      Effect.gen(function* () {
+        writeMeminfo(procRoot, 0);
+        yield* scope.wrap({ command: "agent", args: [], name: "t", threadId: "a" });
+        expect(memoryLimitsOf(calls)).toEqual([["MemoryHigh=infinity", `MemoryMax=${12 * GiB}`]]);
+      }),
+    );
+  });
+
+  it.effect("keeps both memory limits on a host with swap", () => {
+    memory.total = 16 * GiB;
+    return withFakeSystemd(({ scope, calls, procRoot }) =>
+      Effect.gen(function* () {
+        writeMeminfo(procRoot, 2 * 1024 ** 2);
+        yield* scope.wrap({ command: "agent", args: [], name: "t", threadId: "a" });
+        expect(memoryLimitsOf(calls)).toEqual([
+          [`MemoryHigh=${10 * GiB}`, `MemoryMax=${12 * GiB}`],
+        ]);
+      }),
+    );
+  });
+
+  it.effect("applies the memory limits again when swap is removed or added", () => {
+    memory.total = 16 * GiB;
+    return withFakeSystemd(({ scope, calls, procRoot }) =>
+      Effect.gen(function* () {
+        const launch = scope.wrap({ command: "agent", args: [], name: "t", threadId: "a" });
+        const throttled = [`MemoryHigh=${10 * GiB}`, `MemoryMax=${12 * GiB}`];
+        const lifted = ["MemoryHigh=infinity", `MemoryMax=${12 * GiB}`];
+        writeMeminfo(procRoot, 2 * 1024 ** 2);
+        yield* launch;
+        yield* launch;
+        writeMeminfo(procRoot, 0);
+        yield* launch;
+        yield* launch;
+        writeMeminfo(procRoot, 1024);
+        yield* launch;
+        expect(memoryLimitsOf(calls)).toEqual([throttled, lifted, throttled]);
+      }),
+    );
+  });
+
+  it.effect.each<{ readonly label: string; readonly meminfo: string | undefined }>([
+    { label: "an unreadable memory reading", meminfo: undefined },
+    { label: "a memory reading without SwapTotal", meminfo: "MemTotal:       16777216 kB\n" },
+    { label: "a malformed memory reading", meminfo: "SwapTotal:      none kB\n" },
+  ])("keeps the throttle on $label", ({ meminfo }) => {
+    memory.total = 16 * GiB;
+    return withFakeSystemd(({ scope, calls, procRoot }) =>
+      Effect.gen(function* () {
+        if (meminfo !== undefined) writeMeminfo(procRoot, meminfo);
+        yield* scope.wrap({ command: "agent", args: [], name: "t", threadId: "a" });
+        expect(memoryLimitsOf(calls)).toEqual([
+          [`MemoryHigh=${10 * GiB}`, `MemoryMax=${12 * GiB}`],
+        ]);
+      }),
+    );
+  });
+
+  it.effect("follows a live memory change and warns once while the update fails", () => {
+    memory.total = 16 * GiB;
+    const warnings: Array<unknown> = [];
+    const logger = Logger.make(({ message, logLevel }) => {
+      if (logLevel === "Warn") warnings.push(message);
+    });
+    return withFakeSystemd(({ scope, calls, procRoot, failingVerbs }) =>
+      Effect.gen(function* () {
+        writeMeminfo(procRoot, 2 * 1024 ** 2);
+        const launch = scope.wrap({ command: "agent", args: [], name: "t", threadId: "a" });
+        yield* launch;
+        // A VM balloon or a container resize grows RAM while the server keeps running.
+        memory.total = 22 * GiB;
+        failingVerbs.add("set-property");
+        const failedLaunch = yield* launch;
+        yield* launch;
+        failingVerbs.delete("set-property");
+        yield* launch;
+        yield* launch;
+        const grown = [`MemoryHigh=${16 * GiB}`, `MemoryMax=${18 * GiB}`];
+        expect(memoryLimitsOf(calls)).toEqual([
+          [`MemoryHigh=${10 * GiB}`, `MemoryMax=${12 * GiB}`],
+          grown,
+          grown,
+          grown,
+        ]);
+        expect(unitOf(failedLaunch)).toMatch(/^houston-t-/);
+        expect(
+          warnings.flat().filter((m) => m === "Could not set resource limits on an agents slice"),
+        ).toHaveLength(1);
+      }).pipe(Effect.provide(Logger.layer([logger], { mergeWithExisting: false }))),
+    );
+  });
 
   it.effect("stops a previous server's agent session and leaves detached work running", () =>
     withFakeSystemd(({ scope, units, calls, stateDir, cgroupRoot, procRoot }) =>
