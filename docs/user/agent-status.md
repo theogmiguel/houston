@@ -24,10 +24,10 @@ The same marks appear in the sidebar and the command palette: a turning ring for
 running, a check for ready, a question mark for a question, a cross for failed, a clock
 for back.
 
-A provider that cannot reach its model retries the request and shows a **Provider retry**
-row. A turn that stays in retries for 10 minutes without recovering is stopped and fails with
-the retry's error. Retries on a usage limit are not counted; they follow the usage-limit
-settings below.
+When a provider reports that it is retrying a request, the thread shows a **Provider retry**
+row. A turn that stays in retries for 10 minutes without recovering, not counting any wait the
+provider asked for before its next attempt, is stopped and fails with the retry's error.
+Retries on a usage limit are not counted; they follow the usage-limit settings below.
 
 A child thread that is delegated work reports to its parent as well as appearing in its own
 tab. Its question or approval request shows in the parent's pending approvals; the parent

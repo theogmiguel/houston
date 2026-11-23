@@ -266,7 +266,9 @@ it.effect("a parent hears that its delegated child failed in provider retries", 
             event.payload.id === child.turn.runId &&
             event.payload.status === "failed",
         );
+        // The budget counts after Claude's stated 600 ms backoff.
         yield* TestClock.adjust("10 minutes");
+        yield* TestClock.adjust("1 second");
         yield* Fiber.join(childFailed);
         yield* worker.drain();
 
@@ -275,7 +277,7 @@ it.effect("a parent hears that its delegated child failed in provider retries", 
         assert.equal(settledTask.status, "failed");
         assert.equal(
           settledTask.result,
-          "Claude API server error. The provider retried for 10 minutes without recovering; the retry limit is 10 minutes, so the turn was stopped.",
+          "Claude API server error. The provider retried for 10 minutes 1 second without recovering, 1 second of it in waits it asked for; the retry limit is 10 minutes beyond those waits, so the turn was stopped.",
         );
         // The parent's run holds the completion for delivery.
         assert.deepEqual(parent.runs[0]?.delegatedCompletion?.delivery?.taskIds, [task.id]);

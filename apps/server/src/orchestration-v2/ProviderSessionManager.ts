@@ -67,8 +67,8 @@ const RELEASE_SCOPE_CLOSE_TIMEOUT_MS = 30 * 1000;
 /** Past adapters' own 10 s stop fallbacks, so they settle first when the provider answers at all. */
 export const PROVIDER_INTERRUPT_TIMEOUT_MS = 15 * 1000;
 /**
- * Longest a turn may stay in provider retries before it is stopped as failed. Some providers wait
- * for the network without limit; retries that recover do so within a few minutes.
+ * Longest a turn may stay in provider retries, beyond the waits the provider states, before it is
+ * stopped as failed. Some providers wait for the network without limit; recovered retries take minutes.
  */
 export const PROVIDER_RETRY_BUDGET_MS = 10 * 60 * 1000;
 
@@ -312,11 +312,17 @@ const ENDS_SENTENCE = /[.!?]$/;
 function retryBudgetFailure(
   failure: OrchestrationV2ProviderFailure,
   retriedMs: number,
+  statedWaitMs: number,
 ): OrchestrationV2ProviderFailure {
   const message = ENDS_SENTENCE.test(failure.message) ? failure.message : `${failure.message}.`;
+  const retried = formatRetryDuration(retriedMs);
+  const limit = formatRetryDuration(PROVIDER_RETRY_BUDGET_MS);
   return {
     ...failure,
-    message: `${message} The provider retried for ${formatRetryDuration(retriedMs)} without recovering; the retry limit is ${formatRetryDuration(PROVIDER_RETRY_BUDGET_MS)}, so the turn was stopped.`,
+    message:
+      statedWaitMs > 0
+        ? `${message} The provider retried for ${retried} without recovering, ${formatRetryDuration(statedWaitMs)} of it in waits it asked for; the retry limit is ${limit} beyond those waits, so the turn was stopped.`
+        : `${message} The provider retried for ${retried} without recovering; the retry limit is ${limit}, so the turn was stopped.`,
     retryable: false,
   };
 }
@@ -2151,11 +2157,13 @@ export const layerWithOptions = (
           }),
         );
 
-      // Every provider's events pass through the pump, so the retry budget is enforced here once.
+      // Every adapter's events pass through the pump, so this covers each one that reports retries.
       const makeRetryBudget = (entry: LiveSessionEntry) => {
         interface RetryWindow {
           item: ProviderRetryItem;
           readonly openedAtMs: number;
+          /** The delays the provider announced in this window, waited out before the budget counts. */
+          statedWaitMs: number;
           timer: Fiber.Fiber<void> | undefined;
         }
         const windows = new Map<ProviderTurnId, RetryWindow>();
@@ -2190,12 +2198,13 @@ export const layerWithOptions = (
             windows.delete(providerTurnId);
             exceeded.set(providerTurnId, {
               item: window.item,
-              failure: retryBudgetFailure(window.item.failure, retriedMs),
+              failure: retryBudgetFailure(window.item.failure, retriedMs, window.statedWaitMs),
             });
             yield* Effect.logWarning("orchestration-v2.provider-retry-budget-exceeded", {
               providerSessionId: entry.runtime.providerSessionId,
               providerTurnId,
               retriedMs,
+              statedWaitMs: window.statedWaitMs,
               limitMs: PROVIDER_RETRY_BUDGET_MS,
             });
             // A stop that ends the turn later still reports the retry failure.
@@ -2246,18 +2255,31 @@ export const layerWithOptions = (
               yield* closeWindow(id);
               return event;
             }
+            // A turn already being stopped for its budget opens no new window.
+            if (stopped !== undefined) return event;
+            const statedDelayMs = retryItem.retry.retryDelayMs ?? 0;
             const open = windows.get(id);
+            const nowMs = yield* Clock.currentTimeMillis;
             if (open !== undefined) {
+              const previous = open.item;
               open.item = retryItem;
-              return event;
+              // Each new attempt's stated delay moves the deadline; a repeated notice does not.
+              if (retryItem.retry.attempt === previous.retry.attempt || statedDelayMs === 0) {
+                return event;
+              }
+              open.statedWaitMs += statedDelayMs;
+              if (open.timer !== undefined) yield* Fiber.interrupt(open.timer);
             }
-            const window: RetryWindow = {
+            const window: RetryWindow = open ?? {
               item: retryItem,
-              openedAtMs: yield* Clock.currentTimeMillis,
+              openedAtMs: nowMs,
+              statedWaitMs: statedDelayMs,
               timer: undefined,
             };
             windows.set(id, window);
-            window.timer = yield* Effect.sleep(Duration.millis(PROVIDER_RETRY_BUDGET_MS)).pipe(
+            const remainingMs =
+              window.openedAtMs + window.statedWaitMs + PROVIDER_RETRY_BUDGET_MS - nowMs;
+            window.timer = yield* Effect.sleep(Duration.millis(Math.max(0, remainingMs))).pipe(
               Effect.andThen(stopExceededRetry(window)),
               Effect.forkIn(entry.scope, { startImmediately: true }),
             );
