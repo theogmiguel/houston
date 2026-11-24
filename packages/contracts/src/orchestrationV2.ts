@@ -295,7 +295,7 @@ export const OrchestrationV2TurnCapabilities = Schema.Struct({
   // Some take text only, so a steer with attachments restarts the turn instead.
   activeSteeringAcceptsAttachments: Schema.optional(Schema.Boolean),
   // Only where a steer leaves the provider's compaction inside a turn running; otherwise clients
-  // queue the follow-up until it ends.
+  // queue the follow-up until the turn ends.
   activeSteeringDuringCompaction: Schema.optional(Schema.Boolean),
   supportsSteeringByInterruptRestart: Schema.Boolean,
   supportsQueuedMessages: Schema.Boolean,
