@@ -21,6 +21,7 @@ import {
   deriveProviderInstanceEntries,
   NO_PROVIDER_MODEL_SELECTION,
   providerInstanceEntriesFor,
+  resolveProjectDefaultProviderModelSelection,
 } from "./providerInstances";
 import {
   defaultModelSelectionsAreMixed,
@@ -63,6 +64,39 @@ function provider(input: {
     skills: [],
   };
 }
+
+describe("instances marked local", () => {
+  it("lead the picker and start new threads and the composer on them", () => {
+    const pi = ProviderDriverKind.make("pi");
+    const providers: ReadonlyArray<ServerProvider> = [
+      provider({ instanceId: "codex", models: ["gpt-6"] }),
+      provider({ provider: pi, instanceId: "pi", models: ["anthropic/claude"] }),
+      { ...provider({ provider: pi, instanceId: "pi_local", models: ["ollama/qwen"] }), inference: "local" },
+    ];
+    const settings: UnifiedSettings = {
+      ...DEFAULT_UNIFIED_SETTINGS,
+      providerInstances: {
+        [ProviderInstanceId.make("pi")]: { driver: pi, enabled: true },
+        [ProviderInstanceId.make("pi_local")]: { driver: pi, enabled: true, inference: "local" },
+      },
+    };
+    const entries = providerInstanceEntriesFor(providers, settings, null);
+
+    expect(entries.map((entry) => entry.instanceId)).toEqual(["pi_local", "codex", "pi"]);
+    expect(resolveProjectDefaultProviderModelSelection(providers, settings, null)).toEqual({
+      instanceId: "pi_local",
+      model: "ollama/qwen",
+    });
+    expect(
+      resolveComposerProviderSelection({
+        entries,
+        candidateInstanceIds: [],
+        lockedProvider: null,
+        lockedInstanceId: undefined,
+      }).selectedProviderEntry?.instanceId,
+    ).toBe("pi_local");
+  });
+});
 
 function settingsWithProviderInstances(): UnifiedSettings {
   return {

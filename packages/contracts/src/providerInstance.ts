@@ -71,11 +71,16 @@ export type ResolvedProviderInstanceEnvironment = ReadonlyArray<
   Omit<ProviderInstanceEnvironmentVariable, "value"> & { readonly value: string }
 >;
 
+/** User-declared: "local" means every model the instance can select runs on hardware the user controls. */
+export const ProviderInstanceInference = Schema.Literals(["local", "cloud"]);
+export type ProviderInstanceInference = typeof ProviderInstanceInference.Type;
+
 /** Drivers decode their own config; unknown-driver envelopes round-trip verbatim across versions. */
 export const ProviderInstanceConfig = Schema.Struct({
   driver: ProviderDriverKind,
   displayName: Schema.optional(TrimmedNonEmptyString),
   accentColor: Schema.optional(TrimmedNonEmptyString),
+  inference: Schema.optionalKey(ProviderInstanceInference),
   environment: Schema.optionalKey(ProviderInstanceEnvironment),
   enabled: Schema.optionalKey(Schema.Boolean),
   config: Schema.optionalKey(Schema.Unknown),

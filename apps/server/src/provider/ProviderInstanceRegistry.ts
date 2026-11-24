@@ -69,6 +69,25 @@ interface RegistryState {
 const entryEqual = (a: ProviderInstanceConfig, b: ProviderInstanceConfig): boolean =>
   Equal.equals(a, b);
 
+// The envelope owns this mark, so it is stamped here once instead of in every driver.
+const withDeclaredInference = (
+  instance: ProviderInstance,
+  inference: ProviderInstanceConfig["inference"],
+): ProviderInstance => {
+  if (inference === undefined) return instance;
+  const stamp = (snapshot: ServerProvider): ServerProvider => ({ ...snapshot, inference });
+  const { snapshot } = instance;
+  return {
+    ...instance,
+    snapshot: {
+      ...snapshot,
+      getSnapshot: Effect.map(snapshot.getSnapshot, stamp),
+      refresh: Effect.map(snapshot.refresh, stamp),
+      streamChanges: Stream.map(snapshot.streamChanges, stamp),
+    },
+  };
+};
+
 const secretReferencesIn = (environment: ProviderInstanceEnvironment): Array<SecretReference> =>
   environment.flatMap((variable) => (typeof variable.value === "string" ? [] : [variable.value]));
 
@@ -289,7 +308,7 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
   return {
     kind: "live" as const,
     live: {
-      instance: createResult.success,
+      instance: withDeclaredInference(createResult.success, entry.inference),
       scope: childScope,
       entry,
       secrets,
