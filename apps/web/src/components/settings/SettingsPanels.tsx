@@ -7,7 +7,6 @@ import { useRef, useState } from "react";
 import {
   IDLE_COMPACTION_MODES,
   globalIdleCompaction,
-  managedUpdatesDenial,
   ProviderDriverKind,
   type ProviderInstanceId,
   type SidebarProjectGroupingMode,
@@ -31,10 +30,10 @@ import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
   getDesktopUpdateDisabledReason,
-  getDesktopUpdateInstallConfirmationMessage,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
 } from "../../components/desktopUpdate.logic";
+import { useDesktopUpdateActions } from "../useDesktopUpdateActions";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { isDesktopHost } from "../../env";
@@ -55,7 +54,6 @@ import { scopedIdleCompaction } from "./scopedSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { ThreadTitleInstructionsSettings } from "./ThreadTitleInstructionsSettings";
 import { SnoozePresetsRow } from "./SnoozePresetsSettings";
-import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import { managedTelemetryOffMessage, usePrimaryManagedPolicy } from "../../state/managedPolicy";
 import {
   getCustomModelOptionsByInstance,
@@ -178,100 +176,12 @@ function AboutVersionTitle() {
 }
 
 function AboutVersionSection() {
-  const updateState = useDesktopUpdateState();
-  const [isUpdateActionPending, setIsUpdateActionPending] = useState(false);
+  const actions = useDesktopUpdateActions();
+  const updateState = actions.state;
 
-  const hasHostBridge = typeof window !== "undefined" && Boolean(window.hostBridge);
+  const hasHostBridge = actions.hasHostBridge;
   // The desktop updates this machine, whose policy the primary environment reports.
-  const primaryPolicy = usePrimaryManagedPolicy();
-  const updatesDenial = hasHostBridge ? managedUpdatesDenial(primaryPolicy) : undefined;
-
-  const handleButtonClick = async () => {
-    const bridge = window.hostBridge;
-    if (!bridge) return;
-
-    const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
-
-    if (action === "download") {
-      void bridge.downloadUpdate().catch((error: unknown) => {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Could not download update",
-            description: error instanceof Error ? error.message : "Download failed.",
-          }),
-        );
-      });
-      return;
-    }
-
-    if (action === "install") {
-      if (isUpdateActionPending) return;
-      setIsUpdateActionPending(true);
-      let confirmed = false;
-      try {
-        confirmed = await ensureLocalApi().dialogs.confirm(
-          getDesktopUpdateInstallConfirmationMessage(
-            updateState ?? { availableVersion: null, downloadedVersion: null },
-          ),
-        );
-      } catch (error) {
-        setIsUpdateActionPending(false);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Could not confirm update",
-            description: error instanceof Error ? error.message : "Update confirmation failed.",
-          }),
-        );
-        return;
-      }
-      if (!confirmed) {
-        setIsUpdateActionPending(false);
-        return;
-      }
-      void bridge
-        .installUpdate()
-        .catch((error: unknown) => {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not install update",
-              description: error instanceof Error ? error.message : "Install failed.",
-            }),
-          );
-        })
-        .finally(() => setIsUpdateActionPending(false));
-      return;
-    }
-
-    if (typeof bridge.checkForUpdate !== "function") return;
-    void bridge
-      .checkForUpdate()
-      .then((result) => {
-        if (!result.checked) {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not check for updates",
-              description:
-                updatesDenial ??
-                result.state.message ??
-                "Automatic updates are not available in this build.",
-            }),
-          );
-        }
-      })
-      .catch((error: unknown) => {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Could not check for updates",
-            description: error instanceof Error ? error.message : "Update check failed.",
-          }),
-        );
-      });
-  };
+  const updatesDenial = hasHostBridge ? actions.updatesDenial : undefined;
 
   const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
   const buttonTooltip = updateState ? getDesktopUpdateButtonTooltip(updateState) : null;
@@ -321,8 +231,8 @@ function AboutVersionSection() {
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={buttonDisabled || isUpdateActionPending}
-                    onClick={handleButtonClick}
+                    disabled={buttonDisabled || actions.isPending}
+                    onClick={() => void actions.handleAction()}
                   >
                     {buttonLabel}
                   </Button>
