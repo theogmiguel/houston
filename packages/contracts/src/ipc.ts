@@ -496,11 +496,6 @@ export const PersistedSavedEnvironmentRecordSchema = Schema.Struct({
   createdAt: Schema.String,
   lastConnectedAt: Schema.NullOr(Schema.String),
   desktopSsh: Schema.optionalKey(DesktopSshEnvironmentTargetSchema),
-  relayManaged: Schema.optionalKey(
-    Schema.Struct({
-      relayUrl: Schema.String,
-    }),
-  ),
 });
 export type PersistedSavedEnvironmentRecord = typeof PersistedSavedEnvironmentRecordSchema.Type;
 
@@ -1133,7 +1128,6 @@ export const DesktopFileDragInputSchema = Schema.Struct({
 
 export interface HostBridge {
   getAppBranding: () => DesktopAppBranding | null;
-  getRelayTelemetryEnabled: () => boolean;
   getPathForFile: (file: File) => string;
   /** Starts a native drag that carries an existing workspace file to the OS file manager. */
   startFileDrag: (input: DesktopFileDragInput) => Promise<void>;
