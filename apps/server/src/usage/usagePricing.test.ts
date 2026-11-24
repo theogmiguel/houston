@@ -171,6 +171,80 @@ describe("usage pricing", () => {
     });
   });
 
+  it("prices one-hour cache writes at the published rate in every speed tier", () => {
+    const writes = { ...totals, uncachedInputTokens: 0, cachedInputTokens: 0, outputTokens: 0 };
+    const oneHour = (speed: UsageSpeed) => ({
+      model: "claude-opus-5-5",
+      totals: writes,
+      cacheCreation1hTokens: 1_000_000,
+      reportedCostUsd: null,
+      speed,
+    });
+    const entry = {
+      ...rate(4e-6),
+      cache_creation_input_token_cost: 5e-6,
+      cache_creation_input_token_cost_above_1hr: 8e-6,
+    };
+    const multiplied = parseRateTable({
+      "claude-opus-5-5": { ...entry, provider_specific_entry: { fast: 2 } },
+    });
+    const tiered = parseRateTable({
+      "claude-opus-5-5": {
+        ...entry,
+        input_cost_per_token_priority: 8e-6,
+        output_cost_per_token_priority: 4e-5,
+        cache_creation_input_token_cost_above_1hr_priority: 12e-6,
+        input_cost_per_token_ultrafast: 12e-6,
+        output_cost_per_token_ultrafast: 6e-5,
+      },
+    });
+
+    expect(priceUsage(multiplied, oneHour("standard")).costUsd).toBeCloseTo(8);
+    expect(priceUsage(multiplied, oneHour("fast"))).toMatchObject({
+      costUsd: expect.closeTo(16),
+      speedPremiumUsd: expect.closeTo(8),
+    });
+    expect(priceUsage(tiered, oneHour("fast")).costUsd).toBeCloseTo(12);
+    // Without a tier rate, the tier keeps the standard one-hour-to-input ratio.
+    expect(priceUsage(tiered, oneHour("ultrafast")).costUsd).toBeCloseTo(24);
+  });
+
+  it("prices both cache lifetimes at a custom price's single write rate", () => {
+    const overrides = createOverrideRateTable({
+      "claude-opus-5-5": {
+        inputCostPerMillionTokens: 4,
+        outputCostPerMillionTokens: 20,
+        cacheWriteCostPerMillionTokens: 6,
+      },
+    });
+    const writes = { ...totals, uncachedInputTokens: 0, cachedInputTokens: 0, outputTokens: 0 };
+    const priced = priceUsage(
+      new Map(),
+      {
+        model: "claude-opus-5-5",
+        totals: writes,
+        cacheCreation1hTokens: 400_000,
+        reportedCostUsd: null,
+        speed: "standard",
+      },
+      overrides,
+    );
+
+    expect(priced.costUsd).toBeCloseTo(6);
+  });
+
+  it("prices a record without a one-hour count at the five-minute write rate", () => {
+    const table = parseRateTable({
+      "gpt-6-astra": {
+        ...rate(1e-5),
+        cache_creation_input_token_cost: 1.25e-5,
+        cache_creation_input_token_cost_above_1hr: 2e-5,
+      },
+    });
+
+    expect(priceUsage(table, record("gpt-6-astra")).categoryCostUsd?.cacheWrite).toBeCloseTo(12.5);
+  });
+
   it("prices Codex priority and ultrafast requests at their published tier rates", () => {
     const table = parseRateTable({
       "gpt-6-astra": {

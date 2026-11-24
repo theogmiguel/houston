@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 
+import { parseRateTable, priceUsage } from "../../usage/usagePricing.ts";
 import { claudeUsageFormat, parseClaudeLine } from "./claudeUsage.ts";
 
 function claudeLine(overrides: {
@@ -214,5 +215,127 @@ describe("Claude advisor iterations", () => {
     ]);
 
     expect(parse(unusable).map((record) => record.model)).toEqual(["claude-opus-5-5"]);
+  });
+});
+
+describe("Claude cache write pricing", () => {
+  const model = "claude-test-5";
+  // Input $4/M; five-minute writes at 1.25x and one-hour writes at 2x input.
+  const rateEntry = {
+    litellm_provider: "anthropic",
+    input_cost_per_token: 4e-6,
+    output_cost_per_token: 20e-6,
+    cache_read_input_token_cost: 4e-7,
+    cache_creation_input_token_cost: 5e-6,
+  };
+  const rates = parseRateTable({
+    [model]: { ...rateEntry, cache_creation_input_token_cost_above_1hr: 8e-6 },
+  });
+
+  function cacheWrite(combined: number, split?: Record<string, number>) {
+    const [record] = parseClaudeLine(
+      JSON.stringify({
+        type: "assistant",
+        timestamp: "2026-08-07T04:05:13.944Z",
+        sessionId: "s",
+        message: {
+          id: "msg_ttl",
+          model,
+          usage: {
+            input_tokens: 0,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: combined,
+            ...(split === undefined ? {} : { cache_creation: split }),
+            output_tokens: 0,
+          },
+        },
+      }),
+    );
+    if (record === undefined) throw new Error("expected a usage record");
+    return record;
+  }
+
+  it("prices each lifetime at its own rate when the record reports both", () => {
+    const record = cacheWrite(1_000_000, {
+      ephemeral_5m_input_tokens: 400_000,
+      ephemeral_1h_input_tokens: 600_000,
+    });
+
+    expect(record.totals.cacheCreationTokens).toBe(1_000_000);
+    expect(record.cacheCreation1hTokens).toBe(600_000);
+    // 0.4M x $5/M + 0.6M x $8/M
+    expect(priceUsage(rates, record).costUsd).toBeCloseTo(6.8, 9);
+  });
+
+  it("prices a combined-only record at the five-minute rate, once", () => {
+    const record = cacheWrite(1_000_000);
+
+    expect(record.cacheCreation1hTokens).toBeUndefined();
+    expect(priceUsage(rates, record).costUsd).toBeCloseTo(5, 9);
+  });
+
+  it("prices a record with only one-hour writes at the one-hour rate", () => {
+    const record = cacheWrite(1_000_000, {
+      ephemeral_5m_input_tokens: 0,
+      ephemeral_1h_input_tokens: 1_000_000,
+    });
+
+    expect(priceUsage(rates, record).costUsd).toBeCloseTo(8, 9);
+    expect(priceUsage(rates, record).categoryCostUsd?.cacheWrite).toBeCloseTo(8, 9);
+  });
+
+  it("keeps the combined count authoritative when the split does not add up", () => {
+    // Composed fixture: the provider reports no more one-hour tokens than the total; a defensive
+    // case where every written token is billed once, at the one-hour rate.
+    expect(
+      priceUsage(rates, cacheWrite(1_000_000, { ephemeral_1h_input_tokens: 1_500_000 })).costUsd,
+    ).toBeCloseTo(8, 9);
+    // A split short of the total: the remainder is billed at the five-minute rate.
+    expect(
+      priceUsage(
+        rates,
+        cacheWrite(1_000_000, {
+          ephemeral_5m_input_tokens: 100_000,
+          ephemeral_1h_input_tokens: 200_000,
+        }),
+      ).costUsd,
+    ).toBeCloseTo(0.2 * 8 + 0.8 * 5, 9);
+  });
+
+  it("falls back to the five-minute rate for a model without a published one-hour rate", () => {
+    const record = cacheWrite(1_000_000, { ephemeral_1h_input_tokens: 1_000_000 });
+
+    expect(priceUsage(parseRateTable({ [model]: rateEntry }), record).costUsd).toBeCloseTo(5, 9);
+  });
+
+  it("keeps the one-hour count on advisor records", () => {
+    const records = parseClaudeLine(
+      JSON.stringify({
+        type: "assistant",
+        timestamp: "2026-08-07T04:05:13.944Z",
+        sessionId: "s",
+        message: {
+          id: "msg_adv",
+          model,
+          usage: {
+            input_tokens: 0,
+            cache_creation_input_tokens: 0,
+            output_tokens: 0,
+            iterations: [
+              {
+                type: "advisor_message",
+                model: "claude-advisor-5",
+                input_tokens: 1,
+                cache_creation_input_tokens: 500,
+                cache_creation: { ephemeral_5m_input_tokens: 200, ephemeral_1h_input_tokens: 300 },
+                output_tokens: 1,
+              },
+            ],
+          },
+        },
+      }),
+    );
+
+    expect(records.map((record) => record.cacheCreation1hTokens)).toEqual([undefined, 300]);
   });
 });

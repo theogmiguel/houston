@@ -312,6 +312,48 @@ describe("HtmlRender", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  it.effect("publishes an .html file that holds a fragment, wrapped as inline html is", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const config = yield* ServerConfig.ServerConfig;
+      const htmlRender = yield* HtmlRender.HtmlRender;
+      const threadId = ThreadId.make("thread-html-path-fragment");
+      const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "houston-html-page-" });
+      for (const fragment of [
+        "<style>p{color:red}</style><p>Styled</p>",
+        "\n  <DIV class=chart>Chart</DIV>",
+        "\uFEFF<!-- generated -->\n<section><h2>Report</h2></section>",
+        "<svg viewBox='0 0 1 1'></svg>",
+      ]) {
+        const file = path.join(directory, "fragment.html");
+        yield* fileSystem.writeFileString(file, fragment);
+        const fromFile = yield* htmlRender.publish({
+          threadId,
+          path: file,
+          title: "F",
+          height: 200,
+        });
+        const fromInline = yield* htmlRender.publish({
+          threadId,
+          html: fragment,
+          title: "F",
+          height: 200,
+        });
+        const [stored, inlineStored] = yield* Effect.forEach([fromFile, fromInline], (reference) =>
+          fileSystem.readFileString(
+            resolveAttachmentPathById({
+              attachmentsDir: config.attachmentsDir,
+              attachmentId: reference.attachmentId,
+            }) ?? "",
+          ),
+        );
+        expect(stored, fragment).toMatch(/^<!doctype html><head>/);
+        expect(stored, fragment).toBe(inlineStored);
+      }
+    }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect("refuses anything but a regular, singly linked .html file of at most 25 MiB", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -329,6 +371,17 @@ describe("HtmlRender", () => {
       // `mv .env renamed.html` keeps one link and an .html name; only its bytes give it away.
       const renamed = path.join(directory, "renamed.html");
       yield* fileSystem.writeFileString(renamed, "API_KEY=abc123\n");
+      // Bytes that do not open with an HTML element are refused, whatever the name says.
+      const binary = path.join(directory, "binary.html");
+      yield* fileSystem.writeFile(binary, PNG_BYTES);
+      const xml = path.join(directory, "settings.html");
+      yield* fileSystem.writeFileString(xml, "<settings><password>abc123</password></settings>");
+      const text = path.join(directory, "notes.html");
+      yield* fileSystem.writeFileString(text, "TOKEN=abc123 <b>bold</b>");
+      const unclosed = path.join(directory, "unclosed.html");
+      yield* fileSystem.writeFileString(unclosed, "<!-- API_KEY=abc123 <div>");
+      const prefixed = path.join(directory, "prefixed.html");
+      yield* fileSystem.writeFileString(prefixed, "<divider>abc123</divider>");
       const folder = path.join(directory, "folder.html");
       yield* fileSystem.makeDirectory(folder);
       const internal = path.join(config.secretsDir, "page.html");
@@ -342,6 +395,11 @@ describe("HtmlRender", () => {
         secret,
         hardLinked,
         renamed,
+        binary,
+        xml,
+        text,
+        unclosed,
+        prefixed,
         folder,
         internal,
       ]) {
