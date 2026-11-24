@@ -69,14 +69,16 @@ const FORWARDED_REQUEST_HEADERS = [
   "anthropic-beta",
   "openai-beta",
 ];
-const DROPPED_RESPONSE_HEADERS = new Set([
-  "content-encoding",
-  "content-length",
-  "transfer-encoding",
-  "connection",
-  "keep-alive",
-  "set-cookie",
+// Only protocol metadata crosses back; cookies, credentials, encodings and lengths never do.
+const FORWARDED_RESPONSE_HEADERS = new Set([
+  "content-type",
+  "retry-after",
+  "request-id",
+  "x-request-id",
+  "openai-processing-ms",
+  "openai-version",
 ]);
+const FORWARDED_RESPONSE_PREFIXES = ["anthropic-ratelimit-", "x-ratelimit-"];
 
 const errorResponse = (status: number, type: string, message: string) =>
   HttpServerResponse.jsonUnsafe(
@@ -350,7 +352,13 @@ const make = Effect.gen(function* () {
   const responseHeaders = (headers: Readonly<Record<string, string | undefined>>) => {
     const kept: Record<string, string> = {};
     for (const [name, value] of Object.entries(headers)) {
-      if (value !== undefined && !DROPPED_RESPONSE_HEADERS.has(name)) kept[name] = value;
+      if (
+        value !== undefined &&
+        (FORWARDED_RESPONSE_HEADERS.has(name) ||
+          FORWARDED_RESPONSE_PREFIXES.some((prefix) => name.startsWith(prefix)))
+      ) {
+        kept[name] = value;
+      }
     }
     // Generation streams must reach the agent token by token, never buffered or compressed.
     kept["cache-control"] = "no-store, no-transform";
