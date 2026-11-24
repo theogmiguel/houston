@@ -1694,7 +1694,7 @@ export function ThreadsSettingsPanel() {
           serverScoped
           settingKeys={["textGenerationFallback"]}
           {...searchableSetting("text-generation-fallback")}
-          description="Where background writing goes when its model cannot run. Local models only applies once an instance is marked as running local models."
+          description="Where background writing goes when its model cannot run. Local models only never uses a cloud provider and fails when no local model is ready."
           resetAction={
             settings.textGenerationFallback !== DEFAULT_UNIFIED_SETTINGS.textGenerationFallback ? (
               <SettingResetButton
@@ -1737,7 +1737,7 @@ export function ThreadsSettingsPanel() {
   );
 }
 
-const TEXT_GENERATION_FALLBACKS = ["local", "any", "none"] as const;
+const TEXT_GENERATION_FALLBACKS = ["any", "local", "none"] as const;
 const TEXT_GENERATION_FALLBACK_LABELS: Record<TextGenerationFallback, string> = {
   local: "Local models only",
   any: "Any provider",

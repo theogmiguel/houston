@@ -1528,7 +1528,7 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
   textGenerationFallback: TextGenerationFallback.pipe(
-    Schema.withDecodingDefault(Effect.succeed("local" as const)),
+    Schema.withDecodingDefault(Effect.succeed("any" as const)),
   ),
   threadTitleInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   branchNamingMode: BranchNamingMode.pipe(

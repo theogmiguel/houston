@@ -124,9 +124,10 @@ merge and after inactivity, the add-project base directory, host-folder clone la
 generation model and instructions, text generation fallback, and response streaming.
 
 **Text generation fallback** chooses where background writing goes when its model cannot
-run. **Local models only** (the default) never sends it to a cloud instance, even before any
-instance is marked as running local models; it fails instead. **Any provider** allows a
-cloud fallback, and **Don't fall back** does nothing. The current value is shown in the
+run. **Any provider** (the default) tries an instance marked as running local models first,
+then the other providers. **Local models only** never sends it to a cloud instance, even before
+any instance is marked as running local models; it fails instead. **Don't fall back** keeps the
+chosen model and tries nothing else. The current value is shown in the
 picker.
 
 ## Browser

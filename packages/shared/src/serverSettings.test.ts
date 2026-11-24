@@ -150,8 +150,9 @@ describe("local-first text generation", () => {
         policy: "none",
       }),
     ).toBeNull();
+    // Without a local mark, "any" keeps the built-in driver order.
     expect(fallbackTextGenerationModelSelection({}, enabled, { policy: "any" })?.instanceId).toBe(
-      "pi",
+      "codex",
     );
   });
 

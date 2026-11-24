@@ -149,10 +149,13 @@ describe("TextGeneration local-first routing", () => {
           installed: false,
         }),
       ],
-      settings: markedLocal,
+      settings: { ...markedLocal, textGenerationFallback: "local" },
     });
     // "Local models only" also holds before any instance is marked local.
-    const nothingLocal = setup({ providers: [snapshot(codex, "codex", ["gpt-6-luna"])] });
+    const nothingLocal = setup({
+      providers: [snapshot(codex, "codex", ["gpt-6-luna"])],
+      settings: { textGenerationFallback: "local" },
+    });
     return Effect.gen(function* () {
       for (const fixture of [unavailableLocal, nothingLocal]) {
         const error = yield* Effect.flip(fixture.commit(builtIn));
@@ -177,6 +180,20 @@ describe("TextGeneration local-first routing", () => {
       expect(chosen.calls).toEqual([luna]);
       yield* anyProvider.commit(builtIn);
       expect(anyProvider.calls).toHaveLength(1);
+    });
+  });
+
+  it.effect("keeps the built-in model by default when no instance is marked local", () => {
+    const byDefault = setup({ providers: [snapshot(codex, "codex", ["gpt-6-luna"])] });
+    const noFallback = setup({
+      providers: [snapshot(codex, "codex", ["gpt-6-luna"])],
+      settings: { textGenerationFallback: "none" },
+    });
+    return Effect.gen(function* () {
+      yield* byDefault.commit(builtIn);
+      expect(byDefault.calls).toEqual([builtIn]);
+      yield* noFallback.commit(builtIn);
+      expect(noFallback.calls).toEqual([builtIn]);
     });
   });
 

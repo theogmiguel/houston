@@ -58,13 +58,13 @@ export function isModelSelectionProviderEnabled(
 }
 
 const TEXT_GENERATION_FALLBACK_DRIVERS = [
-  "pi",
-  "opencode",
   "codex",
   "claudeAgent",
   "cursor",
   "grok",
   "muse",
+  "pi",
+  "opencode",
   "antigravity",
 ].map((driver) => ProviderDriverKind.make(driver));
 

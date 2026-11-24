@@ -115,7 +115,7 @@ export const make = Effect.gen(function* () {
       (operation !== "generateReviewGuide" || INVESTIGATING_DRIVERS.has(provider.driver)) &&
       !exhaustedUsageWindow(provider, now, model);
     // "Local models only" holds even before any instance is marked local.
-    const localPolicy = settings.textGenerationFallback !== "any";
+    const localPolicy = settings.textGenerationFallback === "local";
     const noLocalModel = new TextGenerationError({
       operation,
       detail:
