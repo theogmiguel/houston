@@ -99,6 +99,11 @@ directories, environment variables and models, and set the provider health check
 Each provider shows its readiness and one action to resolve it. See
 [Install](install.md#providers) and [Agent status](agent-status.md).
 
+An instance can be marked **Runs local models** when every model it can select runs on
+hardware you control, such as Ollama, LM Studio, llama.cpp, vLLM or SGLang. Local
+instances lead the provider picker and the model list, and background writing such as
+thread titles and commit messages prefers them.
+
 Claude has two switches, both on by default:
 
 - **Claude in Chrome** lets a thread's Claude use the Claude in Chrome extension to read
@@ -116,7 +121,13 @@ Token totals, API-equivalent costs and provider limits for the threads Houston r
 Default model, fallback model, default permissions, where new threads start (local checkout
 or new worktree), hold presets, resume and hold behavior at usage limits, auto-close on
 merge and after inactivity, the add-project base directory, host-folder clone layout, text
-generation model and instructions, and response streaming.
+generation model and instructions, text generation fallback, and response streaming.
+
+**Text generation fallback** chooses where background writing goes when its model cannot
+run. **Local models only** (the default) never sends it to a cloud instance, even before any
+instance is marked as running local models; it fails instead. **Any provider** allows a
+cloud fallback, and **Don't fall back** does nothing. The current value is shown in the
+picker.
 
 ## Browser
 

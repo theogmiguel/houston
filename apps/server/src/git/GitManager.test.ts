@@ -3055,6 +3055,8 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
       const { manager } = yield* makeManager({
         serverSettings: {
+          // Moving off a turned-off writer to another provider is the "Any provider" policy.
+          textGenerationFallback: "any",
           projectSettingsOverrides: {
             [projectId]: {
               providerInstances: { [disabledInstanceId]: { enabled: false } },
