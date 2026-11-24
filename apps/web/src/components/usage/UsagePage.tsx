@@ -95,6 +95,7 @@ import { UsageShareBar } from "./UsageShareBar";
 import { UsageModelRow } from "./UsageModelRow";
 import { UsageRetentionSettings } from "./UsageRetentionSettings";
 import { UsageModelCards } from "~/mobile/UsageModelCards";
+import { UsageLocalCompute } from "./UsageLocalCompute";
 import { PhonePageBar } from "~/mobile/PhonePageBar";
 import { USAGE_MODEL_EMPTY_CLS } from "../ui/usage-model-recipes";
 import { useIsPhone } from "~/mobile/usePhone";
@@ -860,6 +861,13 @@ function UsageOverview({
         retentionDays={retentionDays}
         selectedEnvironmentIds={selectedEnvironmentIds}
         hiddenProviders={hiddenProviders}
+      />
+
+      <UsageLocalCompute
+        environments={selectedEnvironments.map((environment) => ({
+          environmentId: environment.environmentId,
+          label: environment.label,
+        }))}
       />
 
       <section className="flex flex-col gap-2">

@@ -1,6 +1,7 @@
 import { AuthSettingsWriteScope } from "@houston-app/contracts";
 import type {
   InferenceDiscoveredServer,
+  InferenceServerId,
   InferenceServerModel,
   InferenceServerSnapshot,
 } from "@houston-app/contracts/houston/inference";
@@ -14,6 +15,7 @@ import {
   inferenceServers,
   refreshInferenceServers,
   removeInferenceServer,
+  saveInferenceServer,
 } from "../../state/inference";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -31,6 +33,7 @@ import {
   AlertDialogPopup,
   AlertDialogTitle,
 } from "../ui/alert-dialog";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { FindInferenceServersDialog } from "./FindInferenceServersDialog";
 import { InferenceServerDialog } from "./InferenceServerDialog";
 import { EMPTY_INFERENCE_SERVER_DRAFT, type InferenceServerDraft } from "./InferenceSettings.logic";
@@ -78,15 +81,21 @@ function ServerRow({
   server,
   now,
   canWrite,
+  servers,
   onEdit,
   onRemove,
+  onFallbackChange,
 }: {
   readonly server: InferenceServerSnapshot;
   readonly now: number;
   readonly canWrite: boolean;
+  readonly servers: ReadonlyArray<InferenceServerSnapshot>;
   readonly onEdit: () => void;
   readonly onRemove: () => void;
+  readonly onFallbackChange: (fallbackServerId: InferenceServerId | null) => void;
 }) {
+  const queue = server.gatewayQueue;
+  const cache = server.promptCache;
   const details = [
     server.engine,
     server.load === undefined
@@ -95,6 +104,14 @@ function ServerRow({
     server.maxConcurrentRequests === undefined
       ? undefined
       : `${server.maxConcurrentRequests} at once`,
+    queue === undefined || (queue.active.length === 0 && queue.waiting.length === 0)
+      ? undefined
+      : `Houston queue: ${queue.active.length} running, ${queue.waiting.length} waiting of ${queue.capacity}`,
+    cache === undefined
+      ? undefined
+      : cache.status === "saturated-falling"
+        ? "Prompt cache (TensorFold): full, cached share falling"
+        : `Prompt cache (TensorFold): ${cache.states ?? 0} states${cache.recentCachedShare === undefined ? "" : `, ${Math.round(cache.recentCachedShare * 100)}% reused`}`,
   ].filter((entry): entry is string => entry !== undefined);
   return (
     <SettingsRow
@@ -123,7 +140,33 @@ function ServerRow({
         </span>
       }
       control={
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Select
+            value={server.fallbackServerId ?? "none"}
+            onValueChange={(value) =>
+              onFallbackChange(value === "none" ? null : (String(value) as InferenceServerId))
+            }
+            disabled={!canWrite}
+          >
+            <SelectTrigger aria-label={`Fallback for ${server.displayName}`} className="min-w-40">
+              <SelectValue>
+                {server.fallbackServerId === undefined
+                  ? "No fallback"
+                  : (servers.find((candidate) => candidate.id === server.fallbackServerId)
+                      ?.displayName ?? server.fallbackServerId)}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              <SelectItem value="none">No fallback</SelectItem>
+              {servers
+                .filter((candidate) => candidate.id !== server.id && candidate.enabled)
+                .map((candidate) => (
+                  <SelectItem key={candidate.id} value={candidate.id}>
+                    {candidate.displayName}
+                  </SelectItem>
+                ))}
+            </SelectPopup>
+          </Select>
           <Button size="compact" variant="outline" disabled={!canWrite} onClick={onEdit}>
             Edit
           </Button>
@@ -142,6 +185,15 @@ function ServerRow({
         <div className="px-4 pb-2">
           <Text as="p" variant="caption" tone="muted">
             {server.message}
+          </Text>
+        </div>
+      )}
+      {server.recentFailure === undefined ? null : (
+        <div className="px-4 pb-2">
+          <Text as="p" variant="caption" tone="danger">
+            Last request {server.recentFailure.status} at{" "}
+            {formatRelativeTimeLabel(server.recentFailure.at, now)}
+            {server.recentFailure.advice === undefined ? "" : `: ${server.recentFailure.advice}`}
           </Text>
         </div>
       )}
@@ -178,6 +230,7 @@ export function InferenceSettingsPanel() {
   );
   const refresh = useAtomCommand(refreshInferenceServers, { reportFailure: false });
   const remove = useAtomCommand(removeInferenceServer, { reportFailure: false });
+  const save = useAtomCommand(saveInferenceServer, { reportFailure: false });
   const [dialog, setDialog] = useState<InferenceDialog | null>(null);
   const [removeTarget, setRemoveTarget] = useState<InferenceServerSnapshot | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -302,8 +355,25 @@ export function InferenceSettingsPanel() {
               server={server}
               now={now}
               canWrite={canWrite}
+              servers={servers}
               onEdit={() => setDialog({ mode: "edit", server })}
               onRemove={() => setRemoveTarget(server)}
+              onFallbackChange={(fallbackServerId) => {
+                if (environmentId === null) return;
+                void save({
+                  environmentId,
+                  input: {
+                    id: server.id,
+                    displayName: server.displayName,
+                    baseUrl: server.baseUrl,
+                    enabled: server.enabled,
+                    ...(server.maxConcurrentRequests === undefined
+                      ? {}
+                      : { maxConcurrentRequests: server.maxConcurrentRequests }),
+                    fallbackServerId,
+                  },
+                }).then(() => query.refresh());
+              }}
             />
           ))
         )}

@@ -25,6 +25,7 @@ import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
 import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
 import { ThreadServersPanel } from "./ThreadServersPanel";
 import { ThreadDetailsUsage, type ThreadDetailsUsageInput } from "./ThreadDetailsUsage";
+import { ThreadDetailsLastRequest } from "./ThreadDetailsLastRequest";
 import { ThreadDetailsItemsMenuItems } from "./ThreadDetailsItemsMenu";
 import { resolveThreadDetailsVisibility, THREAD_DETAILS_ITEMS } from "./threadDetailsItems";
 import { useClientSettings } from "../../hooks/useSettings";
@@ -266,7 +267,13 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
               ) : null}
 
               {visible.usage || (props.sheet === true && props.open === true) ? (
-                <ThreadDetailsUsage {...props.usage} />
+                <>
+                  <ThreadDetailsUsage {...props.usage} />
+                  <ThreadDetailsLastRequest
+                    environmentId={props.environmentId}
+                    threadId={props.threadId}
+                  />
+                </>
               ) : null}
 
               {props.onOpenFiles === undefined ? null : (

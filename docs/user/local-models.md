@@ -33,6 +33,34 @@ again immediately. A row shows:
 **Edit** changes a server's address, name, key or request limit. A blank API key keeps the saved
 one. **Remove** deletes the server and its saved key.
 
+## Use a server in an agent
+
+Pi and OpenCode can send their model traffic through a registered server. Open the agent's
+instance in **Settings → Providers**, set **Model server**, and pick a registered server. The
+instance counts as local while that server is enabled, so it leads the provider list and handles
+background writing; turning the server off makes it a cloud instance again. A linked instance
+whose server is down, removed or not ready waits with a message naming the server rather than
+falling back to its own cloud models. Changing the link affects new sessions; a running session
+keeps the route it started with.
+
+A linked Pi instance discovers the server's models through Houston's gateway and offers them as
+`houston-<server>` models, with the context window and output limit the server reports. Pi gets a
+gateway credential for each provider session, and text generation borrows a short-lived one.
+OpenCode receives the server as a `houston-<server>` provider in its configuration, and a shared
+OpenCode process restarts when the served models change. Its requests are counted per thread
+from OpenCode's own session id.
+
+Other agents cannot use an inference server yet because they have no OpenAI-compatible endpoint
+setting; linking one shows that refusal by name.
+
+### Lean tools
+
+A Pi instance linked to a server uses the **Lean** Houston tool profile unless you choose **Full**
+under the instance's **Houston tools** setting. Lean advertises only Houston's orchestration,
+thread, project, worktree and secret tools, leaving device, preview, HTML, pull request,
+attachment and queue tools out, and it omits the preview guidance it would otherwise include.
+The smaller tool list leaves more of a local model's context for the work.
+
 ## API keys
 
 A server's API key is stored in the Houston server's secret store on that machine, never in
@@ -101,5 +129,13 @@ fallback served it, and a short fingerprint of the static system-and-tools prefi
 response text is never stored. Rows older than a week are removed as new requests arrive.
 
 Houston reports 24-hour and 7-day totals with p50 and p95 queue wait, time to first token and
-decode speed. It also reports a thread's last request and the last reply the watchdog stopped,
-so the thread can explain a slow or stopped turn.
+decode speed. The **Usage** page's **Local compute** section groups these by server and model,
+with requests, failures and the gateway's advice, prompt and completion tokens, the cached share,
+and the p50/p95 measurements; local work is never shown as cloud spend. A waiting thread shows its
+place in the server's queue, and thread details show the thread's last request: server, model,
+tokens, cached share, queue wait, time to first token, decode speed and any fallback.
+
+When the watchdog stops a reply, the thread says why, such as "Stopped a looping reply", with
+**Continue** and **Choose model** actions. **Settings → Inference** shows each server's Houston
+queue, prompt-cache health (TensorFold), how long ago it was checked and its latest failure, and
+lets you choose a fallback server.

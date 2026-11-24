@@ -338,6 +338,7 @@ import { useProactivePanels } from "../hooks/useProactivePanels";
 import { useIncrementalTimelineEntries } from "../hooks/useIncrementalTimelineEntries";
 import { useRightPanelSurfaceClose } from "../hooks/useRightPanelSurfaceClose";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
+import { useInferenceStopBannerItem } from "./chat/useInferenceStopBannerItem";
 import { ComposerTaskStatus } from "./ui/composer-task-status";
 import { Swap } from "./ui/swap";
 import { modelFallbackBannerItem } from "./chat/ComposerUsageLimits";
@@ -2766,6 +2767,16 @@ export default function ChatView(props: ChatViewProps) {
           },
         })
       : null;
+  const inferenceStopBanner = useInferenceStopBannerItem(
+    environmentId,
+    activeThreadId ?? undefined,
+    activeLatestRun,
+    () => {
+      if (resumableRunId !== null) onComposerResumeStable();
+    },
+    () => composerRef.current?.openModelPicker(),
+  );
+  const inferenceStopItems = inferenceStopBanner === null ? [] : [inferenceStopBanner];
   const composerBannerItems = (() => {
     const fallbackSelection = draftFallback?.selection;
     const defaultSelection =
@@ -2835,6 +2846,7 @@ export default function ChatView(props: ChatViewProps) {
         ...projectCloneItems,
         ...freshSessionItems,
         ...composerSystemBannerItems,
+        ...inferenceStopItems,
       ];
     }
     return [
@@ -2846,6 +2858,7 @@ export default function ChatView(props: ChatViewProps) {
       ...projectCloneItems,
       ...freshSessionItems,
       ...composerSystemBannerItems,
+      ...inferenceStopItems,
       branchMismatchBannerItem({
         translate: t,
         mismatchKey: activeBranchMismatchKey,

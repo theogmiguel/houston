@@ -37,3 +37,27 @@ export const discoverInferenceServers = createEnvironmentRpcQueryAtomFamily(conn
   staleTimeMs: 0,
   idleTtlMs: 0,
 });
+
+/** Gateway usage for one window; mounted only while the Usage page's Local compute section shows. */
+export const inferenceUsage = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
+  label: "environment-data:inference:usage",
+  tag: WS_METHODS.houstonInferenceUsage,
+  staleTimeMs: 30_000,
+  idleTtlMs: 60_000,
+});
+
+/** The thread's latest gateway request, read when thread details open. */
+export const threadInferenceRequest = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
+  label: "environment-data:inference:thread-request",
+  tag: WS_METHODS.houstonInferenceThreadRequest,
+  staleTimeMs: 0,
+  idleTtlMs: 60_000,
+});
+
+/** The latest reply Houston's gateway stopped in a thread, read when a run settles. */
+export const threadInferenceStop = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
+  label: "environment-data:inference:thread-stop",
+  tag: WS_METHODS.houstonInferenceThreadStop,
+  staleTimeMs: 0,
+  idleTtlMs: 60_000,
+});
