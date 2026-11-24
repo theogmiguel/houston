@@ -25,6 +25,7 @@ export type SettingsPath =
   | "/settings/keybindings"
   | "/settings/snap-shot"
   | "/settings/providers"
+  | "/settings/inference"
   | "/settings/usage"
   | "/settings/threads"
   | "/settings/browser"
@@ -92,6 +93,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/keybindings": "Keybindings",
   "/settings/snap-shot": "SnapShots",
   "/settings/providers": "Providers",
+  "/settings/inference": "Inference",
   "/settings/usage": "Usage",
   "/settings/threads": "Threads",
   "/settings/browser": "Browser",
@@ -121,6 +123,7 @@ export const SETTINGS_SECTION_DESCRIPTIONS: Readonly<Record<SettingsPath, string
   "/settings/keybindings": "Keyboard shortcuts for commands.",
   "/settings/snap-shot": "Capture shortcut and what a SnapShot includes.",
   "/settings/providers": "Agent providers, their health and usage limits.",
+  "/settings/inference": "OpenAI-compatible model servers on this machine or your network.",
   "/settings/usage": "What your agent sessions would cost at API prices, read locally.",
   "/settings/threads": "Default model, permissions and what happens when limits hit.",
   "/settings/browser": "Agent browser access, profiles and recording.",
@@ -159,6 +162,7 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
     heading: "Agents",
     paths: [
       "/settings/providers",
+      "/settings/inference",
       "/settings/usage",
       "/settings/threads",
       "/settings/browser",
@@ -247,6 +251,31 @@ const SOURCE_CONTROL_HOST_TERMS = sourceControlClients.definitions
   .join(" ");
 
 export const SETTINGS_SEARCH_ITEMS = [
+  {
+    id: "inference-servers",
+    title: "Inference servers",
+    to: "/settings/inference",
+    scope: "environment",
+    searchTerms: [
+      "local model models ollama lm studio llama.cpp vllm sglang openai compatible server gpu context window load",
+    ],
+  },
+  {
+    id: "inference-find-servers",
+    targetId: "inference-servers",
+    title: "Find servers",
+    to: "/settings/inference",
+    scope: "environment",
+    searchTerms: ["discover scan ports listening localhost network model server"],
+  },
+  {
+    id: "inference-add-server",
+    targetId: "inference-servers",
+    title: "Add inference server",
+    to: "/settings/inference",
+    scope: "environment",
+    searchTerms: ["base url api key max concurrent requests register model server"],
+  },
   {
     id: "storage-worktree-keep-when",
     targetId: "storage-worktrees",
@@ -1340,6 +1369,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/snap-shot": null,
   "/settings/keybindings": null,
   "/settings/providers": null,
+  "/settings/inference": "environment",
   "/settings/usage": null,
   "/settings/threads": null,
   "/settings/browser": null,

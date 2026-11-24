@@ -229,6 +229,8 @@ import * as HoustonLayoutWorkspaces from "./houston/layoutWorkspaces.ts";
 import * as HoustonSlackService from "./houston/slack/Service.ts";
 import * as HoustonSlackV1Import from "./houston/slack/V1Import.ts";
 import * as HoustonMergeQueueService from "./houston/mergeQueue/Service.ts";
+import * as InferenceDiscovery from "./houston/inference/InferenceDiscovery.ts";
+import * as InferenceServerRegistry from "./houston/inference/InferenceServerRegistry.ts";
 import * as HoustonTerminalShells from "./houston/terminalShells.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
@@ -1625,6 +1627,8 @@ export const layerWsRpc = (
       const houstonSlack = yield* HoustonSlackService.HoustonSlackService;
       const houstonSlackImport = yield* HoustonSlackV1Import.HoustonSlackV1Import;
       const houstonMergeQueue = yield* HoustonMergeQueueService.HoustonMergeQueueService;
+      const inferenceRegistry = yield* InferenceServerRegistry.InferenceServerRegistry;
+      const inferenceDiscovery = yield* InferenceDiscovery.InferenceDiscovery;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager.TerminalManager;
@@ -3490,6 +3494,21 @@ export const layerWsRpc = (
           houstonMergeQueue.handToThread(input),
         [WS_METHODS.houstonMergeQueueRevert]: (input) => houstonMergeQueue.revert(input),
         [WS_METHODS.houstonMergeQueueAcknowledge]: (input) => houstonMergeQueue.acknowledge(input),
+        [WS_METHODS.houstonInferenceSubscribe]: () =>
+          inferenceRegistry.streamChanges.pipe(Stream.map((servers) => ({ servers }))),
+        [WS_METHODS.houstonInferenceRefresh]: (input) =>
+          inferenceRegistry.refresh(input.id).pipe(Effect.map((servers) => ({ servers }))),
+        [WS_METHODS.houstonInferenceSave]: (input) =>
+          inferenceRegistry.save(input).pipe(
+            Effect.andThen(inferenceRegistry.current),
+            Effect.map((servers) => ({ servers })),
+          ),
+        [WS_METHODS.houstonInferenceRemove]: ({ id }) =>
+          inferenceRegistry.remove(id).pipe(
+            Effect.andThen(inferenceRegistry.current),
+            Effect.map((servers) => ({ servers })),
+          ),
+        [WS_METHODS.houstonInferenceDiscover]: (input) => inferenceDiscovery.discover(input),
         [WS_METHODS.terminalOpen]: (input) => terminalManager.open(input),
         [WS_METHODS.terminalAttach]: (input, metadata) =>
           terminalManager.attachOutputStream(input, terminalViewerId(metadata)),

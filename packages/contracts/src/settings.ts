@@ -1,5 +1,6 @@
 import { EasDeviceHostConfigs, SimlockDeviceHostConfigs, SshDeviceHostConfigs } from "./device.ts";
 import { HoustonObservabilityPreset, LenientObservabilityPreset } from "./houston/observability.ts";
+import { InferenceServerConfig, InferenceServerId } from "./houston/inference.ts";
 import {
   AuthOrchestrationOperateScope,
   AuthSettingsWriteScope,
@@ -1557,6 +1558,11 @@ export const ServerSettings = Schema.Struct({
   providerInstances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  // Houston: OpenAI-compatible model servers listed under Settings → Inference. API keys live in
+  // the server's secret store, keyed by server id, and never in this record.
+  inferenceServers: Schema.Record(InferenceServerId, InferenceServerConfig).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   sourceControlHosts: Schema.Record(Schema.String, SourceControlHostSettings).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
@@ -1941,6 +1947,10 @@ export const ServerSettingsPatch = Schema.Struct({
   sourceControlHosts: Schema.optionalKey(Schema.Record(Schema.String, SourceControlHostSettings)),
   // Replace whole maps to avoid half-merged driver configs.
   providerInstances: Schema.optionalKey(Schema.Record(ProviderInstanceId, ProviderInstanceConfig)),
+  // Merge per server so another client's edit is not lost; null removes an entry.
+  inferenceServers: Schema.optionalKey(
+    Schema.Record(InferenceServerId, Schema.NullOr(InferenceServerConfig)),
+  ),
   // Merge per source to avoid racing other edits; null removes an entry.
   usageLimitSources: Schema.optionalKey(
     Schema.Record(UsageLimitSourceId, Schema.NullOr(UsageLimitSourceConfig)),

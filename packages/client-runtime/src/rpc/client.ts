@@ -75,6 +75,7 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.houstonLayoutWorkspacesSubscribe
   | typeof WS_METHODS.houstonMergeQueueSubscribe
   | typeof WS_METHODS.houstonMergeQueueSubscribeSummary
+  | typeof WS_METHODS.houstonInferenceSubscribe
   | typeof WS_METHODS.terminalAttach
   | typeof WS_METHODS.terminalObserve;
 

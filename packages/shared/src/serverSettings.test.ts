@@ -14,6 +14,7 @@ import {
 import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
+import { InferenceServerId } from "@houston-app/contracts/houston/inference";
 import { resolveServerBackgroundActivitySettings } from "./backgroundActivitySettings.ts";
 import { createModelSelection } from "./model.ts";
 import { resolveProjectScripts } from "./projectScripts.ts";
@@ -907,6 +908,23 @@ describe("serverSettings helpers", () => {
 
     const removed = applyServerSettingsPatch(added, { usageLimitSources: { [hubA]: null } });
     expect(Object.keys(removed.usageLimitSources)).toEqual([hubB]);
+  });
+
+  it("upserts and removes inferenceServers per entry so concurrent edits cannot clobber", () => {
+    const rtx = InferenceServerId.make("rtx");
+    const spark = InferenceServerId.make("spark");
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      inferenceServers: { [rtx]: { baseUrl: "http://rtx:8888/v1", enabled: true } },
+    };
+
+    const added = applyServerSettingsPatch(current, {
+      inferenceServers: { [spark]: { baseUrl: "http://spark:8888/v1", enabled: true } },
+    });
+    expect(Object.keys(added.inferenceServers)).toEqual([rtx, spark]);
+
+    const removed = applyServerSettingsPatch(added, { inferenceServers: { [rtx]: null } });
+    expect(Object.keys(removed.inferenceServers)).toEqual([spark]);
   });
 
   it("upserts and removes secretProviders per entry so concurrent edits cannot clobber", () => {

@@ -79,9 +79,10 @@ that a copy of the software carry this notice, so here it is in full:
 m3code — MIT
 ================================================================================
 
-Portions of Houston's provider instance handling and local-first background writing
-are adapted from m3code, https://github.com/MiaAI-Lab/m3code, a fork of T3 Code. MIT
-asks that a copy of the software carry this notice, so here it is in full:
+Portions of Houston's local model support (provider instances marked local, local-first
+background writing, the model server registry, discovery and Settings → Inference) are
+adapted from m3code, https://github.com/MiaAI-Lab/m3code, a fork of T3 Code. MIT asks
+that a copy of the software carry this notice, so here it is in full:
 
   MIT License
 

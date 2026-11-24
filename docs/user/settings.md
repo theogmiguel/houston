@@ -6,7 +6,7 @@ the settings sidebar finds a page, a section or a single setting by name.
 | Group       | Pages                                                                           |
 | ----------- | ------------------------------------------------------------------------------- |
 | —           | General, Appearance, Chat, Voice, Diffs & pull requests, Keybindings, SnapShots |
-| Agents      | Providers, Usage, Threads, Browser, Devices, Scheduled tasks                    |
+| Agents      | Providers, Inference, Usage, Threads, Browser, Devices, Scheduled tasks         |
 | Code        | Projects, Source control, Worktrees                                             |
 | Connections | Environments, Task sources, Sharing & access, Secrets                           |
 | —           | Maintenance, Labs, About, Archive                                               |
@@ -110,6 +110,12 @@ Claude has two switches, both on by default:
   and drive your Chrome tabs. The extension and a Chromium browser are required.
 - **Artifacts** lets Claude publish pages as private Artifacts on claude.ai. The page's
   content is sent to your Claude account, and the account must have Artifacts.
+
+## Inference
+
+Register the OpenAI-compatible model servers on this machine or your network, add their API key,
+and see whether each one is ready, its models and context windows, its load, and when it was last
+checked. **Find servers** searches this machine. See [Local models](local-models.md).
 
 ## Usage
 

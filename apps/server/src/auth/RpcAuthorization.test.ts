@@ -74,6 +74,16 @@ describe("RPC authorization scopes", () => {
     }
   });
 
+  it("keeps model server discovery, which probes addresses a client names, behind settings write", () => {
+    for (const method of [
+      WS_METHODS.houstonInferenceDiscover,
+      WS_METHODS.houstonInferenceSave,
+      WS_METHODS.houstonInferenceRemove,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthSettingsWriteScope);
+    }
+  });
+
   it("rejects unknown RPC method names", () => {
     for (const method of ["server.notRegistered", "toString", "constructor"]) {
       expect(() => requiredScopeForRpcMethod(method)).toThrow(
