@@ -468,6 +468,8 @@ export const ClaudeProviderCapabilitiesV2 = {
     emitsTurnCompleted: true,
     supportsInterrupt: true,
     supportsActiveSteering: true,
+    // Steers no longer cancel tools; kept true so automatic notices still queue instead of
+    // steering, since a dropped notice has no delivery record to requeue it from.
     activeSteeringInterruptsTools: true,
     supportsSteeringByInterruptRestart: false,
     supportsQueuedMessages: true,
@@ -2593,6 +2595,7 @@ const reserveClaudePdfBudget = (
       pages: 0,
       bytes: 0,
       delivered: false,
+      refunded: false,
       commit() {
         if (this.delivered) return;
         this.delivered = true;
@@ -2600,6 +2603,13 @@ const reserveClaudePdfBudget = (
         budget.pending.bytes -= this.bytes;
         budget.committed.pages += this.pages;
         budget.committed.bytes += this.bytes;
+      },
+      // Claude dropped the message unread, so its files never entered the session.
+      refund() {
+        if (!this.delivered || this.refunded) return;
+        this.refunded = true;
+        budget.committed.pages -= this.pages;
+        budget.committed.bytes -= this.bytes;
       },
     })),
     (reservation) =>
@@ -4105,6 +4115,9 @@ function terminalStatusFromResult(
   return "failed";
 }
 
+const joinFallbackText = (earlier: string, current: string) =>
+  earlier.length === 0 ? current : current.length === 0 ? earlier : `${earlier}\n\n${current}`;
+
 function isClaudeActiveSteeringAbortResult(message: SDKResultMessage): boolean {
   return (
     message.terminal_reason === "aborted_streaming" || message.terminal_reason === "aborted_tools"
@@ -4458,6 +4471,8 @@ interface ActiveClaudeTurnContext {
   readonly itemOrdinals: Map<string, number>;
   readonly assistant: {
     fallbackText: string;
+    // Result-only replies of held results that ended before the current part.
+    earlierFallbackText: string;
     fallbackNativeItemId: string;
     emittedNativeItemIds: Set<string>;
     // The CLI repeats a notice that ends a prompt as the turn's result text.
@@ -4525,6 +4540,9 @@ interface ActiveClaudeTurnContext {
   compactionFailure: { readonly message: string | undefined } | null;
   // Steers end segments whose usage is excluded from the final result; bill them too, oldest first.
   readonly steeredSegmentUsage: Array<SDKResultMessage["usage"]>;
+  // A completed result kept while Claude still holds an unread steer of this turn; it settles
+  // the turn if Claude drops that steer instead of starting it.
+  heldResult: SDKResultMessage | undefined;
   readonly subagentsByTaskId: Map<string, ActiveClaudeSubagent>;
   readonly subagentsByToolUseId: Map<string, ActiveClaudeSubagent>;
   readonly promptUuid: string | null;
@@ -5286,8 +5304,24 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             readonly providerThreadId: OrchestrationV2ProviderThread["id"];
             readonly providerTurnId: OrchestrationV2ProviderTurn["id"];
             readonly messageId: MessageId;
+            readonly nativeThreadId: string;
+            readonly pdfReservation: Effect.Success<ReturnType<typeof reserveClaudePdfBudget>>;
           }
         >();
+        const hasUnreadSteer = (providerTurnId: OrchestrationV2ProviderTurn["id"]) =>
+          [...pendingSteers.values()].some((steer) => steer.providerTurnId === providerTurnId);
+        // A held result's segment is billed with the turn once another result settles it.
+        const absorbHeldResult = (context: ActiveClaudeTurnContext) => {
+          if (context.heldResult === undefined) return;
+          const { assistant } = context;
+          assistant.earlierFallbackText = joinFallbackText(
+            assistant.earlierFallbackText,
+            assistant.fallbackText,
+          );
+          assistant.fallbackText = "";
+          context.steeredSegmentUsage.push(context.heldResult.usage);
+          context.heldResult = undefined;
+        };
         const queryContext = yield* Ref.make<ClaudeLiveQueryContext | null>(null);
         const resultsReportingNewContextWindow = new WeakSet<SDKMessage>();
         // A worktree handoff changes the project settings even within one session.
@@ -8217,6 +8251,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           readonly threadDisposition?: "reusable" | "broken";
           readonly result?: SDKResultMessage;
         }) {
+          // Stop or a process exit can end a turn whose completed result is still held.
+          absorbHeldResult(input.context);
           yield* reasoningDeltas.flushTurn(input.context.nativeTurnId);
           // Houston: a completed turn answered without the unsnapshotted text; a stopped
           // turn keeps the text cut off before its snapshot, as streamed so far.
@@ -8289,10 +8325,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             subagentToolCalls.delete(toolCall.nativeItemId);
           }
 
-          if (
-            input.context.assistant.emittedNativeItemIds.size === 0 &&
-            input.context.assistant.fallbackText.length > 0
-          ) {
+          const fallbackText = joinFallbackText(
+            input.context.assistant.earlierFallbackText,
+            input.context.assistant.fallbackText,
+          );
+          if (input.context.assistant.emittedNativeItemIds.size === 0 && fallbackText.length > 0) {
             const ordinal = yield* resolveItemOrdinal(
               input.context,
               input.context.assistant.fallbackNativeItemId,
@@ -8302,7 +8339,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               turnInput: input.context.input,
               providerTurnId: input.context.providerTurnId,
               nativeItemId: input.context.assistant.fallbackNativeItemId,
-              text: input.context.assistant.fallbackText,
+              text: fallbackText,
               ordinal,
               startedAt: input.context.startedAt,
               completedAt: input.completedAt,
@@ -10343,6 +10380,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             const completedAt = yield* DateTime.now;
             const interrupted = (yield* Ref.get(interruptedTurns)).has(context.providerTurnId);
             const wasSteered = (yield* Ref.get(steeredTurns)).has(context.providerTurnId);
+            absorbHeldResult(context);
             if (!interrupted && wasSteered && isClaudeActiveSteeringAbortResult(message)) {
               context.steeredSegmentUsage.push(message.usage);
               return;
@@ -10419,13 +10457,25 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 : signedOut && resultFailure !== null
                   ? { ...resultFailure, code: "authentication_failed" }
                   : resultFailure;
+            const status = interrupted
+              ? "interrupted"
+              : limitedCompaction !== null
+                ? "failed"
+                : terminalStatusFromResult(message, failureHint);
+            // Claude answers a steer it has not read as its next native turn, which belongs to
+            // this one. A result without echoes cannot prove that turn will come.
+            if (
+              status === "completed" &&
+              terminalFailure === null &&
+              hasUnreadSteer(context.providerTurnId) &&
+              claudeEchoedPromptUuids(message).length > 0
+            ) {
+              context.heldResult = message;
+              return;
+            }
             yield* finalizeActiveTurn({
               context,
-              status: interrupted
-                ? "interrupted"
-                : limitedCompaction !== null
-                  ? "failed"
-                  : terminalStatusFromResult(message, failureHint),
+              status,
               completedAt,
               result: message,
               ...(terminalFailure === null ? {} : { failure: terminalFailure }),
@@ -10513,15 +10563,57 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   : echoed.includes(uuid)
                     ? ("claude.promptEcho" as const)
                     : null;
-              if (evidence === null) continue;
+              const dropped =
+                lifecycle?.uuid === uuid &&
+                (lifecycle.state === "cancelled" ||
+                  lifecycle.state === "discarded" ||
+                  lifecycle.state === "refused");
+              if (evidence === null && !dropped) continue;
               pendingSteers.delete(uuid);
+              const steeredTurn = yield* Ref.get(activeTurn);
+              const { nativeThreadId, pdfReservation, ...target } = steer;
+              if (evidence !== null) {
+                // Claude now answers this steer, and that answer's result settles the turn.
+                if (steeredTurn?.providerTurnId === steer.providerTurnId) {
+                  absorbHeldResult(steeredTurn);
+                }
+                yield* emitProviderEvent({
+                  type: "message.delivery",
+                  driver: CLAUDE_PROVIDER,
+                  ...target,
+                  state: "adopted",
+                  evidence,
+                });
+                continue;
+              }
+              // Claude removed the steer unread; the orchestrator sends it, files included, as the
+              // next turn, so its PDFs leave the session's budget.
+              if (pdfReservation.delivered && !pdfReservation.refunded) {
+                pdfReservation.refund();
+                yield* persistAttachmentBudget(nativeThreadId);
+              }
               yield* emitProviderEvent({
                 type: "message.delivery",
                 driver: CLAUDE_PROVIDER,
-                ...steer,
-                state: "adopted",
-                evidence,
+                ...target,
+                state: "dropped",
+                evidence: null,
+                reason: "providerCancelled",
               });
+              if (
+                steeredTurn?.providerTurnId === steer.providerTurnId &&
+                steeredTurn.heldResult !== undefined &&
+                !hasUnreadSteer(steer.providerTurnId)
+              ) {
+                const result = steeredTurn.heldResult;
+                steeredTurn.heldResult = undefined;
+                yield* finalizeActiveTurn({
+                  context: steeredTurn,
+                  status: "completed",
+                  completedAt: yield* DateTime.now,
+                  result,
+                });
+              }
             }
           }
           const context = yield* Ref.get(activeTurn);
@@ -11646,6 +11738,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               itemOrdinals: new Map(),
               assistant: {
                 fallbackText: "",
+                earlierFallbackText: "",
                 fallbackNativeItemId: `assistant:${turnInput.runId}`,
                 emittedNativeItemIds: new Set(),
                 noticeTexts: new Set(),
@@ -11676,6 +11769,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               latestAssistantRateLimit: null,
               compactionFailure: null,
               steeredSegmentUsage: [],
+              heldResult: undefined,
               subagentsByTaskId: new Map(),
               subagentsByToolUseId: new Map(),
               promptUuid,
@@ -11995,7 +12089,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ),
         );
 
-        // Move subagents to the background before priority "now" steers cancel foreground tools.
+        // Move subagents to the background so a steer reaches Claude without waiting for them.
         const backgroundForegroundSubagents = Effect.fnUntraced(function* (
           live: ClaudeLiveQueryContext,
           deadline: number,
@@ -12106,7 +12200,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   .promptEffort,
               ),
               attachments: turnInput.message.attachments,
-              priority: "now",
+              // "now" makes Claude Code cancel the tool calls in flight as a user refusal.
+              priority: "next",
               uuid: steerUuid,
               attachmentsDir,
               fileSystem,
@@ -12144,6 +12239,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               providerThreadId: turnInput.providerThread.id,
               providerTurnId: turnInput.providerTurnId,
               messageId: turnInput.message.messageId,
+              nativeThreadId: existing.nativeThreadId,
+              pdfReservation,
             });
             yield* Effect.uninterruptibleMask((restore) =>
               restore(
