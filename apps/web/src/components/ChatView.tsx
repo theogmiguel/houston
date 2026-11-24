@@ -102,6 +102,7 @@ import {
 } from "@houston-app/client-runtime/state/subagentRuntime";
 import {
   getUserQueuedThreadRuns,
+  threadSteersDuringCompaction,
   threadSupportsActiveSteering,
   threadSupportsProviderHandoff,
 } from "@houston-app/client-runtime/state/thread-workflows";
@@ -404,6 +405,7 @@ import { useDraftHeroLayoutTransition } from "./chat/useDraftHeroLayoutTransitio
 import { useLocalDispatchState } from "./chat/useLocalDispatchState";
 import { draftFanoutSelectionsAtom, draftSendState } from "./chat/chatViewSend";
 import {
+  compactionBlocksSteering,
   isCompactCommandMessage,
   type LocalThreadErrorEntry,
   makeThreadErrorSetter,
@@ -1605,6 +1607,14 @@ export default function ChatView(props: ChatViewProps) {
   const isCompacting =
     (isSendBusy || phase === "connecting" || phase === "running") &&
     (compactionRunning || (compactRequestIsActive && !compactionSettled));
+  const compactionBlocksSteer = compactionBlocksSteering({
+    activeRunId: activeRuntime?.activeRunId ?? null,
+    runs: serverProjection?.runs ?? [],
+    messages: serverProjection?.messages ?? [],
+    sending: isSendBusy ? (optimisticCompactionMessage ?? null) : null,
+    compactionRunning,
+    steersDuringCompaction: threadSteersDuringCompaction(serverProjection),
+  });
   const isWorking =
     phase === "running" || isSendBusy || isCompacting || runlessWorkStartedAt !== null;
   const activeContextWindow = deriveLatestContextWindowSnapshot(
@@ -4057,7 +4067,7 @@ export default function ChatView(props: ChatViewProps) {
                               }
                               phase={phase}
                               canSteerActiveRun={canSteerActiveRun}
-                              isCompacting={isCompacting}
+                              canSteer={!compactionBlocksSteer}
                               canInterrupt={canInterruptRunningThread}
                               interruptPending={interruptPending}
                               isSendBusy={
