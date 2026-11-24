@@ -57,3 +57,49 @@ listening-port table, so a server on another port must be added by its address.
 A Houston server inside WSL runs in a different network from Windows. It cannot reach a model
 server on the Windows host through `localhost` unless WSL mirrored networking is enabled. Enter
 the host's address instead, such as the address Windows shows for the machine.
+
+## The gateway
+
+Houston reaches a registered server through its own gateway at
+`<server>/inference/<serverId>/v1`, so anything that speaks the OpenAI Chat Completions,
+Completions or Responses API, or the Anthropic Messages API, can use it without knowing the
+server's address or key. The gateway forwards only those four routes and `GET /v1/models`.
+
+### Queue
+
+Each server has its own queue. Its capacity is **Max concurrent requests**, or the batch size or
+slot count the server reports, or one. A request waits for a free slot in this order: your chat
+first, then scheduled tasks, then Houston's background writing; a lower class that has waited
+30 seconds ranks with chat so it is not starved. At most 64 requests wait per server, and none
+waits longer than 10 minutes. A refusal names the limit: how many are waiting, the bound, and the
+operation that could not start.
+
+### Fallback
+
+**Edit → Fallback server** names another registered server to take this one's work while it is
+down or unreachable. The fallback is used only when the connection fails before the request
+reaches the primary, or when the primary is not ready; it never takes over a request already
+running, and a queued primary does not overflow to an idle fallback. The fallback must list the
+same model, serve the same protocol, and fit the request in its context window. A request that
+continues an earlier Responses API reply stays on the server that issued it.
+
+### Watchdog
+
+While a reply streams, the gateway stops it if the model repeats the same text (a 64–1024
+character unit at least 8 times and over 4 KiB, seen twice), if it reasons for 128 KiB without
+answering or calling a tool, if no first token arrives within 5 minutes, or if nothing arrives
+for 2 minutes after it started. A stopped reply ends with the protocol's own error event so the
+agent ends the turn instead of treating it as complete. It cannot retry the same run for a
+minute; send a new message to continue. Turn the watchdog off per server in **Edit**.
+
+### What is recorded
+
+Each request records its server, model, who asked (a chat turn, a scheduled task or background
+writing), thread and run, outcome, a bounded failure cause, HTTP status, prompt, cached,
+completion and reasoning tokens, queue wait, time to first token, decode speed, whether a
+fallback served it, and a short fingerprint of the static system-and-tools prefix. Request and
+response text is never stored. Rows older than a week are removed as new requests arrive.
+
+Houston reports 24-hour and 7-day totals with p50 and p95 queue wait, time to first token and
+decode speed. It also reports a thread's last request and the last reply the watchdog stopped,
+so the thread can explain a slow or stopped turn.

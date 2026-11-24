@@ -134,6 +134,29 @@ fail.
 agent finds first; a check that never fires on a broken fixture is silence wearing the shape
 of a passing check.
 
+## Inference gateway
+
+`apps/server/src/houston/inference/InferenceGateway.ts` forwards the OpenAI Chat Completions,
+Completions and Responses APIs and the Anthropic Messages API to one registered server. It is
+outside environment auth: the only credential is a bearer token minted by
+`InferenceGatewayCredentials` per provider session (bound to an instance, thread and server) or per
+background scope. That token is stored as a hash in memory, never in the database, logs, traces,
+errors or RPC replies, and MCP, OAuth and session tokens do not resolve there. The upstream key is
+read from the secret store and sent only to that key's server; cookies, client credentials and
+proxy headers are never forwarded, and `x-proxy-*` headers are recomputed from authenticated thread
+state rather than copied from the caller.
+
+Requests are buffered up to 32 MiB and refused past it. Redirects are refused, not followed, so the
+upstream key cannot reach another origin. The admission queue, fallback, bounded retry, watchdog
+and request log are described for users in `docs/user/local-models.md`; their limits live with the
+code (`MAX_WAITING`, `MAX_WAIT_MS`, `MAX_REQUEST_BYTES`, `FIRST_CONTENT_TIMEOUT_MS`,
+`IDLE_TIMEOUT_MS`). The request log (`houston_inference_requests`, a Houston-track migration) never
+stores request or response text, only a bounded failure cause and a short static-prefix hash, and
+sweeps rows past its one-week retention.
+
+**Why.** A local server may be shared, so its key must not leak into a client, a log or another
+origin; and a runaway local model otherwise consumes a slot until someone notices.
+
 ## Builds
 
 - **Never two Cargo workloads at once.** `cargo` saturates every core; concurrent builds push
