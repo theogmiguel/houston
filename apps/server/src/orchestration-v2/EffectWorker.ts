@@ -29,7 +29,7 @@ import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { continueRestartedRun } from "./RestartContinuation.ts";
 import { userFacingDispatchErrorMessage } from "./UserFacingErrors.ts";
-import { MessageDeliveryWriter } from "../houston/messageDelivery.ts";
+import { MessageDeliveryWriter, steerFollowUpCommand } from "../houston/messageDelivery.ts";
 import * as TraceContext from "../houston/observability/TraceContext.ts";
 import * as WideEvents from "../houston/observability/WideEvents.ts";
 
@@ -352,41 +352,14 @@ export const layerExecutor: Layer.Layer<
                         ),
                       ),
                     );
-                    // Notifications must be queued messages.
-                    const queued =
-                      message.delegatedCompletion !== undefined ||
-                      message.notification !== undefined;
-                    // Reuse message ids and receipts so retries cannot duplicate messages or follow-ups.
                     yield* threads
-                      .dispatch({
-                        type: "message.dispatch",
-                        commandId: CommandId.make(`command:steer-follow-up:${effect.id}`),
-                        threadId: effect.threadId,
-                        messageId: message.id,
-                        text: message.text,
-                        ...(message.context ? { context: message.context } : {}),
-                        attachments: message.attachments,
-                        ...(message.delegatedCompletion === undefined
-                          ? {}
-                          : { modelSelection: run.modelSelection }),
-                        dispatchMode: {
-                          type: queued ? "queue_after_active" : "start_immediately",
-                        },
-                        createdBy: message.createdBy,
-                        creationSource: message.creationSource,
-                        ...(message.delegatedCompletion === undefined
-                          ? {}
-                          : { delegatedCompletion: message.delegatedCompletion }),
-                        ...(message.notification === undefined
-                          ? {}
-                          : { notification: message.notification }),
-                        ...(message.scheduledTaskId === undefined
-                          ? {}
-                          : { scheduledTaskId: message.scheduledTaskId }),
-                        ...(message.senderThreadId === undefined
-                          ? {}
-                          : { senderThreadId: message.senderThreadId }),
-                      })
+                      .dispatch(
+                        steerFollowUpCommand({
+                          commandId: CommandId.make(`command:steer-follow-up:${effect.id}`),
+                          message,
+                          run,
+                        }),
+                      )
                       .pipe(
                         // A disabled instance cannot retry this completed turn; its result stands.
                         Effect.catchTags({
