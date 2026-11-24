@@ -482,12 +482,14 @@ export const make = Effect.gen(function* () {
     config: InferenceServerConfig,
   ) {
     const endpoint = parseBaseUrl(config.baseUrl);
+    const apiKey = yield* readApiKey(id);
     const base = {
       id,
       displayName: displayNameOf(id, config),
       baseUrl: endpoint.display,
       enabled: config.enabled,
       models: [],
+      ...(apiKey === undefined ? {} : { hasApiKey: apiKey !== "" }),
       ...(config.maxConcurrentRequests === undefined
         ? {}
         : { maxConcurrentRequests: config.maxConcurrentRequests }),
@@ -502,7 +504,6 @@ export const make = Effect.gen(function* () {
     if ("error" in endpoint) {
       return { ...base, status: "error", checkedAt, message: endpoint.error } as const;
     }
-    const apiKey = yield* readApiKey(id);
     if (apiKey === undefined) {
       return {
         ...base,

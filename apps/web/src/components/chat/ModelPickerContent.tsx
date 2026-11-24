@@ -242,17 +242,19 @@ function ModelPickerProviderNotices({
         <ComboboxEmpty className="empty:h-0">{emptyLabel}</ComboboxEmpty>
       )}
       {offerLocalSetup ? (
-        <Text as="p" variant="caption" tone="muted" className="shrink-0 px-3 py-2">
-          {t("No model runs on your own hardware yet.")}{" "}
-          <InlineButton
-            onClick={() => {
-              onRequestClose?.();
-              void navigate({ to: "/settings/inference", search: { setup: "local" } });
-            }}
-          >
-            {t("Use a local model")}
-          </InlineButton>
-        </Text>
+        <div className="shrink-0 px-3 py-2">
+          <Text as="p" variant="caption" tone="muted">
+            {t("No model runs on your own hardware yet.")}{" "}
+            <InlineButton
+              onClick={() => {
+                onRequestClose?.();
+                void navigate({ to: "/settings/inference", search: { setup: "local" } });
+              }}
+            >
+              {t("Use a local model")}
+            </InlineButton>
+          </Text>
+        </div>
       ) : null}
       {updateRequiredNotices.map(({ instanceId, notice }) => (
         <p

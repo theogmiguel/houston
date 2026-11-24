@@ -669,20 +669,22 @@ function ConnectedAgentsStep({
     <section>
       <h2 className="mb-2 text-sm font-medium">{machineLabel}</h2>
       {canDiscoverLocalModels ? (
-        <Card className="mb-3 flex items-center gap-3">
-          <CpuIcon className="size-4 shrink-0" aria-hidden />
-          <div className="min-w-0 flex-1">
-            <Text as="p" weight="medium">
-              Run models on your own hardware
-            </Text>
-            <Text as="p" variant="caption" tone="muted">
-              Find Ollama, LM Studio, llama.cpp, vLLM, SGLang, or TensorFold on {machineLabel} and
-              use it for new threads. Cloud agents below stay available.
-            </Text>
+        <Card className="mb-3">
+          <div className="flex items-center gap-3">
+            <CpuIcon className="size-4 shrink-0" aria-hidden />
+            <div className="min-w-0 flex-1">
+              <Text as="p" weight="medium">
+                Run models on your own hardware
+              </Text>
+              <Text as="p" variant="caption" tone="muted">
+                Find Ollama, LM Studio, llama.cpp, vLLM, SGLang, or TensorFold on {machineLabel} and
+                use it for new threads. Cloud agents below stay available.
+              </Text>
+            </div>
+            <Button size="sm" onClick={() => setLocalSetupOpen(true)}>
+              Find local models
+            </Button>
           </div>
-          <Button size="sm" onClick={() => setLocalSetupOpen(true)}>
-            Find local models
-          </Button>
         </Card>
       ) : null}
       {localSetupOpen ? (

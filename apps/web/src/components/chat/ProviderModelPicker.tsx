@@ -5,6 +5,7 @@ import {
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
 } from "@houston-app/contracts";
+import type { InferenceServerId } from "@houston-app/contracts/houston/inference";
 import { RegistryContext } from "@effect/atom-react";
 import {
   memo,
@@ -16,9 +17,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { BotIcon, ChevronDownIcon } from "lucide-react";
+import { BotIcon, ChevronDownIcon, CpuIcon } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { Text } from "../ui/text";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
 import { ModelPickerContent, resolveModelPickerSelectedModel } from "./ModelPickerContent";
@@ -29,6 +31,7 @@ import { type ProviderInstanceEntry } from "../../providerInstances";
 import { ComposerControl, type ComposerControlSize } from "./ComposerControl";
 import { takeOpenTarget, useComposerMenuProps } from "./composerEventScope";
 import { shortcutLabelForCommand } from "../../keybindings";
+import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { traitsSplitTriggerClassName, type TraitsSplitPart } from "./modelTraits";
@@ -115,6 +118,28 @@ const DOCKED_PICKER_FULL_HEIGHT_PX = 304;
 
 /** The gap and collision padding the positioner keeps around the popup. */
 const DOCKED_PICKER_EDGE_ROOM_PX = 9;
+
+function LocalModelPlace({
+  environmentId,
+  serverId,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly serverId: string | undefined;
+}) {
+  const name = useEnvironmentSettings(environmentId, (settings) =>
+    serverId === undefined
+      ? undefined
+      : settings.inferenceServers[serverId as InferenceServerId]?.displayName,
+  );
+  return (
+    <span data-composer-control-label className="flex max-w-20 shrink-0 items-center gap-1">
+      <CpuIcon aria-hidden className="size-3 shrink-0" />
+      <Text as="span" variant="caption" tone="muted" truncate>
+        {name ?? serverId ?? "local"}
+      </Text>
+    </span>
+  );
+}
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   environmentId: EnvironmentId | null;
@@ -320,6 +345,18 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           .map((selection) => selection.label)
           .join(", ")}${selectedEntries.length > 2 ? `, ${selectedEntries.length - 2} more` : ""}`
     : undefined;
+  // Where a local model runs: its linked server's name, else just that it is local.
+  const localServerId =
+    activeEntry?.snapshot.inference === "local" && props.triggerLabel === undefined
+      ? activeEntry.snapshot.inferenceServerId
+      : undefined;
+  const localPlace = activeEntry?.snapshot.inference === "local" ? "local" : null;
+  const triggerText =
+    props.triggerLabel ??
+    multipleLabel ??
+    (localServerId !== undefined && triggerTitle.endsWith(` (${localServerId})`)
+      ? triggerTitle.slice(0, -` (${localServerId})`.length)
+      : triggerTitle);
   const allModelNames = selectedEntries
     ? selectedEntries.map((selection) => selection.fullLabel).join(", ") || "Choose models"
     : undefined;
@@ -387,6 +424,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             ref={triggerRef}
             aria-label={[
               props.triggerAriaLabel ?? props.triggerLabel ?? allModelNames ?? triggerLabel,
+              localServerId !== undefined && !selectedEntries
+                ? `runs on ${localServerId}`
+                : undefined,
               props.triggerDetail,
             ]
               .filter(Boolean)
@@ -455,10 +495,22 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
                 />
               }
             >
-              {props.triggerLabel ?? multipleLabel ?? triggerTitle}
+              {triggerText}
             </TooltipTrigger>
             <TooltipPopup side="top">{triggerTooltipContent}</TooltipPopup>
           </Tooltip>
+          {localPlace !== null && !selectedEntries ? (
+            props.environmentId === null ? (
+              <span className="flex max-w-20 shrink-0 items-center gap-1">
+                <CpuIcon aria-hidden className="size-3 shrink-0" />
+                <Text as="span" variant="caption" tone="muted" truncate>
+                  {localServerId ?? localPlace}
+                </Text>
+              </span>
+            ) : (
+              <LocalModelPlace environmentId={props.environmentId} serverId={localServerId} />
+            )
+          ) : null}
           {props.triggerSuffix}
           {selectedModel?.isUnavailable && !selectedEntries && props.triggerLabel === undefined ? (
             <Badge variant="outline" size="sm">

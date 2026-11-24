@@ -9,6 +9,8 @@ import {
   EMPTY_INFERENCE_SERVER_DRAFT,
   inferenceServerFromDraft,
   inferenceServerIdFromName,
+  inferenceServerOffers,
+  inferenceServerOriginHost,
   normalizeInferenceServerBaseUrl,
 } from "./InferenceSettings.logic";
 
@@ -111,5 +113,49 @@ describe("inferenceServerFromDraft", () => {
   it("types the id as a branded server id", () => {
     const result = inferenceServerFromDraft({ ...draft, name: "RTX" }, new Set(), { mode: "add" });
     expect(Result.isSuccess(result) && (result.success.id as InferenceServerId)).toBe("rtx");
+  });
+});
+
+describe("inferenceServerOffers", () => {
+  const rtx = InferenceServerIdSchema.make("glm-rtx");
+  const spark = InferenceServerIdSchema.make("spark1");
+  const origin = {
+    [rtx]: { baseUrl: "http://localhost:8888/v1", enabled: true },
+    [spark]: { displayName: "Spark", baseUrl: "http://spark1:8000/v1", enabled: true },
+  };
+
+  it("offers the origin's servers at the address another machine reaches", () => {
+    expect(inferenceServerOffers({}, { servers: origin, host: "rtx" })).toEqual([
+      { id: rtx, name: "glm-rtx", baseUrl: "http://rtx:8888/v1", needsKey: false },
+      { id: spark, name: "Spark", baseUrl: "http://spark1:8000/v1", needsKey: false },
+    ]);
+    expect(
+      inferenceServerOffers(
+        {},
+        { servers: origin, host: "rtx", keyedServerIds: new Set([spark]) },
+      )[1]?.needsKey,
+    ).toBe(true);
+  });
+
+  it("skips servers this machine has by id or by address", () => {
+    const current = {
+      [InferenceServerIdSchema.make("other")]: {
+        baseUrl: "http://rtx:8888/v1",
+        enabled: true,
+      },
+      [spark]: { baseUrl: "http://elsewhere/v1", enabled: true },
+    };
+    expect(inferenceServerOffers(current, { servers: origin, host: "rtx" })).toEqual([]);
+  });
+
+  it("names the origin by its label, else by a LAN endpoint", () => {
+    expect(inferenceServerOriginHost("rtx")).toBe("rtx");
+    expect(
+      inferenceServerOriginHost("Zurih's desktop", [
+        { kind: "lan", httpBaseUrl: "http://192.168.1.122:3773" },
+        { kind: "tailnet", httpBaseUrl: "http://100.64.0.2:3773" },
+      ]),
+    ).toBe("192.168.1.122");
+    expect(inferenceServerOriginHost("My PC")).toBeNull();
   });
 });

@@ -8,6 +8,23 @@ SGLang and other servers that answer `GET /v1/models` are detected.
 The address must be reachable from the machine running the Houston server. `localhost` means that
 machine, even when you are connected from a phone or another computer.
 
+## Use a local model in one step
+
+**Use a local model** finds a model server, links an agent to it and makes one of its models the
+default for new threads. It is offered during first-run setup, in **Settings → Inference**, in
+the model picker while no local model exists, and in the command palette.
+
+It searches the environment's machine and the servers you already registered. Pick the server
+and model, then the agent: Pi and OpenCode are offered, in that order, when they speak the
+server's API. The dialog states what it will change before it does: add or reuse the server, link
+the agent, and set the default. Each change is a normal settings entry, so it can be changed or
+undone in **Settings → Inference** and **Settings → Providers**. Running it again reuses the
+server and linked agent it created.
+
+If the agent is not installed or has not listed the model yet, the server and link are kept and
+the dialog says what is missing. A search that only knows well-known ports on Windows says so;
+enter another address to check it.
+
 ## Register a server
 
 Open **Settings → Inference** and choose **Add server**:
@@ -32,6 +49,25 @@ again immediately. A row shows:
 
 **Edit** changes a server's address, name, key or request limit. A blank API key keeps the saved
 one. **Remove** deletes the server and its saved key.
+
+## Repair a server that moved
+
+When a registered server stops answering, its row offers **Check again**, **Find server** and
+**Change address**. **Find server** searches that server's machine, points out an address that
+serves the same model, and moves the server there. Its id, saved key and linked agents stay, so
+existing `houston-<server>` models keep working; threads already running keep the old address
+until their agent session restarts. **Change address** edits the address by hand.
+
+A thread whose selected agent is linked to a down server says so above the message box, with
+**Check again** and **Find server**.
+
+## When a server no longer serves the model
+
+A linked agent's model can disappear when its server swaps models. If the server is checked and
+ready but no longer lists the model a thread uses, the composer says which model is missing and
+what the server serves now, with **Choose model** and **Check again**. **Settings → Models**
+warns the same way when the default for new threads is such a model. A server that is being
+checked or is down is not reported this way.
 
 ## Use a server in an agent
 
@@ -79,6 +115,18 @@ ports when you enter that address with **Add server**.
 
 On Windows, only the well-known ports are searched; Windows has no equivalent of the Linux
 listening-port table, so a server on another port must be added by its address.
+
+## Servers on your other machines
+
+Inference servers belong to one machine. **Settings → Inference** on one machine lists servers
+registered on the user's other connected Houston environments, with **Add here**. The add form is
+prefilled with the address this machine would use: a `localhost` address becomes the other
+machine's host name, or its LAN address when the label is not a host name. A server this machine
+already has at that address or under that id is not offered.
+
+API keys are never copied between machines. Enter the key again when the origin server uses one.
+An environment whose server version has no inference support is named as such instead of offering
+a button that cannot work.
 
 ## Windows and WSL
 

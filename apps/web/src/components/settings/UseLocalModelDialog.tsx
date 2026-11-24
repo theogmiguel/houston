@@ -11,11 +11,7 @@ import { CheckIcon, CpuIcon, SearchIcon } from "lucide-react";
 import { useState } from "react";
 
 import { useEnvironmentSettings } from "../../hooks/useSettings";
-import {
-  discoverInferenceServers,
-  refreshInferenceServers,
-  INFERENCE_DISCOVERY_EMPTY_INPUT,
-} from "../../state/inference";
+import { discoverInferenceServers, refreshInferenceServers } from "../../state/inference";
 import { serverEnvironment } from "../../state/server";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -302,10 +298,12 @@ export function UseLocalModelDialog({
               </Text>
             </div>
           ) : progress.step === "connecting" ? (
-            <Text as="p" tone="muted" className="flex items-center gap-2" role="status">
+            <div className="flex items-center gap-2" role="status">
               <Spinner className="size-4" />
-              {progress.message}
-            </Text>
+              <Text as="p" tone="muted">
+                {progress.message}
+              </Text>
+            </div>
           ) : (
             <div className="grid gap-5">
               {progress.step === "incomplete" ? (
@@ -337,10 +335,12 @@ export function UseLocalModelDialog({
                   </Text>
                 ) : null}
                 {search.status === "searching" ? (
-                  <Text as="p" tone="muted" className="flex items-center gap-2" role="status">
+                  <div className="flex items-center gap-2" role="status">
                     <Spinner className="size-4" />
-                    Looking for model servers on {machineLabel}…
-                  </Text>
+                    <Text as="p" tone="muted">
+                      Looking for model servers on {machineLabel}…
+                    </Text>
+                  </div>
                 ) : search.status === "failed" ? (
                   <Text as="p" tone="danger">
                     {search.message}
@@ -494,29 +494,31 @@ function DiscoveredServerOption({
 }) {
   const heading = [server.engine, server.baseUrl].filter(Boolean).join(" · ");
   return (
-    <Card className="grid gap-1.5">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Text mono variant="caption" tone="muted">
-          {heading}
-        </Text>
-        {registeredName === undefined ? null : (
-          <Badge variant="outline">Added as {registeredName}</Badge>
+    <Card>
+      <div className="grid gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Text mono variant="caption" tone="muted">
+            {heading}
+          </Text>
+          {registeredName === undefined ? null : (
+            <Badge variant="outline">Added as {registeredName}</Badge>
+          )}
+          {server.status === "needs-key" ? <Badge variant="warning">Needs an API key</Badge> : null}
+        </div>
+        {server.status === "needs-key" ? (
+          <Text as="p" variant="caption" tone="muted">
+            It answered, but lists its models only with a key. Add it in Settings, Inference, with
+            its key.
+          </Text>
+        ) : (
+          server.models.map((model) => (
+            <label key={model.id} className="flex items-center gap-2.5">
+              <Radio value={JSON.stringify([server.baseUrl, model.id])} />
+              <Text as="span">{model.id}</Text>
+            </label>
+          ))
         )}
-        {server.status === "needs-key" ? <Badge variant="warning">Needs an API key</Badge> : null}
       </div>
-      {server.status === "needs-key" ? (
-        <Text as="p" variant="caption" tone="muted">
-          It answered, but lists its models only with a key. Add it in Settings, Inference, with its
-          key.
-        </Text>
-      ) : (
-        server.models.map((model) => (
-          <label key={model.id} className="flex items-center gap-2.5">
-            <Radio value={JSON.stringify([server.baseUrl, model.id])} />
-            <Text as="span">{model.id}</Text>
-          </label>
-        ))
-      )}
     </Card>
   );
 }

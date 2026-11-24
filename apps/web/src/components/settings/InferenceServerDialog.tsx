@@ -51,6 +51,7 @@ export function InferenceServerDialog({
   existing,
   existingIds,
   initialDraft,
+  note,
   onClose,
   onSaved,
 }: {
@@ -59,6 +60,8 @@ export function InferenceServerDialog({
   readonly existing?: InferenceServerSnapshot;
   readonly existingIds: ReadonlySet<string>;
   readonly initialDraft?: InferenceServerDraft;
+  /** Extra sentence for a prefilled add, such as a server copied from another machine. */
+  readonly note?: string;
   readonly onClose: () => void;
   readonly onSaved: () => void;
 }) {
@@ -111,6 +114,7 @@ export function InferenceServerDialog({
           <DialogDescription>
             An OpenAI-compatible model server that {environmentLabel} can reach. localhost means{" "}
             {environmentLabel} itself.
+            {note === undefined ? null : ` ${note}`}
           </DialogDescription>
         </DialogHeader>
         <DialogPanel>

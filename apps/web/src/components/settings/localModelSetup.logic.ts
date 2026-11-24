@@ -109,8 +109,10 @@ function firstFreeId<T>(
   return null;
 }
 
+const TRAILING_SLASHES = /\/+$/;
+
 const sameAddress = (left: string, right: string) =>
-  left.trim().replace(/\/+$/, "") === right.trim().replace(/\/+$/, "");
+  left.trim().replace(TRAILING_SLASHES, "") === right.trim().replace(TRAILING_SLASHES, "");
 
 export interface LocalModelSetupPlan {
   readonly serverId: InferenceServerId;
