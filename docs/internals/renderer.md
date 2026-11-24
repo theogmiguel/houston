@@ -112,11 +112,14 @@ catalog, SSH, WSL, snapshots, updates, the v1 cleanup report and the browser-pre
 ## Renderer recovery
 
 The main process listens for the window's `render-process-gone`. A crash, OOM, kill or
-abnormal exit reloads the window, at most three times in sixty seconds
-(`RENDERER_RECOVERY_MAX_ATTEMPTS` and `RENDERER_RECOVERY_WINDOW_MS` in
-`apps/desktop/src/window/DesktopWindow.ts`). A clean exit or an exhausted budget leaves the
-window stopped rather than reloading forever. Development retries a failed load from the dev
-server with increasing delays while the page is being served.
+abnormal exit reloads the window after a delay that doubles with each consecutive crash, from
+500 ms up to a 30-second ceiling, so a renderer that keeps crashing is retried without a tight
+loop and the window is never left blank for good. A reloaded renderer that stays up for sixty
+seconds restarts the backoff (`apps/desktop/src/window/RendererRecovery.ts`). A clean exit or a
+closed or destroyed window is not reloaded. While a quit or update install is in progress the
+pending reload waits, so it never fights the quit and still runs if the install fails; only one
+reload is pending at a time. Development retries a failed load from the dev server with
+increasing delays while the page is being served.
 
 ## What the renderer knows
 

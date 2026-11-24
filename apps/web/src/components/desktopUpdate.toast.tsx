@@ -1,11 +1,14 @@
 import type { HostBridge, DesktopUpdateState } from "@houston-app/contracts";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
 import { ArrowRightIcon } from "lucide-react";
 
+import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { desktopUpdateStateAtom } from "~/state/desktopUpdate";
 import {
   getDesktopUpdateDownloadedVersion,
   getDesktopUpdateReleaseUrl,
 } from "./desktopUpdate.logic";
-import { toastManager } from "./ui/toast";
+import { stackedThreadToast, toastManager } from "./ui/toast";
 
 type DesktopUpdateShell = Pick<HostBridge, "openExternal">;
 
@@ -59,4 +62,39 @@ export function showDesktopUpdateDownloadedToast(
       </>
     ),
   });
+}
+
+/** A failed quit or relaunch reports after the install call has already returned accepted. */
+const DESKTOP_UPDATE_INSTALL_FAILURE_WATCH_MS = 30_000;
+
+export function watchDesktopUpdateInstallFailure(baselineMessage: string | null): () => void {
+  if (typeof window === "undefined") return () => {};
+  let stopped = false;
+  let unsubscribe = () => {};
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    clearTimeout(timer);
+    queueMicrotask(() => unsubscribe());
+  };
+  unsubscribe = appAtomRegistry.subscribe(
+    desktopUpdateStateAtom,
+    (result) => {
+      const state = AsyncResult.getOrElse(result, () => null);
+      if (!state || state.errorContext !== "install") return;
+      const message = typeof state.message === "string" ? state.message.trim() : "";
+      if (message.length === 0 || message === baselineMessage) return;
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not install update",
+          description: message,
+        }),
+      );
+      stop();
+    },
+    { immediate: false },
+  );
+  const timer = setTimeout(stop, DESKTOP_UPDATE_INSTALL_FAILURE_WATCH_MS);
+  return stop;
 }

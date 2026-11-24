@@ -1715,7 +1715,7 @@ const CLAUDE_BACKGROUND_WAIT_INSTRUCTIONS = `
 
 ### Background work you wait on
 
-To wait for a background command or Monitor you started (tests, a build), call \`houston_background_wait\` with its task ID before you end your turn. Do not mark work you leave running, or PRs. Houston MCP tools are deferred: load one with ToolSearch before you call it.
+To wait for a background command or Monitor you started (tests, a build), call \`houston_background_wait\` with \`taskIds: [id]\` before you end your turn. Do not mark work you leave running, or PRs. Houston MCP tools are deferred: load one with ToolSearch first.
 `;
 
 // Native subagents start from their task, not this session's system prompt.
@@ -3959,6 +3959,20 @@ const watchClaudeRequestSilence = Effect.fnUntraced(function* (input: {
   }
 });
 
+// Claude Code's result error for a --resume whose session it no longer has.
+const CLAUDE_CONVERSATION_NOT_FOUND = "No conversation found with session ID:";
+
+// Only a zero-turn result for the resumed session itself, so a healthy session is never dropped.
+function isClaudeConversationNotFoundResult(message: SDKMessage, nativeThreadId: string): boolean {
+  return (
+    message.type === "result" &&
+    message.subtype !== "success" &&
+    message.num_turns === 0 &&
+    message.session_id === nativeThreadId &&
+    message.errors.some((error) => error.startsWith(CLAUDE_CONVERSATION_NOT_FOUND))
+  );
+}
+
 /** Exclude CLI-internal "[ede_diagnostic] ..." telemetry from error banners. */
 function resultUserFacingError(result: SDKResultMessage): string | undefined {
   const errors = "errors" in result && Array.isArray(result.errors) ? result.errors : [];
@@ -4169,6 +4183,7 @@ function gatewayCooldownResetAt(
 function providerFailureFromResult(
   message: SDKResultMessage,
   completedAt: DateTime.Utc,
+  nativeThreadId: string,
   failureHint?: string,
   usageLimited = false,
 ): OrchestrationV2ProviderFailure | null {
@@ -4207,7 +4222,9 @@ function providerFailureFromResult(
       : terminalResultError(message.terminal_reason, failureHint ?? apiErrorMessage);
   if (message.subtype !== "success") {
     return makeProviderFailure({
-      message: listedError ?? structuredError ?? message.errors.join("\n"),
+      message: isClaudeConversationNotFoundResult(message, nativeThreadId)
+        ? "Claude could not find this thread's earlier session. Send your message again to continue in a new Claude session with this thread's history."
+        : (listedError ?? structuredError ?? message.errors.join("\n")),
       code: message.subtype,
       class: failureClass,
     });
@@ -5326,6 +5343,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         const lastProviderThreadByNativeThread = yield* Ref.make(
           new Map<string, OrchestrationV2ProviderThread>(),
         );
+        // Sessions Claude Code reported gone; resumeThread refuses them so a fresh session takes over.
+        const missingNativeThreads = new Set<string>();
+        // Threads whose next turn runs in the session that replaced a missing one.
+        const threadsLeavingMissingSession = new Set<ThreadId>();
         const goalsByNativeThread = new Map<string, OrchestrationV2ProviderGoal | null>();
         const goalCheckedTurns = new Set<string>();
         // Background subagents can finish after root settlement; retain their registry for wake evidence and hydration.
@@ -5639,6 +5660,21 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               new Map(current).set(nativeThreadId, providerThread),
             );
           });
+
+        // The session manager drops a thread in error from its loaded cache, so the next
+        // send asks resumeThread again instead of reusing the session that is gone.
+        const markNativeThreadMissing = Effect.fnUntraced(function* (nativeThreadId: string) {
+          missingNativeThreads.add(nativeThreadId);
+          const providerThread = (yield* Ref.get(lastProviderThreadByNativeThread)).get(
+            nativeThreadId,
+          );
+          if (providerThread === undefined) return;
+          yield* emitProviderEvent({
+            type: "provider_thread.updated",
+            driver: CLAUDE_PROVIDER,
+            providerThread: { ...providerThread, status: "error", updatedAt: yield* DateTime.now },
+          });
+        });
 
         const rosterForNativeThread = (
           all: ReadonlyMap<string, Map<string, OrchestrationV2PendingBackgroundTask>>,
@@ -10343,7 +10379,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     message: limitedCompaction.message ?? failureHint,
                     code: "compaction_failed",
                   })
-                : providerFailureFromResult(message, completedAt, failureHint, usageLimited);
+                : providerFailureFromResult(
+                    message,
+                    completedAt,
+                    context.nativeThreadId,
+                    failureHint,
+                    usageLimited,
+                  );
             // Houston: a distinct code lets provider readiness mark the instance signed out;
             // a failure with an HTTP status keeps its api_error_<status> code.
             const signedOut =
@@ -11477,7 +11519,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                         resultsReportingNewContextWindow.add(message);
                       }
                     }
-                    return Ref.get(activeTurn).pipe(
+                    // Before the turn settles, so the next send cannot reuse the missing session.
+                    return (
+                      isClaudeConversationNotFoundResult(message, context.nativeThreadId)
+                        ? markNativeThreadMissing(context.nativeThreadId)
+                        : Effect.void
+                    ).pipe(
+                      Effect.andThen(Ref.get(activeTurn)),
                       Effect.flatMap((turn) =>
                         handleSdkMessage({ query: querySession, message }).pipe(
                           TraceContext.withinTraceContext(
@@ -11662,6 +11710,40 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               gatedFramesBeforeEcho: 0,
               heldRootFrames: [],
             };
+            const emitTurnNotice = Effect.fnUntraced(function* (
+              nativeItemId: string,
+              notice: string,
+            ) {
+              yield* emitProviderEvent({
+                type: "turn_item.updated",
+                driver: CLAUDE_PROVIDER,
+                turnItem: {
+                  id: idAllocator.derive.turnItemFromProviderItem({
+                    driver: CLAUDE_PROVIDER,
+                    nativeItemId,
+                  }),
+                  threadId: turnInput.threadId,
+                  runId: turnInput.runId,
+                  nodeId: turnInput.rootNodeId,
+                  providerThreadId: turnInput.providerThread.id,
+                  providerTurnId: context.providerTurnId,
+                  nativeItemRef: {
+                    driver: CLAUDE_PROVIDER,
+                    nativeId: nativeItemId,
+                    strength: "weak",
+                  },
+                  parentItemId: null,
+                  ordinal: yield* resolveItemOrdinal(context, nativeItemId),
+                  type: "system_notice",
+                  status: "completed",
+                  title: notice,
+                  message: notice,
+                  startedAt,
+                  completedAt: startedAt,
+                  updatedAt: startedAt,
+                },
+              });
+            });
             const attachTurn = Effect.gen(function* () {
               querySession.lastTurn = context;
               yield* Ref.set(activeTurn, context);
@@ -11678,38 +11760,20 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   const oldest = announcedBypassDowngrades.values().next().value;
                   if (oldest !== undefined) announcedBypassDowngrades.delete(oldest);
                 }
-                const nativeItemId = `bypass-policy-downgrade:${context.providerTurnId}`;
-                const notice =
-                  "Houston could not confirm Claude bypass permissions here, so Full access is running with approval checks.";
-                yield* emitProviderEvent({
-                  type: "turn_item.updated",
-                  driver: CLAUDE_PROVIDER,
-                  turnItem: {
-                    id: idAllocator.derive.turnItemFromProviderItem({
-                      driver: CLAUDE_PROVIDER,
-                      nativeItemId,
-                    }),
-                    threadId: turnInput.threadId,
-                    runId: turnInput.runId,
-                    nodeId: turnInput.rootNodeId,
-                    providerThreadId: turnInput.providerThread.id,
-                    providerTurnId: context.providerTurnId,
-                    nativeItemRef: {
-                      driver: CLAUDE_PROVIDER,
-                      nativeId: nativeItemId,
-                      strength: "weak",
-                    },
-                    parentItemId: null,
-                    ordinal: yield* resolveItemOrdinal(context, nativeItemId),
-                    type: "system_notice",
-                    status: "completed",
-                    title: notice,
-                    message: notice,
-                    startedAt,
-                    completedAt: startedAt,
-                    updatedAt: startedAt,
-                  },
-                });
+                yield* emitTurnNotice(
+                  `bypass-policy-downgrade:${context.providerTurnId}`,
+                  "Houston could not confirm Claude bypass permissions here, so Full access is running with approval checks.",
+                );
+              }
+              if (
+                !isClaudeProviderContinuationTurn(turnInput) &&
+                !missingNativeThreads.has(nativeThreadId) &&
+                threadsLeavingMissingSession.delete(turnInput.threadId)
+              ) {
+                yield* emitTurnNotice(
+                  `missing-session-replaced:${context.providerTurnId}`,
+                  "Claude could not find this thread's earlier session, so this message started a new Claude session with the thread's history.",
+                );
               }
               yield* emitProviderEvent({
                 type: "provider_turn.updated",
@@ -12328,6 +12392,18 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           resumeThread: Effect.fn("ClaudeAdapterV2.resumeThread")(
             function* (threadInput: { readonly providerThread: OrchestrationV2ProviderThread }) {
               const nativeThreadId = threadInput.providerThread.nativeThreadRef?.nativeId;
+              if (
+                nativeThreadId !== undefined &&
+                nativeThreadId !== null &&
+                missingNativeThreads.has(nativeThreadId)
+              ) {
+                const threadId = threadInput.providerThread.appThreadId;
+                if (threadId !== null) threadsLeavingMissingSession.add(threadId);
+                return yield* new ProviderAdapter.ProviderAdapterProtocolError({
+                  driver: CLAUDE_PROVIDER,
+                  detail: `Claude Code has no conversation ${nativeThreadId} to resume.`,
+                });
+              }
               if (
                 nativeThreadId !== undefined &&
                 nativeThreadId !== null &&

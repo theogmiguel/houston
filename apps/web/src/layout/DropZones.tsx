@@ -133,11 +133,14 @@ function DraggedTab({
 export function LayoutDropZones({ tabLabel }: { tabLabel: (tab: LayoutTab) => LayoutTabLabel }) {
   const state = useLayoutDragState();
   const draggedTabId = state?.source.kind === "tab" ? state.source.tabId : null;
-  const dragged = useLayoutStore((store) =>
+  const draggedContent = state?.source.kind === "content" ? state.source.content : null;
+  const draggedTab = useLayoutStore((store) =>
     draggedTabId === null
       ? null
       : (findLayoutTab(store.layout, (tab) => tab.id === draggedTabId)?.tab ?? null),
   );
+  // Content with no tab yet is labelled as the tab it would open.
+  const dragged = draggedTab ?? (draggedContent && { id: "dragged", content: draggedContent });
   if (!state) return null;
   const insert = state.target ? dropInsertMark(state, state.target) : null;
   // Between two tabs the mark alone says where; any other drop shows the area it fills.

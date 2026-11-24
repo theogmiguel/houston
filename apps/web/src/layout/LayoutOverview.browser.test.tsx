@@ -97,14 +97,16 @@ describe("LayoutOverview", () => {
     expect(useLayoutStore.getState().overviewOpen).toBe(false);
   });
 
-  it("opens with an empty workspace and picks nothing", async () => {
+  it("opens with an empty workspace and picks its launcher", async () => {
     using _session = openSession();
     const picked = vi.fn();
     await using _screen = await render(<LayoutOverview onPick={picked} />);
     useLayoutStore.getState().setOverviewOpen(true);
     await expect.element(page.getByText(/to move, Enter to open/)).toBeVisible();
     await userEvent.keyboard("{Enter}");
-    expect(picked).toHaveBeenCalledWith(null);
+    expect(picked).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.objectContaining({ kind: "launcher" }) }),
+    );
     expect(useLayoutStore.getState().overviewOpen).toBe(false);
   });
 
