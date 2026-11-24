@@ -157,46 +157,6 @@ it("navigates to a thread tapped on the phone home", async () => {
   );
 });
 
-it("ends every row's diff stat at the same gap before its provider mark", async () => {
-  for (const width of [390, 320]) {
-    const { screen } = await mountApp(width);
-    await using _screen = screen;
-    await vi.waitFor(() => expect(threadRow()).not.toBeNull(), { timeout: 5_000 });
-    await vi.waitFor(
-      () =>
-        expect(phoneHome()!.querySelectorAll("[data-thread-diff]").length).toBeGreaterThanOrEqual(
-          2,
-        ),
-      { timeout: 5_000 },
-    );
-
-    const rows = [...phoneHome()!.querySelectorAll<HTMLElement>("[data-thread-diff]")].map(
-      (stat) => {
-        const line = stat.closest<HTMLElement>("[data-thread-meta]")!;
-        const mark = line.querySelector<HTMLElement>("[data-thread-provider-mark]")!;
-        const branch = line.querySelector<HTMLElement>("[data-thread-branch] span.truncate");
-        return {
-          gap: Math.round(mark.getBoundingClientRect().left - stat.getBoundingClientRect().right),
-          // The stat never overlaps the branch name that shares its line.
-          clear:
-            branch === null ||
-            stat.getBoundingClientRect().left >= branch.getBoundingClientRect().right,
-        };
-      },
-    );
-    expect(rows.length, `rows whose stat is shown at ${width}px`).toBeGreaterThanOrEqual(2);
-    expect(
-      new Set(rows.map((row) => row.gap)).size,
-      `gap before the provider mark: ${rows.map((row) => row.gap).join(", ")}`,
-    ).toBe(1);
-    expect(
-      rows.every((row) => row.clear),
-      `stat clear of the branch at ${width}px`,
-    ).toBe(true);
-    await screen.unmount();
-  }
-});
-
 it("keeps the desktop layout at 1024px", async () => {
   const { screen } = await mountApp(1024);
   await using _screen = screen;

@@ -54,7 +54,7 @@ import { resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
 import { SidebarProviderStack, type SidebarProviderEntry } from "./SidebarThreadRow";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { MOTION_FEEDBACK, MOTION_FEEDBACK_OPACITY } from "../ui/motion-recipes";
-import { RowMeta, RowMetaItem } from "../ui/sidebar-row-meta";
+import { RowMeta, RowMetaItem, RowMetaSpacer } from "../ui/sidebar-row-meta";
 import {
   FOCUS_ACTION_CLS,
   FOCUS_ROW_CLS,
@@ -79,7 +79,12 @@ import {
   sidebarThreadRowCls,
 } from "../ui/sidebar-sections";
 import { ROW_SCROLL_MARGIN_CLS, ROW_TITLE_TEXT_CLS } from "../ui/sidebar-rail-recipes";
-import { SIDEBAR_THREAD_META_TEXT_CLASS, SIDEBAR_THREAD_TAG_CLASS } from "../ui/thread-tag-recipes";
+import {
+  SIDEBAR_THREAD_META_TEXT_CLASS,
+  SIDEBAR_THREAD_STATUS_CLASS,
+  SIDEBAR_THREAD_TAG_CLASS,
+} from "../ui/thread-tag-recipes";
+import { ThreadStatusKindGlyph } from "../ui/thread-state-glyph";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { RowActionSweepContext } from "./rowActionSweepContext";
 import { useSearchHighlight } from "./sidebarSearchResults";
@@ -90,7 +95,6 @@ import { threadHasStatus, ThreadStatusWord } from "./threadStatusMark";
 import { ThreadTitleInput } from "./threadTitleInput";
 import {
   ThreadCheckoutMark,
-  ThreadDiffCounts,
   ThreadDraftItem,
   ThreadRemoteItem,
   ThreadTerminalItem,
@@ -471,7 +475,20 @@ export function ThreadCard({
               >
                 {jumpHint !== null ? (
                   <JumpHintBadge label={jumpHint} />
-                ) : shelf !== null || backShown ? null : statusShown ? (
+                ) : shelf === "snoozed" ? (
+                  <span data-thread-held="" className={SIDEBAR_THREAD_STATUS_CLASS}>
+                    <span
+                      role="img"
+                      aria-label={t("On hold")}
+                      className="inline-grid size-3.5 shrink-0 place-items-center"
+                    >
+                      <ThreadStatusKindGlyph kind="back" />
+                    </span>
+                    {timeNode}
+                  </span>
+                ) : shelf !== null ? (
+                  timeNode
+                ) : backShown ? null : statusShown ? (
                   <ThreadStatusWord thread={thread} state={state} nowIso={nowIso} />
                 ) : (
                   timeNode
@@ -615,18 +632,13 @@ export function ThreadCard({
               </button>
             )}
           </div>
-          {/* Items that do not fit beside the branch drop whole behind +N; the right group stays. */}
+          {/* Branch and tags lead; the marks sit at the right edge. Items that do not fit drop whole
+              behind +N, tags and subagents first; the pull request and provider stay. */}
           <div
             data-thread-meta=""
             className={cn("flex h-4 min-w-0 items-center gap-2", SIDEBAR_THREAD_META_TEXT_CLASS)}
           >
             <RowMeta>
-              {/* A shelf row's label ("tomorrow at 9:00 AM", "Closed 2h") has no status cell to sit in. */}
-              {shelf !== null && jumpHint === null ? (
-                <RowMetaItem label="Time" keep>
-                  {timeNode}
-                </RowMetaItem>
-              ) : null}
               {showBranch && branchName !== null ? (
                 <RowMetaItem label={`Branch ${branchName}`} minWidth={BRANCH_MIN_WIDTH_PX}>
                   <span data-thread-branch="" className="inline-flex min-w-0 items-center gap-1">
@@ -639,6 +651,14 @@ export function ThreadCard({
                   <ThreadCheckoutMark thread={thread} />
                 </RowMetaItem>
               ) : null}
+              {(thread.tags ?? []).map((tag) => (
+                <RowMetaItem key={tag} label={`#${tag}`} dropsFirst>
+                  <span data-thread-tag="" className={SIDEBAR_THREAD_TAG_CLASS}>
+                    #{tag}
+                  </span>
+                </RowMetaItem>
+              ))}
+              <RowMetaSpacer />
               <ThreadDraftItem thread={thread} focused={focused} />
               <ThreadTerminalItem thread={thread} onActivate={onOpen} />
               <ThreadRemoteItem thread={thread} />
@@ -665,20 +685,6 @@ export function ThreadCard({
                   </span>
                 </RowMetaItem>
               ) : null}
-              {(thread.tags ?? []).map((tag) => (
-                <RowMetaItem key={tag} label={`#${tag}`}>
-                  <span data-thread-tag="" className={SIDEBAR_THREAD_TAG_CLASS}>
-                    #{tag}
-                  </span>
-                </RowMetaItem>
-              ))}
-              {regeneratingTitle ? (
-                <RowMetaItem label={t("Renaming title")}>
-                  <span data-thread-regenerating="" className="shrink-0">
-                    {t("Renaming…")}
-                  </span>
-                </RowMetaItem>
-              ) : null}
             </RowMeta>
             {showPullRequest && rowPullRequest !== null ? (
               <span data-thread-pr-slot="" className="inline-flex shrink-0">
@@ -690,7 +696,6 @@ export function ThreadCard({
                 />
               </span>
             ) : null}
-            <ThreadDiffCounts thread={thread} rowRef={rowRef} focused={focused} />
             {/* A fixed slot, so the marks line up under the statuses whatever the row carries. */}
             <span
               data-thread-provider-mark=""
