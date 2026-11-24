@@ -17,11 +17,11 @@ import { Tooltip, TooltipTrigger } from "../components/ui/tooltip";
 import { observeResize } from "../lib/observeResize";
 import { setWheelScroller, wheelDeltaPx } from "../motion/wheelGesture";
 import { layoutChromeInsets } from "./layoutChrome";
-import { closeLayoutTabByUser } from "./layoutActions";
+import { closeLayoutTabByUser, createLayoutNewTabContent } from "./layoutActions";
 import { isLayoutGhostTab, type LayoutTab } from "./layoutModel";
 import { useLayoutPane } from "./layoutPaneContext";
 import { useLayoutStore } from "./layoutStore";
-import { beginLayoutTabDrag } from "./layoutTabDrag";
+import { beginLayoutContentDrag, beginLayoutTabDrag } from "./layoutTabDrag";
 import { registerPaneBarSlot } from "./paneBarSlots";
 
 export interface LayoutTabLabel {
@@ -214,7 +214,18 @@ export function LayoutPaneTabBar({
           />
         ))}
       </LayoutTabStrip>
-      {onAdd ? <LayoutTabAdd label="New tab" onClick={() => onAdd(paneId)} /> : null}
+      {onAdd ? (
+        <LayoutTabAdd
+          label="New tab"
+          onClick={() => onAdd(paneId)}
+          onPointerDown={(event) =>
+            beginLayoutContentDrag(event, {
+              kind: "content",
+              content: createLayoutNewTabContent(paneId),
+            })
+          }
+        />
+      ) : null}
       <LayoutTabBarActions ref={registerSlot} />
       {trailing}
     </LayoutTabBar>

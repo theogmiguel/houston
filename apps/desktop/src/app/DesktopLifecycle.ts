@@ -109,6 +109,24 @@ interface QuitState {
 // short and orphan it.
 const SHUTDOWN_STALL_THRESHOLD = Duration.seconds(10);
 
+// Electron's process metrics are the only source of these PIDs; a signal to a
+// non-positive PID would broadcast, so callers must never see one.
+export const terminateLeftoverLinuxChildren = (input: {
+  readonly metrics: ReadonlyArray<{ readonly pid: number }>;
+  readonly currentPid: number;
+  readonly kill: (pid: number) => void;
+}): ReadonlyArray<number> => {
+  const pids = new Set<number>();
+  for (const metric of input.metrics) {
+    if (!Number.isInteger(metric.pid) || metric.pid <= 0 || metric.pid === input.currentPid) {
+      continue;
+    }
+    pids.add(metric.pid);
+  }
+  for (const pid of pids) input.kill(pid);
+  return [...pids];
+};
+
 const startWaitingForShutdown = Effect.fn("desktop.lifecycle.startWaitingForShutdown")(function* (
   quit: QuitState,
 ) {
@@ -252,6 +270,7 @@ export const make = DesktopLifecycle.of({
     const context = yield* Effect.context<DesktopLifecycleRegistrationServices>();
     const runEffect = Effect.runPromiseWith(context);
     const quit: QuitState = { phase: "running", waitingSinceNanos: 0n };
+    let quittingForUpdate = false;
     yield* electronTheme.onUpdated(() => {
       void runEffect(
         desktopWindow.syncAppearance.pipe(Effect.withSpan("desktop.lifecycle.themeUpdated")),
@@ -262,6 +281,7 @@ export const make = DesktopLifecycle.of({
       // Cancelling the following app "before-quit" event breaks that sequence,
       // most visibly on macOS where the native updater performs the relaunch.
       quit.phase = "allowed";
+      quittingForUpdate = true;
       // This event is synchronous and the updater's quit proceeds as soon as
       // the listener returns, so a forked destroyAll would race the quit
       // and windows could still be open when the process exits (visible on
@@ -299,6 +319,27 @@ export const make = DesktopLifecycle.of({
         }).pipe(Effect.withSpan("desktop.lifecycle.windowAllClosed")),
       );
     });
+
+    if (environment.platform === "linux") {
+      // A leftover zygote or renderer can keep the old AppImage mount and the
+      // single-instance lock alive after the main process exits. Only an update
+      // quit relaunches, so an ordinary quit keeps Electron's own teardown.
+      yield* electronApp.on("quit", () => {
+        if (!quittingForUpdate) return;
+        const metrics = Effect.runSyncWith(context)(electronApp.getAppMetrics);
+        terminateLeftoverLinuxChildren({
+          metrics,
+          currentPid: process.pid,
+          kill: (pid) => {
+            try {
+              process.kill(pid, "SIGKILL");
+            } catch {
+              // The child already exited between the snapshot and the signal.
+            }
+          },
+        });
+      });
+    }
 
     if (environment.platform !== "win32") {
       yield* addScopedListener(process, "SIGINT", () => {

@@ -802,8 +802,17 @@ export function withDiffStat<
 ): Entry {
   if (entry.additions !== 0 || entry.deletions !== 0) return entry;
   const stat = statsByRow.get(pullRequestDiffStatKey(entry));
-  return stat === undefined ? entry : { ...entry, ...stat };
+  if (stat === undefined) return entry;
+  // A row keeps its merged entry while its counts hold, so a memoized row skips the page's
+  // re-renders when other rows' counts arrive.
+  const held = mergedEntriesWithDiffStat.get(entry) as Entry | undefined;
+  if (held?.additions === stat.additions && held.deletions === stat.deletions) return held;
+  const merged = { ...entry, ...stat };
+  mergedEntriesWithDiffStat.set(entry, merged);
+  return merged;
 }
+
+const mergedEntriesWithDiffStat = new WeakMap<PullRequestListEntry, PullRequestListEntry>();
 
 export interface PullRequestListOverride {
   readonly state: PullRequestState;

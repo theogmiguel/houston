@@ -12,6 +12,7 @@ import * as Layer from "effect/Layer";
 
 import * as ServerConfig from "../../config.ts";
 import * as VcsProcess from "../../vcs/VcsProcess.ts";
+import { inChildDirectory } from "../nonBlockingSpawner.ts";
 import { GIT_NETWORK_TIMEOUT_MS, git, gitOk, resolvesInside } from "./Project.ts";
 import { keepTail, noForkPoint, reportTail, type VerifyOutcome } from "./rules.ts";
 
@@ -91,6 +92,7 @@ const runCommand = Effect.fn("HoustonMergeVerifier.runCommand")(function* (
   limit: Duration.Duration,
 ) {
   let kept: Uint8Array = new Uint8Array(0);
+  const launch = yield* inChildDirectory("nice", ["-n", "10", "sh", "-c", command], cwd);
   const child = yield* Effect.try({
     try: () => {
       const spawned =
@@ -101,8 +103,8 @@ const runCommand = Effect.fn("HoustonMergeVerifier.runCommand")(function* (
               windowsHide: true,
               stdio: ["ignore", "pipe", "pipe"],
             })
-          : NodeChildProcess.spawn("nice", ["-n", "10", "sh", "-c", command], {
-              cwd,
+          : NodeChildProcess.spawn(launch.command, launch.args, {
+              ...(launch.cwd === undefined ? {} : { cwd: launch.cwd }),
               detached: true,
               stdio: ["ignore", "pipe", "pipe"],
             });
