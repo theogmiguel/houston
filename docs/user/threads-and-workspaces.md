@@ -168,18 +168,20 @@ Every thread row is three lines tall:
 1. The project's icon and name on the left; the status at the right: **Approval**, **Input**,
    **Request**, **Needs you**, **Failed**, **Limited**, **Goal**, **Waiting**, **Running**,
    **Ready** or **Back** (which has a dismiss control). A running or waiting thread
-   says for how long. On hover or focus the status gives way to the row's actions.
+   says for how long. An **On hold** row shows an alarm clock and when it wakes; a
+   **Closed** row shows how long ago it closed. On hover or focus the status gives way to
+   the row's actions.
 2. The title, alone, across the full width.
-3. A muted line: the branch (whether the thread uses a worktree or the project's local
-   checkout, and a machine icon when it runs on another machine), then an unsent draft with
-   **Discard**, the linked pull request (its glyph carries the state colour and the number
-   stays neutral), a running terminal that opens that terminal, running subagents, tags (as
-   `#tag` text) and a regenerating title. At the right: the checkout's uncommitted line
-   counts and the provider mark; a provider without a logo shows its initials on a neutral
-   square.
+3. A muted line: at the left, the branch (whether the thread uses a worktree or the
+   project's local checkout) and tags (as `#tag` text). At the right: an unsent draft with
+   **Discard**, a running terminal that opens that terminal, a machine icon when the thread
+   runs on another machine, running subagents, the linked pull request (its glyph carries the
+   state colour and the number stays neutral) and the provider mark; a provider without a
+   logo shows its initials on a neutral square.
 
-When the items on the third line do not fit, whole items drop from the end behind a **+N**
-counter; hovering it lists what is hidden. Closed rows show how long ago the thread closed.
+When the items on the third line do not fit, tags and the subagent count drop first, then
+whole items from the end, behind a **+N** counter; hovering it lists what is hidden. The pull
+request and the provider mark always stay.
 
 Hovering a row opens a card with the project, the machine when there are several, the
 checkout and branch (with a warning when the checkout is on a different branch than the

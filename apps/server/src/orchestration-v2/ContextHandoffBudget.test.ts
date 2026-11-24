@@ -18,6 +18,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {
   contextUsageForHandoff,
+  estimateTextTokens,
   handoffBudget,
   historyCost,
   historyResponseItems,
@@ -178,6 +179,17 @@ describe("handoff budget", () => {
       assert.isAtMost(historyCost(selected.messages, selected.context), budget);
       assert.isAbove(selected.omittedItems, 0);
     }
+  });
+
+  it("estimates tokens as UTF-8 bytes over four, rounded up", () => {
+    assert.equal(estimateTextTokens(""), 0);
+    assert.equal(estimateTextTokens("abc"), 1);
+    assert.equal(estimateTextTokens("abcd"), 1);
+    assert.equal(estimateTextTokens("abcde"), 2);
+    // Each of these is three or four UTF-8 bytes, so the estimate is not the character count.
+    assert.equal(estimateTextTokens("界界界"), 3);
+    assert.equal(estimateTextTokens("🧪"), 1);
+    assert.equal(estimateTextTokens("x".repeat(100_000)), 25_000);
   });
 
   it("fits the final envelope at intermediate selected/omitted digit boundaries", () => {
