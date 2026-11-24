@@ -9,6 +9,35 @@ import {
   houstonOrchestrationSystemPrompt,
 } from "./orchestrationInstructions.ts";
 
+// Long-running work and a cold child both pay for a full context re-read.
+const ORCHESTRATION_RULES = [
+  "finishes in this turn with no command likely to run over a few minutes (a test suite or build). Use `delegate_task` otherwise,",
+  "re-check is a new `delegate_task` (brief, findings, objections), never a `houston_thread_send`;",
+  "so is new work for a child idle over an hour (give it that child's last summary).",
+];
+
+describe("Houston orchestration instructions", () => {
+  it("send long-running work and work for an idle child to a new delegate, for every provider", () => {
+    const deliveries = {
+      "system prompt": houstonOrchestrationSystemPrompt(true, false) ?? "",
+      "first prompt": houstonOrchestrationPrompt({
+        prompt: "Run the suite.",
+        hasHoustonMcp: true,
+        hasDeviceTools: false,
+        orchestrationDelivered: false,
+        deviceInstructionsDelivered: false,
+      }),
+      "ACP prompt": houstonAcpPromptWithInstructions({
+        prompt: "Run the suite.",
+        state: { interactionMode: "default", hasHoustonMcp: true, hasDeviceTools: false },
+      }),
+    };
+    for (const [delivery, text] of Object.entries(deliveries)) {
+      for (const rule of ORCHESTRATION_RULES) assert.include(text, rule, delivery);
+    }
+  });
+});
+
 describe("Houston device instructions", () => {
   it("route device work through device_open and give Claude the line that loads the tools", () => {
     for (const intent of ["`device_list`", "`device_open`", "`agent-device`", "ssh", "`hostId`"]) {
