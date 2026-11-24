@@ -44,6 +44,16 @@ export function reduceDesktopUpdateStateOnCheckStart(
   state: DesktopUpdateState,
   checkedAt: string,
 ): DesktopUpdateState {
+  // A background check must not hide an offered build or its download/install action.
+  if (state.status === "available" || state.status === "downloaded") {
+    return {
+      ...state,
+      checkedAt,
+      message: null,
+      errorContext: null,
+    };
+  }
+
   const hasDownloadedUpdate = state.downloadedVersion !== null;
   return {
     ...state,
@@ -94,6 +104,21 @@ export function reduceDesktopUpdateStateOnUpdateAvailable(
   omittedReleaseCount = 0,
 ): DesktopUpdateState {
   const isDownloadedVersion = state.downloadedVersion === version;
+  // Keep a downloaded build installable when a newer release appears; the UI compares the two
+  // versions. Its release notes stay with the build that will actually install.
+  if (state.downloadedVersion !== null && !isDownloadedVersion) {
+    return {
+      ...state,
+      status: "downloaded",
+      availableVersion: version,
+      checkedAt,
+      message: null,
+      errorContext: null,
+      downloadPercent: 100,
+      canRetry: true,
+    };
+  }
+
   const preserveReleaseNotes = isDownloadedVersion && releaseNotes.length === 0;
   return {
     ...state,

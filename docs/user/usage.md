@@ -35,11 +35,16 @@ locally. A failed download preserves the last valid catalog. The catalog request
 usage data. A provider-reported cost is used when present; records without usable prices
 still contribute tokens and are marked unpriced.
 
+Claude cache writes are priced by their lifetime: one-hour writes at the catalog's one-hour
+write rate and five-minute writes at its standard write rate. A model without a published
+one-hour rate is priced at the standard rate. Cache write tokens are shown as one count.
+
 ## Model prices
 
 **Model prices** opens the price table. You can add a model price, map a model name to
 another model's price, and apply the table to the environments you select. A mapping and
-override apply to past and future usage on those environments.
+override apply to past and future usage on those environments. A custom cache write price
+applies to both cache lifetimes.
 
 ## Limits
 

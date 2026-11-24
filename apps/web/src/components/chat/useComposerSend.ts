@@ -103,6 +103,7 @@ import {
   referencedThreadContexts,
 } from "./composerSend.logic";
 import { usePlanFollowUpSend } from "./useProposedPlanSend";
+import { useLayoutStore } from "../../layout/layoutStore";
 import { useMultipleModelSend } from "./useMultipleModelSend";
 import { type ComposerDispatchMode } from "@houston-app/client-runtime/state/composer-dispatch";
 import {
@@ -255,6 +256,8 @@ interface ComposerSendInput {
   /** Refuses `/side` with this reason and keeps the draft. */
   readonly sideChatDisabledReason: string | null;
   readonly handleNewThreadInActiveProject: () => void;
+  /** The pane tab showing this chat, kept once a message is sent; null outside a layout pane. */
+  readonly layoutTabId: string | null;
   readonly persistThreadSettingsForNextTurn: (input: {
     threadId: ThreadId;
     createdAt: string;
@@ -343,6 +346,7 @@ export function useComposerSend(input: ComposerSendInput) {
     onResumeCommand,
     sideChatDisabledReason,
     handleNewThreadInActiveProject,
+    layoutTabId,
     persistThreadSettingsForNextTurn,
   } = input;
   const linkedEnvironments = useLinkedEnvironments(environmentId);
@@ -1015,6 +1019,7 @@ export function useComposerSend(input: ComposerSendInput) {
       setThreadError(threadIdForSend, attachmentCapabilitiesBeforeUpload.fileBlockReason);
       return;
     }
+    if (layoutTabId !== null) useLayoutStore.getState().keepTab(layoutTabId);
     const turnUsesAttachmentUploads =
       composerFilesSnapshot.length > 0
         ? attachmentCapabilitiesBeforeUpload.supportsAttachmentUploads

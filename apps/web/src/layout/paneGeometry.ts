@@ -9,6 +9,7 @@ import {
 
 /** Neighboring panes share an 8px gutter, independent of the window inset: each side gives 4px. */
 export const HALF_PANE_GAP = "4px";
+const HALF_PANE_GAP_PX = 4;
 
 export const FULL_RECT = { left: 0, top: 0, width: 1, height: 1 } as const;
 
@@ -43,6 +44,17 @@ export function slotStyle(slot: LayoutPaneSlot, stripPx?: number): CSSProperties
   const top = at(slot.rect.top, edge(slot.hasAbove));
   const bottom = at(slot.rect.top + slot.rect.height, `-1 * ${edge(slot.hasBelow)}`);
   return { left, top, width: `calc(${right} - ${left})`, height: `calc(${bottom} - ${top})` };
+}
+
+/**
+ * `slotStyle` while a resize drag grows the stage every frame: across in whole pixels of the
+ * strip, so a pane that neither resizes nor moves keeps the same style and is not restyled.
+ */
+export function dragSlotStyle(slot: LayoutPaneSlot, stripPx: number): CSSProperties {
+  const edge = (has: boolean) => (has ? HALF_PANE_GAP_PX : 0);
+  const left = Math.round(slot.rect.left * stripPx + edge(slot.hasLeft));
+  const right = Math.round((slot.rect.left + slot.rect.width) * stripPx - edge(slot.hasRight));
+  return { ...slotStyle(slot), left: `${left}px`, width: `${right - left}px` };
 }
 
 /**

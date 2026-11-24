@@ -61,6 +61,10 @@ import {
   readDesktopSecondaryBootstrapsResult,
   type DesktopSecondaryBootstrapsRead,
 } from "./desktopLocal";
+import {
+  DESKTOP_LOCAL_TOPOLOGY_SAFETY_POLL_MS,
+  subscribeDesktopLocalTopology,
+} from "./desktopLocalTopology";
 import * as ConnectionStorage from "./storage";
 import { clientPresentationMetadata } from "./clientMetadata";
 
@@ -403,6 +407,13 @@ const loadPrimaryConnectionRegistration = Effect.fn(
   });
 });
 
+/** A stopped or starting backend is listed without an endpoint; the host announces it later. */
+function hasSecondaryEndpoint(entry: DesktopEnvironmentBootstrap): boolean {
+  return (
+    entry.httpBaseUrl !== null && entry.wsBaseUrl !== null && entry.bootstrapToken !== undefined
+  );
+}
+
 const loadSecondaryConnectionRegistration = Effect.fn(
   "web.connectionPlatform.loadSecondaryConnectionRegistration",
 )(function* (entry: DesktopEnvironmentBootstrap) {
@@ -452,28 +463,77 @@ const loadSecondaryConnectionRegistration = Effect.fn(
   };
 });
 
-// Fallback for a missed server status event and for secondary backends, which have no event.
-// Registrations stay cached until bearer credentials near expiry.
-const PLATFORM_POLL_INTERVAL = "3 seconds";
-
-/** Ticks on the poll and whenever the desktop host reports its local server ready. */
+/** Ticks once at start, on each host topology notice and on the shared safety poll. */
 export function platformRegistrationTriggers(
-  bridge: Pick<HostBridge, "onServerStatus"> | undefined,
-  pollInterval: Duration.Input = PLATFORM_POLL_INTERVAL,
+  subscribe: (listener: () => void) => () => void = subscribeDesktopLocalTopology,
 ): Stream.Stream<void> {
-  const serverReady = Stream.callback<void>((queue) =>
+  const changes = Stream.callback<void>((queue) =>
     Effect.acquireRelease(
-      Effect.sync(() =>
-        bridge?.onServerStatus?.((status) => {
-          if (status.state === "ready") Queue.offerUnsafe(queue, undefined);
-        }),
-      ),
-      (unsubscribe) => Effect.sync(() => unsubscribe?.()),
+      Effect.sync(() => subscribe(() => Queue.offerUnsafe(queue, undefined))),
+      (unsubscribe) => Effect.sync(unsubscribe),
     ),
   );
-  return Stream.merge(Stream.tick(pollInterval), serverReady);
+  return Stream.merge(Stream.succeed(undefined), changes);
 }
-const SECONDARY_BEARER_REFRESH_SKEW_MS = 5_000;
+
+/**
+ * After a build that could not reach a server it was told of, re-read sooner than the safety
+ * poll: a browser has no host to announce its server. A settled build resets the delays.
+ * They sum to about 31 s, so the retries end at roughly the safety poll's interval.
+ */
+const PLATFORM_DISCOVERY_RETRY_DELAYS: ReadonlyArray<Duration.Input> = [
+  "1 second",
+  "2 seconds",
+  "4 seconds",
+  "8 seconds",
+  "16 seconds",
+];
+
+interface PlatformRegistrationsBuild<A> {
+  readonly registrations: A;
+  /** False while a server the topology names could not be reached; a retry follows. */
+  readonly settled: boolean;
+}
+
+/** Builds on each trigger, and retries an unsettled build with the bounded delays above. */
+export function platformRegistrations<A, E, R>(
+  build: Effect.Effect<PlatformRegistrationsBuild<A>, E, R>,
+  subscribe: (listener: () => void) => () => void = subscribeDesktopLocalTopology,
+): Stream.Stream<A, E, R> {
+  return Stream.unwrap(
+    Effect.gen(function* () {
+      const retries = yield* Queue.unbounded<Option.Option<Duration.Input>>();
+      let retriesSpent = 0;
+      const retryTicks = Stream.fromQueue(retries).pipe(
+        Stream.switchMap((delay) =>
+          Option.isSome(delay) ? Stream.fromEffect(Effect.sleep(delay.value)) : Stream.empty,
+        ),
+      );
+      const scheduleRetry = (settled: boolean) => {
+        if (settled) {
+          retriesSpent = 0;
+          return Queue.offer(retries, Option.none());
+        }
+        const delay = PLATFORM_DISCOVERY_RETRY_DELAYS[retriesSpent];
+        if (delay === undefined) return Effect.void;
+        retriesSpent += 1;
+        return Queue.offer(retries, Option.some(delay));
+      };
+      return Stream.merge(platformRegistrationTriggers(subscribe), retryTicks).pipe(
+        Stream.mapEffect(() =>
+          build.pipe(
+            Effect.tap(({ settled }) => scheduleRetry(settled)),
+            Effect.map(({ registrations }) => registrations),
+          ),
+        ),
+      );
+    }),
+  );
+}
+
+// Registrations stay cached until bearer credentials near expiry; two safety polls of skew
+// mean a poll always refreshes a bearer before it expires.
+const SECONDARY_BEARER_REFRESH_SKEW_MS = 2 * DESKTOP_LOCAL_TOPOLOGY_SAFETY_POLL_MS;
 
 function secondaryBearerExpiresAtEpochMs(
   issuedAtEpochMs: number,
@@ -620,6 +680,7 @@ const layerPlatformConnectionSource = Layer.effect(
       const nowEpochMs = yield* Clock.currentTimeMillis;
       const next = new Map<string, CachedPlatformRegistration>();
       const registrations: Array<PlatformConnectionRegistration> = [];
+      let settled = true;
 
       const primaryTopologyRead = readPrimaryEnvironmentTargetResult();
       const retainedPrimary = primaryRegistrationToRetainAfterTopologyRead(
@@ -661,6 +722,8 @@ const layerPlatformConnectionSource = Layer.effect(
             const cacheEntry = { signature, registration: built.value };
             next.set(PRIMARY_LOCAL_ENVIRONMENT_ID, cacheEntry);
             registrations.push(built.value);
+          } else {
+            settled = false;
           }
         }
       }
@@ -759,19 +822,23 @@ const layerPlatformConnectionSource = Layer.effect(
           ) {
             next.set(bootstrap.id, cached);
             registrations.push(cached.registration);
+          } else if (hasSecondaryEndpoint(bootstrap) && !nextRejected.has(bootstrap.id)) {
+            // A rejected credential keeps its own backoff; a failed reachable backend retries soon.
+            settled = false;
           }
         }
         yield* Ref.set(rejectedRef, nextRejected);
       }
 
       yield* Ref.set(cacheRef, next);
-      return registrations as ReadonlyArray<PlatformConnectionRegistration>;
+      return {
+        registrations: registrations as ReadonlyArray<PlatformConnectionRegistration>,
+        settled,
+      } satisfies PlatformRegistrationsBuild<ReadonlyArray<PlatformConnectionRegistration>>;
     }).pipe(Effect.provide(FetchHttpClient.layer));
 
     return PlatformConnectionSource.PlatformConnectionSource.of({
-      registrations: platformRegistrationTriggers(window.hostBridge).pipe(
-        Stream.mapEffect(() => buildPlatformRegistrations),
-      ),
+      registrations: platformRegistrations(buildPlatformRegistrations),
     });
   }),
 );

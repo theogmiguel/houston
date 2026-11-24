@@ -12,6 +12,7 @@ import {
 import { DraftId } from "../composerDraftStore";
 import type { ThreadRouteTarget } from "../threadRoutes";
 import {
+  isBlankLayoutWorkspace,
   isEmptyWorkspaceRetained,
   normalizeLayout,
   type LayoutColumn,
@@ -135,7 +136,7 @@ export function layoutStateToRecords(
 ): HoustonLayoutWorkspaceRecord[] {
   const filled = state.workspaces.filter(
     (workspace) =>
-      workspace.columns.length > 0 ||
+      !isBlankLayoutWorkspace(workspace) ||
       workspace.keepWhenEmpty === true ||
       known.has(workspace.id) ||
       isEmptyWorkspaceRetained(workspace.id),
@@ -145,7 +146,8 @@ export function layoutStateToRecords(
     id: workspace.id,
     name: nameOf(workspace, known.get(workspace.id), index + 1),
     position: index,
-    columns: workspace.columns.map((column) => ({
+    // A blank workspace's launcher is the client's; the server stores it with no columns.
+    columns: (isBlankLayoutWorkspace(workspace) ? [] : workspace.columns).map((column) => ({
       id: column.id,
       // A column wider than the strip is stored at full width, the most a share can hold.
       width: Math.min(1, column.width),
@@ -212,10 +214,12 @@ export function layoutStateFromRecords(
         }),
       })),
     }));
+    // A blank workspace keeps the launcher the window shows, so a refresh does not replace it.
+    const blank = columns.every((column) => column.panes.every((pane) => pane.tabs.length === 0));
     return {
       id: record.id,
       name: record.name,
-      columns,
+      columns: blank && local && isBlankLayoutWorkspace(local) ? local.columns : columns,
       focusedPaneId: local?.focusedPaneId ?? null,
       cameraWidth: local?.cameraWidth ?? null,
       ...(record.pinnedAt === null ? {} : { pinnedAt: record.pinnedAt }),
@@ -226,7 +230,7 @@ export function layoutStateFromRecords(
   const recordIds = new Set(workspaces.map((workspace) => workspace.id));
   // The strip's empty trailing workspace is not stored; keep the one the window already has.
   const emptyBefore = previous?.workspaces.find(
-    (workspace) => workspace.columns.length === 0 && !recordIds.has(workspace.id),
+    (workspace) => isBlankLayoutWorkspace(workspace) && !recordIds.has(workspace.id),
   );
   const withEmpty = emptyBefore ? [...workspaces, emptyBefore] : workspaces;
   const focusedWorkspaceId =

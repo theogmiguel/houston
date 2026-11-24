@@ -28,7 +28,11 @@ import { openAddProjectDialog } from "../AddProjectDialog";
 import { requestCustomSnooze } from "../CustomSnoozeDialog";
 import { isDesktopHost } from "../../env";
 import { DEFAULT_SIDEBAR_GRID_THREAD_SORT_ORDER } from "@houston-app/contracts/settings";
-import { selectFocusedTab, type LayoutWorkspace } from "../../layout/layoutModel";
+import {
+  selectFocusedLayoutGhostId,
+  selectFocusedTab,
+  type LayoutWorkspace,
+} from "../../layout/layoutModel";
 import { chatTargetThreadRef } from "../../layout/layoutThreadRef";
 import { runInNewLayoutTab, useLayoutStore } from "../../layout/layoutStore";
 import { useThreadMembershipStore } from "../../layout/threadMembership";
@@ -90,7 +94,7 @@ import { ProjectFilterContext, ProjectFilterPicker } from "./ProjectFilterPicker
 import { jumpHintLabels } from "../../threads/jumpHints";
 import { useRevealOpenThread } from "../../threads/useRevealOpenThread";
 import { attachSidebarTree } from "../../lib/sidebarTree";
-import { useShortcutModifierState } from "../../shortcutModifierState";
+import { useHeldShortcutModifiers } from "../../shortcutModifierState";
 import { reportFailure } from "./reportFailure";
 import { ThreadBulkMenuContext, useBulkThreadMenu } from "./useBulkThreadMenu";
 import { ThreadJumpHintContext } from "./threadJumpHints";
@@ -159,7 +163,7 @@ import { openCommandPalette } from "../../commandPaletteBus";
 import { SidebarRailNav } from "./SidebarRailNav";
 import type { SidebarProviderEntry } from "./SidebarThreadRow";
 import { EMPTY_PROVIDER_ENTRIES, sidebarProviderEntriesAtom } from "./sidebarProviderEntries";
-import { useSnoozeWakeClock, useThreadJumpHintsVisible } from "../Sidebar.logic";
+import { THREAD_JUMP_HINT_SHOW_DELAY_MS, useSnoozeWakeClock } from "../Sidebar.logic";
 import { resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { SidebarContent, SidebarHeader, useSidebar, useSidebarVisibility } from "../ui/sidebar";
@@ -379,6 +383,17 @@ export function ThreadSidebar({
     );
   };
 
+  // A row click on the thread its focused ghost tab already shows says "this one": keep the tab.
+  const openThreadFromRow = (thread: Pick<EnvironmentThreadShell, "environmentId" | "id">) => {
+    const store = useLayoutStore.getState();
+    const ghostId = selectFocusedLayoutGhostId(store.layout, {
+      kind: "chat",
+      target: { kind: "server", threadRef: scopeThreadRef(thread.environmentId, thread.id) },
+    });
+    if (ghostId !== null) store.keepTab(ghostId);
+    openThread(thread);
+  };
+
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const environmentMachines = useEnvironmentMachines();
   // A selection made under one filter can hold threads the next filter hides.
@@ -554,11 +569,12 @@ export function ThreadSidebar({
     scopedThreadKey(scopeThreadRef(target.environmentId, target.threadId as never)),
   );
   // The first nine rows carry their Mod+1..9 label while the modifier is held.
-  const shortcutModifiers = useShortcutModifierState();
-  const jumpHintsVisible = useThreadJumpHintsVisible(
-    shouldShowThreadJumpHintsForModifiers(shortcutModifiers, keybindings, {
-      context: { terminalFocus: isTerminalFocused() },
-    }),
+  const jumpHintsVisible = useHeldShortcutModifiers(
+    (modifiers) =>
+      shouldShowThreadJumpHintsForModifiers(modifiers, keybindings, {
+        context: { terminalFocus: isTerminalFocused() },
+      }),
+    THREAD_JUMP_HINT_SHOW_DELAY_MS,
   );
   const jumpHints = jumpHintsVisible ? jumpHintLabels(orderedThreadKeys, keybindings) : null;
   const openRailTarget = (target: (typeof railTargets)[number]) => {
@@ -942,7 +958,7 @@ export function ThreadSidebar({
     return true;
   };
 
-  const openNeedsYouThread = (thread: EnvironmentThreadShell) => openThread(thread);
+  const openNeedsYouThread = (thread: EnvironmentThreadShell) => openThreadFromRow(thread);
 
   const reorder = useWorkspaceReorderDrag((draggedId, targetId, side) =>
     reorderLayoutWorkspaceAction(draggedId, targetId, side),
@@ -974,7 +990,7 @@ export function ThreadSidebar({
       runningSubagents={runningSubagentsByThread}
       dragging={dragging}
       reorder={{ drag: reorder.drag, begin: reorder.begin }}
-      onOpenThread={openThread}
+      onOpenThread={openThreadFromRow}
       onSelectThread={selectThread}
       onCloseThread={(thread) => closeThreads([thread])}
       onHoldThread={(thread, preset) => holdThreads([thread], preset.snoozedUntil)}

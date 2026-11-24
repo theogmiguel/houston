@@ -1,12 +1,11 @@
 import type { DesktopLocalServerStatus } from "@houston-app/contracts";
 import { useEffect, useState } from "react";
 
+import { watchDesktopServerStatus } from "../../connection/desktopLocalTopology";
 import { Alert, AlertAction, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { hostBridgeErrorMessage } from "./hostBridgeError";
-
-const STATUS_POLL_MS = 4_000;
 
 /**
  * The window opens before the local server does. This banner names a slow start,
@@ -29,28 +28,10 @@ export function LocalServerStatusBanner() {
     return () => window.clearTimeout(timer);
   }, [status?.state]);
 
-  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- subscribes to the host's server status and polls it until ready
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- subscribes to the host's server status, with the shared safety poll
   useEffect(() => {
     if (!bridge?.getServerStatus) return;
-    let active = true;
-    const refresh = () => {
-      void bridge
-        .getServerStatus?.()
-        .then((next) => {
-          if (active) setStatus(next);
-        })
-        .catch(() => undefined);
-    };
-    refresh();
-    const unsubscribe = bridge.onServerStatus?.((next) => {
-      if (active) setStatus(next);
-    });
-    const timer = window.setInterval(refresh, STATUS_POLL_MS);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-      unsubscribe?.();
-    };
+    return watchDesktopServerStatus(bridge, setStatus);
   }, [bridge]);
 
   if (!bridge?.getServerStatus || status === null) return null;
