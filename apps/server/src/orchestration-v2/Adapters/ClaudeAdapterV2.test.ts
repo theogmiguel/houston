@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- workflow fixtures use files and the fake Claude CLI uses Node streams
 import * as NodeEvents from "node:events";
 import * as NodeFS from "node:fs";
+import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeStream from "node:stream";
 
@@ -59,6 +60,7 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as SecureRandom from "effect/crypto/SecureRandom";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
@@ -82,6 +84,7 @@ import { getModelSelectionStringOptionValue } from "@houston-app/shared/model";
 import { SpawnExecutableResolution } from "@houston-app/shared/shell";
 
 import * as PortScanner from "../../preview/PortScanner.ts";
+import { CHECK_TIMEOUT } from "../../houston/nonBlockingSpawner.ts";
 import * as TraceContext from "../../houston/observability/TraceContext.ts";
 import * as RecordingTracer from "../../observability/testing/RecordingTracer.ts";
 import { attachmentRelativePath } from "../../attachmentStore.ts";
@@ -128,6 +131,7 @@ import {
   projectionFor,
 } from "../testkit/fixtures/shared.ts";
 
+vi.mock("node:fs/promises", { spy: true });
 vi.mock("@anthropic-ai/claude-agent-sdk", async (importOriginal) => ({
   ...(await importOriginal<typeof ClaudeSdk>()),
   resolveSettings: vi.fn(),
@@ -744,6 +748,8 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
       "call `houston_background_wait` with `taskIds: [id]`",
     );
     assert.notInclude(systemPrompt.append ?? "", "## Houston devices");
+    assert.include(systemPrompt.append ?? "", "with no command likely to run over a few minutes");
+    assert.include(systemPrompt.append ?? "", "give it that child's last summary");
     const logged = ClaudeAdapterV2.loggedClaudeQueryOptions(options);
     assert.equal(logged.hasMcpServers, true);
     assert.notInclude(JSON.stringify(logged), "secret-claude-token");
@@ -1112,6 +1118,130 @@ describe("ClaudeAdapterV2 Auto-accept edits", () => {
         ),
       ),
     ),
+  );
+});
+
+describe("ClaudeAdapterV2 hung project folder", () => {
+  it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
+    "fails a turn whose folder never answers with the folder error, within the limit",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const homePath = yield* fileSystem.makeTempDirectoryScoped({
+            prefix: "houston-claude-hung-home-",
+          });
+          const hung = "/houston-hung-turn";
+          const answers: Array<() => void> = [];
+          const access = vi
+            .spyOn(NodeFSP, "access")
+            .mockImplementation((target, mode) =>
+              String(target).startsWith(hung)
+                ? new Promise<void>((resolve) => answers.push(resolve))
+                : NodeFS.promises.access(target, mode),
+            );
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              for (const answer of answers) answer();
+              access.mockRestore();
+            }),
+          );
+          // Calls on the folder never return, as on a mount that stopped answering.
+          const hungReads: Array<string> = [];
+          const hungFileSystem = new Proxy(fileSystem, {
+            get: (target, key) => {
+              const value: unknown = Reflect.get(target, key);
+              if (typeof value !== "function") return value;
+              return (...args: ReadonlyArray<unknown>) => {
+                if (!String(args[0]).startsWith(hung)) return Reflect.apply(value, target, args);
+                hungReads.push(String(key));
+                return Effect.never;
+              };
+            },
+          });
+          let opened = 0;
+          const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
+            instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
+            settings: { ...DEFAULT_CLAUDE_SETTINGS, homePath },
+            environment: {},
+            attachmentsDir: homePath,
+            fileSystem: hungFileSystem,
+            path: yield* Path.Path,
+            random: yield* SecureRandom.SecureRandom,
+            idAllocator: yield* IdAllocator.IdAllocatorV2,
+            queryRunner: {
+              allocateSessionId: Effect.succeed("native-thread-claude-hung-folder"),
+              open: () => {
+                opened++;
+                return Effect.die("unexpected open in a hung folder");
+              },
+              forkSession: () => Effect.die("unused"),
+              subagentLaunchToolUseId: () => Effect.succeed(null),
+              assertComplete: Effect.void,
+            },
+          });
+          const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            cwd: hung,
+          });
+          const threadId = ThreadId.make("thread-claude-hung-folder");
+          const runtime = yield* adapter.openSession({
+            threadId,
+            providerSessionId: ProviderSessionId.make("provider-session-claude-hung-folder"),
+            modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+            runtimePolicy,
+          });
+          const providerThread = yield* runtime.ensureThread({
+            threadId,
+            modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+            runtimePolicy,
+          });
+          const now = yield* DateTime.now;
+          const failure = (attempt: string) =>
+            runtime
+              .startTurn(
+                makeClaudeTestTurnInput({
+                  threadId,
+                  providerThread,
+                  now,
+                  attemptId: RunAttemptId.make(attempt),
+                  text: "Read the project.",
+                  attachments: [],
+                  runtimePolicy,
+                }),
+              )
+              .pipe(
+                Effect.flip,
+                Effect.map((error) => makeProviderFailure({ cause: error }).message),
+                Effect.timeoutOption(Duration.sum(CHECK_TIMEOUT, Duration.seconds(1))),
+                Effect.map(Option.getOrElse(() => "the turn is still waiting")),
+              );
+          const message = `Claude could not start in ${hung}: the folder did not answer within ${Duration.format(CHECK_TIMEOUT)}. Check that its drive or network share is reachable, then send the message again.`;
+
+          const first = yield* Effect.forkChild(failure("attempt-claude-hung-folder-1"));
+          yield* TestClock.adjust(CHECK_TIMEOUT);
+          yield* TestClock.adjust(Duration.seconds(1));
+          assert.equal(yield* Fiber.join(first), message);
+          // The failed turn holds nothing: the next one is told the same at once.
+          const second = yield* Effect.forkChild(failure("attempt-claude-hung-folder-2"));
+          yield* TestClock.adjust(Duration.seconds(1));
+          yield* Effect.yieldNow;
+          assert.isDefined(second.pollUnsafe());
+          assert.equal(yield* Fiber.join(second), message);
+          assert.deepEqual(hungReads, []);
+          assert.equal(opened, 0);
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              IdAllocator.layer,
+              McpProviderSessions.layer,
+              NodeServices.layer,
+              NodeCrypto.layer,
+            ),
+          ),
+        ),
+      ),
   );
 });
 
