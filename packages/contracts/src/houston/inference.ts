@@ -229,6 +229,8 @@ export const InferenceServerSnapshot = Schema.Struct({
   /** The saved server that serves this one's requests while it is down. */
   fallbackServerId: Schema.optional(InferenceServerId),
   apiProtocols: Schema.optional(Schema.Array(InferenceApiProtocol)),
+  /** Whether a saved API key is stored for this server; the key itself never leaves the server. */
+  hasApiKey: Schema.optionalKey(Schema.Boolean),
   gatewayQueue: Schema.optional(InferenceGatewayQueue),
   promptCache: Schema.optional(InferenceServerPromptCache),
   recentFailure: Schema.optional(InferenceServerRecentFailure),

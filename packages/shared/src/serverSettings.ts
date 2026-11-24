@@ -529,6 +529,8 @@ export function applyServerSettingsPatch(
     usageLimitSources: usageLimitSourcesPatch,
     // Houston: a server added or removed by id, without touching the others.
     inferenceServers: inferenceServersPatch,
+    // Houston: one local-agent suggestion answered or recorded, without touching the others.
+    localAgentSuggestions: localAgentSuggestionsPatch,
     secretProviders: secretProvidersPatch,
     sourceControlHosts: sourceControlHostsPatch,
     usagePriceOverrides: usagePriceOverridesPatch,
@@ -736,6 +738,14 @@ export function applyServerSettingsPatch(
     ...(inferenceServersPatch !== undefined
       ? {
           inferenceServers: mergeSettingsEntries(current.inferenceServers, inferenceServersPatch),
+        }
+      : {}),
+    ...(localAgentSuggestionsPatch !== undefined
+      ? {
+          localAgentSuggestions: mergeSettingsEntries(
+            current.localAgentSuggestions,
+            localAgentSuggestionsPatch,
+          ),
         }
       : {}),
     ...(secretProvidersPatch !== undefined

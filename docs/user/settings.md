@@ -99,6 +99,11 @@ directories, environment variables and models, and set the provider health check
 Each provider shows its readiness and one action to resolve it. See
 [Install](install.md#providers) and [Agent status](agent-status.md).
 
+When Houston starts and finds Pi or OpenCode on the machine's `PATH` without an instance of
+that agent, it does not turn the agent on. **Settings → Providers** shows a suggestion such as
+"Pi was found on this machine. Turn it on?" with **Turn on** and **Dismiss**. Dismissing is
+remembered; an agent that was configured or turned off before is not suggested again.
+
 An instance can be marked **Runs local models** when every model it can select runs on
 hardware you control, such as Ollama, LM Studio, llama.cpp, vLLM or SGLang. Local
 instances lead the provider picker and the model list, and background writing such as

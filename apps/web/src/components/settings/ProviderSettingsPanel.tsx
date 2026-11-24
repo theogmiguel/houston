@@ -992,6 +992,13 @@ export function EnvironmentProviderSettings({
     );
   };
 
+  const localAgentSuggestions = Object.values(settings.localAgentSuggestions ?? {}).filter(
+    (suggestion) =>
+      suggestion.status === "suggested" &&
+      !(defaultInstanceIdForDriver(suggestion.driver) in settings.providerInstances) &&
+      visibleDriverKinds.has(suggestion.driver),
+  );
+
   return (
     <>
       <SettingsSection
@@ -1081,6 +1088,58 @@ export function EnvironmentProviderSettings({
               className="@min-[48rem]/providers:min-h-0 @min-[48rem]/providers:flex-1"
             >
               <div className="divide-y divide-border/50">
+                {localAgentSuggestions.map((suggestion) => {
+                  const label =
+                    providerClients.get(suggestion.driver)?.label ??
+                    PROVIDER_DISPLAY_NAMES[suggestion.driver] ??
+                    String(suggestion.driver);
+                  return (
+                    <SettingsRow
+                      key={`local-agent-suggestion:${suggestion.driver}`}
+                      title={`${label} was found on this machine. Turn it on?`}
+                      description={`${label} can run models on this machine. Houston left it off; turning it on adds it to the model picker.`}
+                      control={
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          <Button
+                            size="xs"
+                            variant="outline"
+                            disabled={readOnly}
+                            onClick={() =>
+                              void persistProviderInstance(
+                                {
+                                  operation: "upsert",
+                                  instanceId: defaultInstanceIdForDriver(suggestion.driver),
+                                  instance: { driver: suggestion.driver, enabled: true },
+                                },
+                                {
+                                  localAgentSuggestions: {
+                                    [suggestion.driver]: { ...suggestion, status: "enabled" },
+                                  },
+                                },
+                              )
+                            }
+                          >
+                            Turn on
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="ghost-muted"
+                            disabled={readOnly}
+                            onClick={() =>
+                              updateSettings({
+                                localAgentSuggestions: {
+                                  [suggestion.driver]: { ...suggestion, status: "dismissed" },
+                                },
+                              })
+                            }
+                          >
+                            Dismiss
+                          </Button>
+                        </div>
+                      }
+                    />
+                  );
+                })}
                 {rows.map((row) => renderProviderInstance(row, "list"))}
                 {canAddProvider ? (
                   <button

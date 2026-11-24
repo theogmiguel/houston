@@ -1,6 +1,7 @@
 import { EasDeviceHostConfigs, SimlockDeviceHostConfigs, SshDeviceHostConfigs } from "./device.ts";
 import { HoustonObservabilityPreset, LenientObservabilityPreset } from "./houston/observability.ts";
 import { InferenceServerConfig, InferenceServerId } from "./houston/inference.ts";
+import { LocalAgentSuggestion, LocalAgentSuggestions } from "./houston/providerSuggestions.ts";
 import {
   AuthOrchestrationOperateScope,
   AuthSettingsWriteScope,
@@ -1563,6 +1564,8 @@ export const ServerSettings = Schema.Struct({
   inferenceServers: Schema.Record(InferenceServerId, InferenceServerConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  // Houston: agents found on this machine that the user may turn on, and remembered answers.
+  localAgentSuggestions: LocalAgentSuggestions,
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   sourceControlHosts: Schema.Record(Schema.String, SourceControlHostSettings).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
@@ -1950,6 +1953,10 @@ export const ServerSettingsPatch = Schema.Struct({
   // Merge per server so another client's edit is not lost; null removes an entry.
   inferenceServers: Schema.optionalKey(
     Schema.Record(InferenceServerId, Schema.NullOr(InferenceServerConfig)),
+  ),
+  // Merge per agent; null removes an entry.
+  localAgentSuggestions: Schema.optionalKey(
+    Schema.Record(ProviderDriverKind, Schema.NullOr(LocalAgentSuggestion)),
   ),
   // Merge per source to avoid racing other edits; null removes an entry.
   usageLimitSources: Schema.optionalKey(
