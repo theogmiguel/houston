@@ -1,4 +1,3 @@
-import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -42,6 +41,7 @@ import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts"
 import * as TrayHost from "../tray/TrayHost.ts";
 import { makeQuitShortcutHandler } from "./QuitHold.ts";
 import { copyContextMenuImage } from "./ContextMenuImage.ts";
+import { makeRendererRecovery } from "./RendererRecovery.ts";
 
 // Match --workspace-topbar-height in apps/web/src/index.css; native macOS buttons stay 14 points at any zoom.
 const MACOS_WORKSPACE_TOPBAR_HEIGHT = 52;
@@ -60,9 +60,6 @@ function syncMacosWindowButtons(window: Electron.BrowserWindow): void {
 
 const MAIN_WINDOW_BOUNDS_PERSIST_DEBOUNCE_MS = 500;
 const DEVELOPMENT_LOAD_RETRY_DELAYS_MS = [100, 250, 500, 1_000, 2_000] as const;
-const RENDERER_RECOVERY_RELOAD_DELAY_MS = 500;
-const RENDERER_RECOVERY_MAX_ATTEMPTS = 3;
-const RENDERER_RECOVERY_WINDOW_MS = 60_000;
 const DEVELOPMENT_RETRYABLE_LOAD_ERROR_CODES = new Set([-2, -7, -9, -102, -105, -106, -118]);
 
 type WindowTitleBarOptions = Pick<
@@ -725,7 +722,6 @@ export const make = Effect.gen(function* () {
 
     let developmentLoadRetryIndex = 0;
     let developmentLoadRetryFiber: Fiber.Fiber<void, never> | undefined;
-    let rendererRecoveryTimestamps: number[] = [];
     const clearDevelopmentLoadRetry = () => {
       if (developmentLoadRetryFiber === undefined) {
         return;
@@ -807,36 +803,20 @@ export const make = Effect.gen(function* () {
         );
       },
     );
+    const rendererRecovery = makeRendererRecovery({
+      isWindowGone: () => window.isDestroyed(),
+      isQuitting: Ref.get(desktopState.quitting),
+      reload: loadApplication,
+    });
     window.webContents.on("render-process-gone", (_event, details) => {
-      const recoverable =
-        details.reason === "crashed" ||
-        details.reason === "oom" ||
-        details.reason === "killed" ||
-        details.reason === "abnormal-exit";
-
       runFork(
         Effect.gen(function* () {
-          const now = yield* Clock.currentTimeMillis;
-          rendererRecoveryTimestamps = rendererRecoveryTimestamps.filter(
-            (timestamp) => now - timestamp < RENDERER_RECOVERY_WINDOW_MS,
-          );
-          const shouldRecover =
-            recoverable &&
-            !window.isDestroyed() &&
-            rendererRecoveryTimestamps.length < RENDERER_RECOVERY_MAX_ATTEMPTS;
+          const decision = yield* rendererRecovery.renderProcessGone(details.reason);
           yield* logWindowWarning("main window render process gone", {
             reason: details.reason,
             exitCode: details.exitCode,
-            recovering: shouldRecover,
+            ...decision,
           });
-          if (!shouldRecover) {
-            return;
-          }
-          rendererRecoveryTimestamps.push(now);
-          yield* Effect.sleep(RENDERER_RECOVERY_RELOAD_DELAY_MS);
-          if (!window.isDestroyed()) {
-            loadApplication();
-          }
         }),
       );
     });
@@ -866,6 +846,7 @@ export const make = Effect.gen(function* () {
 
     window.on("closed", () => {
       clearDevelopmentLoadRetry();
+      runFork(rendererRecovery.stop);
       clearBoundsPersist();
       void runPromise(electronWindow.clearMain(Option.some(window)));
     });
