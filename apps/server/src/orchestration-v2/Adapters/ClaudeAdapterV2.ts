@@ -178,6 +178,7 @@ import {
   mergeClaudeProcessEnvironment,
   resolveClaudeHomePath,
 } from "../../provider/Drivers/ClaudeHome.ts";
+import { type ClaudeGatewaySource } from "../../houston/inference/claudeGateway.ts";
 import {
   BUNDLED_CLAUDE_MODEL_CATALOG,
   resolveClaudeCatalogContextWindowTokens,
@@ -4997,6 +4998,8 @@ export interface ClaudeAdapterV2Options {
   readonly settings: ClaudeSettings;
   readonly modelCatalog?: Effect.Effect<ClaudeModelCatalog>;
   readonly environment: NodeJS.ProcessEnv;
+  /** Routes a linked inference server through Houston's gateway; absent means unmanaged. */
+  readonly gateway?: ClaudeGatewaySource;
   readonly attachmentsDir: string;
   readonly fileSystem: FileSystem.FileSystem;
   readonly path: Path.Path;
@@ -11261,6 +11264,21 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         ) {
           const queryPolicy = yield* queryPolicyForTurn(turnInput);
           const mcpSession = yield* mcpSessions.read(turnInput.threadId);
+          const gateway =
+            adapterOptions.gateway === undefined
+              ? undefined
+              : yield* adapterOptions.gateway.forSession(adapterOptions.environment, mcpSession);
+          const refusal =
+            gateway === undefined && adapterOptions.gateway !== undefined
+              ? yield* adapterOptions.gateway.withoutGateway
+              : undefined;
+          if (refusal !== undefined) {
+            return yield* new ProviderAdapter.ProviderAdapterProtocolError({
+              driver: CLAUDE_PROVIDER,
+              detail: refusal,
+            });
+          }
+          const queryEnvironment = gateway?.environment ?? adapterOptions.environment;
           const mcpOverrides = claudeMcpQueryOverrides({
             mcpSession,
             readOnlySandbox:
@@ -11427,7 +11445,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               : { sdkSettings: claudeSdkLaunchArgSettings(launchArgSettings) }),
             environment: withClaudeArtifacts(
               claudeQueryEnvironment(
-                adapterOptions.environment,
+                queryEnvironment,
                 turnInput.appThread,
                 turnInput.appThread.lineage.relationshipToParent === "subagent"
                   ? yield* resolveSubagentPromptCacheTtl(turnInput.runtimePolicy.cwd)
@@ -12980,6 +12998,7 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
       | "modelCatalog"
       | "routeModelCatalog"
       | "requestSilenceLimit"
+      | "gateway"
     > = {},
   ) {
     const { instanceId, environment, enabled, config } = input;

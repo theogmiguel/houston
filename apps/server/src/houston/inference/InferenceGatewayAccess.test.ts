@@ -145,3 +145,14 @@ it.effect("says why a linked server is not managed, and issues instance credenti
     expect(held?.credential.token.length).toBeGreaterThan(0);
   }).pipe(Effect.provide(layerFor(ready))),
 );
+
+it.effect("names the server and the Messages API when Claude's protocol is missing", () =>
+  Effect.gen(function* () {
+    const service = yield* InferenceGateway.InferenceGatewayAccess;
+    expect(yield* service.resolve(pi, "messages")).toEqual({
+      managed: false,
+      reason: "Inference server rtx does not serve the Anthropic Messages API Claude needs.",
+      local: true,
+    });
+  }).pipe(Effect.provide(layerFor({ ...ready, apiProtocols: ["chat-completions"] }))),
+);
