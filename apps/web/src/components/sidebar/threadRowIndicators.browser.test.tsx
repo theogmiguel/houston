@@ -166,36 +166,13 @@ describe("thread row indicators", () => {
     expect(screen.container.querySelector("[data-thread-draft]")).toBeNull();
   });
 
-  it("shows the uncommitted line totals", async () => {
+  it("draws no line totals, even when the checkout has uncommitted changes", async () => {
     reset();
     fixture.totals = { insertions: 12, deletions: 3 };
     await using screen = await render(card(thread()));
-    const stats = screen.getByRole("img", { name: "Uncommitted changes +12 −3" }).element();
-    expect(stats.textContent).toBe("+12 −3");
-  });
-
-  it("shows the line totals in the timeline's diff colours at rest, hovered or not", async () => {
-    reset();
-    fixture.totals = { insertions: 12, deletions: 3 };
-    const probe = (container: HTMLElement, name: string) => {
-      const el = document.createElement("span");
-      el.className = name;
-      container.append(el);
-      const color = getComputedStyle(el).color;
-      el.remove();
-      return color;
-    };
-    await using screen = await render(card(thread()));
-    const [added, removed] = [
-      ...screen.container.querySelectorAll("[aria-label^='Uncommitted'] > span"),
-    ];
-    const addition = probe(screen.container, "text-diff-addition-foreground");
-    const deletion = probe(screen.container, "text-diff-deletion-foreground");
-    expect(getComputedStyle(added!).color).toBe(addition);
-    expect(getComputedStyle(removed!).color).toBe(deletion);
-    expect(getComputedStyle(added!).color).not.toBe(
-      getComputedStyle(screen.container.querySelector("[data-thread-meta]")!).color,
-    );
+    expect(screen.container.querySelector("[data-thread-diff]")).toBeNull();
+    expect(screen.container.querySelector("[aria-label^='Uncommitted']")).toBeNull();
+    expect(screen.container.textContent).not.toContain("+12");
   });
 
   it("shows no totals for a clean checkout", async () => {

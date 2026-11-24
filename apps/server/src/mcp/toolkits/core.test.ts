@@ -2,7 +2,7 @@ import * as AssetSigner from "../../assets/AssetSigner.ts";
 import * as DocumentText from "../../provider/DocumentText.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { expect, it } from "@effect/vitest";
+import { describe, expect, it } from "@effect/vitest";
 import {
   DEFAULT_SERVER_SETTINGS,
   ChatImageAttachment,
@@ -1135,3 +1135,95 @@ it.effect(
     );
   },
 );
+
+describe("houston_background_wait", () => {
+  const waits: Array<{ readonly taskIds: ReadonlyArray<string>; readonly awaited: boolean }> = [];
+  const layerBackgroundWait = layerOrchestratorToolkit.pipe(
+    Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
+    Layer.provide(NodeCrypto.layer),
+    Layer.provide(
+      Layer.mock(ThreadManagement.ThreadManagementService)({
+        getThreadShell: (id) => Effect.succeed(McpToolAccessTestkit.liveThreadShell(id)),
+        awaitBackgroundTasks: (input) =>
+          Effect.sync(() => {
+            waits.push({ taskIds: input.taskIds, awaited: input.awaited });
+            return { matched: input.taskIds, unmatched: [] };
+          }),
+      }),
+    ),
+    Layer.provide(ServerSettings.layerTest()),
+    Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
+    Layer.provide(Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({})),
+    Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
+    Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
+    Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
+    Layer.provide(Layer.mock(RemoteDelegation.RemoteDelegation)({})),
+    Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
+    Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
+    Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
+  );
+  const call = (args: Record<string, unknown>) =>
+    Effect.gen(function* () {
+      const server = yield* McpServer.McpServer;
+      return yield* server
+        .callTool({ name: "houston_background_wait", arguments: args })
+        .pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+          Effect.provideService(McpSchema.McpServerClient, client),
+        );
+    });
+  it.effect("registers a wait from a single taskId", () =>
+    Effect.gen(function* () {
+      waits.length = 0;
+      const result = yield* call({ taskId: "tests" });
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toEqual({ matched: ["tests"], unmatched: [] });
+      expect(waits).toEqual([{ taskIds: ["tests"], awaited: true }]);
+    }).pipe(Effect.provide(layerBackgroundWait)),
+  );
+
+  it.effect("waits on taskIds and taskId together once each", () =>
+    Effect.gen(function* () {
+      waits.length = 0;
+      const result = yield* call({ taskIds: ["tests", "build"], taskId: "tests", waiting: false });
+      expect(result.isError).not.toBe(true);
+      expect(waits).toEqual([{ taskIds: ["tests", "build"], awaited: false }]);
+    }).pipe(Effect.provide(layerBackgroundWait)),
+  );
+
+  it.effect("names both accepted shapes when no task id is given", () =>
+    Effect.gen(function* () {
+      waits.length = 0;
+      const result = yield* call({ waiting: true });
+      expect(declaredFailure(result)).toMatchObject({ code: "invalid_request" });
+      const message = String(declaredFailure(result)?.message);
+      expect(message).toContain("`taskIds`");
+      expect(message).toContain("`taskId`");
+      expect(waits).toEqual([]);
+    }).pipe(Effect.provide(layerBackgroundWait)),
+  );
+
+  it.effect("names the malformed field and the expected shape", () =>
+    Effect.gen(function* () {
+      waits.length = 0;
+      const failure = yield* Effect.flip(call({ taskIds: "tests" }));
+      expect(failure.message).toContain('["taskIds"]');
+      expect(failure.message).toContain("`taskIds` (an array of 1 to 20 task ID strings)");
+      expect(failure.message).toContain("`taskId` (one task ID string)");
+      expect(waits).toEqual([]);
+    }).pipe(Effect.provide(layerBackgroundWait)),
+  );
+
+  it.effect("refuses more than 20 distinct task ids by count", () =>
+    Effect.gen(function* () {
+      waits.length = 0;
+      const taskIds = Array.from({ length: 20 }, (_, index) => `task-${index}`);
+      const result = yield* call({ taskIds, taskId: "task-20" });
+      expect(declaredFailure(result)).toMatchObject({ code: "invalid_request" });
+      const message = String(declaredFailure(result)?.message);
+      expect(message).toContain("20");
+      expect(message).toContain("21");
+      expect(waits).toEqual([]);
+    }).pipe(Effect.provide(layerBackgroundWait)),
+  );
+});

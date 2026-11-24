@@ -1,5 +1,9 @@
 import { OrchestratorMcpFailure } from "@houston-app/contracts";
-import { OrchestratorToolkit } from "./tools.ts";
+import {
+  BACKGROUND_WAIT_MAX_TASK_IDS,
+  BACKGROUND_WAIT_SHAPE,
+  OrchestratorToolkit,
+} from "./tools.ts";
 import * as Effect from "effect/Effect";
 import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
 import * as PeerLinkRequests from "../../../peer/PeerLinkRequests.ts";
@@ -72,10 +76,28 @@ const handlers = {
         scope,
         "houston_background_wait",
       );
+      const taskIds = [
+        ...new Set([
+          ...(input.taskIds ?? []),
+          ...(input.taskId === undefined ? [] : [input.taskId]),
+        ]),
+      ];
+      if (taskIds.length === 0) {
+        return yield* new OrchestratorMcpFailure({
+          code: "invalid_request",
+          message: `houston_background_wait needs ${BACKGROUND_WAIT_SHAPE}; neither was given.`,
+        });
+      }
+      if (taskIds.length > BACKGROUND_WAIT_MAX_TASK_IDS) {
+        return yield* new OrchestratorMcpFailure({
+          code: "invalid_request",
+          message: `houston_background_wait accepts at most ${BACKGROUND_WAIT_MAX_TASK_IDS} task IDs; \`taskIds\` and \`taskId\` together name ${taskIds.length}.`,
+        });
+      }
       return yield* threads
         .awaitBackgroundTasks({
           threadId: caller.thread.threadId,
-          taskIds: input.taskIds,
+          taskIds,
           awaited: input.waiting ?? true,
         })
         .pipe(

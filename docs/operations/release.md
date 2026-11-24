@@ -314,8 +314,8 @@ What every release carries:
 3. `release-publish.yml` verifies the Minisign set — one AppImage and one deb
    for Linux x86_64 and ARM64, one `.app.tar.gz` and one `.dmg` for macOS x64 and
    arm64, plus one Windows x86_64 NSIS installer when the cut included Windows, a
-   `.sig` beside each, every filename carrying the
-   release's version — and refuses anything else. It also verifies every
+   `.sig` beside each, every filename carrying the release's version except the
+   versionless AppImage — and refuses anything else. It also verifies every
    bundle and signed comment against `scripts/updater-pubkey.txt`. Promotion
    repeats this verification over the downloaded draft assets before making
    them public.
@@ -323,9 +323,11 @@ What every release carries:
    `linux-<arch>` / `windows-<arch>` / `darwin-<arch>` key and the bundle-specific
    `-appimage`, `-deb`, `-nsis` and `-app` keys, so a deb install and an AppImage
    install each resolve their own payload. The artifact names are
-   `Houston-<version>-<arch>.AppImage`, `Houston-<version>-<arch>.deb`,
+   `Houston-<arch>.AppImage`, `Houston-<version>-<arch>.deb`,
    `Houston-<version>-<arch>-setup.exe` and
-   `Houston-<version>-<arch>.app.tar.gz`.
+   `Houston-<version>-<arch>.app.tar.gz`. The AppImage carries no version so
+   electron-updater replaces the installed file in place instead of writing a
+   new name and leaving launchers pointing at the old path.
 5. The manifest and the `latest*.yml` files are published as release assets,
    which is what makes the URLs above resolvable.
 
@@ -419,8 +421,9 @@ CARGO_BUILD_JOBS=3 node scripts/build-desktop-artifact.ts \
   --version <X.Y.Z> --output-dir release --verbose
 ```
 
-Output: `release/Houston-<version>-x86_64.AppImage`,
-`release/Houston-<version>-amd64.deb` and `release/latest-linux.yml`.
+Output: `release/Houston-x86_64.AppImage`,
+`release/Houston-<version>-amd64.deb` and `release/latest-linux.yml` (which
+names the versionless AppImage).
 
 **The build host's distro is the artifact's glibc floor.** Building on Ubuntu
 24.04 produces bundles needing glibc 2.38 or newer — AppImage included, because
