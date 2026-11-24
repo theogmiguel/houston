@@ -168,18 +168,20 @@ Every thread row is three lines tall:
 1. The project's icon and name on the left; the status at the right: **Approval**, **Input**,
    **Request**, **Needs you**, **Failed**, **Limited**, **Goal**, **Waiting**, **Running**,
    **Ready** or **Back** (which has a dismiss control). A running or waiting thread
-   says for how long. On hover or focus the status gives way to the row's actions.
+   says for how long. An **On hold** row shows an alarm clock and when it wakes; a
+   **Closed** row shows how long ago it closed. On hover or focus the status gives way to
+   the row's actions.
 2. The title, alone, across the full width.
-3. A muted line: the branch (whether the thread uses a worktree or the project's local
-   checkout, and a machine icon when it runs on another machine), then an unsent draft with
-   **Discard**, the linked pull request (its glyph carries the state colour and the number
-   stays neutral), a running terminal that opens that terminal, running subagents, tags (as
-   `#tag` text) and a regenerating title. At the right: the checkout's uncommitted line
-   counts and the provider mark; a provider without a logo shows its initials on a neutral
-   square.
+3. A muted line: at the left, the branch (whether the thread uses a worktree or the
+   project's local checkout) and tags (as `#tag` text). At the right: an unsent draft with
+   **Discard**, a running terminal that opens that terminal, a machine icon when the thread
+   runs on another machine, running subagents, the linked pull request (its glyph carries the
+   state colour and the number stays neutral) and the provider mark; a provider without a
+   logo shows its initials on a neutral square.
 
-When the items on the third line do not fit, whole items drop from the end behind a **+N**
-counter; hovering it lists what is hidden. Closed rows show how long ago the thread closed.
+When the items on the third line do not fit, tags and the subagent count drop first, then
+whole items from the end, behind a **+N** counter; hovering it lists what is hidden. The pull
+request and the provider mark always stay.
 
 Hovering a row opens a card with the project, the machine when there are several, the
 checkout and branch (with a warning when the checkout is on a different branch than the
@@ -278,15 +280,18 @@ the text `model:<provider>/<model>`. The `@` list and the chips are in the web a
 
 While a turn is running, the send button reads **Steer** or **Queue** and its chevron opens
 the send menu, which offers **Queue message**, **Steer message** and
-**Interrupt and send**. Steering is disabled for providers that cannot accept it. Queued
-and steered messages show their delivery state, and a dropped message names the reason.
+**Interrupt and send**. Steering is disabled for providers that cannot accept it, and while a
+turn that only compacts the context runs, such as `/compact`; a follow-up then queues behind
+it. When the provider compacts by itself inside a turn, a follow-up sent from the composer
+still steers Codex; for Claude and every other provider it queues and is sent when the turn
+ends. Queued and steered messages show their delivery state, and a dropped message names the
+reason.
 Claude reads a steer once the tool calls it is running finish, and the turn stays open until
 it does. If Claude drops a steer without reading it, the message is sent as the next turn, in
 the place it was sent among queued messages. If Claude neither reads nor drops it, the turn
 keeps showing as working until you press Stop. If Claude's process exits first, the turn fails
 and the steer shows as unconfirmed; it is not sent again, so send it again if needed.
-**Follow-up behavior** in **Settings ▸ Chat** sets what a plain send does while a turn
-runs.
+**Follow-up behavior** in **Settings ▸ Chat** sets what a plain send does while a turn runs.
 
 Hovering a finished assistant response shows **Reply to this response**. It adds a quote chip
 with the opening of that response (up to 300 characters) to the composer, which the chip's
