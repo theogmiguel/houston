@@ -149,6 +149,7 @@ import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
+import { CHECK_TIMEOUT, checkWorkingDirectory } from "../../houston/nonBlockingSpawner.ts";
 import * as TraceContext from "../../houston/observability/TraceContext.ts";
 import { snapshotMcpApp } from "../../mcpApps/McpAppSnapshot.ts";
 import { resolveClaudeSdkExecutablePath } from "../../provider/Drivers/ClaudeExecutable.ts";
@@ -364,7 +365,38 @@ const CLAUDE_STOP_CONFIRM_TIMEOUT_MS = 10_000;
 // minutes of complete silence means Claude stopped answering the request.
 export const CLAUDE_REQUEST_SILENCE_LIMIT = "10 minutes" as const;
 
+/** The project directory a Claude launch could not enter: missing, not a directory, or denied. */
+export class ClaudeWorkingDirectoryError extends Schema.TaggedError<ClaudeWorkingDirectoryError>()(
+  "ClaudeWorkingDirectoryError",
+  { cwd: Schema.String, timedOut: Schema.optional(Schema.String) },
+) {
+  override get message(): string {
+    return this.timedOut === undefined
+      ? `Claude could not start in ${this.cwd}: the folder is missing or cannot be entered. Check that the project folder exists and its drive or network share is reachable, then send the message again.`
+      : `Claude could not start in ${this.cwd}: the folder did not answer within ${this.timedOut}. Check that its drive or network share is reachable, then send the message again.`;
+  }
+}
+
+const checkClaudeWorkingDirectory = (cwd: string) =>
+  checkWorkingDirectory(cwd, "claude").pipe(
+    Effect.mapError(
+      (error) =>
+        new ClaudeWorkingDirectoryError({
+          cwd,
+          ...(error.reason._tag === "TimedOut" ? { timedOut: Duration.format(CHECK_TIMEOUT) } : {}),
+        }),
+    ),
+  );
+
+// The shell enters the cwd itself: as a native cwd, a mount that hangs chdir freezes the server.
+// A cwd it cannot enter is reported on fd 3, a socket pair, and it exits 125 once the server
+// has read that. cd sets OLDPWD, which is put back as the CLI was given it.
 const CLAUDE_GROUP_WATCH_SCRIPT = [
+  'houston_oldpwd="${OLDPWD-}" houston_oldpwd_set="${OLDPWD+x}"',
+  'cd -P -- "$1" 2>/dev/null || { echo cwd >&3; read -r _ <&3; exit 125; }',
+  'if [ -n "$houston_oldpwd_set" ]; then OLDPWD="$houston_oldpwd"; else unset OLDPWD; fi',
+  "unset houston_oldpwd houston_oldpwd_set",
+  "shift",
   "{ trap '' TERM; read -r _ <&3; kill -TERM 0; sleep 5; kill -KILL 0; } </dev/null >/dev/null 2>&1 &",
   'exec "$@" 3<&-',
 ].join("\n");
@@ -377,18 +409,32 @@ const CLAUDE_GROUP_WATCH_SCRIPT = [
 export function spawnClaudeProcessGroup(
   options: ClaudeSpawnOptions,
   onExit?: () => void,
+  onUnenterableCwd?: (error: ClaudeWorkingDirectoryError) => void,
 ): ClaudeSpawnedProcess {
+  // Relative to the server's cwd, as a native cwd is; the `./` keeps CDPATH out of it.
+  const cwd = options.cwd ?? ".";
   const child = NodeChildProcess.spawn(
     "/bin/sh",
-    ["-c", CLAUDE_GROUP_WATCH_SCRIPT, "houston-claude", options.command, ...options.args],
+    [
+      "-c",
+      CLAUDE_GROUP_WATCH_SCRIPT,
+      "houston-claude",
+      cwd.startsWith("/") ? cwd : `./${cwd}`,
+      options.command,
+      ...options.args,
+    ],
     {
-      cwd: options.cwd,
       env: options.env,
       signal: options.signal,
       stdio: ["pipe", "pipe", "ignore", "pipe"],
       detached: true,
     },
   );
+  const launchSocket = child.stdio[3];
+  launchSocket?.once("data", () => {
+    onUnenterableCwd?.(new ClaudeWorkingDirectoryError({ cwd }));
+    launchSocket.destroy();
+  });
   child.once("exit", () => {
     try {
       signalProcessGroup(child.pid ?? 0, "SIGKILL");
@@ -1175,6 +1221,13 @@ export const layerQueryRunner: Layer.Layer<
       allocateSessionId: random.uuidV4(),
       open: Effect.fn("ClaudeAgentSdkQueryRunner.open")(
         function* (input: ClaudeAgentSdkQueryOpenInput) {
+          // The launch script's cd cannot time out, so a hung folder must fail here, bounded.
+          const cwd = input.options.cwd;
+          if (platform !== "win32" && cwd !== undefined) {
+            yield* checkClaudeWorkingDirectory(cwd).pipe(
+              Effect.mapError((error) => queryRunnerError(error, "open")),
+            );
+          }
           const protocolLogger = makeClaudeAgentSdkProtocolLogger({
             nativeEventLogger,
             threadId: input.threadId,
@@ -1222,12 +1275,17 @@ export const layerQueryRunner: Layer.Layer<
                   executableArgs: [...launch.args, ...(queryOptions.executableArgs ?? [])],
                 };
           const unit = launch?.unit;
+          // Set before the launch exits, so the stream's failure can name the folder instead.
+          let launchFailure: ClaudeWorkingDirectoryError | undefined;
           const stopScope =
             unit === undefined ? undefined : () => void runFork(agentScope.stop(unit));
           const spawnProcess =
             options.spawnClaudeCodeProcess ??
             ((spawnOptions: ClaudeSpawnOptions) => {
-              if (platform !== "win32") return spawnClaudeProcessGroup(spawnOptions, stopScope);
+              if (platform !== "win32")
+                return spawnClaudeProcessGroup(spawnOptions, stopScope, (error) => {
+                  launchFailure = error;
+                });
               const child = NodeChildProcess.spawn(spawnOptions.command, spawnOptions.args, {
                 cwd: spawnOptions.cwd,
                 env: spawnOptions.env,
@@ -1348,7 +1406,7 @@ export const layerQueryRunner: Layer.Layer<
 
           return {
             messages: Stream.fromAsyncIterable(claudeQueryMessages(queryRuntime), (cause) =>
-              queryRunnerError(cause, "fromAsyncIterable"),
+              queryRunnerError(launchFailure ?? cause, "fromAsyncIterable"),
             ).pipe(
               Stream.tap((message) =>
                 logProtocolEvent({
@@ -1713,7 +1771,7 @@ const CLAUDE_BACKGROUND_WAIT_INSTRUCTIONS = `
 
 ### Background work you wait on
 
-To wait for a background command or Monitor you started (tests, a build), call \`houston_background_wait\` with its task ID before you end your turn. Do not mark work you leave running, or PRs. Houston MCP tools are deferred: load one with ToolSearch before you call it.
+To wait for a background command or Monitor you started (tests, a build), call \`houston_background_wait\` with \`taskIds: [id]\` before you end your turn. Do not mark work you leave running, or PRs. Houston MCP tools are deferred: load one with ToolSearch first.
 `;
 
 // Native subagents start from their task, not this session's system prompt.
@@ -3949,6 +4007,20 @@ const watchClaudeRequestSilence = Effect.fnUntraced(function* (input: {
   }
 });
 
+// Claude Code's result error for a --resume whose session it no longer has.
+const CLAUDE_CONVERSATION_NOT_FOUND = "No conversation found with session ID:";
+
+// Only a zero-turn result for the resumed session itself, so a healthy session is never dropped.
+function isClaudeConversationNotFoundResult(message: SDKMessage, nativeThreadId: string): boolean {
+  return (
+    message.type === "result" &&
+    message.subtype !== "success" &&
+    message.num_turns === 0 &&
+    message.session_id === nativeThreadId &&
+    message.errors.some((error) => error.startsWith(CLAUDE_CONVERSATION_NOT_FOUND))
+  );
+}
+
 /** Exclude CLI-internal "[ede_diagnostic] ..." telemetry from error banners. */
 function resultUserFacingError(result: SDKResultMessage): string | undefined {
   const errors = "errors" in result && Array.isArray(result.errors) ? result.errors : [];
@@ -4156,6 +4228,7 @@ function gatewayCooldownResetAt(
 function providerFailureFromResult(
   message: SDKResultMessage,
   completedAt: DateTime.Utc,
+  nativeThreadId: string,
   failureHint?: string,
   usageLimited = false,
 ): OrchestrationV2ProviderFailure | null {
@@ -4194,7 +4267,9 @@ function providerFailureFromResult(
       : terminalResultError(message.terminal_reason, failureHint ?? apiErrorMessage);
   if (message.subtype !== "success") {
     return makeProviderFailure({
-      message: listedError ?? structuredError ?? message.errors.join("\n"),
+      message: isClaudeConversationNotFoundResult(message, nativeThreadId)
+        ? "Claude could not find this thread's earlier session. Send your message again to continue in a new Claude session with this thread's history."
+        : (listedError ?? structuredError ?? message.errors.join("\n")),
       code: message.subtype,
       class: failureClass,
     });
@@ -5292,6 +5367,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         const lastProviderThreadByNativeThread = yield* Ref.make(
           new Map<string, OrchestrationV2ProviderThread>(),
         );
+        // Sessions Claude Code reported gone; resumeThread refuses them so a fresh session takes over.
+        const missingNativeThreads = new Set<string>();
+        // Threads whose next turn runs in the session that replaced a missing one.
+        const threadsLeavingMissingSession = new Set<ThreadId>();
         const goalsByNativeThread = new Map<string, OrchestrationV2ProviderGoal | null>();
         const goalCheckedTurns = new Set<string>();
         // Background subagents can finish after root settlement; retain their registry for wake evidence and hydration.
@@ -5605,6 +5684,21 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               new Map(current).set(nativeThreadId, providerThread),
             );
           });
+
+        // The session manager drops a thread in error from its loaded cache, so the next
+        // send asks resumeThread again instead of reusing the session that is gone.
+        const markNativeThreadMissing = Effect.fnUntraced(function* (nativeThreadId: string) {
+          missingNativeThreads.add(nativeThreadId);
+          const providerThread = (yield* Ref.get(lastProviderThreadByNativeThread)).get(
+            nativeThreadId,
+          );
+          if (providerThread === undefined) return;
+          yield* emitProviderEvent({
+            type: "provider_thread.updated",
+            driver: CLAUDE_PROVIDER,
+            providerThread: { ...providerThread, status: "error", updatedAt: yield* DateTime.now },
+          });
+        });
 
         const rosterForNativeThread = (
           all: ReadonlyMap<string, Map<string, OrchestrationV2PendingBackgroundTask>>,
@@ -10305,7 +10399,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     message: limitedCompaction.message ?? failureHint,
                     code: "compaction_failed",
                   })
-                : providerFailureFromResult(message, completedAt, failureHint, usageLimited);
+                : providerFailureFromResult(
+                    message,
+                    completedAt,
+                    context.nativeThreadId,
+                    failureHint,
+                    usageLimited,
+                  );
             // Houston: a distinct code lets provider readiness mark the instance signed out;
             // a failure with an HTTP status keeps its api_error_<status> code.
             const signedOut =
@@ -11385,7 +11485,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                         resultsReportingNewContextWindow.add(message);
                       }
                     }
-                    return Ref.get(activeTurn).pipe(
+                    // Before the turn settles, so the next send cannot reuse the missing session.
+                    return (
+                      isClaudeConversationNotFoundResult(message, context.nativeThreadId)
+                        ? markNativeThreadMissing(context.nativeThreadId)
+                        : Effect.void
+                    ).pipe(
+                      Effect.andThen(Ref.get(activeTurn)),
                       Effect.flatMap((turn) =>
                         handleSdkMessage({ query: querySession, message }).pipe(
                           TraceContext.withinTraceContext(
@@ -11468,6 +11574,17 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 detail: `Claude provider turn ${currentTurn.providerTurnId} is still active.`,
                 reason: "previous_turn_active",
               });
+            }
+            // The skill, settings and path reads below are unbounded, so a hung folder fails here.
+            // Any other error is left to the open: a live session can outlast its folder.
+            const { cwd } = turnInput.runtimePolicy;
+            if (hostPlatform !== "win32" && cwd !== null) {
+              yield* checkClaudeWorkingDirectory(cwd).pipe(
+                Effect.catchIf(
+                  (error) => error.timedOut === undefined,
+                  () => Effect.void,
+                ),
+              );
             }
             yield* Ref.update(lastTurnRouteByNativeThread, (current) => {
               const updated = new Map(current);
@@ -11568,6 +11685,40 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               gatedFramesBeforeEcho: 0,
               heldRootFrames: [],
             };
+            const emitTurnNotice = Effect.fnUntraced(function* (
+              nativeItemId: string,
+              notice: string,
+            ) {
+              yield* emitProviderEvent({
+                type: "turn_item.updated",
+                driver: CLAUDE_PROVIDER,
+                turnItem: {
+                  id: idAllocator.derive.turnItemFromProviderItem({
+                    driver: CLAUDE_PROVIDER,
+                    nativeItemId,
+                  }),
+                  threadId: turnInput.threadId,
+                  runId: turnInput.runId,
+                  nodeId: turnInput.rootNodeId,
+                  providerThreadId: turnInput.providerThread.id,
+                  providerTurnId: context.providerTurnId,
+                  nativeItemRef: {
+                    driver: CLAUDE_PROVIDER,
+                    nativeId: nativeItemId,
+                    strength: "weak",
+                  },
+                  parentItemId: null,
+                  ordinal: yield* resolveItemOrdinal(context, nativeItemId),
+                  type: "system_notice",
+                  status: "completed",
+                  title: notice,
+                  message: notice,
+                  startedAt,
+                  completedAt: startedAt,
+                  updatedAt: startedAt,
+                },
+              });
+            });
             const attachTurn = Effect.gen(function* () {
               querySession.lastTurn = context;
               yield* Ref.set(activeTurn, context);
@@ -11584,38 +11735,20 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   const oldest = announcedBypassDowngrades.values().next().value;
                   if (oldest !== undefined) announcedBypassDowngrades.delete(oldest);
                 }
-                const nativeItemId = `bypass-policy-downgrade:${context.providerTurnId}`;
-                const notice =
-                  "Houston could not confirm Claude bypass permissions here, so Full access is running with approval checks.";
-                yield* emitProviderEvent({
-                  type: "turn_item.updated",
-                  driver: CLAUDE_PROVIDER,
-                  turnItem: {
-                    id: idAllocator.derive.turnItemFromProviderItem({
-                      driver: CLAUDE_PROVIDER,
-                      nativeItemId,
-                    }),
-                    threadId: turnInput.threadId,
-                    runId: turnInput.runId,
-                    nodeId: turnInput.rootNodeId,
-                    providerThreadId: turnInput.providerThread.id,
-                    providerTurnId: context.providerTurnId,
-                    nativeItemRef: {
-                      driver: CLAUDE_PROVIDER,
-                      nativeId: nativeItemId,
-                      strength: "weak",
-                    },
-                    parentItemId: null,
-                    ordinal: yield* resolveItemOrdinal(context, nativeItemId),
-                    type: "system_notice",
-                    status: "completed",
-                    title: notice,
-                    message: notice,
-                    startedAt,
-                    completedAt: startedAt,
-                    updatedAt: startedAt,
-                  },
-                });
+                yield* emitTurnNotice(
+                  `bypass-policy-downgrade:${context.providerTurnId}`,
+                  "Houston could not confirm Claude bypass permissions here, so Full access is running with approval checks.",
+                );
+              }
+              if (
+                !isClaudeProviderContinuationTurn(turnInput) &&
+                !missingNativeThreads.has(nativeThreadId) &&
+                threadsLeavingMissingSession.delete(turnInput.threadId)
+              ) {
+                yield* emitTurnNotice(
+                  `missing-session-replaced:${context.providerTurnId}`,
+                  "Claude could not find this thread's earlier session, so this message started a new Claude session with the thread's history.",
+                );
               }
               yield* emitProviderEvent({
                 type: "provider_turn.updated",
@@ -12231,6 +12364,18 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           resumeThread: Effect.fn("ClaudeAdapterV2.resumeThread")(
             function* (threadInput: { readonly providerThread: OrchestrationV2ProviderThread }) {
               const nativeThreadId = threadInput.providerThread.nativeThreadRef?.nativeId;
+              if (
+                nativeThreadId !== undefined &&
+                nativeThreadId !== null &&
+                missingNativeThreads.has(nativeThreadId)
+              ) {
+                const threadId = threadInput.providerThread.appThreadId;
+                if (threadId !== null) threadsLeavingMissingSession.add(threadId);
+                return yield* new ProviderAdapter.ProviderAdapterProtocolError({
+                  driver: CLAUDE_PROVIDER,
+                  detail: `Claude Code has no conversation ${nativeThreadId} to resume.`,
+                });
+              }
               if (
                 nativeThreadId !== undefined &&
                 nativeThreadId !== null &&

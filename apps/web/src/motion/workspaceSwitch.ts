@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 
 import {
+  isBlankLayoutWorkspace,
   selectFocusedWorkspace,
   selectLayoutPaneSlots,
   type LayoutPaneSlot,
@@ -242,9 +243,11 @@ function directionOf(previous: LayoutState, next: LayoutState, fromId: string, t
 }
 
 function vacatedBy(previous: LayoutState, next: LayoutState, id: string): boolean {
-  const columns = (layout: LayoutState) =>
-    layout.workspaces.find((workspace) => workspace.id === id)?.columns.length ?? 0;
-  return columns(previous) > 0 && columns(next) === 0;
+  const held = (layout: LayoutState) => {
+    const workspace = layout.workspaces.find((candidate) => candidate.id === id);
+    return workspace !== undefined && !isBlankLayoutWorkspace(workspace);
+  };
+  return held(previous) && !held(next);
 }
 
 /** Focus moved to another workspace by anything but a swipe: spring there. */

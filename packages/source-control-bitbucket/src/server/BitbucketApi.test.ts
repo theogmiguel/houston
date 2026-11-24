@@ -152,6 +152,73 @@ function makeLayer(input: {
   return { execute, git: gitMock, resolve, listRemotes, layer };
 }
 
+const queryParam = (
+  request: HttpClientRequest.HttpClientRequest,
+  key: string,
+): string | undefined => {
+  const value = request.urlParams.params.find(([name]) => name === key)?.[1];
+  return typeof value === "string" ? value : undefined;
+};
+
+const branchQuery = (request: HttpClientRequest.HttpClientRequest): string =>
+  queryParam(request, "q") ?? "";
+
+const QUERIED_BRANCH = /source\.branch\.name = "((?:[^"\\]|\\.)*)"/gu;
+
+/** The branches a batched query names, in the order it names them. */
+const queriedBranches = (request: HttpClientRequest.HttpClientRequest) =>
+  [...branchQuery(request).matchAll(QUERIED_BRANCH)].map((match) => match[1] ?? "");
+
+const pullRequestOn = (branch: string, id: number) => ({
+  ...bitbucketPullRequest,
+  id,
+  links: { html: { href: `https://bitbucket.org/pingdotgg/houston/pull-requests/${id}` } },
+  source: { branch: { name: branch }, repository: { full_name: "pingdotgg/houston" } },
+});
+
+type PullRequestJson = ReturnType<typeof pullRequestOn>;
+
+/** Lists a first page as Bitbucket does: queried branches only, rows in the given (newest-first)
+ * order, and a `next` link when more rows match. */
+const pullRequestListing =
+  (rows: ReadonlyArray<PullRequestJson>) => (request: HttpClientRequest.HttpClientRequest) => {
+    const branches = new Set(queriedBranches(request));
+    const matching = rows.filter((row) => branches.has(row.source.branch.name));
+    const pagelen = Number(queryParam(request, "pagelen"));
+    return Response.json({
+      values: matching.slice(0, pagelen),
+      ...(matching.length > pagelen ? { next: `${request.url}?page=2` } : {}),
+    });
+  };
+
+const bitbucketContext = (repository: string) => ({
+  provider: {
+    kind: SourceControlProviderKind.make("bitbucket"),
+    name: "Bitbucket",
+    baseUrl: "https://bitbucket.org",
+  },
+  remoteName: "origin",
+  remoteUrl: `git@bitbucket.org:${repository}.git`,
+});
+
+/** Lets the background batch window pass before reading a branch lookup. */
+const afterBatchWindow = <A, E, R>(lookup: Effect.Effect<A, E, R>) =>
+  Effect.gen(function* () {
+    const fiber = yield* Effect.forkChild(lookup);
+    yield* TestClock.adjust("500 millis");
+    return yield* Fiber.join(fiber);
+  });
+
+/** Runs lookups together and lets the background batch window pass before reading them. */
+const lookUpTogether = <A, E, R>(lookups: ReadonlyArray<Effect.Effect<A, E, R>>) =>
+  Effect.gen(function* () {
+    const fiber = yield* Effect.forEach(lookups, (lookup) => Effect.result(lookup), {
+      concurrency: "unbounded",
+    }).pipe(Effect.forkChild);
+    yield* TestClock.adjust("500 millis");
+    return yield* Fiber.join(fiber);
+  });
+
 it.effect("parses pull request responses from the Bitbucket REST API", () => {
   const { execute, layer } = makeLayer({
     response: () =>
@@ -317,12 +384,14 @@ it.effect("lists pull requests with Bitbucket state and source branch query para
 
   return Effect.gen(function* () {
     const bitbucket = yield* BitbucketApi.BitbucketApi;
-    const result = yield* bitbucket.listPullRequests({
-      cwd: "/repo",
-      headSelector: "origin:feature/merged",
-      state: "merged",
-      limit: 10,
-    });
+    const result = yield* afterBatchWindow(
+      bitbucket.listPullRequests({
+        cwd: "/repo",
+        headSelector: "origin:feature/merged",
+        state: "merged",
+        limit: 10,
+      }),
+    );
 
     assert.strictEqual(result[0]?.state, "merged");
     const request = execute.mock.calls[0]?.[0];
@@ -686,8 +755,10 @@ it.effect("prefers credentials saved in settings over the environment, without a
     const auth = yield* bitbucket.probeAuth;
     assert.strictEqual(auth.status, "unauthenticated");
     assert.include(Option.getOrThrow(auth.detail), '"vault"');
-    const error = yield* Effect.flip(
-      bitbucket.listPullRequests({ cwd: "/repo", headSelector: "feature", state: "open" }),
+    const error = yield* afterBatchWindow(
+      Effect.flip(
+        bitbucket.listPullRequests({ cwd: "/repo", headSelector: "feature", state: "open" }),
+      ),
     );
     assert.strictEqual(error._tag, "SettingsSecretUnresolvedError");
     assert.strictEqual(execute.mock.calls.length, requests);
@@ -970,11 +1041,13 @@ it.effect("pauses background reads after a 429 until Bitbucket's retry-after pas
 
   return Effect.gen(function* () {
     const bitbucket = yield* BitbucketApi.BitbucketApi;
-    const lookup = bitbucket.listPullRequests({
-      cwd: "/repo",
-      headSelector: "feature/a",
-      state: "all",
-    });
+    const lookup = afterBatchWindow(
+      bitbucket.listPullRequests({
+        cwd: "/repo",
+        headSelector: "feature/a",
+        state: "all",
+      }),
+    );
 
     yield* Effect.flip(lookup);
     const paused = yield* Effect.flip(lookup);
@@ -982,7 +1055,8 @@ it.effect("pauses background reads after a 429 until Bitbucket's retry-after pas
     assert.deepInclude(paused, {
       _tag: "SourceControlRateLimitPausedError",
       host: "bitbucket.org",
-      retryAt: 60_000,
+      // The 429 answers once the batch window has passed.
+      retryAt: 60_500,
     });
     assert.strictEqual(execute.mock.calls.length, 1);
 
@@ -994,10 +1068,10 @@ it.effect("pauses background reads after a 429 until Bitbucket's retry-after pas
       url: "/repositories/acme/web/pullrequests/1/approve",
     });
 
-    yield* TestClock.adjust("59 seconds");
+    yield* TestClock.adjust("58 seconds");
     assert.strictEqual((yield* Effect.flip(lookup))._tag, "SourceControlRateLimitPausedError");
 
-    yield* TestClock.adjust("1 second");
+    yield* TestClock.adjust("500 millis");
     yield* lookup;
   }).pipe(Effect.provide(layer));
 });
@@ -1023,12 +1097,19 @@ it.effect("keeps a sweep over many branches to a few Bitbucket requests at a tim
 
     yield* Effect.gen(function* () {
       const bitbucket = yield* BitbucketApi.BitbucketApi;
+      // One repository each, so no two lookups share a request.
       const sweep = yield* Effect.forEach(
-        Array.from({ length: 12 }, (_, index) => `feature/${index}`),
-        (branch) =>
-          bitbucket.listPullRequests({ cwd: "/repo", headSelector: branch, state: "all" }),
+        Array.from({ length: 12 }, (_, index) => `acme/repo-${index}`),
+        (repository) =>
+          bitbucket.listPullRequests({
+            cwd: "/repo",
+            context: bitbucketContext(repository),
+            headSelector: "feature",
+            state: "all",
+          }),
         { concurrency: "unbounded", discard: true },
       ).pipe(Effect.forkChild);
+      yield* TestClock.adjust("500 millis");
       for (let index = 0; index < 4; index += 1) yield* Queue.take(started);
       yield* Deferred.succeed(release, undefined);
       yield* Fiber.join(sweep);
@@ -1036,4 +1117,443 @@ it.effect("keeps a sweep over many branches to a few Bitbucket requests at a tim
 
     assert.strictEqual(peak, 4);
   }),
+);
+
+it.effect("sends 45 concurrent branch lookups in one repository as 3 requests", () => {
+  const { execute, layer } = makeLayer({ response: () => Response.json({ values: [] }) });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const results = yield* lookUpTogether(
+      Array.from({ length: 45 }, (_, index) =>
+        bitbucket.listPullRequests({
+          cwd: "/repo",
+          headSelector: `feature/${index}`,
+          state: "all",
+        }),
+      ),
+    );
+
+    assert.isTrue(results.every(Result.isSuccess));
+    assert.strictEqual(execute.mock.calls.length, 3);
+    assert.deepStrictEqual(
+      execute.mock.calls
+        .map(([request]) => queriedBranches(request).length)
+        .toSorted((left, right) => left - right),
+      [5, 20, 20],
+    );
+    assert.deepStrictEqual(
+      execute.mock.calls.flatMap(([request]) => queriedBranches(request)).toSorted(),
+      Array.from({ length: 45 }, (_, index) => `feature/${index}`).toSorted(),
+    );
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("gives each batched branch only its own pull requests, up to its limit", () => {
+  const { execute, layer } = makeLayer({
+    response: () =>
+      Response.json({
+        values: [
+          pullRequestOn("feature/b", 5),
+          pullRequestOn("feature/a", 4),
+          pullRequestOn("feature/unrelated", 3),
+          pullRequestOn("feature/a", 2),
+          pullRequestOn("feature/b", 1),
+        ],
+      }),
+  });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const [a, b, c] = yield* lookUpTogether([
+      bitbucket.listPullRequests({ cwd: "/repo", headSelector: "feature/a", state: "all" }),
+      bitbucket.listPullRequests({
+        cwd: "/repo",
+        headSelector: "feature/b",
+        state: "all",
+        limit: 1,
+      }),
+      bitbucket.listPullRequests({ cwd: "/repo", headSelector: "feature/c", state: "all" }),
+    ]);
+
+    const numbers = (result: typeof a) =>
+      Result.getOrThrow(result!).map((pullRequest) => pullRequest.number);
+    assert.deepStrictEqual(numbers(a), [4, 2]);
+    assert.deepStrictEqual(numbers(b), [5]);
+    assert.deepStrictEqual(numbers(c), []);
+    assert.strictEqual(execute.mock.calls.length, 1);
+    const request = execute.mock.calls[0]![0];
+    assert.strictEqual(
+      branchQuery(request),
+      '(source.branch.name = "feature/a" OR source.branch.name = "feature/b" OR source.branch.name = "feature/c") AND (state = "OPEN" OR state = "MERGED" OR state = "DECLINED" OR state = "SUPERSEDED")',
+    );
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("escapes a branch name so its quotes and backslashes cannot change the filter", () => {
+  const { execute, layer } = makeLayer({ response: () => Response.json({ values: [] }) });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const hostile = 'x\\" OR source.branch.name ~ "';
+    yield* lookUpTogether([
+      bitbucket.listPullRequests({ cwd: "/repo", headSelector: hostile, state: "open" }),
+    ]);
+    yield* lookUpTogether([
+      bitbucket.listPullRequests({ cwd: "/repo", headSelector: hostile, state: "open" }),
+      bitbucket.listPullRequests({ cwd: "/repo", headSelector: "trailing\\", state: "open" }),
+    ]);
+
+    const [single, batched] = execute.mock.calls.map(([request]) => branchQuery(request));
+    assert.strictEqual(
+      single,
+      'source.branch.name = "x\\\\\\" OR source.branch.name ~ \\"" AND state = "OPEN"',
+    );
+    assert.strictEqual(
+      batched,
+      '(source.branch.name = "x\\\\\\" OR source.branch.name ~ \\"" OR source.branch.name = "trailing\\\\") AND state = "OPEN"',
+    );
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("never merges lookups for different repositories or state filters", () => {
+  const { execute, layer } = makeLayer({ response: () => Response.json({ values: [] }) });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const lookup = (repository: string, branch: string, state: "open" | "all") =>
+      bitbucket.listPullRequests({
+        cwd: "/repo",
+        context: bitbucketContext(repository),
+        headSelector: branch,
+        state,
+      });
+    yield* lookUpTogether([
+      lookup("acme/web", "feature/a", "all"),
+      lookup("acme/web", "feature/b", "all"),
+      lookup("acme/api", "feature/a", "all"),
+      lookup("acme/web", "feature/c", "open"),
+    ]);
+
+    assert.deepStrictEqual(
+      execute.mock.calls
+        .map(([request]) => `${request.url} ${queriedBranches(request).join(",")}`)
+        .toSorted(),
+      [
+        "https://api.test.local/2.0/repositories/acme/api/pullrequests feature/a",
+        "https://api.test.local/2.0/repositories/acme/web/pullrequests feature/a,feature/b",
+        "https://api.test.local/2.0/repositories/acme/web/pullrequests feature/c",
+      ],
+    );
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("sends a lone lookup as one request once the batch window passes", () => {
+  const { execute, layer } = makeLayer({
+    response: () => Response.json({ values: [pullRequestOn("feature/a", 9)] }),
+  });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const lookup = bitbucket.listPullRequests({
+      cwd: "/repo",
+      headSelector: "feature/a",
+      state: "all",
+    });
+
+    const background = yield* Effect.forkChild(lookup);
+    yield* TestClock.adjust("499 millis");
+    assert.strictEqual(execute.mock.calls.length, 0);
+    yield* TestClock.adjust("1 millis");
+    assert.deepStrictEqual(
+      (yield* Fiber.join(background)).map((pullRequest) => pullRequest.number),
+      [9],
+    );
+
+    const interactive = yield* lookup.pipe(
+      Effect.provideService(SourceControlRateLimit.Interactive, true),
+      Effect.forkChild,
+    );
+    yield* TestClock.adjust("50 millis");
+    yield* Fiber.join(interactive);
+    assert.strictEqual(execute.mock.calls.length, 2);
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("answers a quiet branch that shares a batch with a busy one", () => {
+  const listing = pullRequestListing([
+    ...Array.from({ length: 600 }, (_, index) => pullRequestOn("feature/busy", 2000 - index)),
+    pullRequestOn("feature/quiet", 7),
+  ]);
+  const { execute, layer } = makeLayer({ response: listing });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const [busy, quiet] = yield* lookUpTogether(
+      ["feature/busy", "feature/quiet"].map((branch) =>
+        bitbucket.listPullRequests({ cwd: "/repo", headSelector: branch, state: "all" }),
+      ),
+    );
+
+    assert.deepStrictEqual(
+      Result.getOrThrow(busy!).map((pullRequest) => pullRequest.number),
+      Array.from({ length: 20 }, (_, index) => 2000 - index),
+    );
+    assert.deepStrictEqual(
+      Result.getOrThrow(quiet!).map((pullRequest) => pullRequest.number),
+      [7],
+    );
+    assert.isAtMost(execute.mock.calls.length, 2);
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("asks about each branch on its own once the shared requests run out", () => {
+  const busyBranches = ["feature/busy-0", "feature/busy-1", "feature/busy-2"];
+  const quietBranches = Array.from({ length: 10 }, (_, index) => `feature/quiet-${index}`);
+  // Each busy branch fills a shared first page in turn; nineteen pull requests per quiet branch,
+  // interleaved, all older than the busy branches'.
+  const listing = pullRequestListing([
+    ...busyBranches.flatMap((branch, busy) =>
+      Array.from({ length: 600 }, (_, index) => pullRequestOn(branch, 9000 - busy * 1000 - index)),
+    ),
+    ...Array.from({ length: 190 }, (_, index) =>
+      pullRequestOn(quietBranches[index % 10]!, 1000 - index),
+    ),
+  ]);
+  const { execute, layer } = makeLayer({ response: listing });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const results = yield* lookUpTogether(
+      [...busyBranches, ...quietBranches].map((branch) =>
+        bitbucket.listPullRequests({ cwd: "/repo", headSelector: branch, state: "all" }),
+      ),
+    );
+    const quiet = results.slice(busyBranches.length);
+
+    for (const busy of results.slice(0, busyBranches.length)) {
+      assert.strictEqual(Result.getOrThrow(busy!).length, 20);
+    }
+    quietBranches.forEach((_, branch) => {
+      assert.deepStrictEqual(
+        Result.getOrThrow(quiet[branch]!).map((pullRequest) => pullRequest.number),
+        Array.from({ length: 19 }, (_, index) => 1000 - branch - index * 10),
+      );
+    });
+    const queried = execute.mock.calls.map(([request]) => queriedBranches(request));
+    // Three shared requests, then one per quiet branch the shared ones left unanswered.
+    assert.strictEqual(queried.length, 13);
+    assert.deepStrictEqual(
+      queried
+        .slice(3)
+        .map(([branch]) => branch)
+        .toSorted(),
+      quietBranches.toSorted(),
+    );
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("asks about each branch on its own when a shared first page answers none", () => {
+  // Nineteen pull requests per branch, interleaved: the first page holds fewer than twenty of each.
+  const branches = ["feature/a", "feature/b", "feature/c"];
+  const listing = pullRequestListing(
+    Array.from({ length: 57 }, (_, index) => pullRequestOn(branches[index % 3]!, 100 - index)),
+  );
+  const { execute, layer } = makeLayer({ response: listing });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const results = yield* lookUpTogether(
+      branches.map((branch) =>
+        bitbucket.listPullRequests({ cwd: "/repo", headSelector: branch, state: "all" }),
+      ),
+    );
+
+    branches.forEach((_, branch) => {
+      assert.deepStrictEqual(
+        Result.getOrThrow(results[branch]!).map((pullRequest) => pullRequest.number),
+        Array.from({ length: 19 }, (_, index) => 100 - branch - index * 3),
+      );
+    });
+    const sent = execute.mock.calls.map(
+      ([request]) =>
+        `${request.url} ${queriedBranches(request).join(",")} pagelen=${queryParam(request, "pagelen")}`,
+    );
+    const url = "https://api.test.local/2.0/repositories/pingdotgg/houston/pullrequests";
+    assert.deepStrictEqual(sent[0], `${url} feature/a,feature/b,feature/c pagelen=50`);
+    assert.deepStrictEqual(sent.slice(1).toSorted(), [
+      `${url} feature/a pagelen=20`,
+      `${url} feature/b pagelen=20`,
+      `${url} feature/c pagelen=20`,
+    ]);
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("answers the other lookups of a batch when one caller is interrupted", () => {
+  const { execute, layer } = makeLayer({
+    response: pullRequestListing([pullRequestOn("feature/a", 2), pullRequestOn("feature/c", 1)]),
+  });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const [a, b, c] = yield* Effect.forEach(["feature/a", "feature/b", "feature/c"], (branch) =>
+      Effect.forkChild(
+        bitbucket.listPullRequests({ cwd: "/repo", headSelector: branch, state: "all" }),
+      ),
+    );
+    yield* TestClock.adjust("200 millis");
+    yield* Fiber.interrupt(b!);
+    yield* TestClock.adjust("300 millis");
+
+    assert.deepStrictEqual(
+      (yield* Fiber.join(a!)).map((pullRequest) => pullRequest.number),
+      [2],
+    );
+    assert.deepStrictEqual(
+      (yield* Fiber.join(c!)).map((pullRequest) => pullRequest.number),
+      [1],
+    );
+    assert.strictEqual(execute.mock.calls.length, 1);
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("fails a whole batch on a server error and answers the next batch", () => {
+  let answered = 0;
+  const listing = pullRequestListing([pullRequestOn("feature/a", 3)]);
+  const { execute, layer } = makeLayer({
+    response: (request) => {
+      answered += 1;
+      return answered === 1 ? new Response("Unavailable", { status: 503 }) : listing(request);
+    },
+  });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const sweep = () =>
+      lookUpTogether(
+        ["feature/a", "feature/b"].map((branch) =>
+          bitbucket.listPullRequests({ cwd: "/repo", headSelector: branch, state: "all" }),
+        ),
+      );
+
+    for (const result of yield* sweep()) {
+      assert.deepInclude(Result.getFailure(result).pipe(Option.getOrThrow), {
+        _tag: "BitbucketResponseError",
+        status: 503,
+      });
+    }
+    const [a, b] = yield* sweep();
+    assert.deepStrictEqual(
+      Result.getOrThrow(a!).map((pullRequest) => pullRequest.number),
+      [3],
+    );
+    assert.deepStrictEqual(Result.getOrThrow(b!), []);
+    assert.strictEqual(execute.mock.calls.length, 2);
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("never batches interactive lookups with background ones", () => {
+  const { execute, layer } = makeLayer({ response: () => Response.json({ values: [] }) });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const lookup = (branch: string) =>
+      bitbucket.listPullRequests({ cwd: "/repo", headSelector: branch, state: "all" });
+    yield* lookUpTogether([
+      lookup("feature/a"),
+      lookup("feature/b").pipe(Effect.provideService(SourceControlRateLimit.Interactive, true)),
+      lookup("feature/c"),
+      lookup("feature/d").pipe(Effect.provideService(SourceControlRateLimit.Interactive, true)),
+    ]);
+
+    assert.deepStrictEqual(
+      execute.mock.calls.map(([request]) => queriedBranches(request).join(",")).toSorted(),
+      ["feature/a,feature/c", "feature/b,feature/d"],
+    );
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("never batches lookups made with different credential scopes", () => {
+  const { execute, layer } = makeLayer({ response: () => Response.json({ values: [] }) });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const lookup = (branch: string, scope: string) =>
+      bitbucket
+        .listPullRequests({ cwd: "/repo", headSelector: branch, state: "all" })
+        .pipe(Effect.provideService(SourceControlRateLimit.CredentialScope, scope));
+    yield* lookUpTogether([
+      lookup("feature/a", "project-one"),
+      lookup("feature/b", "project-two"),
+      lookup("feature/c", "project-one"),
+    ]);
+
+    assert.deepStrictEqual(
+      execute.mock.calls.map(([request]) => queriedBranches(request).join(",")).toSorted(),
+      ["feature/a,feature/c", "feature/b"],
+    );
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect(
+  "fails every batched lookup as rate limited and sends nothing until the pause ends",
+  () => {
+    let answered = 0;
+    const { execute, layer } = makeLayer({
+      response: () => {
+        answered += 1;
+        return answered === 1
+          ? new Response("Rate limit exceeded", {
+              status: 429,
+              headers: { "retry-after": "60", "x-ratelimit-limit": "1000" },
+            })
+          : Response.json({ values: [] });
+      },
+    });
+
+    return Effect.gen(function* () {
+      const bitbucket = yield* BitbucketApi.BitbucketApi;
+      const sweep = () =>
+        lookUpTogether(
+          ["feature/a", "feature/b", "feature/c"].map((branch) =>
+            bitbucket.listPullRequests({ cwd: "/repo", headSelector: branch, state: "all" }),
+          ),
+        );
+
+      const limited = yield* sweep();
+      assert.strictEqual(execute.mock.calls.length, 1);
+      for (const result of limited) {
+        assert.isTrue(Result.isFailure(result));
+        const error = Result.getFailure(result).pipe(Option.getOrThrow);
+        assert.deepInclude(error, {
+          _tag: "BitbucketResponseError",
+          operation: "listPullRequests",
+          status: 429,
+          retryAt: 60_500,
+          rateLimit: 1000,
+        });
+        assert.strictEqual(
+          error.message,
+          "Bitbucket API failed in listPullRequests: Bitbucket's API rate limit was reached (HTTP 429); requests resume at 1970-01-01T00:01:00.500Z.",
+        );
+      }
+
+      const paused = yield* sweep();
+      for (const result of paused) {
+        assert.strictEqual(
+          Result.getFailure(result).pipe(Option.getOrThrow)._tag,
+          "SourceControlRateLimitPausedError",
+        );
+      }
+      assert.strictEqual(execute.mock.calls.length, 1);
+
+      yield* TestClock.adjust("58 seconds");
+      assert.isTrue((yield* sweep()).every(Result.isFailure));
+      assert.strictEqual(execute.mock.calls.length, 1);
+
+      yield* TestClock.adjust("1 second");
+      assert.isTrue((yield* sweep()).every(Result.isSuccess));
+      assert.strictEqual(execute.mock.calls.length, 2);
+    }).pipe(Effect.provide(layer));
+  },
 );

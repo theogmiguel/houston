@@ -294,6 +294,32 @@ function scheduledTaskSummary(task: ScheduledTask, mayRun: boolean): Orchestrato
 const FULL_CATALOG_DRIVERS: ReadonlySet<string> = new Set(["codex", "claudeAgent", "muse", "grok"]);
 const LISTED_MODEL_LIMIT = 8;
 
+/**
+ * Finds the model a delegate target names: its exact id, or an alias the provider reports
+ * for exactly one of its models. A refusal lists the ids the provider accepts.
+ */
+function resolveAdvertisedModel(
+  provider: ServerProvider,
+  requested: string,
+): { readonly slug: string } | { readonly refusal: string } {
+  if (provider.models.some((model) => model.slug === requested)) return { slug: requested };
+  const key = requested.toLowerCase();
+  const aliased = provider.models.filter((model) =>
+    model.aliases?.some((alias) => alias.toLowerCase() === key),
+  );
+  if (aliased.length === 1) return { slug: aliased[0]!.slug };
+  if (aliased.length > 1) {
+    return {
+      refusal: `Model ${requested} is an alias of several models of provider ${provider.instanceId}: ${aliased.map((model) => model.slug).join(", ")}. Pass one of these ids.`,
+    };
+  }
+  const listed = provider.models.slice(0, LISTED_MODEL_LIMIT).map((model) => model.slug);
+  const omitted = provider.models.length - listed.length;
+  return {
+    refusal: `Model ${requested} is not advertised by provider ${provider.instanceId}. It accepts: ${listed.join(", ")}${omitted === 0 ? "." : `, and ${omitted} more; orchestrator_capabilities with search lists them.`}`,
+  };
+}
+
 const WHITESPACE_RUN = /\s+/;
 const NON_LETTER_OR_DIGIT_RUN = /[^\p{L}\p{N}]+/u;
 
@@ -1417,7 +1443,15 @@ const make = Effect.gen(function* () {
 
     const inheritedSelection = input.parent.thread.modelSelection;
     const requestedModel = input.target?.model;
+    const advertised =
+      requestedModel === undefined || provider.models.length === 0
+        ? undefined
+        : resolveAdvertisedModel(provider, requestedModel);
+    if (advertised !== undefined && "refusal" in advertised) {
+      return yield* failure("model_unavailable", advertised.refusal);
+    }
     const model =
+      advertised?.slug ??
       requestedModel ??
       (instanceId === inheritedSelection.instanceId
         ? inheritedSelection.model
@@ -1426,16 +1460,6 @@ const make = Effect.gen(function* () {
       return yield* failure(
         "model_unavailable",
         `Provider ${instanceId} has no model available for inheritance.`,
-      );
-    }
-    if (
-      requestedModel !== undefined &&
-      provider.models.length > 0 &&
-      !provider.models.some((candidate) => candidate.slug === requestedModel)
-    ) {
-      return yield* failure(
-        "model_unavailable",
-        `Model ${requestedModel} is not advertised by provider ${instanceId}.`,
       );
     }
 
