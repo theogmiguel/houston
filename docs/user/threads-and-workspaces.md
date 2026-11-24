@@ -283,8 +283,9 @@ the send menu, which offers **Queue message**, **Steer message** and
 **Interrupt and send**. Steering is disabled for providers that cannot accept it, and while a
 turn that only compacts the context runs, such as `/compact`; a follow-up then queues behind
 it. When the provider compacts by itself inside a turn, a follow-up sent from the composer
-still steers Codex; for Claude and every other provider it queues until the compaction ends.
-Queued and steered messages show their delivery state, and a dropped message names the reason.
+still steers Codex; for Claude and every other provider it queues and is sent when the turn
+ends. Queued and steered messages show their delivery state, and a dropped message names the
+reason.
 Claude reads a steer once the tool calls it is running finish, and the turn stays open until
 it does. If Claude drops a steer without reading it, the message is sent as the next turn, in
 the place it was sent among queued messages. If Claude neither reads nor drops it, the turn
