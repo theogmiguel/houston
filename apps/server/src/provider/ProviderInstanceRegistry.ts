@@ -72,10 +72,14 @@ const entryEqual = (a: ProviderInstanceConfig, b: ProviderInstanceConfig): boole
 // The envelope owns this mark, so it is stamped here once instead of in every driver.
 const withDeclaredInference = (
   instance: ProviderInstance,
-  inference: ProviderInstanceConfig["inference"],
+  { inference, inferenceServerId }: Pick<ProviderInstanceConfig, "inference" | "inferenceServerId">,
 ): ProviderInstance => {
-  if (inference === undefined) return instance;
-  const stamp = (snapshot: ServerProvider): ServerProvider => ({ ...snapshot, inference });
+  if (inference === undefined && inferenceServerId === undefined) return instance;
+  const stamp = (snapshot: ServerProvider): ServerProvider => ({
+    ...snapshot,
+    ...(inference === undefined ? {} : { inference }),
+    ...(inferenceServerId === undefined ? {} : { inferenceServerId }),
+  });
   const { snapshot } = instance;
   return {
     ...instance,
@@ -213,6 +217,24 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
     };
   }
 
+  // Only harnesses with an OpenAI-compatible endpoint setting can route a linked server.
+  if (
+    entry.inferenceServerId !== undefined &&
+    entry.driver !== "pi" &&
+    entry.driver !== "opencode"
+  ) {
+    return {
+      kind: "unavailable" as const,
+      snapshot: yield* buildUnavailableProviderSnapshot({
+        driverKind: entry.driver,
+        instanceId,
+        displayName: entry.displayName,
+        accentColor: entry.accentColor,
+        reason: `${driver.metadata.displayName} cannot use an inference server yet: it has no OpenAI-compatible endpoint setting.`,
+      }),
+    };
+  }
+
   const decoder = Schema.decodeUnknownEffect(driver.configSchema);
   const decodeResult = yield* decoder(entry.config ?? driver.defaultConfig()).pipe(Effect.result);
   if (decodeResult._tag === "Failure") {
@@ -308,7 +330,7 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
   return {
     kind: "live" as const,
     live: {
-      instance: withDeclaredInference(createResult.success, entry.inference),
+      instance: withDeclaredInference(createResult.success, entry),
       scope: childScope,
       entry,
       secrets,

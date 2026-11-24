@@ -2,7 +2,20 @@ import { tokenizeCliArgs } from "@houston-app/shared/cliArgs";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 
-import type { McpProviderSessionConfig } from "@houston-app/provider-core/server/mcpSession";
+import type { ManagedInferenceServer } from "@houston-app/provider-core/server/inferenceGateway";
+import type { McpToolProfile } from "@houston-app/provider-core/server/mcpToolProfile";
+import type {
+  InferenceGatewayCredential,
+  McpProviderSessionConfig,
+} from "@houston-app/provider-core/server/mcpSession";
+import {
+  HOUSTON_GATEWAY_MODELS_ENV,
+  HOUSTON_GATEWAY_PROVIDER_ENV,
+  HOUSTON_GATEWAY_TOKEN_ENV,
+  HOUSTON_GATEWAY_URL_ENV,
+  PI_HOUSTON_GATEWAY_EXTENSION_FILENAME,
+  PI_HOUSTON_GATEWAY_EXTENSION_SOURCE,
+} from "./gatewayExtensionSource.ts";
 import {
   PI_HOUSTON_MCP_EXTENSION_FILENAME,
   PI_HOUSTON_MCP_EXTENSION_SOURCE,
@@ -10,6 +23,7 @@ import {
   HOUSTON_MCP_URL_ENV,
   HOUSTON_PI_RUNTIME_MODE_ENV,
   HOUSTON_PI_MCP_EXTENSION_PATH_ENV,
+  HOUSTON_PI_TOOL_PROFILE_ENV,
 } from "./mcpExtensionSource.ts";
 
 const RESERVED_PI_LAUNCH_ARGUMENTS = new Set([
@@ -240,6 +254,74 @@ export const materializePiHoustonMcpExtension = Effect.fn("materializePiHoustonM
   },
 );
 
+const materializeSource = Effect.fnUntraced(function* (dest: string, source: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const existing = yield* fs.readFileString(dest).pipe(Effect.orElseSucceed(() => ""));
+  if (existing !== source) {
+    yield* fs.writeFileString(dest, source);
+  }
+  return dest;
+});
+
+/** For discovery and text generation, which run without Houston's full extension. */
+export const materializePiHoustonGatewayExtension = Effect.fn(
+  "materializePiHoustonGatewayExtension",
+)(function* (cacheDir: string) {
+  const fs = yield* FileSystem.FileSystem;
+  yield* fs.makeDirectory(cacheDir, { recursive: true });
+  return yield* materializeSource(
+    `${cacheDir.replace(BACKSLASH, "/")}/${PI_HOUSTON_GATEWAY_EXTENSION_FILENAME}`,
+    PI_HOUSTON_GATEWAY_EXTENSION_SOURCE,
+  );
+});
+
+export interface PiGatewayLaunch {
+  readonly server: ManagedInferenceServer;
+  readonly credential: InferenceGatewayCredential;
+}
+
+const piGatewayProviderName = (serverId: string) => `houston-${serverId}`;
+
+const PI_THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
+// Pi's documented defaults for a model that does not say.
+const PI_DEFAULT_CONTEXT_WINDOW = 128_000;
+const PI_DEFAULT_MAX_TOKENS = 16_384;
+
+/** Pi model configs for registerProvider; a level the server does not advertise is unsupported. */
+function piGatewayModels(server: ManagedInferenceServer) {
+  return server.models.map((model) => {
+    const efforts = new Set(model.reasoningEfforts ?? []);
+    return {
+      id: model.id,
+      name: `${model.id} (${server.displayName})`,
+      reasoning: efforts.size > 0,
+      ...(efforts.size === 0
+        ? {}
+        : {
+            thinkingLevelMap: Object.fromEntries(
+              PI_THINKING_LEVELS.map((level) => [level, efforts.has(level) ? level : null]),
+            ),
+          }),
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: model.contextWindow ?? PI_DEFAULT_CONTEXT_WINDOW,
+      maxTokens: Math.min(
+        model.maxOutputTokens ?? PI_DEFAULT_MAX_TOKENS,
+        model.contextWindow ?? Number.POSITIVE_INFINITY,
+      ),
+    };
+  });
+}
+
+/** An explicit profile wins; "auto" follows the instance's link to an enabled inference server. */
+export function resolvePiToolProfile(
+  setting: "auto" | "full" | "lean",
+  linkedToInferenceServer: boolean,
+): McpToolProfile {
+  if (setting !== "auto") return setting;
+  return linkedToInferenceServer ? "lean" : "full";
+}
+
 export function buildPiRpcLaunch(input: {
   readonly launchArgs: ReadonlyArray<string>;
   readonly environment: NodeJS.ProcessEnv;
@@ -253,6 +335,11 @@ export function buildPiRpcLaunch(input: {
   readonly shortLived?: boolean;
   readonly disableExtensions?: boolean;
   readonly disableTools?: boolean;
+  /** A managed inference server: registered in Pi as `houston-<serverId>` through Houston's gateway. */
+  readonly gateway?: PiGatewayLaunch | undefined;
+  /** Loaded alone, even under --no-extensions, when Houston's full extension is not. */
+  readonly gatewayExtensionPath?: string | undefined;
+  readonly toolProfile?: McpToolProfile;
   readonly runtimeMode?: "approval-required" | "auto-accept-edits" | "auto" | "full-access";
 }): {
   readonly args: ReadonlyArray<string>;
@@ -287,11 +374,28 @@ export function buildPiRpcLaunch(input: {
   ) {
     args.push("--extension", input.extensionPath);
   }
+  const gatewayCarrier = hasHoustonExtension
+    ? "full"
+    : input.gateway !== undefined && input.gatewayExtensionPath !== undefined
+      ? "gateway-only"
+      : undefined;
+  if (gatewayCarrier === "gateway-only" && input.gatewayExtensionPath !== undefined) {
+    args.push("--extension", input.gatewayExtensionPath);
+  }
   const environment = { ...input.environment };
   // MCP credentials belong to this Houston session; discard inherited server/parent credentials.
+  for (const name of [
+    HOUSTON_GATEWAY_URL_ENV,
+    HOUSTON_GATEWAY_TOKEN_ENV,
+    HOUSTON_GATEWAY_PROVIDER_ENV,
+    HOUSTON_GATEWAY_MODELS_ENV,
+  ]) {
+    delete environment[name];
+  }
   delete environment[HOUSTON_MCP_URL_ENV];
   delete environment[HOUSTON_MCP_BEARER_ENV];
   delete environment[HOUSTON_PI_MCP_EXTENSION_PATH_ENV];
+  delete environment[HOUSTON_PI_TOOL_PROFILE_ENV];
 
   return {
     args,
@@ -306,12 +410,23 @@ export function buildPiRpcLaunch(input: {
               input.runtimeMode === "auto" ? "approval-required" : input.runtimeMode,
           }
         : {}),
+      ...(hasHoustonMcp && input.toolProfile !== undefined
+        ? { [HOUSTON_PI_TOOL_PROFILE_ENV]: input.toolProfile }
+        : {}),
       ...(hasHoustonMcp && input.mcpSession !== undefined
         ? {
             [HOUSTON_MCP_URL_ENV]: input.mcpSession.endpoint,
             [HOUSTON_MCP_BEARER_ENV]: bearerTokenFromAuthorizationHeader(
               input.mcpSession.authorizationHeader,
             ),
+          }
+        : {}),
+      ...(gatewayCarrier !== undefined && input.gateway !== undefined
+        ? {
+            [HOUSTON_GATEWAY_URL_ENV]: input.gateway.credential.baseUrl,
+            [HOUSTON_GATEWAY_TOKEN_ENV]: input.gateway.credential.token,
+            [HOUSTON_GATEWAY_PROVIDER_ENV]: piGatewayProviderName(input.gateway.server.serverId),
+            [HOUSTON_GATEWAY_MODELS_ENV]: JSON.stringify(piGatewayModels(input.gateway.server)),
           }
         : {}),
     },

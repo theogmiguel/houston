@@ -159,6 +159,7 @@ function resolveProjectOverrides(
         includeConfiguredInstances: true,
         defaultModelSelection: effective.defaultModelSelection as ModelSelection | null,
         policy: settings.textGenerationFallback,
+        inferenceServers: settings.inferenceServers,
       },
     );
     if (fallback !== null) effective.textGenerationModelSelection = fallback;

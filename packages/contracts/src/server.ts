@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { AcpRegistryUrlAuthAction } from "./acpRegistry.ts";
+import { InferenceServerId } from "./houston/inference.ts";
 import { ProviderReadiness } from "./houston/providerReadiness.ts";
 import {
   type EnvironmentMachineKind,
@@ -216,6 +217,8 @@ export const ServerProvider = Schema.Struct({
   displayName: Schema.optional(TrimmedNonEmptyString),
   accentColor: Schema.optional(TrimmedNonEmptyString),
   inference: Schema.optionalKey(ProviderInstanceInference),
+  /** The registered server this instance's models run on, when it is linked. */
+  inferenceServerId: Schema.optionalKey(InferenceServerId),
   // Validate driver-supplied remote icons against the driver's trusted origin.
   iconUrl: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(2_048))),
   badgeLabel: Schema.optional(TrimmedNonEmptyString),

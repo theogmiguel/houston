@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { InferenceServerId } from "./houston/inference.ts";
 import { SecretReference } from "./secretReference.ts";
 
 const PROVIDER_SLUG_MAX_CHARS = 64;
@@ -81,11 +82,27 @@ export const ProviderInstanceConfig = Schema.Struct({
   displayName: Schema.optional(TrimmedNonEmptyString),
   accentColor: Schema.optional(TrimmedNonEmptyString),
   inference: Schema.optionalKey(ProviderInstanceInference),
+  /** The registered server this instance's models run on; implies local inference. */
+  inferenceServerId: Schema.optionalKey(InferenceServerId),
   environment: Schema.optionalKey(ProviderInstanceEnvironment),
   enabled: Schema.optionalKey(Schema.Boolean),
   config: Schema.optionalKey(Schema.Unknown),
 });
 export type ProviderInstanceConfig = typeof ProviderInstanceConfig.Type;
+
+/**
+ * A linked instance is local exactly while its registered server is enabled; a link to a disabled
+ * or missing server is not local, whatever the manual mark says. Unlinked instances use the mark.
+ */
+export function isLocalProviderInstance(
+  instance: Pick<ProviderInstanceConfig, "inference" | "inferenceServerId"> | undefined,
+  inferenceServers: Readonly<Record<string, { readonly enabled: boolean }>> | undefined,
+): boolean {
+  if (instance?.inferenceServerId !== undefined) {
+    return inferenceServers?.[instance.inferenceServerId]?.enabled === true;
+  }
+  return instance?.inference === "local";
+}
 
 export const ProviderInstanceMutation = Schema.Union([
   Schema.Struct({

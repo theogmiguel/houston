@@ -226,6 +226,8 @@ export const InferenceServerSnapshot = Schema.Struct({
   models: Schema.Array(InferenceServerModel),
   load: Schema.optional(InferenceServerLoad),
   maxConcurrentRequests: Schema.optional(NonNegativeInt),
+  /** The saved server that serves this one's requests while it is down. */
+  fallbackServerId: Schema.optional(InferenceServerId),
   apiProtocols: Schema.optional(Schema.Array(InferenceApiProtocol)),
   gatewayQueue: Schema.optional(InferenceGatewayQueue),
   promptCache: Schema.optional(InferenceServerPromptCache),
@@ -274,7 +276,8 @@ export const InferenceServerSaveInput = Schema.Struct({
   apiKey: Schema.optional(SecretLiteral),
   enabled: Schema.optional(Schema.Boolean),
   maxConcurrentRequests: Schema.optional(PositiveInt),
-  fallbackServerId: Schema.optional(InferenceServerId),
+  /** Omitted keeps the saved fallback; null clears it. */
+  fallbackServerId: Schema.optionalKey(Schema.NullOr(InferenceServerId)),
   watchdog: Schema.optional(Schema.Struct({ enabled: Schema.optional(Schema.Boolean) })),
 });
 export type InferenceServerSaveInput = typeof InferenceServerSaveInput.Type;

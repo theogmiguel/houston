@@ -9,6 +9,7 @@ import {
   globalIdleCompaction,
   type IdleCompactionMode,
   isProviderAvailable,
+  isLocalProviderInstance,
   isUnconfiguredDefaultInstanceEnabled,
   resolveProjectProviderInstanceEnabled,
   resolveProviderInstanceEnabled,
@@ -76,12 +77,13 @@ export function fallbackTextGenerationModelSelection(
     readonly includeConfiguredInstances?: boolean;
     readonly defaultModelSelection?: ModelSelection | null;
     readonly policy?: TextGenerationFallback;
+    readonly inferenceServers?: ServerSettings["inferenceServers"];
   },
 ): ModelSelection | null {
   const policy = options?.policy ?? "any";
   if (policy === "none") return null;
   const isLocal = (instanceId: ProviderInstanceId) =>
-    providerInstances[instanceId]?.inference === "local";
+    isLocalProviderInstance(providerInstances[instanceId], options?.inferenceServers);
   const allCandidates = [
     ...TEXT_GENERATION_FALLBACK_DRIVERS.map(
       (driver) => [defaultInstanceIdForDriver(driver), driver] as const,

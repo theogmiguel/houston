@@ -93,3 +93,19 @@ it.effect("stops resolving a background credential after its ttl", () => {
     yield* Scope.close(scope, Exit.void);
   }).pipe(Effect.provide(layer(clock)));
 });
+
+it.effect("maps a shared harness session to its thread only while a holder is registered", () =>
+  Effect.gen(function* () {
+    const service = yield* InferenceGatewayCredentials.InferenceGatewayCredentials;
+    const scoped = Effect.scoped(
+      Effect.gen(function* () {
+        yield* service.attributeSessions(instance, (sessionId) =>
+          sessionId === "opencode-1" ? thread : undefined,
+        );
+        return yield* service.harnessSessionThread(instance, "opencode-1");
+      }),
+    );
+    expect(yield* scoped).toBe(thread);
+    expect(yield* service.harnessSessionThread(instance, "opencode-1")).toBeUndefined();
+  }).pipe(Effect.provide(layer())),
+);

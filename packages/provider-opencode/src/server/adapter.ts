@@ -56,6 +56,11 @@ import * as Stream from "effect/Stream";
 import * as ProviderHost from "@houston-app/provider-core/server/ProviderHost";
 import { mcpToolPresentation } from "@houston-app/provider-core/server/mcpToolPresentation";
 import * as McpProviderSessions from "@houston-app/provider-core/server/McpProviderSessions";
+import {
+  makeOpenCodeGatewaySource,
+  type OpenCodeGatewaySource,
+  unmanagedOpenCodeGatewaySource,
+} from "./gateway.ts";
 import * as ProviderEventLoggers from "@houston-app/provider-core/server/ProviderEventLoggers";
 import {
   structuralProtocolMethod,
@@ -424,6 +429,8 @@ export interface OpenCodeAdapterV2Options {
   readonly instanceId: ProviderInstanceId;
   readonly settings: OpenCodeSettings;
   readonly environment: NodeJS.ProcessEnv;
+  /** Routes a linked inference server through Houston's gateway; absent means unmanaged. */
+  readonly gateway?: OpenCodeGatewaySource;
   readonly nativeEventLogger?: ProviderEventLoggers.EventNdjsonLogger;
 }
 
@@ -962,6 +969,18 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
       function* (input: ProviderAdapter.ProviderAdapterV2OpenSessionInput) {
         const scope = yield* Effect.scope;
         const cwd = input.runtimePolicy.cwd ?? host.paths.cwd;
+        const mcpSession = yield* mcpSessions.read(input.threadId);
+        const gatewaySource = options.gateway ?? unmanagedOpenCodeGatewaySource;
+        const resolution = yield* gatewaySource.resolution;
+        // A linked server that is down makes the instance wait; it never falls back to the cloud.
+        if (resolution !== undefined && !resolution.managed && resolution.local === true) {
+          return yield* new ProviderAdapter.ProviderAdapterOpenSessionError({
+            driver: OPENCODE_PROVIDER,
+            providerSessionId: input.providerSessionId,
+            cause: resolution.reason,
+          });
+        }
+        const environment = yield* gatewaySource.forSession(options.environment, mcpSession);
         const connection = yield* runtime.connectToOpenCodeServer({
           binaryPath: options.settings.binaryPath,
           directory: cwd,
@@ -969,7 +988,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           ...(options.settings.serverPassword
             ? { serverPassword: options.settings.serverPassword }
             : {}),
-          environment: options.environment,
+          environment,
         });
         const client = runtime.createOpenCodeSdkClient({
           baseUrl: connection.url,
@@ -979,7 +998,6 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             : {}),
         });
 
-        const mcpSession = yield* mcpSessions.read(input.threadId);
         const hasHoustonMcp = mcpSession !== undefined && !connection.external;
         const orchestrationSystemPrompt = houstonOrchestrationSystemPrompt(
           hasHoustonMcp,
@@ -3818,6 +3836,7 @@ export const OpenCodeAdapterV2Driver: ProviderAdapterDriver<
       const providerEventLoggers = yield* ProviderEventLoggers.ProviderEventLoggers;
       return yield* makeOpenCodeAdapterV2({
         instanceId: input.instanceId,
+        gateway: yield* makeOpenCodeGatewaySource(input.instanceId),
         settings: { ...input.config, enabled: input.enabled },
         environment: yield* mergeProviderInstanceEnvironment(input.environment, hostEnvironment),
         ...(providerEventLoggers.native === undefined

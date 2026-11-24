@@ -78,7 +78,7 @@ it.effect("runs Pi offline, since the process is stopped as soon as it answers",
       return pi.spawner.spawn(command);
     });
     const textGeneration = yield* makePiTextGeneration(
-      { enabled: true, binaryPath: "pi", launchArgs: "", customModels: [] },
+      { enabled: true, binaryPath: "pi", launchArgs: "", toolProfile: "auto", customModels: [] },
       {},
     ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
 
@@ -102,7 +102,7 @@ it.effect("names the model and the disabled extensions when Pi cannot load it", 
   Effect.gen(function* () {
     const pi = yield* makeFakePi("", "Model not found: demo/demo-model");
     const textGeneration = yield* makePiTextGeneration(
-      { enabled: true, binaryPath: "pi", launchArgs: "", customModels: [] },
+      { enabled: true, binaryPath: "pi", launchArgs: "", toolProfile: "auto", customModels: [] },
       {},
     ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, pi.spawner));
 
@@ -137,7 +137,7 @@ const generateCommitMessage = (turnEvents: ReadonlyArray<Record<string, unknown>
   Effect.gen(function* () {
     const pi = yield* makeFakePi(reply, undefined, turnEvents);
     const textGeneration = yield* makePiTextGeneration(
-      { enabled: true, binaryPath: "pi", launchArgs: "", customModels: [] },
+      { enabled: true, binaryPath: "pi", launchArgs: "", toolProfile: "auto", customModels: [] },
       {},
     ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, pi.spawner));
     return yield* textGeneration.generateCommitMessage({

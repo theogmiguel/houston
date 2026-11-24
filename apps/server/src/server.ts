@@ -151,6 +151,7 @@ import * as InferenceServerRegistry from "./houston/inference/InferenceServerReg
 import * as InferenceAdmission from "./houston/inference/InferenceAdmission.ts";
 import * as InferenceGateway from "./houston/inference/InferenceGateway.ts";
 import * as InferenceGatewayCredentials from "./houston/inference/InferenceGatewayCredentials.ts";
+import * as InferenceGatewayAccess from "./houston/inference/InferenceGatewayAccess.ts";
 import * as InferenceRequests from "./houston/inference/InferenceRequests.ts";
 import * as InferenceRouting from "./houston/inference/InferenceRouting.ts";
 import * as InferenceStops from "./houston/inference/InferenceStops.ts";
@@ -660,7 +661,9 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(HoustonSlackStore.sweep),
   HoustonLayoutWorkspaces.layer,
   // Model servers registered in Settings: periodic probes and on-demand discovery.
-  Layer.mergeAll(InferenceServerRegistry.layer, InferenceDiscovery.layer),
+  InferenceGatewayAccess.layer.pipe(
+    Layer.provideMerge(Layer.mergeAll(InferenceServerRegistry.layer, InferenceDiscovery.layer)),
+  ),
   // The gateway's own accounting and stops; the queue layers sit with the route below.
   Layer.mergeAll(InferenceRequests.layer, InferenceStops.layer),
   Layer.effectDiscard(

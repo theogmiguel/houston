@@ -89,6 +89,12 @@ const errorResponse = (status: number, type: string, message: string) =>
 const BEARER = /^bearer\s+/i;
 const ROUTE = /^\/inference\/([^/]+)\/v1\/(.+)$/;
 
+/**
+ * OpenCode 2 sends its session id on every model request. Read only on an instance credential,
+ * within that instance; the forwarded-header allowlist keeps it from the upstream.
+ */
+const HARNESS_SESSION_HEADER = "x-opencode-session-id";
+
 const presentedToken = (request: HttpServerRequest.HttpServerRequest): string => {
   const authorization = request.headers.authorization;
   if (authorization !== undefined && BEARER.test(authorization)) {
@@ -383,10 +389,19 @@ const make = Effect.gen(function* () {
       return errorResponse(405, "method_not_allowed", "Method not allowed.");
     }
 
-    const caller = yield* credentials.resolve(presentedToken(request));
-    if (caller === undefined) {
+    const presented = yield* credentials.resolve(presentedToken(request));
+    if (presented === undefined) {
       return errorResponse(401, "authentication_error", "Missing or unknown gateway credential.");
     }
+    const harnessSessionId = request.headers[HARNESS_SESSION_HEADER];
+    const sessionThread =
+      presented.threadId === undefined &&
+      presented.providerInstanceId !== undefined &&
+      harnessSessionId !== undefined
+        ? yield* credentials.harnessSessionThread(presented.providerInstanceId, harnessSessionId)
+        : undefined;
+    const caller =
+      sessionThread === undefined ? presented : { ...presented, threadId: sessionThread };
     if (caller.serverId !== serverId) {
       return errorResponse(403, "permission_error", "This credential is for another server.");
     }

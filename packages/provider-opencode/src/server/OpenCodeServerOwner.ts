@@ -14,6 +14,7 @@ interface OpenCodeServerOwnerState {
   server: OpenCodeRuntime.OpenCodeServerProcess | null;
   serverScope: Scope.Closeable | null;
   borrowers: number;
+  environmentKey: string | undefined;
   idleCloseFiber: Fiber.Fiber<void, never> | null;
 }
 
@@ -31,6 +32,8 @@ export const make = Effect.fn("OpenCodeServerOwner.make")(function* (input: {
   readonly directory: string;
   readonly serverPassword?: string;
   readonly environment?: NodeJS.ProcessEnv;
+  /** When this changes, an idle server is replaced so new sessions see the new environment. */
+  readonly environmentKey?: Effect.Effect<string>;
   readonly verify?: (url: string) => Effect.Effect<string, OpenCodeRuntime.OpenCodeRuntimeError>;
 }) {
   const runtime = yield* OpenCodeRuntime.OpenCodeRuntime;
@@ -42,6 +45,7 @@ export const make = Effect.fn("OpenCodeServerOwner.make")(function* (input: {
     server: null,
     serverScope: null,
     borrowers: 0,
+    environmentKey: undefined,
     idleCloseFiber: null,
   };
 
@@ -85,8 +89,11 @@ export const make = Effect.fn("OpenCodeServerOwner.make")(function* (input: {
   const acquireServer = mutex.withPermit(
     Effect.gen(function* () {
       yield* cancelIdleClose();
+      const environmentKey =
+        input.environmentKey === undefined ? undefined : yield* input.environmentKey;
       if (state.server !== null) {
-        if (yield* state.server.isRunning) {
+        const stale = state.borrowers === 0 && environmentKey !== state.environmentKey;
+        if (!stale && (yield* state.server.isRunning)) {
           state.borrowers += 1;
           return state.server;
         }
@@ -120,6 +127,7 @@ export const make = Effect.fn("OpenCodeServerOwner.make")(function* (input: {
           state.server = server;
           state.serverScope = serverScope;
           state.borrowers = 1;
+          state.environmentKey = environmentKey;
           yield* watchServerExit(server).pipe(Effect.forkIn(ownerScope));
           return server;
         }),
@@ -184,5 +192,7 @@ export const layer = (input: {
   readonly directory: string;
   readonly serverPassword?: string;
   readonly environment?: NodeJS.ProcessEnv;
+  /** When this changes, an idle server is replaced so new sessions see the new environment. */
+  readonly environmentKey?: Effect.Effect<string>;
   readonly verify?: (url: string) => Effect.Effect<string, OpenCodeRuntime.OpenCodeRuntimeError>;
 }) => Layer.effect(OpenCodeServerOwner, make(input));

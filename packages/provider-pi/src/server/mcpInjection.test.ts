@@ -2,6 +2,12 @@ import { assert, describe, it } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@houston-app/contracts";
 
 import {
+  HOUSTON_GATEWAY_MODELS_ENV,
+  HOUSTON_GATEWAY_PROVIDER_ENV,
+  HOUSTON_GATEWAY_TOKEN_ENV,
+  HOUSTON_GATEWAY_URL_ENV,
+} from "./gatewayExtensionSource.ts";
+import {
   HOUSTON_MCP_BEARER_ENV,
   HOUSTON_MCP_URL_ENV,
   HOUSTON_PI_RUNTIME_MODE_ENV,
@@ -20,6 +26,105 @@ const mcpSession = {
   authorizationHeader: "Bearer secret-pi-token",
   browserToolsAvailable: true,
 };
+
+const gateway = {
+  server: {
+    serverId: "rtx",
+    displayName: "rtx",
+    models: [
+      {
+        id: "GLM-5.3-Flash",
+        contextWindow: 813056,
+        reasoningEfforts: ["max", "high", "low"],
+      },
+      { id: "plain" },
+    ],
+  },
+  credential: {
+    serverId: "rtx",
+    baseUrl: "http://127.0.0.1:43123/inference/rtx/v1",
+    token: "gateway-secret",
+  },
+};
+
+describe("pi Houston gateway provider", () => {
+  it("hands a managed server's gateway to Pi through the environment only", () => {
+    const launch = buildPiRpcLaunch({
+      launchArgs: [],
+      environment: {},
+      mcpSession,
+      extensionPath: "/tmp/cache/pi-houston-mcp-extension.ts",
+      gateway,
+    });
+    assert.notInclude(launch.args.join(" "), "gateway-secret");
+    assert.equal(launch.env[HOUSTON_GATEWAY_URL_ENV], "http://127.0.0.1:43123/inference/rtx/v1");
+    assert.equal(launch.env[HOUSTON_GATEWAY_TOKEN_ENV], "gateway-secret");
+    assert.equal(launch.env[HOUSTON_GATEWAY_PROVIDER_ENV], "houston-rtx");
+    assert.deepEqual(JSON.parse(launch.env[HOUSTON_GATEWAY_MODELS_ENV]!), [
+      {
+        id: "GLM-5.3-Flash",
+        name: "GLM-5.3-Flash (rtx)",
+        reasoning: true,
+        thinkingLevelMap: {
+          minimal: null,
+          low: "low",
+          medium: null,
+          high: "high",
+          xhigh: null,
+          max: "max",
+        },
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 813056,
+        maxTokens: 16384,
+      },
+      {
+        id: "plain",
+        name: "plain (rtx)",
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
+        maxTokens: 16384,
+      },
+    ]);
+  });
+
+  it("loads only the gateway extension for background processes and drops stale credentials", () => {
+    const launch = buildPiRpcLaunch({
+      launchArgs: ["--extension", "/home/user/.pi/agent/extensions/demo.ts"],
+      environment: { [HOUSTON_GATEWAY_TOKEN_ENV]: "inherited" },
+      mcpSession: undefined,
+      extensionPath: undefined,
+      gatewayExtensionPath: "/tmp/cache/pi-houston-gateway-extension.ts",
+      gateway,
+      ephemeral: true,
+      shortLived: true,
+      disableExtensions: true,
+      disableTools: true,
+    });
+    assert.deepEqual(launch.args.slice(-2), [
+      "--extension",
+      "/tmp/cache/pi-houston-gateway-extension.ts",
+    ]);
+    assert.equal(launch.env[HOUSTON_GATEWAY_TOKEN_ENV], "gateway-secret");
+
+    const unmanaged = buildPiRpcLaunch({
+      launchArgs: [],
+      environment: {
+        [HOUSTON_GATEWAY_TOKEN_ENV]: "inherited",
+        [HOUSTON_GATEWAY_URL_ENV]: "http://x",
+      },
+      mcpSession: undefined,
+      extensionPath: undefined,
+      gatewayExtensionPath: "/tmp/cache/pi-houston-gateway-extension.ts",
+      ephemeral: true,
+    });
+    assert.deepEqual(unmanaged.args, ["--mode", "rpc", "--no-session"]);
+    assert.isUndefined(unmanaged.env[HOUSTON_GATEWAY_TOKEN_ENV]);
+    assert.isUndefined(unmanaged.env[HOUSTON_GATEWAY_URL_ENV]);
+  });
+});
 
 describe("pi Houston MCP injection", () => {
   it("always adds the permission bridge and configures MCP when available", () => {

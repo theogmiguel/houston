@@ -491,6 +491,9 @@ export const make = Effect.gen(function* () {
       ...(config.maxConcurrentRequests === undefined
         ? {}
         : { maxConcurrentRequests: config.maxConcurrentRequests }),
+      ...(config.fallbackServerId === undefined
+        ? {}
+        : { fallbackServerId: config.fallbackServerId }),
     } as const;
     if (!config.enabled) {
       return { ...base, status: "unreachable", checkedAt: null, message: "Turned off." } as const;
@@ -790,7 +793,9 @@ export const make = Effect.gen(function* () {
         ? existing?.fallbackServerId === undefined
           ? {}
           : { fallbackServerId: existing.fallbackServerId }
-        : { fallbackServerId: input.fallbackServerId }),
+        : input.fallbackServerId === null
+          ? {}
+          : { fallbackServerId: input.fallbackServerId }),
       ...(input.watchdog === undefined
         ? existing?.watchdog === undefined
           ? {}

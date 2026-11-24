@@ -47,11 +47,28 @@ export class InferenceGatewayCredentials extends Context.Service<
       readonly providerSessionId: string;
       readonly providerInstanceId: ProviderInstanceId;
     }) => Effect.Effect<InferenceGatewayCredential>;
-    /** For discovery and text generation; revoked when the scope closes and after a TTL. */
+    /**
+     * For discovery, text generation and a shared harness process; revoked when the scope closes
+     * and after a TTL. `providerInstanceId` attributes the credential to that instance.
+     */
     readonly issueBackground: (input: {
       readonly serverId: InferenceServerId;
       readonly pinned: InferenceServerConfig;
+      readonly providerInstanceId?: ProviderInstanceId;
     }) => Effect.Effect<InferenceGatewayCredential, never, Scope.Scope>;
+    /**
+     * Lets an instance's shared harness name the thread behind a request: the gateway asks
+     * `threadOf` with the harness session id the request carries, until the scope closes.
+     */
+    readonly attributeSessions: (
+      providerInstanceId: ProviderInstanceId,
+      threadOf: (harnessSessionId: string) => ThreadId | undefined,
+    ) => Effect.Effect<void, never, Scope.Scope>;
+    /** The thread a shared harness session belongs to, if any holder knows it. */
+    readonly harnessSessionThread: (
+      providerInstanceId: ProviderInstanceId,
+      harnessSessionId: string,
+    ) => Effect.Effect<ThreadId | undefined>;
     readonly resolve: (rawToken: string) => Effect.Effect<InferenceCaller | undefined>;
     readonly touch: (threadId: ThreadId) => Effect.Effect<void>;
     readonly revokeProviderSession: (providerSessionId: string) => Effect.Effect<void>;
@@ -163,7 +180,13 @@ const makeWithOptions = Effect.fn("InferenceGatewayCredentials.make")(function* 
     const minted = yield* Effect.acquireRelease(mint, ({ tokenHash }) => removeToken(tokenHash));
     yield* store({
       tokenHash: minted.tokenHash,
-      caller: { serverId: input.serverId, pinned: input.pinned },
+      caller: {
+        serverId: input.serverId,
+        pinned: input.pinned,
+        ...(input.providerInstanceId === undefined
+          ? {}
+          : { providerInstanceId: input.providerInstanceId }),
+      },
       lastAliveAt: issuedAt,
       expiresAt: issuedAt + BACKGROUND_INFERENCE_TTL_MS,
     });
@@ -215,9 +238,44 @@ const makeWithOptions = Effect.fn("InferenceGatewayCredentials.make")(function* 
       records: new Map(Array.from(records).filter(([, record]) => !predicate(record))),
     }));
 
+  const harnessSessions = new Map<
+    ProviderInstanceId,
+    Set<(harnessSessionId: string) => ThreadId | undefined>
+  >();
+  const attributeSessions: InferenceGatewayCredentials["Service"]["attributeSessions"] = (
+    providerInstanceId,
+    threadOf,
+  ) =>
+    Effect.acquireRelease(
+      Effect.sync(() => {
+        const held = harnessSessions.get(providerInstanceId) ?? new Set();
+        held.add(threadOf);
+        harnessSessions.set(providerInstanceId, held);
+      }),
+      () =>
+        Effect.sync(() => {
+          const held = harnessSessions.get(providerInstanceId);
+          held?.delete(threadOf);
+          if (held?.size === 0) harnessSessions.delete(providerInstanceId);
+        }),
+    );
+  const harnessSessionThread: InferenceGatewayCredentials["Service"]["harnessSessionThread"] = (
+    providerInstanceId,
+    harnessSessionId,
+  ) =>
+    Effect.sync(() => {
+      for (const threadOf of harnessSessions.get(providerInstanceId) ?? []) {
+        const threadId = threadOf(harnessSessionId);
+        if (threadId !== undefined) return threadId;
+      }
+      return undefined;
+    });
+
   return InferenceGatewayCredentials.of({
     issueSession,
     issueBackground,
+    attributeSessions,
+    harnessSessionThread,
     resolve,
     touch,
     revokeProviderSession: Effect.fn("InferenceGatewayCredentials.revokeProviderSession")(

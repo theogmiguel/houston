@@ -14,6 +14,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as OpenCode2TextGeneration from "./v2/textGeneration.ts";
 import { makeOpenCodeTextGeneration } from "./textGeneration.ts";
+import { makeOpenCodeGatewaySource } from "./gateway.ts";
 import * as ProviderLatestVersions from "@houston-app/provider-core/server/ProviderLatestVersions";
 import * as ProviderHost from "@houston-app/provider-core/server/ProviderHost";
 import { expandHomePath } from "@houston-app/provider-core/server/pathExpansion";
@@ -259,6 +260,8 @@ export const OpenCodeDriver: ProviderDriver<
               Effect.andThen(cachedMaintenance({ fresh: true })),
             )
           : cachedMaintenance();
+    const gateway = yield* makeOpenCodeGatewaySource(instanceId);
+    const gatewayEnvironment = yield* gateway.forProcess(processEnv);
     const openCodeV1Adapter = yield* OpenCodeAdapterV2.OpenCodeAdapterV2Driver.create({
       instanceId,
       displayName,
@@ -282,7 +285,8 @@ export const OpenCodeDriver: ProviderDriver<
       serverUrl: effectiveConfig.serverUrl,
       serverPassword: effectiveConfig.serverPassword,
       directory: host.paths.cwd,
-      environment: processEnv,
+      environment: gatewayEnvironment,
+      environmentKey: gateway.processKey,
     }).pipe(
       Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, openCodeRuntime),
       Effect.provideService(
@@ -337,7 +341,8 @@ export const OpenCodeDriver: ProviderDriver<
       binaryPath: effectiveConfig.binaryPath,
       directory: host.paths.cwd,
       ...(effectiveConfig.serverPassword ? { serverPassword: effectiveConfig.serverPassword } : {}),
-      environment: processEnv,
+      environment: gatewayEnvironment,
+      environmentKey: gateway.processKey,
     });
     const textGeneration = selectOpenCodeRuntimeTextGeneration(
       runtimeProbe,

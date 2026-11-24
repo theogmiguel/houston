@@ -160,7 +160,11 @@ export const make = Effect.gen(function* () {
                   usableElsewhere(provider, defaultTextGenerationModel(driver))
                 );
               },
-              { includeConfiguredInstances: true, policy: settings.textGenerationFallback },
+              {
+                includeConfiguredInstances: true,
+                policy: settings.textGenerationFallback,
+                inferenceServers: settings.inferenceServers,
+              },
             ));
       if (fallback !== null) selection = fallback;
       else if (localPolicy || operation === "generateReviewGuide") return yield* noLocalModel;

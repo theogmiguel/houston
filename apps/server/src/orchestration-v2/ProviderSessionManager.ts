@@ -48,6 +48,9 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSessions from "@houston-app/provider-core/server/McpProviderSessions";
 import * as ServerSettings from "../serverSettings.ts";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
+import * as InferenceGateway from "@houston-app/provider-core/server/inferenceGateway";
+import type { InferenceServerId } from "@houston-app/contracts/houston/inference";
+import * as InferenceGatewayCredentials from "../houston/inference/InferenceGatewayCredentials.ts";
 import * as EventSink from "./EventSink.ts";
 import * as CommandOutputHub from "./CommandOutputHub.ts";
 import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
@@ -383,6 +386,10 @@ export const layerWithOptions = (
       const fileSystem = yield* FileSystem.FileSystem;
       const mcpSessionRegistry = yield* McpSessionRegistry.McpSessionRegistry;
       const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+      const inferenceAccess = yield* Effect.serviceOption(InferenceGateway.InferenceGatewayAccess);
+      const inferenceCredentials = yield* Effect.serviceOption(
+        InferenceGatewayCredentials.InferenceGatewayCredentials,
+      );
       /** Unreadable settings must preserve explicit browser-access opt-outs. */
       const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
       const projectService = yield* Effect.serviceOption(ProjectService.ProjectService);
@@ -495,6 +502,25 @@ export const layerWithOptions = (
       const isMcpCredentialReserved = (threadId: ThreadId, mcpCredentialId: string) =>
         (mcpCredentialReservations.get(mcpReservationKey(threadId, mcpCredentialId)) ?? 0) > 0;
       const mcpPrepareLock = yield* KeyedLock.make<ThreadId>();
+      /**
+       * The enabled inference server this instance is linked to. Its session credential is minted
+       * here so it lives exactly as long as the provider session and never falls back to the cloud.
+       */
+      const linkedInferenceServer = Effect.fn("ProviderSessionManager.linkedInferenceServer")(
+        function* (providerInstanceId: ProviderInstanceId) {
+          if (Option.isNone(inferenceAccess) || Option.isNone(serverSettings)) return undefined;
+          const settings = yield* serverSettings.value.getSettings;
+          const resolution = yield* inferenceAccess.value.resolve(
+            providerInstanceId,
+            "chat-completions",
+          );
+          if (resolution?.managed !== true) return undefined;
+          const serverId = resolution.server.serverId as InferenceServerId;
+          const config = settings.inferenceServers[serverId];
+          return config === undefined ? undefined : { serverId, config };
+        },
+        (effect) => effect.pipe(Effect.orElseSucceed(() => undefined)),
+      );
       /** Serialize prepares per thread so concurrent rotations cannot revoke each other's credentials. */
       const prepareMcpSession = (
         threadId: ThreadId,
@@ -550,7 +576,9 @@ export const layerWithOptions = (
                     resolved.capabilities.has("preview") === browserToolsAvailable &&
                     resolved.capabilities.has("device") === deviceToolsAvailable &&
                     // A credential issued while the lineage read failed is replaced once it works.
-                    (resolved.thread.subagent === true) === subagent
+                    (resolved.thread.subagent === true) === subagent &&
+                    (yield* linkedInferenceServer(providerInstanceId))?.serverId ===
+                      existing.inferenceGateway?.serverId
                   ) {
                     return { mcpCredentialId: existing.providerSessionId, issued: false };
                   }
@@ -565,17 +593,49 @@ export const layerWithOptions = (
                   subagent,
                   ...(submitOnly ? { houstonTaskSubmitOnly: true } : {}),
                 });
-                yield* mcpSessions.set(credential.config);
+                const linked = yield* linkedInferenceServer(providerInstanceId);
+                const inferenceGateway =
+                  linked === undefined || Option.isNone(inferenceCredentials)
+                    ? undefined
+                    : yield* inferenceCredentials.value.issueSession({
+                        serverId: linked.serverId,
+                        pinned: linked.config,
+                        threadId,
+                        providerSessionId: credential.config.providerSessionId,
+                        providerInstanceId,
+                      });
+                yield* mcpSessions.set(
+                  inferenceGateway === undefined
+                    ? credential.config
+                    : {
+                        ...credential.config,
+                        inferenceGateway: {
+                          serverId: inferenceGateway.serverId,
+                          baseUrl: inferenceGateway.baseUrl,
+                          token: inferenceGateway.token,
+                        },
+                      },
+                );
                 reserveMcpCredential(threadId, credential.config.providerSessionId);
                 return { mcpCredentialId: credential.config.providerSessionId, issued: true };
               }),
             );
       const clearMcpSession = (threadId: ThreadId, mcpCredentialId?: string) =>
         mcpCredentialId === undefined
-          ? mcpSessionRegistry
-              .revokeThread(threadId)
-              .pipe(Effect.tap(() => mcpSessions.clear(threadId)))
+          ? mcpSessionRegistry.revokeThread(threadId).pipe(
+              Effect.andThen(
+                Option.isNone(inferenceCredentials)
+                  ? Effect.void
+                  : inferenceCredentials.value.revokeThread(threadId),
+              ),
+              Effect.tap(() => mcpSessions.clear(threadId)),
+            )
           : mcpSessionRegistry.revokeProviderSession(mcpCredentialId).pipe(
+              Effect.andThen(
+                Option.isNone(inferenceCredentials)
+                  ? Effect.void
+                  : inferenceCredentials.value.revokeProviderSession(mcpCredentialId),
+              ),
               Effect.tap(() =>
                 Effect.gen(function* () {
                   if ((yield* mcpSessions.read(threadId))?.providerSessionId === mcpCredentialId) {

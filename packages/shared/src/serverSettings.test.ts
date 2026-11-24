@@ -157,6 +157,28 @@ describe("local-first text generation", () => {
     );
   });
 
+  it("treats a linked instance as local exactly while its server is enabled", () => {
+    const linked = ProviderInstanceId.make("pi_linked");
+    const instances = {
+      [linked]: { driver: pi, inferenceServerId: "rtx" as never, enabled: true },
+    };
+    const enabled = (instanceId: ProviderInstanceId) => instanceId === linked;
+    expect(
+      fallbackTextGenerationModelSelection(instances, enabled, {
+        includeConfiguredInstances: true,
+        policy: "local",
+        inferenceServers: { rtx: { baseUrl: "http://rtx/v1", enabled: true } } as never,
+      })?.instanceId,
+    ).toBe(linked);
+    expect(
+      fallbackTextGenerationModelSelection(instances, enabled, {
+        includeConfiguredInstances: true,
+        policy: "local",
+        inferenceServers: { rtx: { baseUrl: "http://rtx/v1", enabled: false } } as never,
+      }),
+    ).toBeNull();
+  });
+
   it("picks a ready local instance's concrete default model, never an alias", () => {
     const { inference: _cloud, ...codex } = snapshot(
       ProviderInstanceId.make("codex"),

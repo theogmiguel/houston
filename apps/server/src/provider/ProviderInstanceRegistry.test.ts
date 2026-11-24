@@ -20,6 +20,7 @@ import {
   type SecretReference,
   type ServerProvider,
 } from "@houston-app/contracts";
+import { InferenceServerId } from "@houston-app/contracts/houston/inference";
 import * as ProviderLatestVersions from "@houston-app/provider-core/server/ProviderLatestVersions";
 import * as McpProviderSessions from "@houston-app/provider-core/server/McpProviderSessions";
 import * as HostProcess from "@houston-app/shared/HostProcess";
@@ -380,6 +381,27 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
       expect(unavailable?.instanceId).toBe(instanceId);
       expect(unavailable?.availability).toBe("unavailable");
       expect(unavailable?.unavailableReason).toBe(reason);
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.live("refuses a link to an inference server for a driver without an OpenAI endpoint", () =>
+    Effect.gen(function* () {
+      const instanceId = ProviderInstanceId.make("codex_linked");
+      const { registry } = yield* makeProviderInstanceRegistry({
+        drivers: [CodexDriver],
+        configMap: {
+          [instanceId]: {
+            driver: ProviderDriverKind.make("codex"),
+            inferenceServerId: InferenceServerId.make("rtx"),
+          },
+        },
+      });
+
+      expect(yield* registry.getInstance(instanceId)).toBeUndefined();
+      const [unavailable] = yield* registry.listUnavailable;
+      expect(unavailable?.unavailableReason).toBe(
+        "Codex cannot use an inference server yet: it has no OpenAI-compatible endpoint setting.",
+      );
     }).pipe(Effect.provide(layerTest)),
   );
 
