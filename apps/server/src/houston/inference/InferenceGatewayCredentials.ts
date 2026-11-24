@@ -242,11 +242,10 @@ const makeWithOptions = Effect.fn("InferenceGatewayCredentials.make")(function* 
     ProviderInstanceId,
     Set<(harnessSessionId: string) => ThreadId | undefined>
   >();
-  const attributeSessions: InferenceGatewayCredentials["Service"]["attributeSessions"] = (
-    providerInstanceId,
-    threadOf,
-  ) =>
-    Effect.acquireRelease(
+  const attributeSessions: InferenceGatewayCredentials["Service"]["attributeSessions"] = Effect.fn(
+    "InferenceGatewayCredentials.attributeSessions",
+  )(function* (providerInstanceId, threadOf) {
+    yield* Effect.acquireRelease(
       Effect.sync(() => {
         const held = harnessSessions.get(providerInstanceId) ?? new Set();
         held.add(threadOf);
@@ -259,17 +258,17 @@ const makeWithOptions = Effect.fn("InferenceGatewayCredentials.make")(function* 
           if (held?.size === 0) harnessSessions.delete(providerInstanceId);
         }),
     );
-  const harnessSessionThread: InferenceGatewayCredentials["Service"]["harnessSessionThread"] = (
-    providerInstanceId,
-    harnessSessionId,
-  ) =>
-    Effect.sync(() => {
-      for (const threadOf of harnessSessions.get(providerInstanceId) ?? []) {
-        const threadId = threadOf(harnessSessionId);
-        if (threadId !== undefined) return threadId;
-      }
-      return undefined;
-    });
+  });
+  const harnessSessionThread: InferenceGatewayCredentials["Service"]["harnessSessionThread"] =
+    Effect.fn("InferenceGatewayCredentials.harnessSessionThread")(
+      function* (providerInstanceId, harnessSessionId) {
+        for (const threadOf of harnessSessions.get(providerInstanceId) ?? []) {
+          const threadId = threadOf(harnessSessionId);
+          if (threadId !== undefined) return threadId;
+        }
+        return undefined;
+      },
+    );
 
   return InferenceGatewayCredentials.of({
     issueSession,
