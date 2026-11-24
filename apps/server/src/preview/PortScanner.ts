@@ -376,7 +376,7 @@ const procLocalAddress = (hex: string): boolean => {
   return hex.startsWith(`${"0".repeat(16)}FFFF0000`) && procLocalAddress(hex.slice(24));
 };
 
-const parseProcNetTcp = (
+export const parseProcNetTcp = (
   raw: string,
 ): ReadonlyArray<{ readonly port: number; readonly inode: string }> => {
   const listeners: Array<{ port: number; inode: string }> = [];

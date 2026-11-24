@@ -74,6 +74,10 @@
     "./houston/terminalShells": {
       "types": "./src/houston/terminalShells.ts",
       "import": "./src/houston/terminalShells.ts"
+    },
+    "./houston/inference": {
+      "types": "./src/houston/inference.ts",
+      "import": "./src/houston/inference.ts"
     }
   },
   "scripts": {

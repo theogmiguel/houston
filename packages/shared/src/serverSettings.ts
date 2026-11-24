@@ -471,6 +471,8 @@ export function applyServerSettingsPatch(
     worktreeCleanup: worktreeCleanupPatch,
     // Merged per entry below; its `null` removals must not reach deepMerge.
     usageLimitSources: usageLimitSourcesPatch,
+    // Houston: a server added or removed by id, without touching the others.
+    inferenceServers: inferenceServersPatch,
     secretProviders: secretProvidersPatch,
     sourceControlHosts: sourceControlHostsPatch,
     usagePriceOverrides: usagePriceOverridesPatch,
@@ -673,6 +675,11 @@ export function applyServerSettingsPatch(
             current.usageLimitSources,
             usageLimitSourcesPatch,
           ),
+        }
+      : {}),
+    ...(inferenceServersPatch !== undefined
+      ? {
+          inferenceServers: mergeSettingsEntries(current.inferenceServers, inferenceServersPatch),
         }
       : {}),
     ...(secretProvidersPatch !== undefined

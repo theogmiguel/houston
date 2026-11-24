@@ -146,6 +146,8 @@ import * as SlackRunMessages from "./houston/slack/RunMessages.ts";
 import * as HoustonSlackStore from "./houston/slack/Store.ts";
 import * as SlackWebApi from "./houston/slack/WebApi.ts";
 import { layerMergeQueue } from "./houston/mergeQueue/layer.ts";
+import * as InferenceDiscovery from "./houston/inference/InferenceDiscovery.ts";
+import * as InferenceServerRegistry from "./houston/inference/InferenceServerRegistry.ts";
 import * as HoustonMergeQueueStore from "./houston/mergeQueue/Store.ts";
 import * as HoustonMergeQueueThreads from "./houston/mergeQueue/Threads.ts";
 import * as GitHubRest from "@houston-app/source-control-github/server/GitHubRest";
@@ -651,6 +653,8 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(HoustonTaskProjectSweep.sweep),
   Layer.effectDiscard(HoustonSlackStore.sweep),
   HoustonLayoutWorkspaces.layer,
+  // Model servers registered in Settings: periodic probes and on-demand discovery.
+  Layer.mergeAll(InferenceServerRegistry.layer, InferenceDiscovery.layer),
   Layer.effectDiscard(
     Effect.gen(function* () {
       const service = yield* HoustonThreadMembership.HoustonThreadMembership;
