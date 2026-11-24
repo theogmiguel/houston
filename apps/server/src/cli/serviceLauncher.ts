@@ -1,9 +1,12 @@
 import * as Effect from "effect/Effect";
 import { Command } from "effect/cli";
 
+import { guardProcessOutput } from "../houston/outputGuard.ts";
 import { main as runServiceLauncher } from "../serviceLauncher.ts";
 
 export async function runServiceLauncherCli(): Promise<void> {
+  // The launcher's own output is the service log; a failed write must not stop the service.
+  guardProcessOutput();
   try {
     await runServiceLauncher();
   } catch (cause) {
