@@ -4,10 +4,14 @@ import type {
   InferenceUsageWindow,
 } from "@houston-app/contracts/houston/inference";
 import { formatPercent, formatTokens } from "@houston-app/shared/usageFormat";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { useEnvironmentQuery } from "../../state/query";
-import { inferenceUsage } from "../../state/inference";
+import {
+  INFERENCE_SERVERS_EMPTY_INPUT,
+  inferenceServers,
+  inferenceUsage,
+} from "../../state/inference";
 import {
   formatMeasuredSeconds,
   formatTokensPerSecond,
@@ -98,7 +102,26 @@ function EnvironmentLocalCompute({
   );
 }
 
-/** Local model work measured by Houston's gateway: never priced as cloud spend. */
+/** Reports whether an environment has any model server registered; renders nothing. */
+function ServerPresence({
+  environmentId,
+  onChange,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly onChange: (environmentId: EnvironmentId, registered: boolean) => void;
+}) {
+  const query = useEnvironmentQuery(
+    inferenceServers({ environmentId, input: INFERENCE_SERVERS_EMPTY_INPUT }),
+  );
+  const registered = (query.data?.servers.length ?? 0) > 0;
+  useEffect(() => onChange(environmentId, registered), [environmentId, onChange, registered]);
+  return null;
+}
+
+/**
+ * Local model work measured by Houston's gateway: never priced as cloud spend. Shown only for
+ * environments with a registered model server, so the page stays as it was without one.
+ */
 export function UsageLocalCompute({
   environments,
 }: {
@@ -108,9 +131,28 @@ export function UsageLocalCompute({
   }>;
 }) {
   const [window, setWindow] = useState<InferenceUsageWindow>("24h");
-  if (environments.length === 0) return null;
+  const [registered, setRegistered] = useState<ReadonlySet<EnvironmentId>>(() => new Set());
+  const onPresence = useCallback((environmentId: EnvironmentId, present: boolean) => {
+    setRegistered((current) => {
+      if (current.has(environmentId) === present) return current;
+      const next = new Set(current);
+      if (present) next.add(environmentId);
+      else next.delete(environmentId);
+      return next;
+    });
+  }, []);
+  const shown = environments.filter((environment) => registered.has(environment.environmentId));
+  const probes = environments.map((environment) => (
+    <ServerPresence
+      key={environment.environmentId}
+      environmentId={environment.environmentId}
+      onChange={onPresence}
+    />
+  ));
+  if (shown.length === 0) return <>{probes}</>;
   return (
     <Card>
+      {probes}
       <Text as="h2" variant="headline" weight="semibold">
         Local compute
       </Text>
@@ -126,10 +168,14 @@ export function UsageLocalCompute({
           if (value === "24h" || value === "7d") setWindow(value);
         }}
       >
-        <Toggle value="24h">{LOCAL_COMPUTE_WINDOW_LABELS["24h"]}</Toggle>
-        <Toggle value="7d">{LOCAL_COMPUTE_WINDOW_LABELS["7d"]}</Toggle>
+        <Toggle value="24h" aria-label={`Local compute, ${LOCAL_COMPUTE_WINDOW_LABELS["24h"]}`}>
+          {LOCAL_COMPUTE_WINDOW_LABELS["24h"]}
+        </Toggle>
+        <Toggle value="7d" aria-label={`Local compute, ${LOCAL_COMPUTE_WINDOW_LABELS["7d"]}`}>
+          {LOCAL_COMPUTE_WINDOW_LABELS["7d"]}
+        </Toggle>
       </ToggleGroup>
-      {environments.map((environment) => (
+      {shown.map((environment) => (
         <EnvironmentLocalCompute
           key={environment.environmentId}
           environmentId={environment.environmentId}
