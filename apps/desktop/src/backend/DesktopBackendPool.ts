@@ -17,6 +17,7 @@ import * as DesktopBackendConfiguration from "./DesktopBackendConfiguration.ts";
 import * as DesktopBackendManager from "./DesktopBackendManager.ts";
 import * as DesktopServerAttachment from "./DesktopServerAttachment.ts";
 import * as DesktopServerStatus from "./DesktopServerStatus.ts";
+import { noticeTopologyChanges } from "./DesktopBackendTopologyNotice.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopState from "../app/DesktopState.ts";
@@ -27,6 +28,8 @@ import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
+import * as ElectronWindow from "../electron/ElectronWindow.ts";
+import * as IpcChannels from "../ipc/channels.ts";
 
 const { logWarning: logBackendPoolWarning } =
   DesktopObservability.makeComponentLogger("desktop-backend-pool");
@@ -133,6 +136,15 @@ export const layer = Layer.effect(
     const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
     const serverAttachment = yield* DesktopServerAttachment.DesktopServerAttachment;
     const serverStatus = yield* DesktopServerStatus.DesktopServerStatus;
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    // Renderers re-read the bootstraps on this notice instead of polling for them.
+    const noticeTopologyChanged = electronWindow
+      .sendAll(IpcChannels.LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANGED_CHANNEL)
+      .pipe(
+        Effect.catchCause((cause) =>
+          logBackendPoolWarning("failed to announce a local environment change", { cause }),
+        ),
+      );
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const { primaryBackendStartup } = yield* DesktopState.DesktopState;
     // The primary instance's output log, which the status banner names on failure.
@@ -197,7 +209,7 @@ export const layer = Layer.effect(
         } satisfies DesktopBackendManager.DesktopBackendAttachment),
       );
 
-    const primary = yield* DesktopBackendManager.makeBackendInstance({
+    const primarySpec: DesktopBackendManager.BackendInstanceSpec = {
       id: DesktopBackendManager.PRIMARY_INSTANCE_ID,
       // Resolve lazily: startup loads persisted settings after pool initialization.
       label: configuration.resolvePrimaryLabel,
@@ -280,7 +292,10 @@ export const layer = Layer.effect(
           logPath: primaryServerLogPath,
           warning: Option.getOrNull(attachment.warning),
         }),
-    });
+    };
+    const primary = yield* DesktopBackendManager.makeBackendInstance(
+      noticeTopologyChanges(primarySpec, noticeTopologyChanged),
+    );
 
     const instancesRef = yield* SynchronizedRef.make<
       ReadonlyMap<BackendInstanceId, RegisteredInstance>
@@ -318,10 +333,9 @@ export const layer = Layer.effect(
             return Effect.gen(function* () {
               // Provide the child Scope last so the captured pool Scope cannot shadow it and orphan stop/restart finalizers.
               const instanceScope = yield* Scope.fork(layerScope, "sequential");
-              const instance = yield* DesktopBackendManager.makeBackendInstance(spec).pipe(
-                Scope.provide(instanceScope),
-                Effect.provide(factoryContext),
-              );
+              const instance = yield* DesktopBackendManager.makeBackendInstance(
+                noticeTopologyChanges(spec, noticeTopologyChanged),
+              ).pipe(Scope.provide(instanceScope), Effect.provide(factoryContext));
               const next = new Map(current);
               next.set(spec.id, {
                 _tag: "Active",
@@ -337,7 +351,7 @@ export const layer = Layer.effect(
         ).pipe(
           Effect.flatMap((result) =>
             result._tag === "Registered"
-              ? Effect.succeed(result.instance)
+              ? noticeTopologyChanged.pipe(Effect.as(result.instance))
               : Deferred.await(result.done).pipe(Effect.andThen(register(spec))),
           ),
         ),
@@ -395,6 +409,7 @@ export const layer = Layer.effect(
         onNone: () => Effect.void,
         onSome: (scope) => Scope.close(scope, Exit.void).pipe(Effect.ignore),
       }).pipe(Effect.ensuring(finish));
+      yield* noticeTopologyChanged;
     });
 
     return DesktopBackendPool.of({

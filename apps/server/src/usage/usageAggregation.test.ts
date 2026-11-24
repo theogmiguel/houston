@@ -12,11 +12,13 @@ const rates: RateTable = new Map([
       outputCostPerToken: 5e-5,
       cacheReadCostPerToken: 1e-6,
       cacheCreationCostPerToken: 1.25e-5,
+      cacheCreation1hCostPerToken: 2e-5,
       fast: {
         inputCostPerToken: 2e-5,
         outputCostPerToken: 1e-4,
         cacheReadCostPerToken: 2e-6,
         cacheCreationCostPerToken: 2.5e-5,
+        cacheCreation1hCostPerToken: 4e-5,
       },
       ultrafast: null,
     },
@@ -83,6 +85,21 @@ describe("UsageAggregator", () => {
       speedPremiumUsd: expect.closeTo(0.005625),
     });
     expect(bucket).not.toHaveProperty("ultrafastCostUsd");
+  });
+
+  it("prices one-hour cache writes at their rate in totals and speed premium, not in token counts", () => {
+    const [bucket] = aggregate([
+      record({ cacheCreation1hTokens: 6 }),
+      record({ cacheCreation1hTokens: 6, speed: "fast" }),
+    ]).buckets;
+
+    expect(bucket).toMatchObject({
+      totals: { cacheCreationTokens: 20 },
+      costUsd: expect.closeTo(0.01401),
+      // Standard 4 x 1.25e-5 + 6 x 2e-5; fast 4 x 2.5e-5 + 6 x 4e-5.
+      categoryCostUsd: { cacheWrite: expect.closeTo(0.00051) },
+      speedPremiumUsd: expect.closeTo(0.00467),
+    });
   });
 
   it("keeps only the first record for a repeated dedupe key", () => {

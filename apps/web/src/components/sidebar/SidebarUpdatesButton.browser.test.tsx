@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => {
     update: null as DesktopUpdateState | null,
     providers: [] as ServerProvider[],
     hasUpdates: false,
+    confirmResult: true,
     providersMarker: { marker: "providers" },
     subscribe: (listener: () => void) => {
       listeners.add(listener);
@@ -56,6 +57,9 @@ vi.mock("../../env", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../env")>()),
   isDesktopHost: true,
 }));
+vi.mock("../../confirmDialog", () => ({
+  requestConfirmDialog: async () => mocks.confirmResult,
+}));
 vi.mock("./useUpdateEverything", () => ({
   useUpdateEverything: () => ({
     hasUpdates: mocks.hasUpdates,
@@ -64,6 +68,7 @@ vi.mock("./useUpdateEverything", () => ({
     providerCount: 0,
     rows: [],
     restarts: [],
+    run: vi.fn(async () => {}),
   }),
 }));
 
@@ -128,10 +133,15 @@ function terminalProvider(status: "succeeded" | "failed"): ServerProvider {
   };
 }
 
-function setup(update: DesktopUpdateState | null, providers: ServerProvider[] = []) {
+function setup(
+  update: DesktopUpdateState | null,
+  providers: ServerProvider[] = [],
+  hasUpdates = false,
+) {
   mocks.update = update;
   mocks.providers = providers;
-  mocks.hasUpdates = false;
+  mocks.hasUpdates = hasUpdates;
+  mocks.confirmResult = true;
   localStorage.clear();
   return {
     [Symbol.dispose]: () => {
@@ -226,10 +236,95 @@ describe("SidebarUpdatesButton", () => {
     expect(popup.textContent).toContain("Updating Claude");
     expect(downloadUpdate).not.toHaveBeenCalled();
 
-    await userEvent.click(
-      page.getByRole("button", { name: "Update 0.9.4 ready to download" }).element(),
-    );
+    await userEvent.click(page.getByRole("button", { name: "Download update 0.9.4" }).element());
     expect(downloadUpdate).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the app's own download action when other sources also have updates", async () => {
+    const downloadUpdate = vi.fn(async () => ({
+      accepted: true,
+      completed: true,
+      state: updateState(),
+    }));
+    (window as { hostBridge?: unknown }).hostBridge = { downloadUpdate, installUpdate: vi.fn() };
+    using _env = setup(updateState(), [runningProvider()], true);
+    await using _screen = await renderButton();
+    await userEvent.click(updatesButton()!);
+    const popup = document.querySelector('[role="dialog"]')!;
+    await vi.waitFor(() => expect(popup.textContent).toContain("Update 0.9.4"));
+
+    await userEvent.click(page.getByRole("button", { name: "Download update 0.9.4" }).element());
+    expect(downloadUpdate).toHaveBeenCalledOnce();
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    await expect.element(page.getByRole("button", { name: "Update everything" })).toBeVisible();
+  });
+
+  it("opens Update everything from its own secondary action", async () => {
+    const downloadUpdate = vi.fn(async () => ({
+      accepted: true,
+      completed: true,
+      state: updateState(),
+    }));
+    (window as { hostBridge?: unknown }).hostBridge = { downloadUpdate, installUpdate: vi.fn() };
+    using _env = setup(updateState(), [runningProvider()], true);
+    await using _screen = await renderButton();
+    await userEvent.click(updatesButton()!);
+    await userEvent.click(page.getByRole("button", { name: "Update everything" }).element());
+    await vi.waitFor(() => expect(document.querySelector('[role="alertdialog"]')).not.toBeNull());
+    expect(downloadUpdate).not.toHaveBeenCalled();
+  });
+
+  it("says a refused download was not started instead of showing nothing", async () => {
+    const add = vi.spyOn(toastManager, "add");
+    const downloadUpdate = vi.fn(async () => ({
+      accepted: false,
+      completed: false,
+      state: updateState({ status: "checking" }),
+    }));
+    (window as { hostBridge?: unknown }).hostBridge = { downloadUpdate, installUpdate: vi.fn() };
+    using _env = setup(updateState());
+    await using _screen = await renderButton();
+    await userEvent.click(updatesButton()!);
+    await userEvent.click(page.getByRole("button", { name: "Download update 0.9.4" }).element());
+    await vi.waitFor(() =>
+      expect(
+        add.mock.calls.some(
+          ([toast]) => (toast as { title?: string }).title === "Update not started",
+        ),
+      ).toBe(true),
+    );
+    const refusal = add.mock.calls.find(
+      ([toast]) => (toast as { title?: string }).title === "Update not started",
+    )![0] as { description?: string };
+    expect(refusal.description).toContain("check for updates is still running");
+    expect(
+      add.mock.calls.some(([toast]) => (toast as { title?: string }).title === "Update downloaded"),
+    ).toBe(false);
+  });
+
+  it("keeps install clickable during a check and never shows the downloaded toast when refused", async () => {
+    const add = vi.spyOn(toastManager, "add");
+    const installUpdate = vi.fn(async () => ({
+      accepted: false,
+      completed: false,
+      state: updateState({ status: "checking", downloadedVersion: "0.9.4" }),
+    }));
+    (window as { hostBridge?: unknown }).hostBridge = { downloadUpdate: vi.fn(), installUpdate };
+    using _env = setup(updateState({ status: "checking", downloadedVersion: "0.9.4" }));
+    await using _screen = await renderButton();
+    await userEvent.click(updatesButton()!);
+    await userEvent.click(page.getByRole("button", { name: "Restart to update" }).element());
+    await vi.waitFor(() => expect(installUpdate).toHaveBeenCalledOnce());
+    await vi.waitFor(() =>
+      expect(
+        add.mock.calls.some(
+          ([toast]) => (toast as { title?: string }).title === "Update not started",
+        ),
+      ).toBe(true),
+    );
+    expect(
+      add.mock.calls.some(([toast]) => (toast as { title?: string }).title === "Update downloaded"),
+    ).toBe(false);
   });
 
   it("opens from the keyboard, and Escape closes it and returns focus to the icon", async () => {

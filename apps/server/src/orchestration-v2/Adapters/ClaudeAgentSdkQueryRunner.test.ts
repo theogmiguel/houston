@@ -3,6 +3,7 @@ import * as ClaudeSdk from "@anthropic-ai/claude-agent-sdk";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeEvents from "node:events";
 import * as NodeFS from "node:fs";
+import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeStream from "node:stream";
@@ -13,6 +14,7 @@ import { ProviderSessionId, ThreadId } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -25,6 +27,7 @@ import { AgentScope } from "@houston-app/shared/AgentScope";
 import { ProviderEventLoggers } from "@houston-app/provider-core/server/ProviderEventLoggers";
 import { makeProviderFailure } from "@houston-app/provider-core/server/failure";
 import { signalProcessGroup } from "@houston-app/provider-core/server/processGroup";
+import { CHECK_TIMEOUT } from "../../houston/nonBlockingSpawner.ts";
 import * as PortScanner from "../../preview/PortScanner.ts";
 import {
   ClaudeAgentSdkQueryRunner,
@@ -34,6 +37,8 @@ import {
 } from "./ClaudeAdapterV2.ts";
 
 vi.mock("@anthropic-ai/claude-agent-sdk", { spy: true });
+vi.mock("node:fs/promises", { spy: true });
+const actualFSP = await vi.importActual<typeof NodeFSP>("node:fs/promises");
 
 const FORK_SESSION_ID = "11111111-1111-4111-8111-111111111111";
 
@@ -424,7 +429,7 @@ function fakeClaudeCli(script: string): string {
   return cli;
 }
 
-const openFakeCli = (cli: string) =>
+const openFakeCli = (cli: string, cwd?: string) =>
   Effect.gen(function* () {
     const runner = yield* ClaudeAgentSdkQueryRunner;
     return yield* runner.open({
@@ -436,6 +441,7 @@ const openFakeCli = (cli: string) =>
         tools: [],
         permissionMode: "default",
         pathToClaudeCodeExecutable: cli,
+        ...(cwd === undefined ? {} : { cwd }),
       },
     });
   });
@@ -486,6 +492,119 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("Claude CLI pro
       yield* session.close;
       yield* Effect.promise(() => leftoverStopped);
       assert.strictEqual(yield* Deferred.await(stopped), "houston-claude-test.scope");
+    }),
+  );
+
+  // A native cwd makes libuv wait for chdir, which a hung mount stalls with the whole server.
+  it.effect("enters the cwd in the child, keeping OLDPWD as the CLI was given it", () =>
+    Effect.gen(function* () {
+      const cli = fakeClaudeCli(
+        [
+          'dir=$(dirname "$0")',
+          'pwd -P > "$dir/cwd"',
+          'printf %s "${OLDPWD-unset}" > "$dir/oldpwd"',
+        ].join("\n"),
+      );
+      const dir = NodePath.dirname(cli);
+      const workspace = NodePath.join(dir, "work space");
+      NodeFS.mkdirSync(workspace);
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => NodeFS.rmSync(dir, { recursive: true, force: true })),
+      );
+      const launch = (env: NodeJS.ProcessEnv) =>
+        Effect.promise(() => {
+          const child = spawnClaudeProcessGroup({
+            command: cli,
+            args: [],
+            cwd: workspace,
+            env,
+            signal: new AbortController().signal,
+          }) as NodeChildProcess.ChildProcess;
+          return new Promise<number | null>((resolve) => child.once("exit", resolve)).then(
+            (code) => ({
+              code,
+              spawnargs: child.spawnargs,
+              cwd: NodeFS.readFileSync(NodePath.join(dir, "cwd"), "utf8"),
+              oldpwd: NodeFS.readFileSync(NodePath.join(dir, "oldpwd"), "utf8"),
+            }),
+          );
+        });
+      const { OLDPWD: _oldpwd, ...withoutOldpwd } = process.env;
+      const without = yield* launch(withoutOldpwd);
+      assert.equal(without.code, 0);
+      assert.equal(without.cwd, `${NodeFS.realpathSync(workspace)}\n`);
+      assert.equal(without.spawnargs[4], workspace);
+      assert.equal(without.oldpwd, "unset");
+      assert.equal((yield* launch({ ...withoutOldpwd, OLDPWD: "/given" })).oldpwd, "/given");
+
+      // A folder gone between the open's check and the launch: the script exits 125 and says why.
+      const missing = NodePath.join(dir, "missing");
+      const reported = yield* Effect.promise(
+        () =>
+          new Promise<[number | null, string | undefined]>((resolve) => {
+            let message: string | undefined;
+            const child = spawnClaudeProcessGroup(
+              {
+                command: cli,
+                args: [],
+                cwd: missing,
+                env: process.env,
+                signal: new AbortController().signal,
+              },
+              undefined,
+              (error) => (message = error.message),
+            ) as NodeChildProcess.ChildProcess;
+            child.once("exit", (code) => resolve([code, message]));
+          }),
+      );
+      assert.equal(reported[0], 125);
+      assert.include(reported[1], `Claude could not start in ${missing}`);
+    }),
+  );
+
+  // Entered in the child, a hung folder would stall the launch with no error until MCP times out.
+  it.effect("fails to open a session in a folder that is missing or does not answer", () =>
+    Effect.gen(function* () {
+      const cli = fakeClaudeCli('touch "$(dirname "$0")/ran"');
+      const dir = NodePath.dirname(cli);
+      const hung = NodePath.join(dir, "hung project");
+      NodeFS.mkdirSync(hung);
+      const answers: Array<() => void> = [];
+      const access = vi
+        .spyOn(NodeFSP, "access")
+        .mockImplementation((path, mode) =>
+          path === hung
+            ? new Promise<void>((resolve) => answers.push(resolve))
+            : actualFSP.access(path, mode),
+        );
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          for (const answer of answers) answer();
+          access.mockRestore();
+          NodeFS.rmSync(dir, { recursive: true, force: true });
+        }),
+      );
+      const queries = vi.mocked(ClaudeSdk.query).mock.calls.length;
+      const failure = (cwd: string) =>
+        openFakeCli(cli, cwd).pipe(
+          Effect.provide(realQueryRunner),
+          Effect.flip,
+          Effect.map((error) => makeProviderFailure({ cause: error }).message),
+        );
+
+      const missing = NodePath.join(dir, "missing project");
+      assert.equal(
+        yield* failure(missing),
+        `Claude could not start in ${missing}: the folder is missing or cannot be entered. Check that the project folder exists and its drive or network share is reachable, then send the message again.`,
+      );
+      const hungFailure = yield* Effect.forkChild(failure(hung));
+      yield* TestClock.adjust(CHECK_TIMEOUT);
+      assert.equal(
+        yield* Fiber.join(hungFailure),
+        `Claude could not start in ${hung}: the folder did not answer within ${Duration.format(CHECK_TIMEOUT)}. Check that its drive or network share is reachable, then send the message again.`,
+      );
+      assert.equal(vi.mocked(ClaudeSdk.query).mock.calls.length, queries);
+      assert.isFalse(NodeFS.existsSync(NodePath.join(dir, "ran")));
     }),
   );
 

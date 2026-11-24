@@ -3314,6 +3314,7 @@ export default function ChatView(props: ChatViewProps) {
     onResumeCommand: activeProject !== null ? handleOpenResumeSessionStable : undefined,
     sideChatDisabledReason,
     handleNewThreadInActiveProject,
+    layoutTabId: paneTabId,
     persistThreadSettingsForNextTurn,
   });
   const onImplementPlanInNewThreadStable = useStableCallback(onImplementPlanInNewThread);
