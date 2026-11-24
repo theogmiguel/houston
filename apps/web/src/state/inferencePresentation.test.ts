@@ -4,7 +4,11 @@ import {
 } from "@houston-app/contracts/houston/inference";
 import { describe, expect, it } from "vite-plus/test";
 
-import { inferenceModelNotServed, inferenceServerOutage } from "./inferencePresentation";
+import {
+  inferenceModelImageGap,
+  inferenceModelNotServed,
+  inferenceServerOutage,
+} from "./inferencePresentation";
 
 describe("inferenceServerOutage", () => {
   const rtx = InferenceServerId.make("rtx");
@@ -77,5 +81,32 @@ describe("inferenceModelNotServed", () => {
     expect(check("houston-rtx/GLM-5.3-Flash", ready([], "unreachable"))).toBeNull();
     expect(check("houston-rtx/GLM-5.3-Flash", ready(["DeepSeek"], "checking"))).toBeNull();
     expect(check("tensorfold/GLM-5.3-Flash", ready(["DeepSeek"]))).toBeNull();
+  });
+
+  it("tells an image a served model reads apart from one it does not, or nobody checked", () => {
+    const withImages = (image: { supported: boolean } | undefined) => [
+      {
+        ...ready([])[0]!,
+        models: [
+          {
+            id: "GLM-5.3-Flash",
+            ...(image === undefined
+              ? {}
+              : { capabilities: { image: { ...image, source: "checked" as const } } }),
+          },
+        ],
+      },
+    ];
+    const gap = (
+      snapshots: ReadonlyArray<InferenceServerSnapshot>,
+      modelSlug = "houston-rtx/GLM-5.3-Flash",
+    ) =>
+      inferenceModelImageGap({ serverId: rtx, driver: "pi", modelSlug, servers, snapshots })
+        ?.reason ?? null;
+    expect(gap(withImages({ supported: true }))).toBeNull();
+    expect(gap(withImages({ supported: false }))).toBe("text-only");
+    expect(gap(withImages(undefined))).toBe("unchecked");
+    // A model the server no longer lists is the not-served notice's to report.
+    expect(gap(withImages(undefined), "houston-rtx/DeepSeek")).toBeNull();
   });
 });

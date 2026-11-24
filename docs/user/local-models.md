@@ -43,12 +43,32 @@ again immediately. A row shows:
   ready;
 - the engine it reports, such as Ollama, LM Studio, llama.cpp, vLLM or TensorFold;
 - its models and the context window each one serves, or the trained window when it serves none;
-- whether the engine reports that a model reads images;
+- whether the engine reports, or a check found, that a model reads images;
 - running and waiting requests when the engine exposes metrics;
 - how long ago it was checked.
 
 **Edit** changes a server's address, name, key or request limit. A blank API key keeps the saved
 one. **Remove** deletes the server and its saved key.
+
+## Check whether a model reads images
+
+Pi and OpenCode pass your image attachments to a linked model unless its engine or Houston's
+check says it reads text only. To check a model, press **Check images** next to it in
+**Settings → Inference**; attaching an image to a model nobody has checked also starts the
+check. Houston sends four solid-colour test images through the same queue as your threads and
+asks the model to name each colour, with a short answer limit and at most two minutes. It marks
+the model **Reads images** or **Text only**; a text-only result applies to sessions that start
+afterwards. Checking again is offered a day after a result, in case the server now runs
+different weights under the same name.
+
+A check records nothing when it cannot tell: the server is busy or times out, the reply is cut
+off while reasoning, or the answer names no colour. Those leave the model unchanged and can be
+tried again.
+
+While an image is attached to a linked model that reads text only, the composer says the model
+will not see it, with **Choose model**. For a model nobody has checked, the composer says the
+check is running or the result is unknown and offers **Check images**; the image is still sent,
+so a server that cannot read it refuses it visibly.
 
 ## Repair a server that moved
 

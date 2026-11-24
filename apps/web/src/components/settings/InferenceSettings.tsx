@@ -1,4 +1,5 @@
 import { AuthSettingsWriteScope, type EnvironmentId } from "@houston-app/contracts";
+import { useAtomValue } from "@effect/atom-react";
 import type {
   InferenceDiscoveredServer,
   InferenceServerId,
@@ -13,6 +14,7 @@ import { useNowMinute } from "../../hooks/useNowMinute";
 import { useEnvironments, type EnvironmentPresentation } from "../../state/environments";
 import { useEnvironmentScope } from "../../state/session";
 import {
+  checkInferenceModelImages,
   INFERENCE_SERVERS_EMPTY_INPUT,
   inferenceServers,
   refreshInferenceServers,
@@ -208,6 +210,7 @@ function InferenceServerOffersFrom({
 }
 
 function ServerRow({
+  environmentId,
   server,
   now,
   canWrite,
@@ -218,6 +221,7 @@ function ServerRow({
   onRemove,
   onFallbackChange,
 }: {
+  readonly environmentId: EnvironmentId;
   readonly server: InferenceServerSnapshot;
   readonly now: number;
   readonly canWrite: boolean;
@@ -356,16 +360,71 @@ function ServerRow({
                 {model.id}
               </Text>
               <Text tone="muted">{modelDetails(model)}</Text>
-              {model.capabilities?.image?.supported ? (
-                <Badge size="sm" variant="info">
-                  Reads images
-                </Badge>
-              ) : null}
+              <InferenceModelImages
+                environmentId={environmentId}
+                serverId={server.id}
+                model={model}
+                canCheck={server.status === "ready"}
+              />
             </li>
           ))}
         </ul>
       )}
     </SettingsRow>
+  );
+}
+
+// A server can swap the weights behind a model id, so a day-old check is offered again.
+const IMAGE_CHECK_STALE_MS = 24 * 60 * 60_000;
+
+/** Whether a model reads images, and a way to check by sending it test images. */
+function InferenceModelImages({
+  environmentId,
+  serverId,
+  model,
+  canCheck,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly serverId: InferenceServerId;
+  readonly model: InferenceServerModel;
+  readonly canCheck: boolean;
+}) {
+  const check = useAtomCommand(checkInferenceModelImages, { label: "check images" });
+  const canRun = useAtomValue(checkInferenceModelImages.permissionAtom(environmentId));
+  const [checking, setChecking] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const now = Date.parse(useNowMinute());
+  const image = model.capabilities?.image;
+  const stale =
+    image?.checkedAt !== undefined && now - Date.parse(image.checkedAt) > IMAGE_CHECK_STALE_MS;
+  const runCheck = async () => {
+    setChecking(true);
+    setNote(null);
+    const result = await check({ environmentId, input: { serverId, model: model.id } });
+    setChecking(false);
+    // A verdict arrives with the server's next snapshot; only an inconclusive check needs words.
+    if (result._tag === "Success" && result.value.outcome === "unknown") {
+      setNote(result.value.detail);
+    }
+  };
+  return (
+    <>
+      {image === undefined ? null : (
+        <Badge size="sm" variant={image.supported ? "info" : "outline"}>
+          {image.supported ? "Reads images" : "Text only"}
+        </Badge>
+      )}
+      {canCheck && canRun && (image === undefined || stale) ? (
+        <Button size="xs" variant="ghost" disabled={checking} onClick={() => void runCheck()}>
+          {checking ? "Checking images" : image ? "Check images again" : "Check images"}
+        </Button>
+      ) : null}
+      {note === null ? null : (
+        <Text as="span" variant="caption" tone="warning">
+          {note}
+        </Text>
+      )}
+    </>
   );
 }
 
@@ -534,10 +593,11 @@ export function InferenceSettingsPanel({
               ) : null
             }
           />
-        ) : (
+        ) : environmentId === null ? null : (
           servers.map((server) => (
             <ServerRow
               key={server.id}
+              environmentId={environmentId}
               server={server}
               now={now}
               canWrite={canWrite}

@@ -1453,11 +1453,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setComposerDraftPrompt(composerDraftTarget, nextPrompt);
   };
 
-  const addComposerImage = (image: ComposerImageAttachment) =>
-    addComposerDraftImages(attachmentDraftTarget, [image]);
+  const addComposerImage = (image: ComposerImageAttachment) => {
+    const accepted = addComposerDraftImages(attachmentDraftTarget, [image]);
+    if (accepted.length > 0) inferenceBanner.onImagesAttached();
+    return accepted;
+  };
 
-  const addComposerImagesToDraft = (images: ComposerImageAttachment[]) =>
-    addComposerDraftImages(attachmentDraftTarget, images);
+  const addComposerImagesToDraft = (images: ComposerImageAttachment[]) => {
+    const accepted = addComposerDraftImages(attachmentDraftTarget, images);
+    if (accepted.length > 0) inferenceBanner.onImagesAttached();
+    return accepted;
+  };
 
   const addComposerFilesToDraft = (files: ComposerFileAttachment[]) =>
     addComposerDraftFiles(attachmentDraftTarget, files, { appendReference: false });
@@ -2820,14 +2826,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       getModelDisabledReason={getModelDisabledReason}
     />
   );
-  const inferenceOutageItem = useInferenceOutageBannerItem(
+  const inferenceBanner = useInferenceOutageBannerItem(
     environmentId,
     selectedProviderStatus,
     selectedModel,
+    composerImages.length > 0,
     () => setIsComposerModelPickerOpen(true),
   );
   const baseBannerItems =
-    inferenceOutageItem === null ? props.bannerItems : [...props.bannerItems, inferenceOutageItem];
+    inferenceBanner.item === null
+      ? props.bannerItems
+      : [...props.bannerItems, inferenceBanner.item];
   // An open question owns the space above the composer. Only a machine problem,
   // which is why an answer could not go through, stays beside it.
   const bannerItems: readonly ComposerBannerStackItem[] =

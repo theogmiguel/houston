@@ -24,7 +24,9 @@ state directory on the machine that runs it.
   metrics and model details. It sends only to the addresses you register and sends a saved API key
   only to the server that key belongs to. **Find servers** probes loopback and the machine's own
   listening ports, never sends a saved key, and saves nothing until you add a server. See
-  [Local models](local-models.md).
+  [Local models](local-models.md). **Check images** sends four generated solid-colour test
+  images and a short question only to the server being checked, and stores the answer it found
+  without keeping the images.
 - **Updates.** Houston checks for new versions of the app and of each agent CLI.
 
 ## Usage and crash data

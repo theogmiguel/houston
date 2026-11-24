@@ -31,6 +31,16 @@ export const removeInferenceServer = createEnvironmentRpcCommand(connectionAtomR
   tag: WS_METHODS.houstonInferenceRemove,
 });
 
+/** Asks one model to name test images; the server records reads-images or text-only. */
+export const checkInferenceModelImages = createEnvironmentRpcCommand(connectionAtomRuntime, {
+  label: "environment-data:inference:check-images",
+  tag: WS_METHODS.houstonInferenceCheckImages,
+  concurrency: {
+    mode: "singleFlight",
+    key: ({ environmentId, input }) => JSON.stringify([environmentId, input.serverId, input.model]),
+  },
+});
+
 export const discoverInferenceServers = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
   label: "environment-data:inference:discover",
   tag: WS_METHODS.houstonInferenceDiscover,
