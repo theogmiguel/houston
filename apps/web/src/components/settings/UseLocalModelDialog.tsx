@@ -33,7 +33,6 @@ import { Label } from "../ui/label";
 import { Radio, RadioGroup } from "../ui/radio-group";
 import { Spinner } from "../ui/spinner";
 import { Text } from "../ui/text";
-import { isWindowsPlatform } from "../../lib/utils";
 import { normalizeInferenceServerBaseUrl } from "./InferenceSettings.logic";
 import {
   linkedModelSlug,
@@ -329,9 +328,8 @@ export function UseLocalModelDialog({
                 </div>
                 {search.status === "done" && !search.result.searchedListeningPorts ? (
                   <Text as="p" variant="caption" tone="muted">
-                    {isWindowsPlatform(navigator.platform)
-                      ? "Windows lists no listening ports here, so only the usual ports are searched. Enter another address below."
-                      : "Listening ports were not found on this system, so only the usual ports were searched. Enter another address below."}
+                    Only the usual ports were searched: the server reads its listening ports on
+                    Linux only. Enter another address below.
                   </Text>
                 ) : null}
                 {search.status === "searching" ? (

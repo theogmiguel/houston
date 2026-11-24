@@ -1,7 +1,6 @@
 import type { EnvironmentId } from "@houston-app/contracts";
 import type { InferenceDiscoveredServer } from "@houston-app/contracts/houston/inference";
 
-import { isWindowsPlatform } from "../../lib/utils";
 import { discoverInferenceServers, INFERENCE_DISCOVERY_EMPTY_INPUT } from "../../state/inference";
 import { useEnvironmentQuery } from "../../state/query";
 import { Badge } from "../ui/badge";
@@ -65,9 +64,8 @@ export function FindInferenceServersDialog({
         <DialogPanel>
           {!searchedListeningPorts ? (
             <Text as="p" variant="caption" tone="muted">
-              {isWindowsPlatform(navigator.platform)
-                ? "Windows lists no listening ports here, so only the usual ports are searched. Enter another address with Add server."
-                : "Listening ports were not found on this system, so only the usual ports were searched. Enter another address with Add server."}
+              Only the usual ports were searched: the server reads its listening ports on Linux
+              only. Enter another address with Add server.
             </Text>
           ) : null}
           {pending ? (
