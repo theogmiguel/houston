@@ -18,6 +18,7 @@ import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -238,6 +239,8 @@ interface LiveSessionEntry {
   >;
   readonly requestEventPermit: Semaphore.Semaphore;
   readonly scope: Scope.Closeable;
+  /** Done once `scope` has run the adapter's finalizers; ends the event pump. */
+  readonly scopeClosed: Deferred.Deferred<void>;
   readonly idleGeneration: number;
   readonly busyTurns: ReadonlySet<string>;
   readonly idleFiber: Fiber.Fiber<void, never> | null;
@@ -2190,6 +2193,8 @@ export const layerWithOptions = (
             );
           });
         return entry.runtime.events.pipe(
+          // Several adapters never end their event stream, and a parked pump retains the whole session.
+          Stream.interruptWhen(Deferred.await(entry.scopeClosed)),
           // No span per event: the fiber has no parent (withoutTurnContext), so the work an event
           // does starts traces of its own, and an event that only passes through costs none.
           Stream.runForEach((event) => withEventTraceContext(entry, event, pumpEvent(event))),
@@ -2339,6 +2344,10 @@ export const layerWithOptions = (
                 }
               });
               const sessionScope = yield* Scope.fork(sessionScopes);
+              // Added before the adapter's finalizers so it runs after them, but the pump may still
+              // drop events the adapter emits while shutting down; their subscribers are already detached.
+              const scopeClosed = yield* Deferred.make<void>();
+              yield* Scope.addFinalizer(sessionScope, Deferred.done(scopeClosed, Exit.void));
               yield* agentScope.clear(input.threadId);
               const runtime = yield* adapter
                 .openSession({
@@ -2412,6 +2421,7 @@ export const layerWithOptions = (
                 eventSubscribers,
                 requestEventPermit: yield* Semaphore.make(1),
                 scope: sessionScope,
+                scopeClosed,
                 idleGeneration: 0,
                 busyTurns: new Set(),
                 idleFiber: null,
