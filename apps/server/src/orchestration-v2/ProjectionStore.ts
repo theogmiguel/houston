@@ -685,6 +685,11 @@ export interface ProjectionStoreV2Shape {
   readonly getHeldQueuedRuns: (
     threadId: ThreadId,
   ) => Effect.Effect<ReadonlyArray<OrchestrationV2Run>, ProjectionStoreV2Error>;
+  /** The steers of a run that its provider took back unread, oldest first. */
+  readonly getDroppedSteers: (
+    threadId: ThreadId,
+    runId: RunId,
+  ) => Effect.Effect<ReadonlyArray<OrchestrationV2TurnItem>, ProjectionStoreV2Error>;
   readonly getRecoveryThreadIds: (
     kind: ProjectionRecoveryKind,
     projects?: {
@@ -5571,6 +5576,19 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         Effect.mapError(controlReadError(threadId)),
       );
 
+    const getDroppedSteers: ProjectionStoreV2Shape["getDroppedSteers"] = (threadId, runId) =>
+      sql<PayloadRow>`
+        SELECT payload_json FROM orchestration_v2_projection_turn_items
+        WHERE run_id = ${runId} AND thread_id = ${threadId} AND type = 'user_message'
+          AND json_extract(payload_json, '$.delivery.state') = 'dropped'
+          AND json_extract(payload_json, '$.delivery.route') = 'activeTurn'
+          AND json_extract(payload_json, '$.delivery.reason') = 'providerCancelled'
+        ORDER BY ordinal ASC
+      `.pipe(
+        Effect.flatMap(decodeRows(decodeTurnItemPayload, threadId)),
+        Effect.mapError(controlReadError(threadId)),
+      );
+
     const getMessageCount: ProjectionStoreV2Shape["getMessageCount"] = (threadId) =>
       sql<{
         count: number;
@@ -7547,6 +7565,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       getRunMessage: readOnReader(getRunMessage),
       canStartQueuedRun: readOnReader(canStartQueuedRun),
       getHeldQueuedRuns: readOnReader(getHeldQueuedRuns),
+      getDroppedSteers: readOnReader(getDroppedSteers),
       getPendingNativeUserInputs: readOnReader(getPendingNativeUserInputs),
       hasUnpairedRunInterruptRequest: readOnReader(hasUnpairedRunInterruptRequest),
       isNodeStored: readOnReader(isNodeStored),

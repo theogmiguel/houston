@@ -294,6 +294,9 @@ export const OrchestrationV2TurnCapabilities = Schema.Struct({
   activeSteeringInterruptsTools: Schema.optional(Schema.Boolean),
   // Some take text only, so a steer with attachments restarts the turn instead.
   activeSteeringAcceptsAttachments: Schema.optional(Schema.Boolean),
+  // Only where a steer leaves the provider's compaction inside a turn running; otherwise clients
+  // queue the follow-up until the turn ends.
+  activeSteeringDuringCompaction: Schema.optional(Schema.Boolean),
   supportsSteeringByInterruptRestart: Schema.Boolean,
   supportsQueuedMessages: Schema.Boolean,
   terminalStatusQuality: Schema.Literals(["strong", "weak", "none"]),
@@ -3230,6 +3233,10 @@ export const OrchestrationV2Command = Schema.Union([
     usageLimitContinuationOfRunId: Schema.optional(RunId),
     manualContinuationOfRunId: Schema.optional(RunId),
     usageLimitRecoveryRequestId: Schema.optional(CommandId),
+    /** Server-set: the ended run whose steer the provider dropped unread. */
+    steerFollowUpOfRunId: Schema.optional(RunId),
+    /** Server-set: the latest run ordinal when that steer was sent; the follow-up queues after it. */
+    steerFollowUpAfterRunOrdinal: Schema.optional(NonNegativeInt),
     deliveryIntent: Schema.optional(Schema.Literals(["auto", "steer", "restart"])),
     /**
      * How a direct send handles a provider switch the previous session's background work would

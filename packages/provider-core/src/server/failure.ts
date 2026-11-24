@@ -106,6 +106,7 @@ function curatedCauseMessages(cause: unknown): {
         case "ClaudeAppendSystemPromptFileError":
         case "ClaudeAppendSystemPromptMissingValueError":
         case "ClaudeSettingsLaunchArgError":
+        case "ClaudeWorkingDirectoryError":
         case "ClaudeMcpRegistrationTimeoutError":
         case "ClaudeRequestSilenceError":
         case "CursorModelUnavailableError":

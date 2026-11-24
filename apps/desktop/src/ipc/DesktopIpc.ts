@@ -4,6 +4,8 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
+import * as IpcChannels from "./channels.ts";
+
 export interface DesktopIpcInvokeEvent {
   readonly sender: { readonly id: number };
 }
@@ -68,6 +70,28 @@ export interface DesktopSyncIpcMethod<E, R> {
   readonly handler: () => Effect.Effect<unknown, E, R>;
 }
 
+/**
+ * Channels the renderer reads on every topology change and safety poll. A span per call would
+ * fill the trace file and rotate older diagnostics away, so only their failures are traced.
+ */
+export const FAILURE_ONLY_TRACED_CHANNELS: ReadonlySet<string> = new Set([
+  IpcChannels.GET_LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANNEL,
+  IpcChannels.GET_SERVER_STATUS_CHANNEL,
+]);
+
+const traceCall =
+  (channel: string, spanName: string) =>
+  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> => {
+    const span = { attributes: { channel } };
+    if (!FAILURE_ONLY_TRACED_CHANNELS.has(channel)) {
+      return effect.pipe(Effect.withSpan(spanName, span));
+    }
+    return effect.pipe(
+      Effect.withTracerEnabled(false),
+      Effect.catchCause((cause) => Effect.failCause(cause).pipe(Effect.withSpan(spanName, span))),
+    );
+  };
+
 export class DesktopIpc extends Context.Service<
   DesktopIpc,
   {
@@ -96,10 +120,10 @@ export const make = (ipcMain: DesktopIpcMain): DesktopIpc["Service"] =>
             ipcMain.removeHandler(channel);
             ipcMain.handle(channel, (event, raw) =>
               runPromise(
-                Effect.gen(function* () {
-                  yield* Effect.annotateCurrentSpan({ channel });
-                  return yield* handler(raw, event);
-                }).pipe(Effect.annotateLogs({ channel }), Effect.withSpan("desktop.ipc.invoke")),
+                handler(raw, event).pipe(
+                  Effect.annotateLogs({ channel }),
+                  traceCall(channel, "desktop.ipc.invoke"),
+                ),
               ),
             );
           },
@@ -129,12 +153,9 @@ export const make = (ipcMain: DesktopIpcMain): DesktopIpc["Service"] =>
             ipcMain.removeAllListeners(channel);
             ipcMain.on(channel, (event) => {
               event.returnValue = runSync(
-                Effect.gen(function* () {
-                  yield* Effect.annotateCurrentSpan({ channel });
-                  return yield* handler();
-                }).pipe(
+                handler().pipe(
                   Effect.annotateLogs({ channel }),
-                  Effect.withSpan("desktop.ipc.invokeSync"),
+                  traceCall(channel, "desktop.ipc.invokeSync"),
                 ),
               );
             });

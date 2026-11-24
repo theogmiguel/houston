@@ -9,8 +9,15 @@ import {
   type OrchestrationV2ServerCommand,
 } from "@houston-app/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as BitbucketDriver from "@houston-app/source-control-bitbucket/server/driver";
+import * as SourceControlRateLimit from "@houston-app/source-control-core/server/SourceControlRateLimit";
+import * as TestSourceControlHost from "@houston-app/source-control-testing/TestSourceControlHost";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
+import type * as Duration from "effect/Duration";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -21,6 +28,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
+import { HttpClient, HttpClientResponse } from "effect/http";
 
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as GitManager from "../git/GitManager.ts";
@@ -176,6 +184,145 @@ describe("ThreadPullRequestServiceV2 reads", () => {
           yield* service.drain;
 
           expect(lookups.slice(lookupsBeforeIdle)).toEqual([]);
+        }).pipe(Effect.provide(dependencies));
+      }),
+    ),
+  );
+
+  it.effect("sweeps 40 branches of one Bitbucket repository in at most 2 requests", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const project: OrchestrationProjectShell = {
+          id: threadShell("bitbucket-branch-0").projectId,
+          title: "Project",
+          workspaceRoot: "/workspace/project",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: "2026-08-01T00:00:00.000Z",
+          updatedAt: "2026-08-01T00:00:00.000Z",
+        };
+        const threads = Array.from({ length: 40 }, (_, index) => ({
+          ...threadShell(`bitbucket-branch-${index}`),
+          branch: `feature/${index}`,
+        }));
+        let requests = 0;
+        // Composed: the real Bitbucket driver over a fake HTTP client, behind a GitManager mock
+        // that asks it about each branch the way GitManager's lookup does.
+        const bitbucket = yield* BitbucketDriver.driver.make.pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              TestSourceControlHost.layer({
+                git: {
+                  remotes: () =>
+                    Effect.succeed(
+                      Effect.succeed({
+                        remotes: [
+                          {
+                            name: "origin",
+                            url: "git@bitbucket.org:acme/project.git",
+                            pushUrl: Option.none(),
+                            isPrimary: true,
+                          },
+                        ],
+                        freshness: {
+                          source: "live-local" as const,
+                          observedAt: DateTime.makeUnsafe("1970-01-01T00:00:00.000Z"),
+                          expiresAt: Option.none(),
+                        },
+                      }),
+                    ),
+                },
+              }),
+              SourceControlRateLimit.layer,
+              Layer.succeed(
+                HttpClient.HttpClient,
+                HttpClient.make((request) =>
+                  Effect.sync(() => {
+                    requests += 1;
+                    return HttpClientResponse.fromWeb(request, Response.json({ values: [] }));
+                  }),
+                ),
+              ),
+              NodeServices.layer,
+              NodeCrypto.layer,
+              ConfigProvider.layer(
+                ConfigProvider.fromEnv({
+                  env: { HOUSTON_BITBUCKET_API_BASE_URL: "https://api.test.local/2.0" },
+                }),
+              ),
+            ),
+          ),
+        );
+        const activation = yield* Deferred.make<void>();
+        const dependencies = Layer.mergeAll(
+          Layer.mock(Orchestrator.OrchestratorV2)({
+            streamDomainEvents: Stream.never,
+            getPullRequestSnapshot: () =>
+              Effect.succeed({
+                schemaVersion: 2,
+                snapshotSequence: 1,
+                threads,
+                archivedThreads: [],
+              }),
+          }),
+          Layer.mock(ProjectStore.ProjectStoreV2)({
+            listShells: () => Effect.succeed([project]),
+            getShell: () => Effect.succeedSome(project),
+          }),
+          Layer.mock(GitManager.GitManager)({
+            branchPullRequest: ({ cwd, branch }) =>
+              bitbucket.sourceControl
+                .listChangeRequests({ cwd, headSelector: branch, state: "all", limit: 20 })
+                .pipe(Effect.as(null), Effect.orDie),
+          }),
+          Layer.mock(PullRequestService.PullRequestService)({}),
+          Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({
+            resolve: () =>
+              Effect.succeed({
+                canonicalKey: "bitbucket.org/acme/project",
+                locator: {
+                  source: "git-remote" as const,
+                  remoteName: "origin",
+                  remoteUrl: "git@bitbucket.org:acme/project.git",
+                },
+                provider: SourceControlProviderKind.make("bitbucket"),
+                owner: "acme",
+                name: "project",
+              }),
+          }),
+          Layer.mock(BackgroundPolicy.BackgroundPolicy)({
+            shouldRunScopeWork: () => Effect.succeed(true),
+            shouldRunOpportunisticWork: Effect.succeed(true),
+          }),
+          Layer.succeed(ServerActivation.ServerActivation, Deferred.await(activation)),
+          Layer.succeed(
+            SecureRandom.SecureRandom,
+            SecureRandom.make((size) => new Uint8Array(size).fill(1)),
+          ),
+          FileSystem.layerNoop({}),
+          Path.layer,
+        );
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadPullRequestService.make;
+          yield* service.start();
+          yield* Deferred.succeed(activation, undefined);
+          // Counts the requests of the sweep that starts once `wait` has passed.
+          const sweep = (wait: Duration.Input) =>
+            Effect.gen(function* () {
+              const before = requests;
+              yield* TestClock.adjust(wait);
+              for (let step = 0; step < 4; step += 1) yield* TestClock.adjust("500 millis");
+              yield* service.drain;
+              return requests - before;
+            });
+
+          // The startup sweep, then the periodic one a minute later; each one asks Bitbucket.
+          const startup = yield* sweep(0);
+          expect(startup).toBeGreaterThan(0);
+          expect(startup).toBeLessThanOrEqual(2);
+          const periodic = yield* sweep("1 minute");
+          expect(periodic).toBeGreaterThan(0);
+          expect(periodic).toBeLessThanOrEqual(2);
         }).pipe(Effect.provide(dependencies));
       }),
     ),
