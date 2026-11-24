@@ -1,6 +1,5 @@
 import * as Aead from "effect/crypto/Aead";
 import * as SecureRandom from "effect/crypto/SecureRandom";
-import * as Base64Url from "effect/encoding/Base64Url";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -14,6 +13,7 @@ import type { NonEmptyReadonlyArray } from "effect/Array";
 import { ed25519, x25519 } from "@noble/curves/ed25519.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { sha256 } from "@noble/hashes/sha2.js";
+import { E2EE_IDENTITY_MISMATCH_CODE, E2EE_KEY_LENGTH } from "./socketE2eeProtocol.ts";
 
 /**
  * Application-layer end-to-end encryption for the WebSocket RPC channel: an
@@ -22,15 +22,20 @@ import { sha256 } from "@noble/hashes/sha2.js";
  * replay and reordering fail the socket. XChaCha20 also runs without crypto.subtle.
  */
 
-/** Query parameter that asks for an E2EE session, mirroring `frameParts`. */
-export const SOCKET_E2EE_QUERY_PARAM = "e2ee";
+export {
+  decodeIdentityKey,
+  E2EE_IDENTITY_MISMATCH_CODE,
+  E2EE_REQUIRED_CODE,
+  encodeIdentityKey,
+  SOCKET_E2EE_QUERY_PARAM,
+} from "./socketE2eeProtocol.ts";
 
 const PROTOCOL_VERSION = 1;
 const TRANSCRIPT_PREFIX = "houston-e2ee-v1";
 const C2S_INFO = "houston-e2ee-v1-c2s";
 const S2C_INFO = "houston-e2ee-v1-s2c";
 
-const KEY_LENGTH = 32;
+const KEY_LENGTH = E2EE_KEY_LENGTH;
 const NONCE_LENGTH = 32;
 const SIGNATURE_LENGTH = 64;
 const RECORD_VERSION = 0x01;
@@ -46,9 +51,6 @@ const NONCE_PREFIX_LENGTH = 16;
 /** Rekeying is out of scope for v1; close long before the counter space thins. */
 const MAX_RECORD_COUNTER = 2 ** 32 - 1;
 export const E2EE_HANDSHAKE_TIMEOUT = "15 seconds";
-
-export const E2EE_IDENTITY_MISMATCH_CODE = "E2EE_IDENTITY_MISMATCH";
-export const E2EE_REQUIRED_CODE = "E2EE_REQUIRED";
 
 export class E2eeProtocolError extends Schema.TaggedError<E2eeProtocolError>()(
   "E2eeProtocolError",
@@ -162,17 +164,6 @@ export const identityFingerprint = (publicKey: Uint8Array): string => {
   )
     .join("-")
     .toUpperCase();
-};
-
-export const encodeIdentityKey = (publicKey: Uint8Array): string => Base64Url.encode(publicKey);
-
-export const decodeIdentityKey = (value: string): Uint8Array | undefined => {
-  try {
-    const bytes = Result.getOrThrow(Base64Url.decode(value));
-    return bytes.length === KEY_LENGTH ? Uint8Array.from(bytes) : undefined;
-  } catch {
-    return undefined;
-  }
 };
 
 const deriveRecordKeys = Effect.fn("socketE2ee.deriveRecordKeys")(function* (

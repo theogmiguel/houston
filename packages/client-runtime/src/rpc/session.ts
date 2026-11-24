@@ -8,12 +8,7 @@ import {
   joinSocketFrameParts,
   SOCKET_FRAME_PARTS_QUERY_PARAM,
 } from "@houston-app/shared/socketFrameParts";
-import {
-  decodeIdentityKey,
-  layerE2eeCrypto,
-  SOCKET_E2EE_QUERY_PARAM,
-  wrapClientSocketWithE2ee,
-} from "@houston-app/shared/socketE2ee";
+import { decodeIdentityKey, SOCKET_E2EE_QUERY_PARAM } from "@houston-app/shared/socketE2eeProtocol";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -250,10 +245,17 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
       pinnedServerKey !== undefined
         ? Effect.map(
             Effect.flatMap(Effect.service(Socket.Socket), (socket) =>
-              wrapClientSocketWithE2ee(socket, {
-                environmentId: connection.environmentId,
-                expectedServerIdentityKey: pinnedServerKey,
-              }),
+              // The cipher code loads only for an environment that pinned a key.
+              Effect.flatMap(
+                Effect.promise(() => import("@houston-app/shared/socketE2ee")),
+                (e2ee) =>
+                  e2ee
+                    .wrapClientSocketWithE2ee(socket, {
+                      environmentId: connection.environmentId,
+                      expectedServerIdentityKey: pinnedServerKey,
+                    })
+                    .pipe(Effect.provide(e2ee.layerE2eeCrypto)),
+              ),
             ),
             joinSocketFrameParts,
           )
@@ -265,7 +267,6 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
         }),
       ),
       Layer.provide(Layer.succeed(Socket.WebSocketConstructor, countingWebSocketConstructor)),
-      Layer.provide(layerE2eeCrypto),
     );
     const layerProtocol = Layer.effect(
       RpcClient.Protocol,

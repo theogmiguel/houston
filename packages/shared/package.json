@@ -35,6 +35,10 @@
       "types": "./src/socketE2ee.ts",
       "import": "./src/socketE2ee.ts"
     },
+    "./socketE2eeProtocol": {
+      "types": "./src/socketE2eeProtocol.ts",
+      "import": "./src/socketE2eeProtocol.ts"
+    },
     "./composerPullRequestMatches": {
       "types": "./src/composerPullRequestMatches.ts",
       "import": "./src/composerPullRequestMatches.ts"

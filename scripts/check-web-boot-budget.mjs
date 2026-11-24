@@ -12,7 +12,9 @@ import * as NodeZlib from "node:zlib";
 // new code with a dynamic import or raise this with the reason in the commit. Local model
 // support added about 10 KB of protocol (the inference RPCs and settings the shell decodes on
 // connect) while its dialogs, settings page and usage section stay out of the closure.
-export const BOOT_BUDGET_BYTES = 4_090_000;
+// Encrypted remote control added about 13 KB of protocol and connection-security presentation;
+// its cipher code loads only for an environment that pinned a key.
+export const BOOT_BUDGET_BYTES = 4_100_000;
 
 // What a cold start loads before React mounts: each entry and its static imports, plus the
 // chunks its own dynamic imports preload (bootstrap.ts → main.tsx), with their stylesheets.
