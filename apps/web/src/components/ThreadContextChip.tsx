@@ -2,6 +2,9 @@ import type { ThreadContextRecord } from "@houston-app/contracts";
 import { Link } from "@tanstack/react-router";
 import { MessagesSquareIcon } from "lucide-react";
 
+import { scopeThreadRef } from "@houston-app/client-runtime/environment";
+
+import { beginLayoutThreadDrag } from "~/layout/layoutTabDrag";
 import { useThreadShell } from "~/state/entities";
 import { ContextChip, ContextChipLabel } from "./ContextChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -23,6 +26,15 @@ export function ThreadContextChip(props: {
             {...(props.unreadable ? { state: "invalid" as const } : {})}
             render={<Link to="/$environmentId/$threadId" params={{ environmentId, threadId }} />}
             aria-label={`Thread, ${title}`}
+            // A native link drag would end the pointer drag that opens the thread in the layout.
+            draggable={false}
+            onPointerDown={(event) =>
+              beginLayoutThreadDrag(event, {
+                kind: "thread",
+                threadRef: scopeThreadRef(environmentId, threadId),
+                title,
+              })
+            }
             data-markdown-copy={props.copyMarkdown}
             className="no-underline"
           >

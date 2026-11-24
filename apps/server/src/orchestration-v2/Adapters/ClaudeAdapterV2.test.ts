@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- workflow fixtures use files and the fake Claude CLI uses Node streams
 import * as NodeEvents from "node:events";
 import * as NodeFS from "node:fs";
+import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeStream from "node:stream";
 
@@ -59,6 +60,7 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as SecureRandom from "effect/crypto/SecureRandom";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
@@ -82,6 +84,7 @@ import { getModelSelectionStringOptionValue } from "@houston-app/shared/model";
 import { SpawnExecutableResolution } from "@houston-app/shared/shell";
 
 import * as PortScanner from "../../preview/PortScanner.ts";
+import { CHECK_TIMEOUT } from "../../houston/nonBlockingSpawner.ts";
 import * as TraceContext from "../../houston/observability/TraceContext.ts";
 import * as RecordingTracer from "../../observability/testing/RecordingTracer.ts";
 import { attachmentRelativePath } from "../../attachmentStore.ts";
@@ -128,6 +131,7 @@ import {
   projectionFor,
 } from "../testkit/fixtures/shared.ts";
 
+vi.mock("node:fs/promises", { spy: true });
 vi.mock("@anthropic-ai/claude-agent-sdk", async (importOriginal) => ({
   ...(await importOriginal<typeof ClaudeSdk>()),
   resolveSettings: vi.fn(),
@@ -739,8 +743,13 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
     assert.equal(systemPrompt.type, "preset");
     assert.equal(systemPrompt.preset, "claude_code");
     assert.include(systemPrompt.append ?? "", "Use `delegate_task`");
-    assert.include(systemPrompt.append ?? "", "call `houston_background_wait`");
+    assert.include(
+      systemPrompt.append ?? "",
+      "call `houston_background_wait` with `taskIds: [id]`",
+    );
     assert.notInclude(systemPrompt.append ?? "", "## Houston devices");
+    assert.include(systemPrompt.append ?? "", "with no command likely to run over a few minutes");
+    assert.include(systemPrompt.append ?? "", "give it that child's last summary");
     const logged = ClaudeAdapterV2.loggedClaudeQueryOptions(options);
     assert.equal(logged.hasMcpServers, true);
     assert.notInclude(JSON.stringify(logged), "secret-claude-token");
@@ -1109,6 +1118,130 @@ describe("ClaudeAdapterV2 Auto-accept edits", () => {
         ),
       ),
     ),
+  );
+});
+
+describe("ClaudeAdapterV2 hung project folder", () => {
+  it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
+    "fails a turn whose folder never answers with the folder error, within the limit",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const homePath = yield* fileSystem.makeTempDirectoryScoped({
+            prefix: "houston-claude-hung-home-",
+          });
+          const hung = "/houston-hung-turn";
+          const answers: Array<() => void> = [];
+          const access = vi
+            .spyOn(NodeFSP, "access")
+            .mockImplementation((target, mode) =>
+              String(target).startsWith(hung)
+                ? new Promise<void>((resolve) => answers.push(resolve))
+                : NodeFS.promises.access(target, mode),
+            );
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              for (const answer of answers) answer();
+              access.mockRestore();
+            }),
+          );
+          // Calls on the folder never return, as on a mount that stopped answering.
+          const hungReads: Array<string> = [];
+          const hungFileSystem = new Proxy(fileSystem, {
+            get: (target, key) => {
+              const value: unknown = Reflect.get(target, key);
+              if (typeof value !== "function") return value;
+              return (...args: ReadonlyArray<unknown>) => {
+                if (!String(args[0]).startsWith(hung)) return Reflect.apply(value, target, args);
+                hungReads.push(String(key));
+                return Effect.never;
+              };
+            },
+          });
+          let opened = 0;
+          const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
+            instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
+            settings: { ...DEFAULT_CLAUDE_SETTINGS, homePath },
+            environment: {},
+            attachmentsDir: homePath,
+            fileSystem: hungFileSystem,
+            path: yield* Path.Path,
+            random: yield* SecureRandom.SecureRandom,
+            idAllocator: yield* IdAllocator.IdAllocatorV2,
+            queryRunner: {
+              allocateSessionId: Effect.succeed("native-thread-claude-hung-folder"),
+              open: () => {
+                opened++;
+                return Effect.die("unexpected open in a hung folder");
+              },
+              forkSession: () => Effect.die("unused"),
+              subagentLaunchToolUseId: () => Effect.succeed(null),
+              assertComplete: Effect.void,
+            },
+          });
+          const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            cwd: hung,
+          });
+          const threadId = ThreadId.make("thread-claude-hung-folder");
+          const runtime = yield* adapter.openSession({
+            threadId,
+            providerSessionId: ProviderSessionId.make("provider-session-claude-hung-folder"),
+            modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+            runtimePolicy,
+          });
+          const providerThread = yield* runtime.ensureThread({
+            threadId,
+            modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+            runtimePolicy,
+          });
+          const now = yield* DateTime.now;
+          const failure = (attempt: string) =>
+            runtime
+              .startTurn(
+                makeClaudeTestTurnInput({
+                  threadId,
+                  providerThread,
+                  now,
+                  attemptId: RunAttemptId.make(attempt),
+                  text: "Read the project.",
+                  attachments: [],
+                  runtimePolicy,
+                }),
+              )
+              .pipe(
+                Effect.flip,
+                Effect.map((error) => makeProviderFailure({ cause: error }).message),
+                Effect.timeoutOption(Duration.sum(CHECK_TIMEOUT, Duration.seconds(1))),
+                Effect.map(Option.getOrElse(() => "the turn is still waiting")),
+              );
+          const message = `Claude could not start in ${hung}: the folder did not answer within ${Duration.format(CHECK_TIMEOUT)}. Check that its drive or network share is reachable, then send the message again.`;
+
+          const first = yield* Effect.forkChild(failure("attempt-claude-hung-folder-1"));
+          yield* TestClock.adjust(CHECK_TIMEOUT);
+          yield* TestClock.adjust(Duration.seconds(1));
+          assert.equal(yield* Fiber.join(first), message);
+          // The failed turn holds nothing: the next one is told the same at once.
+          const second = yield* Effect.forkChild(failure("attempt-claude-hung-folder-2"));
+          yield* TestClock.adjust(Duration.seconds(1));
+          yield* Effect.yieldNow;
+          assert.isDefined(second.pollUnsafe());
+          assert.equal(yield* Fiber.join(second), message);
+          assert.deepEqual(hungReads, []);
+          assert.equal(opened, 0);
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              IdAllocator.layer,
+              McpProviderSessions.layer,
+              NodeServices.layer,
+              NodeCrypto.layer,
+            ),
+          ),
+        ),
+      ),
   );
 });
 
@@ -11496,6 +11629,177 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           ),
         ),
       ),
+  );
+
+  // Composed: Claude Code's result for a --resume whose session it no longer has.
+  const resumeResultFrame = (
+    errors: ReadonlyArray<string>,
+    frame: { readonly sessionId?: string; readonly numTurns?: number } = {},
+  ) =>
+    claudeSdkFrame({
+      ...makeResultFrame({
+        uuid: "00000000-0000-4000-8000-000000000a61",
+        result: "",
+        subtype: "error_during_execution",
+        isError: true,
+        numTurns: frame.numTurns ?? 0,
+        errors,
+        terminalReason: null,
+      }),
+      session_id: frame.sessionId ?? WAKE_NATIVE_SESSION,
+    });
+  const missingSessionError = (sessionId: string) =>
+    `No conversation found with session ID: ${sessionId}`;
+  const failFirstResume = Effect.fnUntraced(function* (
+    errors: ReadonlyArray<string>,
+    frame?: Parameters<typeof resumeResultFrame>[1],
+  ) {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const configDir = yield* fileSystem.makeTempDirectoryScoped({
+      prefix: "houston-claude-missing-session-",
+    });
+    const sessionIds = [WAKE_NATIVE_SESSION, "native-session-fresh"];
+    const harness = yield* makeWakeHarnessWithOptions({
+      environment: { CLAUDE_CONFIG_DIR: configDir },
+      allocateSessionId: Effect.sync(() => sessionIds.shift() ?? "native-session-extra"),
+      freshQueueOnReopen: true,
+    });
+    yield* harness.runtime.startTurn(
+      makeClaudeTestTurnInput({
+        threadId: harness.threadId,
+        providerThread: harness.providerThread,
+        now: yield* DateTime.now,
+        attemptId: RunAttemptId.make("missing-session-resume"),
+        text: "Continue.",
+        attachments: [],
+      }),
+    );
+    yield* harness.offerAndWait(resumeResultFrame(errors, frame));
+    const terminal = yield* Queue.take(harness.terminalReceipts);
+    const erroredThreads = harness.events.filter(
+      (event) =>
+        event.type === "provider_thread.updated" && event.providerThread.status === "error",
+    );
+    const resumed = yield* harness.runtime
+      .resumeThread({ providerThread: harness.providerThread })
+      .pipe(Effect.exit);
+    return { harness, terminal, erroredThreads, resumed };
+  });
+  // What the turn-start fallback does after resumeThread refuses the missing session.
+  const startFreshSession = Effect.fnUntraced(function* (
+    harness: Effect.Success<ReturnType<typeof failFirstResume>>["harness"],
+  ) {
+    const fresh = yield* harness.runtime.ensureThread({
+      threadId: harness.threadId,
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
+      existingProviderThread: { ...harness.providerThread, nativeThreadRef: null },
+      forceNewNativeThread: true,
+    });
+    yield* harness.runtime.startTurn(
+      makeClaudeTestTurnInput({
+        threadId: harness.threadId,
+        providerThread: fresh,
+        now: yield* DateTime.now,
+        attemptId: RunAttemptId.make("missing-session-fresh"),
+        text: "Continue.",
+        attachments: [],
+      }),
+    );
+    return fresh;
+  });
+  const systemNotices = (events: ReadonlyArray<ProviderAdapter.ProviderAdapterV2Event>) =>
+    events.filter(
+      (event) => event.type === "turn_item.updated" && event.turnItem.type === "system_notice",
+    );
+  const claudeTestLayer = Layer.mergeAll(
+    IdAllocator.layer,
+    McpProviderSessions.layer,
+    NodeServices.layer,
+    NodeCrypto.layer,
+  );
+
+  it.effect("starts a fresh session after Claude Code reports the resumed conversation gone", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { harness, terminal, erroredThreads, resumed } = yield* failFirstResume([
+          missingSessionError(WAKE_NATIVE_SESSION),
+        ]);
+        assert.equal(terminal.status, "failed");
+        if (terminal.status !== "failed") return;
+        assert.include(terminal.failure.message, "could not find this thread's earlier session");
+        assert.notInclude(terminal.failure.message, WAKE_NATIVE_SESSION);
+        // The session manager drops a thread in error from its loaded cache.
+        assert.lengthOf(erroredThreads, 1);
+        assert.isTrue(Exit.isFailure(resumed));
+
+        const fresh = yield* startFreshSession(harness);
+        assert.equal(fresh.nativeThreadRef?.nativeId, "native-session-fresh");
+        const notice = yield* Queue.take(harness.systemNoticeReceipts);
+        assert.equal(notice.turnItem.providerThreadId, fresh.id);
+        assert.include(
+          notice.turnItem.type === "system_notice" ? notice.turnItem.title : "",
+          "started a new Claude session",
+        );
+      }).pipe(Effect.provide(claudeTestLayer)),
+    ),
+  );
+
+  it.effect("fails a fresh session Claude Code also cannot find without starting another", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { harness } = yield* failFirstResume([missingSessionError(WAKE_NATIVE_SESSION)]);
+        const fresh = yield* startFreshSession(harness);
+        yield* Queue.take(harness.systemNoticeReceipts);
+        yield* harness.offerAndWait(
+          resumeResultFrame([missingSessionError("native-session-fresh")], {
+            sessionId: "native-session-fresh",
+          }),
+        );
+        const terminal = yield* Queue.take(harness.terminalReceipts);
+        assert.equal(terminal.status, "failed");
+        assert.equal(terminal.providerThreadId, fresh.id);
+        // No retry: two prompts, two processes, two terminals, one notice.
+        yield* yieldTicks(20);
+        assert.lengthOf(harness.offeredMessages, 2);
+        assert.lengthOf(harness.processQueues, 2);
+        assert.lengthOf(harness.terminalEvents(), 2);
+        assert.lengthOf(systemNotices(harness.events), 1);
+        const refused = yield* harness.runtime
+          .resumeThread({ providerThread: fresh })
+          .pipe(Effect.exit);
+        assert.isTrue(Exit.isFailure(refused));
+      }).pipe(Effect.provide(claudeTestLayer)),
+    ),
+  );
+
+  it.effect.each([
+    { name: "an unrelated error", errors: ["Error: the model request failed"] },
+    {
+      name: "the wording for another session",
+      errors: [missingSessionError("native-session-other")],
+      frame: { sessionId: "native-session-other" },
+    },
+    {
+      name: "the wording after turns ran",
+      errors: [missingSessionError(WAKE_NATIVE_SESSION)],
+      frame: { numTurns: 1 },
+    },
+  ])("keeps resuming a Claude session after a failed result with $name", (input) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { harness, terminal, erroredThreads, resumed } = yield* failFirstResume(
+          input.errors,
+          input.frame,
+        );
+        assert.equal(terminal.status, "failed");
+        if (terminal.status !== "failed") return;
+        assert.notInclude(terminal.failure.message, "could not find this thread's earlier session");
+        assert.lengthOf(erroredThreads, 0);
+        assert.isTrue(Exit.isSuccess(resumed));
+        assert.lengthOf(systemNotices(harness.events), 0);
+      }).pipe(Effect.provide(claudeTestLayer)),
+    ),
   );
 
   it.effect("lets the native SDK acknowledge Stop before closing its own query", () =>

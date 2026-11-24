@@ -43,8 +43,8 @@ To launch an AppImage, open a terminal in its download folder and run the comman
 replacing the filename with the exact one you downloaded:
 
 ```bash
-chmod +x ./Houston-<version>-x86_64.AppImage
-./Houston-<version>-x86_64.AppImage
+chmod +x ./Houston-x86_64.AppImage
+./Houston-x86_64.AppImage
 ```
 
 ## Providers

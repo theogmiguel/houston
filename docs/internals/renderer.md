@@ -51,6 +51,16 @@ The renderer asks `window.hostBridge.getLocalEnvironmentBootstraps()`
 origin with the credential the server issues for it. The token comes only from the host
 bridge. The messages are typed in `packages/contracts`; the renderer defines none of its own.
 
+The renderer re-reads the bootstraps and the server status when the host announces a change
+(`onLocalEnvironmentBootstrapsChanged`, `onServerStatus`) and on one shared safety poll
+(`src/connection/desktopLocalTopology.ts`). A new reader subscribes there instead of starting
+its own timer. The host traces these reads only when they fail (`FAILURE_ONLY_TRACED_CHANNELS`
+in `apps/desktop/src/ipc/DesktopIpc.ts`), so that they do not fill the trace file.
+A registration build that cannot reach a server it was told of retries after 1, 2, 4, 8 and
+16 seconds, then leaves it to the safety poll (`PLATFORM_DISCOVERY_RETRY_DELAYS` in
+`src/connection/platform.ts`): a browser has no host to announce its server, and a failed
+discovery drops the environment until the next read.
+
 ## The terminal engine
 
 `terminal/ghostty/` is Houston's own engine; its README lists each file's job. The WASM is
@@ -112,11 +122,14 @@ catalog, SSH, WSL, snapshots, updates, the v1 cleanup report and the browser-pre
 ## Renderer recovery
 
 The main process listens for the window's `render-process-gone`. A crash, OOM, kill or
-abnormal exit reloads the window, at most three times in sixty seconds
-(`RENDERER_RECOVERY_MAX_ATTEMPTS` and `RENDERER_RECOVERY_WINDOW_MS` in
-`apps/desktop/src/window/DesktopWindow.ts`). A clean exit or an exhausted budget leaves the
-window stopped rather than reloading forever. Development retries a failed load from the dev
-server with increasing delays while the page is being served.
+abnormal exit reloads the window after a delay that doubles with each consecutive crash, from
+500 ms up to a 30-second ceiling, so a renderer that keeps crashing is retried without a tight
+loop and the window is never left blank for good. A reloaded renderer that stays up for sixty
+seconds restarts the backoff (`apps/desktop/src/window/RendererRecovery.ts`). A clean exit or a
+closed or destroyed window is not reloaded. While a quit or update install is in progress the
+pending reload waits, so it never fights the quit and still runs if the install fails; only one
+reload is pending at a time. Development retries a failed load from the dev server with
+increasing delays while the page is being served.
 
 ## What the renderer knows
 

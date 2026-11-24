@@ -106,6 +106,8 @@ function makeTestAdapter(input: {
   readonly nativeThreadGeneration?: Ref.Ref<number>;
   readonly failResume?: boolean;
   readonly failResumeOnce?: Ref.Ref<boolean>;
+  /** On this run the native thread is lost, as when Claude Code no longer has the session. */
+  readonly loseNativeThreadOnRun?: number;
   readonly initialContextUsage?: OrchestrationV2ProviderThread["contextUsage"];
   readonly getModelContextWindow?: (selection: ModelSelection) => number | undefined;
   readonly canReuseContextUsage?: ProviderAdapter.ProviderAdapterV2SessionRuntime["canReuseContextUsage"];
@@ -133,6 +135,7 @@ function makeTestAdapter(input: {
     openSession: (sessionInput) =>
       Effect.gen(function* () {
         const events = yield* PubSub.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
+        const lostNativeThreadIds = new Set<string>();
         if (input.closedSessions !== undefined) {
           const closedSessions = input.closedSessions;
           yield* Effect.addFinalizer(() =>
@@ -224,6 +227,7 @@ function makeTestAdapter(input: {
             Effect.gen(function* () {
               if (
                 input.failResume ||
+                lostNativeThreadIds.has(providerThread.nativeThreadRef?.nativeId ?? "") ||
                 (input.failResumeOnce !== undefined &&
                   (yield* Ref.getAndSet(input.failResumeOnce, false)))
               )
@@ -392,6 +396,15 @@ function makeTestAdapter(input: {
                     completedAt: null,
                     tokenUsage: { ...reportedUsage, updatedAt: DateTime.formatIso(eventTime) },
                   },
+                });
+              }
+              const nativeThreadId = turnInput.providerThread.nativeThreadRef?.nativeId;
+              if (turnInput.runOrdinal === input.loseNativeThreadOnRun && nativeThreadId != null) {
+                lostNativeThreadIds.add(nativeThreadId);
+                yield* PubSub.publish(events, {
+                  type: "provider_thread.updated",
+                  driver: input.driver,
+                  providerThread: { ...turnInput.providerThread, status: "error" },
                 });
               }
               for (const event of providerEvents) {
@@ -1490,6 +1503,106 @@ describe("orchestration v2 provider switching", () => {
           );
         }),
       ),
+  );
+
+  // Composed: the fake reports its native thread lost the way the Claude adapter does when
+  // Claude Code no longer has the session, without the session being detached first.
+  it.live("moves a live session's next send to a fresh native thread after it is lost", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const cwd = yield* checkpointWorkspace("lost-native-thread");
+        const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+        const layerRegistry = ProviderAdapterRegistry.layerFromAdapters([
+          makeTestAdapter({
+            instanceId: CLAUDE_MODEL_SELECTION.instanceId,
+            driver: CLAUDE_DRIVER,
+            capabilities: ClaudeProviderCapabilitiesV2,
+            modelSelection: CLAUDE_MODEL_SELECTION,
+            responseByRunOrdinal: { 1: "The release marker is amber." },
+            capturedTurns,
+            failedRunOrdinals: new Set([2]),
+            loseNativeThreadOnRun: 2,
+            nativeThreadGeneration: yield* Ref.make(0),
+          }),
+        ]);
+        const projection = yield* Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+          const runToEnd = Effect.fn("runToEnd")(function* (ordinal: number) {
+            yield* orchestrator.dispatch({
+              type: "message.dispatch",
+              commandId: CommandId.make(`lost-native-thread:${ordinal}`),
+              threadId,
+              messageId: MessageId.make(`lost-native-thread:${ordinal}`),
+              createdBy: "user",
+              creationSource: "web",
+              text: `Request ${ordinal}`,
+              attachments: [],
+              modelSelection: CLAUDE_MODEL_SELECTION,
+              dispatchMode: { type: "start_immediately" },
+            });
+            yield* orchestrator.streamStoredEvents.pipe(
+              Stream.filter(
+                ({ event }) =>
+                  event.type === "run.updated" &&
+                  event.payload.ordinal === ordinal &&
+                  (event.payload.status === "completed" || event.payload.status === "failed"),
+              ),
+              Stream.runHead,
+            );
+            yield* worker.drain();
+          });
+          yield* orchestrator.dispatch({
+            type: "thread.create",
+            commandId: CommandId.make("lost-native-thread:create"),
+            threadId,
+            projectId,
+            createdBy: "user",
+            creationSource: "web",
+            title: "Lost native thread",
+            modelSelection: CLAUDE_MODEL_SELECTION,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+          });
+          yield* runToEnd(1);
+          yield* runToEnd(2);
+          yield* runToEnd(3);
+          return yield* orchestrator.getThreadProjection(threadId);
+        }).pipe(
+          Effect.provide(
+            ProviderReplayHarness.layerWithRegistry(
+              {
+                name: "lost-native-thread",
+                runtimePolicyOverride: {
+                  cwd,
+                  approvalPolicy: "never",
+                  sandboxPolicy: { type: "readOnly" },
+                },
+              },
+              layerRegistry,
+            ),
+          ),
+        );
+
+        const turns = yield* Ref.get(capturedTurns);
+        assert.deepEqual(
+          projection.runs.map((run) => run.status),
+          ["completed", "failed", "completed"],
+        );
+        assert.equal(turns[1]?.nativeThreadId, turns[0]?.nativeThreadId);
+        assert.notEqual(turns[2]?.nativeThreadId, turns[1]?.nativeThreadId);
+        assert.deepEqual(
+          projection.contextHandoffs
+            .filter((handoff) => handoff.targetRunId === projection.runs[2]?.id)
+            .map((handoff) => handoff.strategy),
+          ["full_thread_summary"],
+        );
+        assert.include(turns[2]?.text ?? "", "The release marker is amber.");
+        assert.include(turns[2]?.text ?? "", "Request 3");
+      }),
+    ),
   );
 
   it.live.each(["an older handoff", "a missed request"] as const)(

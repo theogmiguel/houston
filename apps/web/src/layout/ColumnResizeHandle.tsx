@@ -7,6 +7,7 @@ import {
   type PointerEvent,
   type RefObject,
 } from "react";
+import { flushSync } from "react-dom";
 
 import {
   LayoutPassiveLayer,
@@ -178,6 +179,7 @@ export function LayoutResizeHandles({
   const dragRef = useRef<ActiveDrag | null>(null);
   const baseLayoutRef = useRef<LayoutState>(layout);
   const frameRef = useRef<number | null>(null);
+  const shownDragRef = useRef<ActiveDrag | null>(null);
   const pointerRef = useRef({ x: 0, y: 0, scrollLeft: 0 });
   const heldStripPxRef = useRef(0);
   const stageAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -227,6 +229,7 @@ export function LayoutResizeHandles({
       // A pointer the browser no longer tracks cannot be captured; the drag follows the handle's own events.
     }
     baseLayoutRef.current = layout;
+    shownDragRef.current = null;
     heldStripPxRef.current = scrollerRef.current?.scrollWidth ?? 0;
     pointerRef.current = {
       x: event.clientX,
@@ -262,16 +265,25 @@ export function LayoutResizeHandles({
     const next = dragAtPointer(active, event);
     if (next.value === active.value) return;
     dragRef.current = next;
-    // Pointer streams can outpace paint. Lay out the strip once per frame,
-    // always using the latest pointer, without dropping the release position.
+    // The frame's first step is committed now, ahead of the frame's rAF callbacks, so their layout
+    // reads see the new widths once; a commit left to the scheduler lands after paint. Pointer
+    // streams can outpace paint: later steps in the same frame wait for this frame's rAF and
+    // use the latest pointer, so the release position is never dropped.
     if (frameRef.current !== null) return;
+    showDrag(next);
     frameRef.current = requestAnimationFrame(() => {
       frameRef.current = null;
       const latest = dragRef.current;
-      if (!latest) return;
-      setDrag(latest);
+      if (latest && latest !== shownDragRef.current) showDrag(latest);
+    });
+  };
+
+  const showDrag = (shown: ActiveDrag) => {
+    shownDragRef.current = shown;
+    flushSync(() => {
+      setDrag(shown);
       onPreview({
-        layout: applyDrag(baseLayoutRef.current, latest),
+        layout: applyDrag(baseLayoutRef.current, shown),
         heldStripPx: heldStripPxRef.current,
       });
     });

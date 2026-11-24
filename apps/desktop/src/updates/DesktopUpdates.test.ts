@@ -71,6 +71,30 @@ describe("DesktopUpdates.configure", () => {
   });
 });
 
+describe("DesktopUpdates pollers", () => {
+  it.effect("checks at startup and then every four hours", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const updates = yield* DesktopUpdates.DesktopUpdates;
+      const attach = yield* Deferred.make<void>();
+      yield* updates.configure(Deferred.await(attach));
+      yield* Deferred.succeed(attach, undefined);
+      yield* flushCallbacks;
+      yield* flushCallbacks;
+
+      yield* TestClock.adjust("15 seconds");
+      assert.strictEqual(harness.checkCount(), 1);
+
+      // A four-minute poll would already have run a second check here.
+      yield* TestClock.adjust("4 minutes");
+      assert.strictEqual(harness.checkCount(), 1);
+
+      yield* TestClock.adjust("4 hours");
+      assert.strictEqual(harness.checkCount(), 2);
+    }).pipe(Effect.provide(harness.layer), Effect.scoped);
+  });
+});
+
 describe("DesktopUpdates.afterFirstWindow", () => {
   const waitFor = Effect.gen(function* () {
     const state = yield* DesktopState.DesktopState;
