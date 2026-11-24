@@ -59,6 +59,14 @@ export function RowMetaItem({
   );
 }
 
+/**
+ * Pushes the items after it to the line's right edge. It is not an item, so the fit arithmetic
+ * never counts it; its negative margin cancels the gap the line adds before it.
+ */
+export function RowMetaSpacer() {
+  return <span aria-hidden data-meta-spacer="" className="-ml-2 min-w-0 flex-1" />;
+}
+
 interface FitResult {
   readonly hidden: ReadonlyArray<boolean>;
   readonly labels: ReadonlyArray<string>;

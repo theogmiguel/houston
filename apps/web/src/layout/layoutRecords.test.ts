@@ -11,6 +11,7 @@ import {
 } from "./layoutRecords";
 import {
   createLayoutState,
+  isBlankLayoutWorkspace,
   normalizeLayout,
   type LayoutState,
   type LayoutTab,
@@ -100,6 +101,21 @@ describe("layoutStateToRecords", () => {
     const records = layoutStateToRecords(createLayoutState(), new Map(), NOW);
     expect(records).toHaveLength(1);
     expect(records[0]!.columns).toEqual([]);
+  });
+
+  it("leaves a blank workspace's launcher out of the stored columns", () => {
+    const state = stateOf([
+      workspace("w1", [column("c1", [tab("t1", chat("a"))])]),
+      workspace("w2", [column("c2", [tab("l", { kind: "launcher", id: "l", context: null })])], {
+        name: "Docs",
+        keepWhenEmpty: true,
+      }),
+    ]);
+    const records = layoutStateToRecords(state, new Map(), NOW);
+    expect(records.map((record) => [record.id, record.columns.length])).toEqual([
+      ["w1", 1],
+      ["w2", 0],
+    ]);
   });
 
   it("keeps an empty workspace the server already stores, so it survives a reload", () => {
@@ -203,7 +219,7 @@ describe("layoutStateFromRecords", () => {
       new Set(),
     );
     expect(state.workspaces.map((w) => w.id).slice(0, 2)).toEqual(["a", "b"]);
-    expect(state.workspaces.at(-1)!.columns).toEqual([]);
+    expect(isBlankLayoutWorkspace(state.workspaces.at(-1)!)).toBe(true);
     expect(state.workspaces[0]!.name).toBe("Name a");
   });
 
@@ -263,7 +279,48 @@ describe("layoutStateFromRecords", () => {
       new Set(),
     );
     expect(state.workspaces.map((workspace) => workspace.id)).toContain("b");
-    expect(state.workspaces.find((workspace) => workspace.id === "b")!.columns).toEqual([]);
+    const stored = state.workspaces.find((workspace) => workspace.id === "b")!;
+    expect(isBlankLayoutWorkspace(stored)).toBe(true);
+    expect(stored.columns).toHaveLength(1);
+  });
+
+  it("gives a stored workspace with no columns a blank launcher tab", () => {
+    const state = layoutStateFromRecords(
+      [{ ...record("a", 0, ["ta"]), columns: [] }],
+      null,
+      new Set(),
+    );
+    const tabs = state.workspaces[0]!.columns.flatMap((c) => c.panes).flatMap((p) => p.tabs);
+    expect(tabs.map((entry) => entry.content)).toEqual([
+      { kind: "launcher", id: expect.any(String), context: null },
+    ]);
+    expect(state.workspaces[0]!.focusedPaneId).not.toBeNull();
+  });
+
+  it("keeps the launcher a blank workspace already shows when the server's copy arrives", () => {
+    const stored = { ...record("a", 0, ["ta"]), columns: [] };
+    const first = layoutStateFromRecords([stored], null, new Set());
+    const again = layoutStateFromRecords([stored], first, new Set());
+    expect(again.workspaces[0]!.columns).toEqual(first.workspaces[0]!.columns);
+  });
+
+  it("stores a blank workspace with no columns, so the launcher never reaches the server", () => {
+    const stored = { ...record("a", 0, ["ta"]), columns: [] };
+    const state = layoutStateFromRecords([stored], null, new Set());
+    const [back] = layoutStateToRecords(
+      state,
+      new Map([["a", { name: "Name a", createdAt: NOW }]]),
+      NOW,
+    );
+    expect(back!.columns).toEqual([]);
+    expect(layoutRecordContentKey(back!)).toBe(layoutRecordContentKey(stored));
+  });
+
+  it("stores a workspace holding two launchers as they are", () => {
+    const launcher = (id: string) => tab(id, { kind: "launcher", id, context: null });
+    const state = stateOf([workspace("w1", [column("c1", [launcher("l1"), launcher("l2")])])]);
+    const [stored] = layoutStateToRecords(state, new Map(), NOW);
+    expect(stored!.columns[0]!.panes[0]!.tabs).toHaveLength(2);
   });
 
   it("yields the default empty layout for no records", () => {
@@ -382,6 +439,6 @@ describe("a stored layout that still holds a Usage page tab", () => {
       null,
       new Set(),
     );
-    expect(state.workspaces.flatMap((entry) => entry.columns)).toEqual([]);
+    expect(state.workspaces.every(isBlankLayoutWorkspace)).toBe(true);
   });
 });

@@ -38,16 +38,42 @@ const citation = {
 };
 
 // The mocked source observer is shared, so every test starts by resetting it.
-function setup() {
+function setup({ sourceStyle = "" } = {}) {
   mocks.observeSource.mockReset().mockReturnValue(mocks.dispose);
   mocks.dispose.mockClear();
   const source = document.createElement("p");
   source.textContent = "hello";
+  source.style.cssText = sourceStyle;
   document.body.append(source);
   const range = document.createRange();
   range.selectNodeContents(source);
   const sourceAnchor = { source, range, viewport: document.body } as AssistantCitationSourceAnchor;
-  return { sourceAnchor, [Symbol.dispose]: () => source.remove() };
+  return { sourceAnchor, source, [Symbol.dispose]: () => source.remove() };
+}
+
+// A cited answer inside a real scroll viewport, so scrolling can carry it out of view.
+function setupScrollViewport() {
+  mocks.observeSource.mockReset().mockReturnValue(mocks.dispose);
+  mocks.dispose.mockClear();
+  const viewport = document.createElement("div");
+  viewport.dataset.assistantCitationViewport = "true";
+  viewport.style.cssText = "position: relative; width: 400px; height: 120px; overflow: auto;";
+  const source = document.createElement("p");
+  source.textContent = "hello";
+  source.style.margin = "0";
+  const tail = document.createElement("div");
+  tail.style.height = "400px";
+  viewport.append(source, tail);
+  document.body.append(viewport);
+  const range = document.createRange();
+  range.selectNodeContents(source);
+  const sourceAnchor = { source, range, viewport } as AssistantCitationSourceAnchor;
+  return {
+    sourceAnchor,
+    source,
+    viewport,
+    [Symbol.dispose]: () => viewport.remove(),
+  };
 }
 
 function mount(sourceAnchor: AssistantCitationSourceAnchor, onSave: () => boolean) {
@@ -128,24 +154,84 @@ describe("citation comment source disappearance", () => {
 });
 
 describe("citation comment placement", () => {
-  it("renders the editor inline after the cited answer", async () => {
-    using source = setup();
+  it("renders the editor in a popover below the cited range", async () => {
+    using source = setup({ sourceStyle: "position: fixed; top: 8px; left: 8px; margin: 0;" });
     await using _screen = await mount(
       source.sourceAnchor,
       vi.fn(() => true),
     );
-    await vi.waitFor(() =>
-      expect(document.querySelector('[data-citation-comment-inline="true"]')).not.toBeNull(),
-    );
-    const inline = document.querySelector<HTMLElement>('[data-citation-comment-inline="true"]')!;
-    const host = inline.parentElement!;
-    expect(host.previousElementSibling).toBe(source.sourceAnchor.source);
-    expect(document.querySelector('[data-slot="popover-popup"]')).toBeNull();
+    const popup = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[data-slot="popover-popup"]');
+      expect(found, "popover popup").not.toBeNull();
+      return found!;
+    });
+    expect(popup.contains(textarea())).toBe(true);
+
+    const rangeRect = source.sourceAnchor.range.getBoundingClientRect();
+    const popupRect = popup.getBoundingClientRect();
+    expect(popupRect.top).toBeGreaterThanOrEqual(rangeRect.bottom - 1);
 
     await userEvent.click(textarea()!);
     await userEvent.keyboard("note");
 
     expect(textarea()?.value).toBe("note");
-    expect(inline.getBoundingClientRect().width).toBeGreaterThan(0);
+    expect(popup.getBoundingClientRect().width).toBeGreaterThan(0);
+  });
+
+  it("flips above the range when there is no room below", async () => {
+    using source = setup({ sourceStyle: "position: fixed; bottom: 8px; left: 8px; margin: 0;" });
+    await using _screen = await mount(
+      source.sourceAnchor,
+      vi.fn(() => true),
+    );
+    const popup = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[data-slot="popover-popup"]');
+      expect(found, "popover popup").not.toBeNull();
+      return found!;
+    });
+
+    const rangeRect = source.sourceAnchor.range.getBoundingClientRect();
+    expect(popup.getBoundingClientRect().bottom).toBeLessThanOrEqual(rangeRect.top + 1);
+  });
+
+  it("commits the draft and closes when the cited range scrolls out of the viewport", async () => {
+    using source = setupScrollViewport();
+    const onSave = vi.fn(() => true);
+    await using _screen = await mount(source.sourceAnchor, onSave);
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-slot="popover-popup"]')).not.toBeNull(),
+    );
+    await typeComment("scrolled away");
+
+    await act(async () => {
+      source.viewport.scrollTop = 300;
+      source.viewport.dispatchEvent(new Event("scroll"));
+    });
+
+    await vi.waitFor(() => expect(textarea()).toBeNull());
+    expect(onSave).toHaveBeenCalledWith("scrolled away");
+  });
+
+  it("commits the draft when the user clicks outside the popover", async () => {
+    using source = setup();
+    const onSave = vi.fn(() => true);
+    await using _screen = await mount(source.sourceAnchor, onSave);
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-slot="popover-popup"]')).not.toBeNull(),
+    );
+    await typeComment("outside draft");
+
+    const outside = document.createElement("button");
+    outside.textContent = "outside";
+    outside.style.cssText = "position: fixed; right: 8px; bottom: 8px;";
+    document.body.append(outside);
+    try {
+      await userEvent.click(outside);
+    } finally {
+      outside.remove();
+    }
+
+    await vi.waitFor(() => expect(textarea()).toBeNull());
+    expect(onSave).toHaveBeenCalledWith("outside draft");
   });
 });

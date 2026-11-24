@@ -46,8 +46,20 @@ const MIB = 1024 * 1024;
 const MAX_IMAGE_BYTES = 10 * MIB;
 const MAX_PAGE_BYTES = 25 * MIB;
 const HTML_FILE_EXTENSION = /\.html?$/i;
-// Judge the bytes, as the image check does: a renamed .env or key does not start like a page.
-const HTML_DOCUMENT_START = /^\s*<(?:!doctype\s+html|html)[\s>]/i;
+// Judge the bytes, as the image check does: a renamed .env, key or XML config does not open
+// with a doctype or a standard HTML element, so fragments pass and arbitrary tags do not.
+const HTML_ELEMENTS =
+  "a abbr address area article aside audio b base bdi bdo blockquote body br button canvas " +
+  "caption cite code col colgroup data datalist dd del details dfn dialog div dl dt em embed " +
+  "fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 head header hgroup hr html i iframe " +
+  "img input ins kbd label legend li link main map mark math menu meta meter nav noscript object " +
+  "ol optgroup option output p picture pre progress q rp rt ruby s samp script search section " +
+  "select slot small source span strong style sub summary sup svg table tbody td template " +
+  "textarea tfoot th thead time title tr track u ul var video wbr";
+const HTML_PAGE_OPENING = new RegExp(
+  String.raw`^<(?:!doctype\s+html|${HTML_ELEMENTS.replaceAll(" ", "|")})[\s/>]`,
+  "i",
+);
 const formatMib = (bytes: number) => `${(bytes / MIB).toFixed(1)} MiB`;
 
 export class HtmlRenderFileError extends Schema.TaggedError<HtmlRenderFileError>()(
@@ -55,7 +67,7 @@ export class HtmlRenderFileError extends Schema.TaggedError<HtmlRenderFileError>
   { path: Schema.String, cause: Schema.optional(Schema.Defect()) },
 ) {
   override get message(): string {
-    return `${this.path} is not a readable HTML document. Pass an absolute path to a regular .html file that starts with <!doctype html> or <html>, or pass html instead.`;
+    return `${this.path} is not a readable HTML document. Pass an absolute path to a regular .html file that starts with <!doctype html> or an HTML element such as <html>, <style> or <div>, or pass html instead.`;
   }
 }
 
@@ -252,6 +264,16 @@ const hasSvgRoot = (text: string) => {
     else if (text.slice(at, at + 9).toLowerCase() === "<!doctype") at = afterDoctype(text, at + 9);
     // XML names are case-sensitive, and only these characters can end one here.
     else return SVG_ROOT_OPENING.test(text.slice(at, at + 5));
+  }
+  return false;
+};
+
+const opensAsHtml = (text: string) => {
+  let at = 0;
+  while (at !== -1) {
+    while (WHITESPACE_CHAR.test(text.charAt(at))) at += 1;
+    if (!text.startsWith("<!--", at)) return HTML_PAGE_OPENING.test(text.slice(at, at + 64));
+    at = after(text, "-->", at + 4);
   }
   return false;
 };
@@ -481,7 +503,7 @@ const make = Effect.gen(function* () {
         });
       }),
     );
-    return HTML_DOCUMENT_START.test(html) ? html : yield* unreadable;
+    return opensAsHtml(html) ? html : yield* unreadable;
   });
 
   const readSource = (input: HtmlRenderSource) =>
