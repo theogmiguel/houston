@@ -71,7 +71,10 @@ describe("instances marked local", () => {
     const providers: ReadonlyArray<ServerProvider> = [
       provider({ instanceId: "codex", models: ["gpt-6"] }),
       provider({ provider: pi, instanceId: "pi", models: ["anthropic/claude"] }),
-      { ...provider({ provider: pi, instanceId: "pi_local", models: ["ollama/qwen"] }), inference: "local" },
+      {
+        ...provider({ provider: pi, instanceId: "pi_local", models: ["ollama/qwen"] }),
+        inference: "local",
+      },
     ];
     const settings: UnifiedSettings = {
       ...DEFAULT_UNIFIED_SETTINGS,
