@@ -4,6 +4,7 @@ import { assert, describe, it } from "@effect/vitest";
 import { CommandId, MessageId } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
+import * as Tracer from "effect/Tracer";
 import { TestClock } from "effect/testing";
 
 import { ClaudeProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
@@ -510,6 +511,72 @@ describe("send intents at dispatch", () => {
       assert.lengthOf(harness.started, 1);
       assert.deepInclude(latest(history), { state: "dropped", reason: "providerCancelled" });
     }),
+  );
+
+  // A completed run with no dropped steer costs the thread no projection read.
+  const readsWithoutDroppedSteer = (
+    name: string,
+    options: DoubleOptions,
+    maxStatementsPerPass: number,
+  ) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness(name, { ...options, steerAdopts: true });
+        const spans: Array<Tracer.Span> = [];
+        const tracer = Tracer.make({
+          span(spanOptions) {
+            const span = new Tracer.NativeSpan(spanOptions);
+            spans.push(span);
+            return span;
+          },
+        });
+        const underRequeue = (span: Tracer.Span) => {
+          let parent = span.parent._tag === "Some" ? span.parent.value : undefined;
+          while (parent?._tag === "Span") {
+            if (parent.name === "Orchestrator.requeueDroppedSteers") return true;
+            parent = parent.parent._tag === "Some" ? parent.parent.value : undefined;
+          }
+          return false;
+        };
+        yield* runWith(harness, ({ send, startFirst, settle, runningTurn, deliveries }) =>
+          Effect.gen(function* () {
+            const runId = yield* startFirst;
+            const messageId = MessageId.make(`message:${name}`);
+            yield* send(messageId, "also report the slowest test", {
+              type: "steer_active",
+              targetRunId: runId,
+            });
+            yield* settle;
+            assert.equal(latest(deliveries(messageId))?.state, "adopted");
+            yield* harness.endTurn(yield* runningTurn, "completed");
+            yield* settle;
+            yield* send(`${messageId}:unsteered`, "next", { type: "start_immediately" });
+            yield* settle;
+            yield* harness.endTurn(yield* runningTurn, "completed");
+            yield* settle;
+          }),
+        ).pipe(Effect.withTracer(tracer));
+        assert.lengthOf(harness.started, 2);
+        const passes = spans.filter((span) => span.name === "Orchestrator.requeueDroppedSteers");
+        assert.isAtLeast(passes.length, 2);
+        const inside = spans.filter(underRequeue);
+        assert.lengthOf(
+          inside.filter((span) => span.name === "ProjectionStore.readCanonicalProjection"),
+          0,
+        );
+        assert.isAtMost(
+          inside.filter((span) => span.name === "sqlite").length,
+          passes.length * maxStatementsPerPass,
+        );
+      }),
+    );
+
+  it.effect("a completed Claude run with no dropped steer reads no thread projection", () =>
+    readsWithoutDroppedSteer("claude-no-dropped-steer", claude, 1),
+  );
+
+  it.effect("another provider's completed run reads nothing for dropped steers", () =>
+    readsWithoutDroppedSteer("codex-no-dropped-steer", {}, 0),
   );
 
   // A dropped steer keeps its place: behind messages queued before it, ahead of later ones.

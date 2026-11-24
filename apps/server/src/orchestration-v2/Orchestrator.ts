@@ -15188,28 +15188,20 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     run: OrchestrationV2Run,
   ) {
     if (run.status !== "completed") return;
-    const { turnItems } = yield* projectionStore.getThreadRecords(threadId, ["turnItems"], {
-      turnItemTypes: ["user_message"],
-      turnItemRunIds: [run.id],
-    });
-    const dropped = turnItems.flatMap((item) =>
-      item.type === "user_message" &&
-      item.delivery?.route === "activeTurn" &&
-      item.delivery.state === "dropped" &&
-      item.delivery.reason === "providerCancelled"
-        ? [{ item, delivery: item.delivery }]
-        : [],
+    // Every completed run comes here, so check the driver and the stored drops before the thread.
+    const adapter = yield* providerAdapters.get(run.providerInstanceId).pipe(Effect.option);
+    if (Option.isNone(adapter) || adapter.value.driver !== "claudeAgent") return;
+    const dropped = (yield* projectionStore.getDroppedSteers(threadId, run.id)).flatMap((item) =>
+      item.type === "user_message" ? [item] : [],
     );
     if (dropped.length === 0) return;
-    const { driver } = yield* providerAdapters.get(run.providerInstanceId);
-    if (driver !== "claudeAgent") return;
     const { messages, runs } = yield* projectionStore.getThreadRecords(
       threadId,
       ["messages", "runs"],
-      { messageIds: dropped.map(({ item }) => item.messageId) },
+      { messageIds: dropped.map((item) => item.messageId) },
     );
     const placed = [];
-    for (const { item } of dropped) {
+    for (const item of dropped) {
       const message = messages.find((candidate) => candidate.id === item.messageId);
       if (message === undefined || message.runId !== run.id) continue;
       // The first steer effect recorded the runs queued before the steer; a promoted queued
