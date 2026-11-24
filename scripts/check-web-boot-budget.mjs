@@ -9,8 +9,10 @@ import * as NodeZlib from "node:zlib";
 // Measured at 3,981,009 bytes once rarely used dialogs loaded on demand; issue linking added
 // 3,206 bytes of protocol and presentation to the boot closure, which new UI must not join.
 // The 2% headroom absorbs build-environment defines and small additions; beyond it, load the
-// new code with a dynamic import or raise this with the reason in the commit.
-export const BOOT_BUDGET_BYTES = 4_080_000;
+// new code with a dynamic import or raise this with the reason in the commit. Local model
+// support added about 10 KB of protocol (the inference RPCs and settings the shell decodes on
+// connect) while its dialogs, settings page and usage section stay out of the closure.
+export const BOOT_BUDGET_BYTES = 4_090_000;
 
 // What a cold start loads before React mounts: each entry and its static imports, plus the
 // chunks its own dynamic imports preload (bootstrap.ts → main.tsx), with their stylesheets.
