@@ -11,6 +11,11 @@ import * as Stream from "effect/Stream";
 import * as Option from "effect/Option";
 import { ChildProcessSpawner } from "effect/process";
 import { makeCodexTextGeneration } from "../../textGeneration/CodexTextGeneration.ts";
+import {
+  makeCodexGatewaySource,
+  withCodexGatewayStatus,
+} from "../../houston/inference/codexGateway.ts";
+import * as ServerConfig from "../../config.ts";
 import * as ProviderHost from "@houston-app/provider-core/server/ProviderHost";
 import { chatGptModels } from "../CodexChatGptModels.ts";
 import { makeCodexManagedRuntime } from "../CodexManagedRuntime.ts";
@@ -47,6 +52,15 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
     config,
     environment: yield* mergeProviderInstanceEnvironment(input.environment),
   });
+  const serverConfig = yield* ServerConfig.ServerConfig;
+  const gateway = yield* makeCodexGatewaySource(instanceId, {
+    directory: path.join(serverConfig.providerStatusCacheDir, "codex-model-catalogs"),
+    codexVersion: runtime.installation.resolve().pipe(
+      Effect.map((executable) => executable.version),
+      Effect.orElseSucceed(() => undefined),
+    ),
+  });
+  const gatewayResolution = yield* gateway.resolution;
   const continuationIdentity = codexContinuationIdentity(runtime.homeLayout);
   const stamp = withInstanceIdentity({
     instanceId,
@@ -62,12 +76,17 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
   };
   const pending = makePendingCodexProvider({ ...config, enabled, customModels: [] }).pipe(
     Effect.map((draft) =>
-      stamp({
-        ...draft,
-        models: [],
-        setup,
-        runtimePaths,
-      }),
+      stamp(
+        withCodexGatewayStatus(
+          {
+            ...draft,
+            models: [],
+            setup,
+            runtimePaths,
+          },
+          gatewayResolution,
+        ),
+      ),
     ),
   );
   const check = Effect.gen(function* () {
@@ -152,32 +171,39 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
         }),
       ),
       Effect.map((draft) =>
-        stamp({
-          ...draft,
-          auth: managedAuth,
-          version: draft.version ?? executable.value.version,
-          usageLimits,
-          models: draft.models.map((model) => ({
-            ...model,
-            ...(model.capabilities
-              ? {
-                  capabilities: {
-                    ...model.capabilities,
-                    optionDescriptors: (model.capabilities.optionDescriptors ?? []).filter(
-                      (option) => option.id !== "serviceTier",
+        stamp(
+          withCodexGatewayStatus(
+            {
+              ...draft,
+              auth: managedAuth,
+              version: draft.version ?? executable.value.version,
+              usageLimits,
+              models: draft.models.map((model) => ({
+                ...model,
+                ...(model.capabilities
+                  ? {
+                      capabilities: {
+                        ...model.capabilities,
+                        optionDescriptors: (model.capabilities.optionDescriptors ?? []).filter(
+                          (option) => option.id !== "serviceTier",
+                        ),
+                      },
+                    }
+                  : {}),
+              })),
+              setup,
+              runtimePaths,
+              ...(draft.slashCommands
+                ? {
+                    slashCommands: draft.slashCommands.filter(
+                      (command) => command.name !== "feedback",
                     ),
-                  },
-                }
-              : {}),
-          })),
-          setup,
-          runtimePaths,
-          ...(draft.slashCommands
-            ? {
-                slashCommands: draft.slashCommands.filter((command) => command.name !== "feedback"),
-              }
-            : {}),
-        }),
+                  }
+                : {}),
+            },
+            gatewayResolution,
+          ),
+        ),
       ),
       Effect.catch(() =>
         runtime.auth.read.pipe(
@@ -245,6 +271,8 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
   const orchestrationAdapter = yield* createCodexAdapterV2(input, {
     onUsageLimits: (update) => snapshot.applyUsageLimits(update),
     resolveRuntime: runtime.resolve,
+    gateway,
+    linkedToInferenceServer: gatewayResolution !== undefined,
   }).pipe(
     Effect.mapError(
       (cause) =>
@@ -261,6 +289,7 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
     undefined,
     snapshot.getSnapshot.pipe(Effect.map((value) => value.models)),
     resolveRuntime,
+    gateway,
   );
   const protect = <A>(operation: string, effect: Effect.Effect<A, TextGenerationError>) =>
     runtime.auth.controller.withAccess!(effect).pipe(

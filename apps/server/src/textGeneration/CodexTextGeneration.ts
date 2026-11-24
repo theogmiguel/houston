@@ -19,6 +19,7 @@ import { resolveAttachmentPath } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
 import { expandHomePath } from "@houston-app/provider-core/server/pathExpansion";
 import { codexExecLaunchArgs, resolveCodexLaunchArgs } from "../provider/codexLaunchArgs.ts";
+import type { CodexGatewaySource } from "../houston/inference/codexGateway.ts";
 import * as TextGenerationOperations from "@houston-app/provider-core/server/textGenerationOperations";
 import {
   normalizeCliError,
@@ -61,6 +62,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     import("@houston-app/contracts").ProviderSetupError,
     Scope.Scope
   >,
+  gateway?: Pick<CodexGatewaySource, "forBackground" | "withoutGateway">,
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -268,6 +270,12 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       // The selection's options were chosen for the requested model and may not fit a fallback.
       const fellBack = matchedModel === undefined && model !== requestedModel;
       const launchArgs = resolveCodexLaunchArgs(effectiveConfig.launchArgs, effectiveEnvironment);
+      const managed = gateway === undefined ? undefined : yield* gateway.forBackground;
+      const refusal =
+        gateway !== undefined && managed === undefined ? yield* gateway.withoutGateway : undefined;
+      if (refusal !== undefined) {
+        return yield* new TextGenerationError({ operation, detail: refusal });
+      }
       const reasoningEffort =
         (fellBack
           ? undefined
@@ -278,6 +286,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       const binary = effectiveConfig.binaryPath || "codex";
       const env = {
         ...effectiveEnvironment,
+        ...managed?.environment,
         ...(effectiveConfig.homePath
           ? {
               CODEX_HOME: expandHomePath(
@@ -300,6 +309,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         [
           "exec",
           ...execLaunchArgs,
+          ...(managed?.args ?? []),
           // A user's MCP server could act on the text-generation prompt.
           ...CODEX_NO_PLUGIN_ARGS,
           ...(mcpServersOff ? ["--config", mcpServersOff] : []),

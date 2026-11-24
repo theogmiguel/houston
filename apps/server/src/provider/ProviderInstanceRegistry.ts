@@ -217,11 +217,13 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
     };
   }
 
-  // Only harnesses with an OpenAI-compatible endpoint setting can route a linked server.
+  // Only harnesses Houston can point at a gateway route accept a linked server.
   if (
     entry.inferenceServerId !== undefined &&
     entry.driver !== "pi" &&
-    entry.driver !== "opencode"
+    entry.driver !== "opencode" &&
+    entry.driver !== "codex" &&
+    entry.driver !== "claudeAgent"
   ) {
     return {
       kind: "unavailable" as const,
@@ -230,7 +232,7 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
         instanceId,
         displayName: entry.displayName,
         accentColor: entry.accentColor,
-        reason: `${driver.metadata.displayName} cannot use an inference server yet: it has no OpenAI-compatible endpoint setting.`,
+        reason: `${driver.metadata.displayName} cannot use an inference server yet.`,
       }),
     };
   }

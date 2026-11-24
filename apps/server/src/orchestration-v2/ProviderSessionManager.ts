@@ -510,14 +510,17 @@ export const layerWithOptions = (
         function* (providerInstanceId: ProviderInstanceId) {
           if (Option.isNone(inferenceAccess) || Option.isNone(serverSettings)) return undefined;
           const settings = yield* serverSettings.value.getSettings;
-          const resolution = yield* inferenceAccess.value.resolve(
-            providerInstanceId,
-            "chat-completions",
-          );
-          if (resolution?.managed !== true) return undefined;
-          const serverId = resolution.server.serverId as InferenceServerId;
-          const config = settings.inferenceServers[serverId];
-          return config === undefined ? undefined : { serverId, config };
+          // Each harness speaks its own protocol; a session credential is the same whichever one
+          // the adapter later asks for, so any managed protocol proves the link is usable.
+          const protocols = ["chat-completions", "responses", "messages"] as const;
+          for (const protocol of protocols) {
+            const resolution = yield* inferenceAccess.value.resolve(providerInstanceId, protocol);
+            if (resolution?.managed !== true) continue;
+            const serverId = resolution.server.serverId as InferenceServerId;
+            const config = settings.inferenceServers[serverId];
+            if (config !== undefined) return { serverId, config };
+          }
+          return undefined;
         },
         (effect) => effect.pipe(Effect.orElseSucceed(() => undefined)),
       );

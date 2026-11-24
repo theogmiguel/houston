@@ -384,14 +384,21 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
-  it.live("refuses a link to an inference server for a driver without an OpenAI endpoint", () =>
+  it.live("refuses a link to an inference server for a driver that cannot use a gateway", () =>
     Effect.gen(function* () {
-      const instanceId = ProviderInstanceId.make("codex_linked");
+      const instanceId = ProviderInstanceId.make("cursor_linked");
+      const driver: AnyProviderDriver = {
+        driverKind: ProviderDriverKind.make("cursor"),
+        metadata: { displayName: "Cursor" },
+        configSchema: Schema.Unknown,
+        defaultConfig: () => ({}),
+        create: () => Effect.die("a refused driver must not be created"),
+      };
       const { registry } = yield* makeProviderInstanceRegistry({
-        drivers: [CodexDriver],
+        drivers: [driver],
         configMap: {
           [instanceId]: {
-            driver: ProviderDriverKind.make("codex"),
+            driver: ProviderDriverKind.make("cursor"),
             inferenceServerId: InferenceServerId.make("rtx"),
           },
         },
@@ -399,9 +406,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
 
       expect(yield* registry.getInstance(instanceId)).toBeUndefined();
       const [unavailable] = yield* registry.listUnavailable;
-      expect(unavailable?.unavailableReason).toBe(
-        "Codex cannot use an inference server yet: it has no OpenAI-compatible endpoint setting.",
-      );
+      expect(unavailable?.unavailableReason).toBe("Cursor cannot use an inference server yet.");
     }).pipe(Effect.provide(layerTest)),
   );
 

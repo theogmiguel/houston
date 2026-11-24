@@ -645,7 +645,7 @@ function ProjectOverrideInheritance({
   );
 }
 
-/** Links a Pi or OpenCode instance to one of the environment's registered model servers. */
+/** Links a Pi, OpenCode, Codex or Claude instance to one of the environment's model servers. */
 function ModelServerRow({
   instance,
   environmentId,
@@ -763,7 +763,12 @@ interface ProviderInstanceCardProps {
 
 const EMPTY_ACP_PROJECTS: NonNullable<ProviderInstanceCardProps["acpProjects"]> = [];
 const NO_INFERENCE_SERVER = "none";
-const INFERENCE_CAPABLE_DRIVERS: ReadonlySet<string> = new Set(["pi", "opencode"]);
+const INFERENCE_CAPABLE_DRIVERS: ReadonlySet<string> = new Set([
+  "pi",
+  "opencode",
+  "codex",
+  "claudeAgent",
+]);
 const NO_SECRET_SOURCES: ReadonlyArray<SecretSource> = [];
 const NO_CUSTOM_MODELS: ReadonlyArray<CustomModelDefinition> = [];
 

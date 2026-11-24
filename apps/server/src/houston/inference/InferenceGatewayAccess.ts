@@ -41,7 +41,9 @@ function resolveManagedServer(
   if (snapshot?.status !== "ready") return unmanaged(`Inference server ${name} is not ready.`);
   if (snapshot.apiProtocols?.includes(protocol) !== true) {
     return unmanaged(
-      `Inference server ${name} does not serve the ${PROTOCOL_NAMES[protocol]} API this provider needs.`,
+      `Inference server ${name} does not serve the ${PROTOCOL_NAMES[protocol]} API ${
+        protocol === "messages" ? "Claude needs" : "this provider needs"
+      }.`,
     );
   }
   if (snapshot.models.length === 0) return unmanaged(`Inference server ${name} lists no models.`);
@@ -134,7 +136,11 @@ const make = Effect.gen(function* () {
   });
 });
 
-const HARNESS_PROTOCOLS: ReadonlyArray<InferenceApiProtocol> = ["chat-completions", "responses"];
+const HARNESS_PROTOCOLS: ReadonlyArray<InferenceApiProtocol> = [
+  "chat-completions",
+  "responses",
+  "messages",
+];
 
 export const layer = Layer.effect(InferenceGateway.InferenceGatewayAccess, make);
 

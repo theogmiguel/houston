@@ -10029,3 +10029,63 @@ describe("codexDynamicToolOutput", () => {
     ]);
   });
 });
+
+describe("CodexAdapterV2 local models", () => {
+  it.effect(
+    "a local instance whose server is down refuses to open instead of using the cloud",
+    () =>
+      Effect.gen(function* () {
+        let opened = 0;
+        const adapter = yield* CodexAdapterV2.makeCodexAdapterV2({
+          instanceId: CodexAdapterV2.CODEX_DEFAULT_INSTANCE_ID,
+          settings: DEFAULT_CODEX_SETTINGS,
+          environment: {},
+          linkedToInferenceServer: true,
+          gateway: {
+            resolution: Effect.succeed({
+              managed: false,
+              reason: "Inference server rtx is not ready.",
+              local: true,
+            }),
+            forSession: () => Effect.undefined,
+            forBackground: Effect.undefined,
+            withoutGateway: Effect.succeed(
+              "Inference server rtx is not ready. This Codex instance runs local models, so it waits instead of using the cloud.",
+            ),
+          },
+          clientFactory: {
+            open: () =>
+              Effect.sync(() => {
+                opened++;
+              }).pipe(Effect.andThen(Effect.die("a cloud session opened"))),
+          },
+          digest: yield* Digest.Digest,
+          fileSystem: yield* FileSystem.FileSystem,
+          idAllocator: yield* IdAllocator.IdAllocatorV2,
+          serverConfig: yield* ProviderReplayHarness.makeReplayServerConfig("local-down").pipe(
+            Effect.orDie,
+          ),
+        });
+        const error = yield* Effect.flip(
+          adapter.openSession({
+            threadId: ThreadId.make("thread-local-down"),
+            providerSessionId: ProviderSessionId.make("session-local-down"),
+            modelSelection: CODEX_TEST_MODEL_SELECTION,
+            runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
+          }),
+        );
+        assert.equal(error._tag, "ProviderAdapterOpenSessionError");
+        assert.equal(opened, 0);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+  );
+});
