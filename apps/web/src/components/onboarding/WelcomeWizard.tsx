@@ -15,6 +15,7 @@ import {
 } from "@houston-app/client-runtime/state/runtime";
 import {
   AgentSessionSource,
+  AuthSettingsWriteScope,
   AuthTerminalOperateScope,
   CommandId,
   defaultInstanceIdForDriver,
@@ -28,6 +29,7 @@ import {
   ArrowRightIcon,
   CheckIcon,
   ChevronRightIcon,
+  CpuIcon,
   LinkIcon,
   MonitorIcon,
   TerminalIcon,
@@ -81,6 +83,9 @@ import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { HoustonWordmark } from "../HoustonWordmark";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
+import { Card } from "../ui/card";
+import { Text } from "../ui/text";
+import { UseLocalModelDialog } from "../settings/UseLocalModelDialog";
 import { CommandBlock } from "../CommandBlock";
 import { Checkbox } from "../ui/checkbox";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
@@ -622,6 +627,8 @@ function ConnectedAgentsStep({
     autoStart: boolean;
   } | null>(null);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
+  const canDiscoverLocalModels = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
+  const [localSetupOpen, setLocalSetupOpen] = useState(false);
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- asks the environment to refresh its provider list when the environment changes
   useEffect(() => {
@@ -661,6 +668,30 @@ function ConnectedAgentsStep({
   return (
     <section>
       <h2 className="mb-2 text-sm font-medium">{machineLabel}</h2>
+      {canDiscoverLocalModels ? (
+        <Card className="mb-3 flex items-center gap-3">
+          <CpuIcon className="size-4 shrink-0" aria-hidden />
+          <div className="min-w-0 flex-1">
+            <Text as="p" weight="medium">
+              Run models on your own hardware
+            </Text>
+            <Text as="p" variant="caption" tone="muted">
+              Find Ollama, LM Studio, llama.cpp, vLLM, SGLang, or TensorFold on {machineLabel} and
+              use it for new threads. Cloud agents below stay available.
+            </Text>
+          </div>
+          <Button size="sm" onClick={() => setLocalSetupOpen(true)}>
+            Find local models
+          </Button>
+        </Card>
+      ) : null}
+      {localSetupOpen ? (
+        <UseLocalModelDialog
+          environmentId={environmentId}
+          machineLabel={machineLabel}
+          onClose={() => setLocalSetupOpen(false)}
+        />
+      ) : null}
       {!canOperateTerminal ? (
         <p className="mb-2 text-sm text-muted-foreground">
           This connection cannot control terminals.

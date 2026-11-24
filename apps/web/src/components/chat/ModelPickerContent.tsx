@@ -58,6 +58,7 @@ import { MODEL_PICKER_DOCKED_CLASS, MODEL_PICKER_HINT_CLS } from "../ui/composer
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import { TooltipProvider } from "../ui/tooltip";
 import { Button, InlineButton } from "../ui/button";
+import { Text } from "../ui/text";
 import {
   isProviderInstancePickerReady,
   isProviderInstancePickerVisible,
@@ -200,11 +201,13 @@ function ModelPickerProviderNotices({
   setupEntries,
   updateRequiredNotices,
   emptyLabel,
+  offerLocalSetup,
   onRequestClose,
   onOpenProviderSetup,
 }: {
   setupEntries: ReadonlyArray<ProviderInstanceEntry>;
   emptyLabel: string;
+  offerLocalSetup: boolean;
   updateRequiredNotices: ReadonlyArray<{ instanceId: ProviderInstanceId; notice: string }>;
   onRequestClose: (() => void) | undefined;
   onOpenProviderSetup: ((instanceId: ProviderInstanceId) => void) | undefined;
@@ -238,6 +241,19 @@ function ModelPickerProviderNotices({
       ) : (
         <ComboboxEmpty className="empty:h-0">{emptyLabel}</ComboboxEmpty>
       )}
+      {offerLocalSetup ? (
+        <Text as="p" variant="caption" tone="muted" className="shrink-0 px-3 py-2">
+          {t("No model runs on your own hardware yet.")}{" "}
+          <InlineButton
+            onClick={() => {
+              onRequestClose?.();
+              void navigate({ to: "/settings/inference", search: { setup: "local" } });
+            }}
+          >
+            {t("Use a local model")}
+          </InlineButton>
+        </Text>
+      ) : null}
       {updateRequiredNotices.map(({ instanceId, notice }) => (
         <p
           key={instanceId}
@@ -1113,6 +1129,13 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               ) : null}
               <ModelPickerProviderNotices
                 setupEntries={providerSetupEntries}
+                offerLocalSetup={
+                  !instanceEntries.some(
+                    (entry) =>
+                      entry.snapshot.inference === "local" ||
+                      entry.snapshot.inferenceServerId !== undefined,
+                  )
+                }
                 updateRequiredNotices={updateRequiredNotices}
                 emptyLabel={
                   selectedInstanceId === "favorites" && !isSearching

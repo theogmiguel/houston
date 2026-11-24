@@ -55,6 +55,7 @@ import {
   BugIcon,
   ChartNoAxesColumnIcon,
   CheckIcon,
+  CpuIcon,
   ChevronRightIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
@@ -1734,6 +1735,29 @@ function OpenCommandPaletteDialog(props: {
       },
     });
   }
+
+  actionItems.push({
+    kind: "action",
+    value: "action:use-local-model",
+    searchTerms: [
+      "local",
+      "model",
+      "gpu",
+      "inference",
+      "ollama",
+      "lm studio",
+      "llama.cpp",
+      "vllm",
+      "sglang",
+      "server",
+      "offline",
+    ],
+    title: t("Use a local model"),
+    icon: <CpuIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/settings/inference", search: { setup: "local" } });
+    },
+  });
 
   actionItems.push({
     kind: "action",
