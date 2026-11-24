@@ -34,7 +34,7 @@ import {
   MonitorIcon,
   TerminalIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useClientSettings } from "../../hooks/useSettings";
 
 import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
@@ -85,7 +85,6 @@ import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Text } from "../ui/text";
-import { UseLocalModelDialog } from "../settings/UseLocalModelDialog";
 import { CommandBlock } from "../CommandBlock";
 import { Checkbox } from "../ui/checkbox";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
@@ -105,6 +104,13 @@ const NO_ENVIRONMENTS: readonly EnvironmentId[] = [];
 const AGENT_ONBOARDING_THREAD_ID = ThreadId.make("onboarding-agent-setup");
 const ONBOARDING_STAGES = ["Connect", "Agents", "Projects"] as const;
 const SCAN_LIMIT_MESSAGE = "Scan limit reached. Some projects or conversations may be missing.";
+
+// Loaded on demand: first run is the only boot path that can open it.
+const UseLocalModelDialog = lazy(() =>
+  import("../settings/UseLocalModelDialog").then((module) => ({
+    default: module.UseLocalModelDialog,
+  })),
+);
 
 export function WelcomeWizard({
   localAvailable,
@@ -688,11 +694,13 @@ function ConnectedAgentsStep({
         </Card>
       ) : null}
       {localSetupOpen ? (
-        <UseLocalModelDialog
-          environmentId={environmentId}
-          machineLabel={machineLabel}
-          onClose={() => setLocalSetupOpen(false)}
-        />
+        <Suspense fallback={null}>
+          <UseLocalModelDialog
+            environmentId={environmentId}
+            machineLabel={machineLabel}
+            onClose={() => setLocalSetupOpen(false)}
+          />
+        </Suspense>
       ) : null}
       {!canOperateTerminal ? (
         <p className="mb-2 text-sm text-muted-foreground">
