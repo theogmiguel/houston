@@ -102,6 +102,12 @@ export function threadSupportsActiveSteering(projection: Projection | null | und
   return session?.capabilities.turns.supportsActiveSteering === true;
 }
 
+export function threadSteersDuringCompaction(projection: Projection | null | undefined): boolean {
+  if (projection == null) return false;
+  const session = resolveThreadProviderSession(projection);
+  return session?.capabilities.turns.activeSteeringDuringCompaction === true;
+}
+
 export function threadSupportsProviderHandoff(projection: Projection | null | undefined): boolean {
   if (projection == null) return false;
   const session = resolveThreadProviderSession(projection);

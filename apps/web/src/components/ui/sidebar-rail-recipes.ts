@@ -24,14 +24,6 @@ export const HOVER_CARD_TEXT_CLS = "break-words";
 /** The keyboard hint that labels a row with its jump shortcut. */
 export const RAIL_KBD_CLS = "border border-sidebar-border font-sans text-3xs text-secondary-label";
 
-/**
- * A row's diff totals use the timeline's diff colours at rest, so a changed checkout reads
- * without hovering. The mono 2xs digits stay below the title in size and weight.
- */
-export const ROW_DIFF_COUNTS_CLS = "font-mono text-2xs tabular-nums";
-export const ROW_DIFF_ADDED_CLS = "text-diff-addition-foreground";
-export const ROW_DIFF_REMOVED_CLS = "text-diff-deletion-foreground";
-
 /** The unsent-draft mark; the pencil gives way to a cross on hover or focus. */
 export const ROW_DRAFT_MARK_CLS = `group/draft cursor-pointer text-warning-foreground outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`;
 export const ROW_DRAFT_PENCIL_CLS =

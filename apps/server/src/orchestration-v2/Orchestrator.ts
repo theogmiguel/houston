@@ -9,6 +9,7 @@ import {
   runRanAfter,
   usageLimitBlockedRun,
 } from "@houston-app/shared/orchestrationV2ThreadError";
+import { providerAcceptedRun } from "@houston-app/shared/orchestrationV2ManualContinuation";
 import { canonicalizeGitCafePullRequestUrl } from "@houston-app/source-control-definitions/registry";
 import { threadIssueKeysEqual } from "@houston-app/contracts";
 import { threadPullRequestsOf } from "../sourceControl/threadPullRequests.ts";
@@ -6570,6 +6571,23 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           commandType: command.type,
           cause: "This thread can no longer be resumed from that run.",
         });
+      }
+      // The provider never received the stopped request, so Resume sends that request again.
+      const original = providerAcceptedRun(source, projection)
+        ? undefined
+        : projection.messages.find((message) => message.id === source.userMessageId);
+      if (
+        original !== undefined &&
+        original.notification === undefined &&
+        original.delegatedCompletion === undefined
+      ) {
+        const { context: _context, ...continuation } = command;
+        command = {
+          ...continuation,
+          text: original.text,
+          ...(original.context ? { context: original.context } : {}),
+          attachments: original.attachments,
+        };
       }
     }
     if (command.usageLimitContinuationOfRunId !== undefined) {

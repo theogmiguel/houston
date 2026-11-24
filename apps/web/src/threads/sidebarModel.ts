@@ -237,11 +237,6 @@ export function clearThreadSelection(): ThreadSelection {
   return { selectedThreadKeys: new Set(), anchorThreadKey: null };
 }
 
-/** The workspace row's uncommitted totals, when the renderer has them. */
-export function formatDiffCounts(diff: { insertions: number; deletions: number }): string {
-  return `+${diff.insertions} −${diff.deletions}`;
-}
-
 export interface SearchableThread {
   readonly title: string;
   readonly branch: string | null;
