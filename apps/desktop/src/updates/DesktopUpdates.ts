@@ -58,8 +58,9 @@ import {
 const CHANNEL_CHANGE_RETRY_DELAY = Duration.seconds(1);
 const CHANNEL_CHANGE_RETRIES = 30;
 const AUTO_UPDATE_STARTUP_DELAY = "15 seconds";
-const AUTO_UPDATE_POLL_INTERVAL = "4 minutes";
-const PREPARED_INSTALL_CHECK_WAIT = Duration.seconds(90);
+// Upstream checks every four hours; polling faster only loads the feed with no user benefit.
+const AUTO_UPDATE_POLL_INTERVAL = "4 hours";
+const UPDATE_CHECK_WAIT = Duration.seconds(90);
 
 type UpdateAction = "check" | "download" | "install" | "install-recovery" | "channel";
 
@@ -541,6 +542,24 @@ export const make = Effect.gen(function* () {
       ),
     );
 
+  // Re-runs admission after each finished action, so a caller waiting on a check decides on its
+  // result instead of the state the check started from.
+  const admitAfterCheck = Effect.fn("desktop.updates.admitAfterCheck")(function* (
+    admit: Effect.Effect<"admitted" | "refused" | "wait-for-check">,
+  ) {
+    const actionCompletions = yield* PubSub.subscribe(finishedUpdateActions);
+    let admission = yield* stateMutex.withPermits(1)(admit);
+    while (admission === "wait-for-check") {
+      const finishedAction = yield* PubSub.take(actionCompletions).pipe(
+        Effect.timeoutOption(UPDATE_CHECK_WAIT),
+      );
+      admission = Option.isNone(finishedAction)
+        ? "refused"
+        : yield* stateMutex.withPermits(1)(admit);
+    }
+    return admission;
+  });
+
   const applyAutoUpdaterChannel = Effect.fn("desktop.updates.applyAutoUpdaterChannel")(function* (
     channel: DesktopUpdateChannel,
   ) {
@@ -620,16 +639,34 @@ export const make = Effect.gen(function* () {
   });
 
   const downloadAvailableUpdate = Effect.gen(function* () {
+    const admission = yield* Effect.scoped(
+      admitAfterCheck(
+        Effect.gen(function* () {
+          const state = yield* Ref.get(updateStateRef);
+          if (!(yield* Ref.get(updaterConfiguredRef)) || state.status !== "available") {
+            return "refused" as const;
+          }
+          const activeAction = yield* Ref.get(activeUpdateActionRef);
+          if (Option.isSome(activeAction)) {
+            return activeAction.value === "check"
+              ? ("wait-for-check" as const)
+              : ("refused" as const);
+          }
+          return (yield* tryStartUpdateAction("download"))
+            ? ("admitted" as const)
+            : ("refused" as const);
+        }),
+      ),
+    );
+    if (admission === "refused") {
+      return { accepted: false, completed: false };
+    }
+
     const state = yield* Ref.get(updateStateRef);
-    if (!(yield* Ref.get(updaterConfiguredRef)) || state.status !== "available") {
-      return { accepted: false, completed: false };
-    }
-
-    if (!(yield* tryStartUpdateAction("download"))) {
-      return { accepted: false, completed: false };
-    }
-
     return yield* Effect.gen(function* () {
+      if (state.status !== "available") {
+        return { accepted: false, completed: false };
+      }
       yield* setState(reduceDesktopUpdateStateOnDownloadStart(state));
       yield* electronUpdater.setDisableDifferentialDownload(
         isArm64HostRunningIntelBuild(environment.runtimeInfo),
@@ -790,47 +827,35 @@ export const make = Effect.gen(function* () {
   const installDownloadedUpdate = (expectedVersion?: string) =>
     Effect.scoped(
       Effect.gen(function* () {
-        const actionCompletions = yield* PubSub.subscribe(finishedUpdateActions);
-        let admission: "admitted" | "refused" | "wait-for-check" = "wait-for-check";
-        while (admission === "wait-for-check") {
-          admission = yield* stateMutex.withPermits(1)(
-            Effect.gen(function* () {
-              const state = yield* Ref.get(updateStateRef);
-              const activeAction = yield* Ref.get(activeUpdateActionRef);
-              const hasExpectedDownload =
-                state.downloadedVersion !== null &&
-                (expectedVersion === undefined || state.downloadedVersion === expectedVersion);
-              if (
-                (yield* Ref.get(desktopState.quitting)) ||
-                !(yield* Ref.get(updaterConfiguredRef)) ||
-                !hasExpectedDownload
-              ) {
-                return "refused" as const;
-              }
-              if (Option.isSome(activeAction)) {
-                return activeAction.value === "check" && expectedVersion !== undefined
-                  ? ("wait-for-check" as const)
-                  : ("refused" as const);
-              }
-              const hasInstallableDownload =
-                state.status === "downloaded" ||
-                (state.status === "error" &&
-                  (state.errorContext === null || state.errorContext === "install"));
-              if (!hasInstallableDownload) return "refused" as const;
-              return (yield* tryStartUpdateAction("install"))
-                ? ("admitted" as const)
-                : ("refused" as const);
-            }),
-          );
-          if (admission === "wait-for-check") {
-            const finishedAction = yield* PubSub.take(actionCompletions).pipe(
-              Effect.timeoutOption(PREPARED_INSTALL_CHECK_WAIT),
-            );
-            if (Option.isNone(finishedAction)) {
-              admission = "refused";
+        const admission = yield* admitAfterCheck(
+          Effect.gen(function* () {
+            const state = yield* Ref.get(updateStateRef);
+            const activeAction = yield* Ref.get(activeUpdateActionRef);
+            const hasExpectedDownload =
+              state.downloadedVersion !== null &&
+              (expectedVersion === undefined || state.downloadedVersion === expectedVersion);
+            if (
+              (yield* Ref.get(desktopState.quitting)) ||
+              !(yield* Ref.get(updaterConfiguredRef)) ||
+              !hasExpectedDownload
+            ) {
+              return "refused" as const;
             }
-          }
-        }
+            if (Option.isSome(activeAction)) {
+              return activeAction.value === "check"
+                ? ("wait-for-check" as const)
+                : ("refused" as const);
+            }
+            const hasInstallableDownload =
+              state.status === "downloaded" ||
+              (state.status === "error" &&
+                (state.errorContext === null || state.errorContext === "install"));
+            if (!hasInstallableDownload) return "refused" as const;
+            return (yield* tryStartUpdateAction("install"))
+              ? ("admitted" as const)
+              : ("refused" as const);
+          }),
+        );
         if (admission === "refused") {
           return { accepted: false, completed: false, failed: false };
         }
@@ -1037,15 +1062,41 @@ export const make = Effect.gen(function* () {
 
     if (Option.isNone(activeAction)) {
       const checkedAt = yield* currentIsoTimestamp;
-      yield* updateState((current) => ({
-        ...current,
-        status: "error",
-        message: error.message,
-        checkedAt,
-        downloadPercent: null,
-        errorContext: current.errorContext,
-        canRetry: getCanRetryFromState(current),
-      }));
+      yield* updateState((current) => {
+        // A background error describes no user action, so it must not leave a stale action context
+        // that offers a click the main process would refuse.
+        if (current.downloadedVersion !== null) {
+          return {
+            ...current,
+            status: "downloaded",
+            message: null,
+            checkedAt,
+            downloadPercent: 100,
+            errorContext: null,
+            canRetry: true,
+          };
+        }
+        if (current.availableVersion !== null) {
+          return {
+            ...current,
+            status: "available",
+            message: error.message,
+            checkedAt,
+            downloadPercent: null,
+            errorContext: null,
+            canRetry: true,
+          };
+        }
+        return {
+          ...current,
+          status: "error",
+          message: error.message,
+          checkedAt,
+          downloadPercent: null,
+          errorContext: null,
+          canRetry: getCanRetryFromState(current),
+        };
+      });
     }
 
     yield* logUpdaterError(error.message, {

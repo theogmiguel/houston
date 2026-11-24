@@ -187,7 +187,11 @@ import {
 import { planThreadDeletion } from "./ThreadDeletion.ts";
 import type * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
-import { acceptedDelivery, nextDelivery } from "../houston/messageDelivery.ts";
+import {
+  acceptedDelivery,
+  nextDelivery,
+  steerFollowUpCommand,
+} from "../houston/messageDelivery.ts";
 import {
   ASIDE_NEEDS_FINISHED_TURN,
   asideForkRefusal,
@@ -757,6 +761,7 @@ function queuedMessageDelivery(
   command: {
     readonly messageId: OrchestrationV2ConversationMessage["id"];
     readonly notification?: unknown;
+    readonly steerFollowUpOfRunId?: RunId | undefined;
   },
   delegatedCompletion: unknown,
   input: {
@@ -770,7 +775,17 @@ function queuedMessageDelivery(
     (item) => item.type === "user_message" && item.messageId === command.messageId,
   );
   if (existing?.type === "user_message" && existing.delivery !== undefined) {
-    return { delivery: existing.delivery };
+    // A steer the provider dropped unread becomes its own turn in the commit that queues it.
+    return {
+      delivery:
+        command.steerFollowUpOfRunId === undefined
+          ? existing.delivery
+          : nextDelivery(existing.delivery, {
+              type: "rerouted",
+              reason: "turnEnded",
+              at: input.now,
+            }),
+    };
   }
   if (command.notification !== undefined || delegatedCompletion !== undefined) return {};
   const rerouted =
@@ -6103,6 +6118,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             providerThreadId: providerThread.id,
             providerTurnId: providerTurn.id,
             messageId: input.messageId,
+            steerFollowUpAfterRunOrdinal: Math.max(
+              0,
+              ...input.projection.runs.map((run) => run.ordinal),
+            ),
           },
         } satisfies PendingOrchestrationEffectV2,
       ]);
@@ -7039,7 +7058,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       projection.thread.worktreePath === null
         ? latestRun
         : undefined;
-    let queueBehindRun = activeRun ?? worktreeMissingRun;
+    // A steer whose run already ended still keeps its place in the queue.
+    const steerFollowUpSource =
+      command.steerFollowUpOfRunId === undefined
+        ? undefined
+        : projection.runs.find((run) => run.id === command.steerFollowUpOfRunId);
+    let queueBehindRun = activeRun ?? worktreeMissingRun ?? steerFollowUpSource;
     const pendingMergeBackTransfers = pendingMergeBackTransfersForThread(projection);
     const startsOrQueuesRun =
       dispatchMode.type === "defer_start" ||
@@ -7049,6 +7073,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     // Provider failure or usage limits re-hold the queue.
     const worktreeSetupUnresolved = worktreeSetupPending(projection);
     const sentByUserFromClient =
+      command.steerFollowUpOfRunId === undefined &&
       command.createdBy === "user" &&
       (command.creationSource === "web" || command.creationSource === "mobile") &&
       command.scheduledTaskId === undefined;
@@ -7220,6 +7245,35 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         command.createdBy === "agent" &&
         command.creationSource === "provider" &&
         !(yield* stopReachedRun(command, command.threadId, activeRun.id));
+      // Behind the runs queued before the steer was sent, and earlier requeued steers.
+      let steerFollowUpQueuePosition: number | undefined;
+      if (
+        command.steerFollowUpOfRunId !== undefined &&
+        command.steerFollowUpAfterRunOrdinal !== undefined
+      ) {
+        const afterRunOrdinal = command.steerFollowUpAfterRunOrdinal;
+        const steerOrdinal =
+          projection.turnItems.find(
+            (item) => item.type === "user_message" && item.messageId === command.messageId,
+          )?.ordinal ?? -1;
+        const earlierSteerMessageIds = new Set(
+          projection.turnItems.flatMap((item) =>
+            item.type === "user_message" && item.ordinal < steerOrdinal ? [item.messageId] : [],
+          ),
+        );
+        steerFollowUpQueuePosition =
+          Math.max(
+            0,
+            ...projection.runs
+              .filter(
+                (candidate) =>
+                  candidate.status === "queued" &&
+                  (candidate.ordinal <= afterRunOrdinal ||
+                    earlierSteerMessageIds.has(candidate.userMessageId)),
+              )
+              .map((candidate) => candidate.queuePosition ?? candidate.ordinal),
+          ) + 1;
+      }
       const run: OrchestrationV2Run = {
         id: runId,
         threadId: command.threadId,
@@ -7240,12 +7294,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         queuePosition:
           goalStopRunId !== undefined
             ? 1
-            : Math.max(
+            : (steerFollowUpQueuePosition ??
+              Math.max(
                 0,
                 ...projection.runs
                   .filter((candidate) => candidate.status === "queued")
                   .map((candidate) => candidate.queuePosition ?? candidate.ordinal),
-              ) + 1,
+              ) + 1),
         requestedAt: now,
         startedAt: null,
         completedAt: null,
@@ -7338,6 +7393,42 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         occurredAt: now,
         payload: run,
       });
+      if (steerFollowUpQueuePosition !== undefined) {
+        for (const queued of projection.runs) {
+          if (
+            queued.status !== "queued" ||
+            (queued.queuePosition ?? queued.ordinal) < steerFollowUpQueuePosition
+          )
+            continue;
+          yield* emitEvent({
+            type: "run.updated",
+            threadId: command.threadId,
+            runId: queued.id,
+            ...(queued.rootNodeId === null ? {} : { nodeId: queued.rootNodeId }),
+            providerInstanceId: queued.providerInstanceId,
+            occurredAt: now,
+            payload: { ...queued, queuePosition: (queued.queuePosition ?? queued.ordinal) + 1 },
+          });
+        }
+      }
+      // The dropped steer's item shows the follow-up in the same commit that queues it.
+      const droppedSteerItem =
+        command.steerFollowUpOfRunId === undefined
+          ? undefined
+          : projection.turnItems.find(
+              (item) => item.type === "user_message" && item.messageId === command.messageId,
+            );
+      if (droppedSteerItem?.type === "user_message" && message.delivery !== undefined) {
+        yield* emitEvent({
+          type: "turn-item.updated",
+          threadId: command.threadId,
+          ...(droppedSteerItem.runId === null ? {} : { runId: droppedSteerItem.runId }),
+          ...(droppedSteerItem.nodeId === null ? {} : { nodeId: droppedSteerItem.nodeId }),
+          providerInstanceId: modelSelection.instanceId,
+          occurredAt: now,
+          payload: { ...droppedSteerItem, delivery: message.delivery, updatedAt: now },
+        });
+      }
       yield* completeSourcePlan(now);
       yield* emitEvent({
         type: "run-attempt.created",
@@ -15090,6 +15181,80 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       : threadDispatch.withLock(parentThreadId, dispatch);
   });
 
+  // Houston: a steer Claude took back unread runs as the next turn, as a steer that arrives after
+  // its turn ended does. Only a completed run requeues: Stop and failures keep the drop visible.
+  const requeueDroppedSteers = Effect.fn("Orchestrator.requeueDroppedSteers")(function* (
+    threadId: ThreadId,
+    run: OrchestrationV2Run,
+  ) {
+    if (run.status !== "completed") return;
+    // Every completed run comes here, so check the driver and the stored drops before the thread.
+    const adapter = yield* providerAdapters.get(run.providerInstanceId).pipe(Effect.option);
+    if (Option.isSome(adapter) && adapter.value.driver !== "claudeAgent") return;
+    const dropped = (yield* projectionStore.getDroppedSteers(threadId, run.id)).flatMap((item) =>
+      item.type === "user_message" ? [item] : [],
+    );
+    if (dropped.length === 0) return;
+    if (Option.isNone(adapter)) {
+      yield* Effect.logWarning("Dropped steers stay unsent: their provider is not registered", {
+        threadId,
+        runId: run.id,
+        providerInstanceId: run.providerInstanceId,
+      });
+      return;
+    }
+    const { messages, runs } = yield* projectionStore.getThreadRecords(
+      threadId,
+      ["messages", "runs"],
+      { messageIds: dropped.map((item) => item.messageId) },
+    );
+    const placed = [];
+    for (const item of dropped) {
+      const message = messages.find((candidate) => candidate.id === item.messageId);
+      if (message === undefined || message.runId !== run.id) continue;
+      // The first steer effect recorded the runs queued before the steer; a promoted queued
+      // message also stays behind only the runs queued before its own.
+      const firstSteer = Option.getOrUndefined(
+        yield* effectOutbox.firstSteer(threadId, message.id),
+      )?.request;
+      const afterRunOrdinal = Math.max(
+        0,
+        Math.min(
+          (firstSteer?.type === "provider-turn.steer"
+            ? firstSteer.steerFollowUpAfterRunOrdinal
+            : undefined) ?? Math.max(...runs.map((candidate) => candidate.ordinal)),
+          ...runs.flatMap((candidate) =>
+            candidate.userMessageId === message.id ? [candidate.ordinal - 1] : [],
+          ),
+        ),
+      );
+      placed.push({ item, message, afterRunOrdinal });
+    }
+    placed.sort(
+      (left, right) =>
+        left.afterRunOrdinal - right.afterRunOrdinal || left.item.ordinal - right.item.ordinal,
+    );
+    // The dispatch reroutes the item in the commit that queues it: a failed one leaves it dropped.
+    for (const { message, afterRunOrdinal } of placed) {
+      yield* dispatchWithReceiptEffect(
+        steerFollowUpCommand({
+          commandId: CommandId.make(`command:dropped-steer:${run.id}:${message.id}`),
+          message,
+          run,
+          placement: { ofRunId: run.id, afterRunOrdinal },
+        }),
+      ).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Failed to requeue a dropped steer", {
+            threadId,
+            messageId: message.id,
+            cause,
+          }),
+        ),
+      );
+    }
+  });
+
   const handleRunUpdate = Effect.fn("Orchestrator.handleRunUpdate")(
     function* (stored: OrchestrationV2StoredEvent) {
       if (stored.event.type !== "run.updated") return;
@@ -15122,6 +15287,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               ? releaseUnattendedHolds(threadId, run.id)
               : Effect.void
             ).pipe(
+              // Queued in its place before the queue starts, so it runs where it was sent.
+              Effect.andThen(
+                requeueDroppedSteers(threadId, run).pipe(
+                  Effect.catchCause((cause) =>
+                    Effect.logWarning("Failed to requeue a dropped steer", { threadId, cause }),
+                  ),
+                ),
+              ),
               Effect.andThen(
                 startNextQueuedRun(threadId, {
                   endedRunId: run.id,
