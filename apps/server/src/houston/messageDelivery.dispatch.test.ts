@@ -3,9 +3,12 @@
 import { assert, describe, it } from "@effect/vitest";
 import { CommandId, MessageId } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
+import * as Queue from "effect/Queue";
+import * as Tracer from "effect/Tracer";
 import { TestClock } from "effect/testing";
 
-import { latest, makeHarness, runWith } from "./messageDelivery.testkit.ts";
+import { ClaudeProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
+import { latest, makeHarness, runWith, type DoubleOptions } from "./messageDelivery.testkit.ts";
 
 describe("send intents at dispatch", () => {
   it.effect("each intent is recorded as accepted", () =>
@@ -430,5 +433,221 @@ describe("send intents at dispatch", () => {
         );
       }),
     ),
+  );
+
+  // regression: #747 a steer the provider took back unread was only marked dropped.
+  const droppedSteer = (
+    name: string,
+    options: DoubleOptions,
+    endedAs: "completed" | "interrupted",
+    check: (input: {
+      readonly harness: Effect.Success<ReturnType<typeof makeHarness>>;
+      readonly history: ReadonlyArray<NonNullable<ReturnType<typeof latest>>>;
+      readonly messageId: MessageId;
+    }) => void,
+  ) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness(name, options);
+        yield* runWith(harness, ({ send, startFirst, deliveries, settle, runningTurn, threadId }) =>
+          Effect.gen(function* () {
+            const runId = yield* startFirst;
+            const turn = yield* runningTurn;
+            const messageId = MessageId.make(`message:${name}`);
+            yield* send(messageId, "also report the slowest test", {
+              type: "steer_active",
+              targetRunId: runId,
+            });
+            yield* settle;
+            assert.lengthOf(harness.steered, 1);
+            yield* Queue.offer(harness.events, {
+              type: "message.delivery",
+              driver: harness.adapter.driver,
+              threadId,
+              providerThreadId: turn.providerThreadId,
+              providerTurnId: turn.id,
+              messageId,
+              state: "dropped",
+              evidence: null,
+              reason: "providerCancelled",
+            });
+            yield* settle;
+            yield* harness.endTurn(turn, endedAs);
+            yield* settle;
+            check({ harness, history: deliveries(messageId), messageId });
+          }),
+        );
+      }),
+    );
+  const claude = { driver: "claudeAgent", capabilities: ClaudeProviderCapabilitiesV2 } as const;
+
+  it.effect("a Claude steer dropped unread runs as the next turn", () =>
+    droppedSteer("claude-dropped-steer", claude, "completed", ({ harness, history, messageId }) => {
+      assert.isTrue(
+        history.some((delivery) => delivery.state === "dropped"),
+        JSON.stringify(history),
+      );
+      assert.lengthOf(harness.started, 2);
+      assert.equal(harness.started.at(-1)?.message.messageId, messageId);
+      assert.deepInclude(latest(history), {
+        intent: "steer",
+        route: "ownTurn",
+        rerouted: "turnEnded",
+        state: "adopted",
+        evidence: "turnStarted",
+      });
+    }),
+  );
+
+  it.effect("a Claude steer dropped by Stop is not sent again", () =>
+    droppedSteer("claude-stopped-steer", claude, "interrupted", ({ harness, history }) => {
+      assert.lengthOf(harness.started, 1);
+      assert.deepInclude(latest(history), { state: "dropped", reason: "providerCancelled" });
+    }),
+  );
+
+  it.effect("a steer another provider dropped stays dropped", () =>
+    droppedSteer("codex-dropped-steer", {}, "completed", ({ harness, history }) => {
+      assert.lengthOf(harness.started, 1);
+      assert.deepInclude(latest(history), { state: "dropped", reason: "providerCancelled" });
+    }),
+  );
+
+  // A completed run with no dropped steer costs the thread no projection read.
+  const readsWithoutDroppedSteer = (
+    name: string,
+    options: DoubleOptions,
+    maxStatementsPerPass: number,
+  ) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness(name, { ...options, steerAdopts: true });
+        const spans: Array<Tracer.Span> = [];
+        const tracer = Tracer.make({
+          span(spanOptions) {
+            const span = new Tracer.NativeSpan(spanOptions);
+            spans.push(span);
+            return span;
+          },
+        });
+        const underRequeue = (span: Tracer.Span) => {
+          let parent = span.parent._tag === "Some" ? span.parent.value : undefined;
+          while (parent?._tag === "Span") {
+            if (parent.name === "Orchestrator.requeueDroppedSteers") return true;
+            parent = parent.parent._tag === "Some" ? parent.parent.value : undefined;
+          }
+          return false;
+        };
+        yield* runWith(harness, ({ send, startFirst, settle, runningTurn, deliveries }) =>
+          Effect.gen(function* () {
+            const runId = yield* startFirst;
+            const messageId = MessageId.make(`message:${name}`);
+            yield* send(messageId, "also report the slowest test", {
+              type: "steer_active",
+              targetRunId: runId,
+            });
+            yield* settle;
+            assert.equal(latest(deliveries(messageId))?.state, "adopted");
+            yield* harness.endTurn(yield* runningTurn, "completed");
+            yield* settle;
+            yield* send(`${messageId}:unsteered`, "next", { type: "start_immediately" });
+            yield* settle;
+            yield* harness.endTurn(yield* runningTurn, "completed");
+            yield* settle;
+          }),
+        ).pipe(Effect.withTracer(tracer));
+        assert.lengthOf(harness.started, 2);
+        const passes = spans.filter((span) => span.name === "Orchestrator.requeueDroppedSteers");
+        assert.isAtLeast(passes.length, 2);
+        const inside = spans.filter(underRequeue);
+        assert.lengthOf(
+          inside.filter((span) => span.name === "ProjectionStore.readCanonicalProjection"),
+          0,
+        );
+        assert.isAtMost(
+          inside.filter((span) => span.name === "sqlite").length,
+          passes.length * maxStatementsPerPass,
+        );
+      }),
+    );
+
+  it.effect("a completed Claude run with no dropped steer reads no thread projection", () =>
+    readsWithoutDroppedSteer("claude-no-dropped-steer", claude, 1),
+  );
+
+  it.effect("another provider's completed run reads nothing for dropped steers", () =>
+    readsWithoutDroppedSteer("codex-no-dropped-steer", {}, 0),
+  );
+
+  // A dropped steer keeps its place: behind messages queued before it, ahead of later ones.
+  const dropOrder = (
+    name: string,
+    sends: ReadonlyArray<"queue" | "steer" | "agent steer">,
+    expected: ReadonlyArray<"queue" | "steer" | "agent steer">,
+  ) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* makeHarness(name, claude);
+        yield* runWith(
+          harness,
+          ({ send, startFirst, settle, runningTurn, orchestrator, threadId }) =>
+            Effect.gen(function* () {
+              const runId = yield* startFirst;
+              const turn = yield* runningTurn;
+              const idOf = (kind: string) => MessageId.make(`message:${name}:${kind}`);
+              for (const kind of sends) {
+                if (kind === "queue") {
+                  yield* send(idOf(kind), "queued", { type: "queue_after_active" });
+                } else {
+                  yield* orchestrator.dispatch({
+                    type: "message.dispatch",
+                    commandId: CommandId.make(`send:${name}:${kind}`),
+                    threadId,
+                    messageId: idOf(kind),
+                    text: "steered",
+                    attachments: [],
+                    dispatchMode: { type: "steer_active", targetRunId: runId },
+                    createdBy: kind === "steer" ? "user" : "agent",
+                    creationSource: kind === "steer" ? "web" : "mcp",
+                  });
+                }
+                yield* settle;
+              }
+              const steered = sends.find((kind) => kind !== "queue")!;
+              yield* Queue.offer(harness.events, {
+                type: "message.delivery",
+                driver: harness.adapter.driver,
+                threadId,
+                providerThreadId: turn.providerThreadId,
+                providerTurnId: turn.id,
+                messageId: idOf(steered),
+                state: "dropped",
+                evidence: null,
+                reason: "providerCancelled",
+              });
+              yield* settle;
+              yield* harness.endTurn(turn, "completed");
+              yield* settle;
+              yield* harness.endTurn(yield* runningTurn, "completed");
+              yield* settle;
+              assert.deepEqual(
+                harness.started.map((started) => started.message.messageId),
+                [MessageId.make("message:first"), ...expected.map(idOf)],
+              );
+            }),
+        );
+      }),
+    );
+
+  it.effect("a dropped steer runs ahead of a message queued after it", () =>
+    dropOrder("steer-then-queue", ["steer", "queue"], ["steer", "queue"]),
+  );
+
+  it.effect("a dropped steer runs behind a message queued before it", () =>
+    dropOrder("queue-then-steer", ["queue", "steer"], ["queue", "steer"]),
+  );
+
+  it.effect("a dropped agent steer does not jump ahead of earlier queued messages", () =>
+    dropOrder("queue-then-agent-steer", ["queue", "agent steer"], ["queue", "agent steer"]),
   );
 });
