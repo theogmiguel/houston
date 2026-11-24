@@ -10,15 +10,18 @@ import { beginLayoutTabDrag } from "./layoutTabDrag";
 import type { LayoutTabLabel } from "./PaneTabBar";
 import { LayoutWorkspaceStrip } from "./WorkspaceStrip";
 
-const label = (tab: { id: string }): LayoutTabLabel => ({ title: tab.id });
+const label = (tab: { id: string; content?: { kind: string } }): LayoutTabLabel => ({
+  title: tab.content?.kind === "launcher" ? "New tab" : tab.id,
+});
 
-function Scene() {
+function Scene({ onAddTab = () => {} }: { onAddTab?: (paneId: string) => void }) {
   const layout = useLayoutStore((state) => state.layout);
   return (
     <div style={{ width: 1000, height: 600, position: "relative" }}>
       <LayoutWorkspaceStrip
         layout={layout}
         narrow={false}
+        onAddTab={onAddTab}
         tabLabel={label}
         renderTab={(tab) => <div data-body={tab.id} style={{ flex: 1 }} />}
       />
@@ -273,5 +276,126 @@ describe("dragging a tab", () => {
     expect(useLayoutStore.getState().layout.workspaces[0]!.columns[0]!.panes[0]!.tabs).toHaveLength(
       2,
     );
+  });
+});
+
+describe("dragging the + button", () => {
+  const add = (container: HTMLElement, paneId: string) =>
+    container.querySelector<HTMLElement>(
+      `[data-layout-pane-id='${paneId}'] [data-layout-tab-add], [data-layout-bar-pane='${paneId}'] [data-layout-tab-add]`,
+    )!;
+  const pointer = (type: string, init: PointerEventInit & { target?: EventTarget }) =>
+    new PointerEvent(type, {
+      pointerId: 9,
+      pointerType: "mouse",
+      button: 0,
+      bubbles: true,
+      cancelable: true,
+      ...init,
+    });
+  // The dragged-from workspace only: the blank spare below it keeps a launcher of its own.
+  const launchers = () =>
+    useLayoutStore
+      .getState()
+      .layout.workspaces[0]!.columns.flatMap((column) => column.panes)
+      .flatMap((p) => p.tabs.filter((t) => t.content.kind === "launcher").map((t) => t.id));
+
+  async function press(button: HTMLElement) {
+    const from = button.getBoundingClientRect();
+    const start = { clientX: from.left + 4, clientY: from.top + 4 };
+    await act(() => button.dispatchEvent(pointer("pointerdown", start)));
+    return start;
+  }
+  const move = (x: number, y: number) =>
+    act(() => window.dispatchEvent(pointer("pointermove", { clientX: x, clientY: y })));
+  const release = (x: number, y: number) =>
+    act(() => window.dispatchEvent(pointer("pointerup", { clientX: x, clientY: y })));
+
+  it("places a new launcher tab at the split edge it is dropped on", async () => {
+    using _layout = openLayout();
+    await using screen = await render(<Scene />, { router: false });
+    const target = pane(screen.container, "w0c1p0");
+    const start = await press(add(screen.container, "w0c0p0"));
+    await move(start.clientX + 2, start.clientY);
+    expect(overlay()).toBeNull();
+    await move(target.right - 10, target.top + 48 + (target.height - 48) / 2);
+    expect(overlay()!.querySelector("[data-layout-drop-pill]")?.textContent).toBe("Side by side");
+    expect(overlay()!.querySelector("[data-layout-drag-ghost]")?.textContent).toBe("New tab");
+    await release(target.right - 10, target.top + 48 + (target.height - 48) / 2);
+    expect(overlay()).toBeNull();
+    expect(launchers()).toHaveLength(1);
+    const columns = useLayoutStore.getState().layout.workspaces[0]!.columns;
+    expect(columns).toHaveLength(3);
+    expect(columns[2]!.panes[0]!.tabs[0]!.content.kind).toBe("launcher");
+  });
+
+  it("places the launcher between the tabs of the bar it is dropped on", async () => {
+    using _layout = openLayout();
+    await using screen = await render(<Scene />, { router: false });
+    const target = pane(screen.container, "w0c0p0");
+    const tabB = screen.container
+      .querySelector<HTMLElement>("[data-layout-pane-tab='b']")!
+      .getBoundingClientRect();
+    const start = await press(add(screen.container, "w0c1p0"));
+    await move(start.clientX + 20, start.clientY);
+    await move(tabB.left + 4, target.top + 20);
+    await release(tabB.left + 4, target.top + 20);
+    const pane0 = useLayoutStore.getState().layout.workspaces[0]!.columns[0]!.panes[0]!;
+    expect(
+      pane0.tabs.map((tab) => (tab.content.kind === "launcher" ? "launcher" : tab.id)),
+    ).toEqual(["a", "launcher", "b"]);
+  });
+
+  it("drops where a quick flick lands, before the move has rendered", async () => {
+    using _layout = openLayout();
+    await using screen = await render(<Scene />, { router: false });
+    const target = pane(screen.container, "w0c1p0");
+    const point = { x: target.right - 10, y: target.top + 48 + (target.height - 48) / 2 };
+    const start = await press(add(screen.container, "w0c0p0"));
+    // Move and release in one task: nothing renders between them.
+    await act(() => {
+      window.dispatchEvent(
+        pointer("pointermove", { clientX: start.clientX + 40, clientY: start.clientY }),
+      );
+      window.dispatchEvent(pointer("pointermove", { clientX: point.x, clientY: point.y }));
+      window.dispatchEvent(pointer("pointerup", { clientX: point.x, clientY: point.y }));
+    });
+    expect(overlay()).toBeNull();
+    expect(launchers()).toHaveLength(1);
+    expect(useLayoutStore.getState().layout.workspaces[0]!.columns).toHaveLength(3);
+  });
+
+  it("cancels on Escape, leaves the layout alone and does not add a tab on release", async () => {
+    using _layout = openLayout();
+    let added = 0;
+    await using screen = await render(<Scene onAddTab={() => (added += 1)} />, { router: false });
+    const start = await press(add(screen.container, "w0c0p0"));
+    await move(start.clientX + 300, start.clientY + 200);
+    expect(overlay()).not.toBeNull();
+    await act(() =>
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      ),
+    );
+    expect(overlay()).toBeNull();
+    await release(start.clientX + 300, start.clientY + 200);
+    expect(launchers()).toHaveLength(0);
+    expect(added).toBe(0);
+  });
+
+  it("stays a plain click below the threshold", async () => {
+    using _layout = openLayout();
+    let added: string[] = [];
+    await using screen = await render(<Scene onAddTab={(paneId) => added.push(paneId)} />, {
+      router: false,
+    });
+    const button = add(screen.container, "w0c0p0");
+    const start = await press(button);
+    await move(start.clientX + 2, start.clientY + 1);
+    await release(start.clientX + 2, start.clientY + 1);
+    await act(() => button.click());
+    expect(overlay()).toBeNull();
+    expect(added).toEqual(["w0c0p0"]);
+    expect(launchers()).toHaveLength(0);
   });
 });

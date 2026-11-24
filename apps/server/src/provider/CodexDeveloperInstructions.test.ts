@@ -63,12 +63,14 @@ describe("Codex orchestration context", () => {
       .map(([, entry]) => entry.value)
       .join("\n");
 
-    NodeAssert.ok(orchestration.includes("use your native tool when the child uses your provider"));
+    NodeAssert.ok(orchestration.includes("when the child uses your provider, a model it offers"));
     NodeAssert.ok(orchestration.includes("`run_in_background:false`"));
-    NodeAssert.ok(orchestration.includes("A native type running another provider's model"));
+    NodeAssert.ok(orchestration.includes("a native type on another provider's model counts"));
+    NodeAssert.ok(orchestration.includes("with no command likely to run over a few minutes"));
     NodeAssert.ok(
       orchestration.includes("Every new delegate review or re-check is a new `delegate_task`"),
     );
+    NodeAssert.ok(orchestration.includes("new work for a child idle over an hour"));
     NodeAssert.ok(orchestration.includes("never a `houston_thread_send`"));
     NodeAssert.ok(!orchestration.includes("inheritedOptions"));
     NodeAssert.ok(!orchestration.includes("Prefer native"));

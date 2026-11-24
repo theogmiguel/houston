@@ -79,11 +79,14 @@ as a card above the layout.
 - A column and its panes share the strip: **New pane to the right** and **New pane below**
   (under **Layout…** in the command palette) open a new tab in a new column or pane, a tab's
   **Split right** and **Split down** split its pane, and dragging a tab to a pane's edge does the
-  same. Drag a tab between panes or onto another workspace to move it.
+  same. Drag a tab between panes or onto another workspace to move it. Drag a pane's **+**
+  button to place a new tab where you drop it: on a tab bar, at a pane's edge or at the
+  strip's edge. `Escape` cancels the drag.
 - Closing a tab closes that view only; the thread keeps its history, and an unsent draft keeps
   its text until you send it. Closing a draft with text offers **Reopen** in a notice.
   **Reopen closed tab** (its rebindable shortcut, or the command palette) brings back the most
-  recent one.
+  recent one. A workspace's last tab gives way to a launcher; closing that launcher removes the
+  workspace only when it is unnamed and holds no threads.
 - **Fill the window** gives the focused pane the whole window, and the same command undoes it.
   **Column width** cycles ⅓, ½, ⅔ and full width; **Center column**, **Pull pane into the left
   column** and **Push pane out to its own column** rearrange the strip. Drag the edge between
@@ -203,6 +206,9 @@ asks for confirmation.
 ### Dragging
 
 - Drag a row onto a chat composer to attach that thread as context.
+- Drag a thread row from the command palette, or a thread chip in a message or composer, onto
+  a pane to open its chat there, or onto a composer to attach it. The palette closes when the
+  drag starts.
 - Drag a thread row onto another workspace group to move its chat tab to that workspace,
   where it opens in a column of its own. Drag a workspace heading to reorder workspaces.
 - Drag a **Closed** or **On hold** row into the rail to reopen or wake it in its workspace.
@@ -275,9 +281,13 @@ the send menu, which offers **Queue message**, **Steer message** and
 **Interrupt and send**. Steering is disabled for providers that cannot accept it, and while a
 turn that only compacts the context runs, such as `/compact`; a follow-up then queues behind
 it. When the provider compacts by itself inside a turn, a follow-up sent from the composer
-still steers Codex; for Claude and every other provider it queues until the compaction ends,
-because a Claude steer would stop the compaction and start it again. Queued and steered
-messages show their delivery state, and a dropped message names the reason.
+still steers Codex; for Claude and every other provider it queues until the compaction ends.
+Queued and steered messages show their delivery state, and a dropped message names the reason.
+Claude reads a steer once the tool calls it is running finish, and the turn stays open until
+it does. If Claude drops a steer without reading it, the message is sent as the next turn, in
+the place it was sent among queued messages. If Claude neither reads nor drops it, the turn
+keeps showing as working until you press Stop. If Claude's process exits first, the turn fails
+and the steer shows as unconfirmed; it is not sent again, so send it again if needed.
 **Follow-up behavior** in **Settings ▸ Chat** sets what a plain send does while a turn runs.
 
 Hovering a finished assistant response shows **Reply to this response**. It adds a quote chip
