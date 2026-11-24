@@ -37,6 +37,11 @@
         "prepare-server-compile-cache.cjs",
         "smoke-desktop-app.ts",
         "verify-windows-desktop-artifact.ts",
+        // Manual local-model evals: run.ts is a CLI, capture-local.ts starts harnesses, and
+        // mcp-stub.ts is spawned by path.
+        "evals/local-models/mcp-tool-use/run.ts",
+        "evals/local-models/mcp-tool-use/capture-local.ts",
+        "evals/local-models/mcp-tool-use/mcp-stub.ts",
       ],
       "ignoreDependencies": ["agent-device", "esbuild"],
       // The `houston` npm package's files: copied into the package, never imported.
