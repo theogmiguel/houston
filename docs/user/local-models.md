@@ -65,8 +65,7 @@ A thread whose selected agent is linked to a down server says so above the messa
 
 A linked agent's model can disappear when its server swaps models. If the server is checked and
 ready but no longer lists the model a thread uses, the composer says which model is missing and
-what the server serves now, with **Choose model** and **Check again**. **Settings → Models**
-warns the same way when the default for new threads is such a model. A server that is being
+what the server serves now, with **Choose model** and **Check again**. A server that is being
 checked or is down is not reported this way.
 
 ## Use a server in an agent
