@@ -291,8 +291,9 @@ pnpm dist:desktop:linux                                    # AppImage
 node scripts/build-desktop-artifact.ts --platform linux --target deb
 ```
 
-Output lands in `release/` as `Houston-<version>-x86_64.AppImage` and
-`Houston-<version>-amd64.deb`. The packaging script stages the server, builds the native
+Output lands in `release/` as `Houston-x86_64.AppImage` and
+`Houston-<version>-amd64.deb`. The AppImage name carries no version so
+electron-updater replaces it in place; the packaging script stages the server, builds the native
 helpers and hands the result to electron-builder.
 
 Local install, separate from packaging:

@@ -1171,6 +1171,8 @@ export interface HostBridge {
    */
   getSystemLocale: () => string | null;
   getLocalEnvironmentBootstraps: () => readonly DesktopEnvironmentBootstrap[];
+  /** Fires when a local server starts, stops or changes address; re-read the bootstraps then. */
+  onLocalEnvironmentBootstrapsChanged?: (listener: () => void) => () => void;
   getLocalEnvironmentEnabled: () => boolean;
   setLocalEnvironmentEnabled: (enabled: boolean) => Promise<void>;
   getLocalEnvironmentBearerToken: () => Promise<string>;
