@@ -12,6 +12,7 @@ import { beginThreadDragAt, endThreadDrag } from "../../threads/threadDrag";
 import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import {
   createLayoutState,
+  isBlankLayoutWorkspace,
   normalizeLayout,
   openLayoutTab,
   type LayoutState,
@@ -326,9 +327,12 @@ describe("workspace group", () => {
     );
     expect(onCreateThread).toHaveBeenCalledExactlyOnceWith(target.id);
     expect(
-      useLayoutStore.getState().layout.workspaces.find((candidate) => candidate.id === target.id)!
-        .columns,
-    ).toHaveLength(0);
+      isBlankLayoutWorkspace(
+        useLayoutStore
+          .getState()
+          .layout.workspaces.find((candidate) => candidate.id === target.id)!,
+      ),
+    ).toBe(true);
   });
 
   it("opens a new thread from the heading's plus in that workspace", async () => {

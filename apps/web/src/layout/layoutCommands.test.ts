@@ -1,4 +1,5 @@
-import { LAYOUT_KEYBINDING_COMMANDS } from "@houston-app/contracts";
+import { scopeThreadRef } from "@houston-app/client-runtime/environment";
+import { EnvironmentId, LAYOUT_KEYBINDING_COMMANDS, ThreadId } from "@houston-app/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
@@ -20,7 +21,13 @@ import {
 import { setLayoutOverlayMode, useLayoutOverlayStore } from "./layoutOverlayStore";
 import { landPendingLayoutFocus, useLayoutStore } from "./layoutStore";
 
-const page = (id: string): LayoutTabContent => ({ kind: "launcher", id, context: null });
+const page = (id: string): LayoutTabContent => ({
+  kind: "chat",
+  target: {
+    kind: "server",
+    threadRef: scopeThreadRef(EnvironmentId.make("local"), ThreadId.make(id)),
+  },
+});
 
 let original: LayoutState;
 beforeEach(() => {
@@ -33,7 +40,7 @@ afterEach(() => {
   setLayoutOverlayMode(null);
 });
 
-/** Three launcher tabs, one per column, focus on the last. */
+/** Three chat tabs, one per column, focus on the last. */
 function threeColumns() {
   const store = useLayoutStore.getState();
   for (const id of ["one", "two", "three"]) {
@@ -41,10 +48,12 @@ function threeColumns() {
   }
 }
 
-const focusedLauncherId = () => {
+const focusedChatId = () => {
   landPendingLayoutFocus();
   const content = selectFocusedTab(useLayoutStore.getState().layout)?.content;
-  return content?.kind === "launcher" ? content.id : null;
+  return content?.kind === "chat" && content.target.kind === "server"
+    ? content.target.threadRef.threadId
+    : null;
 };
 
 describe("isLayoutCommand", () => {
@@ -71,15 +80,15 @@ describe("isLayoutCommand", () => {
 describe("runLayoutCommand", () => {
   it("moves focus between columns", () => {
     threeColumns();
-    expect(focusedLauncherId()).toBe("three");
+    expect(focusedChatId()).toBe("three");
     runLayoutCommand("layout.focusLeft");
-    expect(focusedLauncherId()).toBe("two");
+    expect(focusedChatId()).toBe("two");
     runLayoutCommand("layout.focusFirstColumn");
-    expect(focusedLauncherId()).toBe("one");
+    expect(focusedChatId()).toBe("one");
     runLayoutCommand("layout.focusRight");
-    expect(focusedLauncherId()).toBe("two");
+    expect(focusedChatId()).toBe("two");
     runLayoutCommand("layout.focusLastColumn");
-    expect(focusedLauncherId()).toBe("three");
+    expect(focusedChatId()).toBe("three");
   });
 
   it("hints where a moved pane landed", () => {

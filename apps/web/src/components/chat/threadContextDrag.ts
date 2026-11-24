@@ -63,11 +63,12 @@ export function useThreadContextDragGhost(): ThreadContextDragGhost | null {
 let overTarget: HTMLElement | null = null;
 
 function findDropTarget(point: { x: number; y: number }): HTMLElement | null {
-  return (
-    document
-      .elementFromPoint(point.x, point.y)
-      ?.closest<HTMLElement>(`[${DROP_TARGET_ATTRIBUTE}]`) ?? null
-  );
+  // The layout's drag overlay covers the whole window, so look through every layer at the point.
+  for (const element of document.elementsFromPoint(point.x, point.y)) {
+    const target = element.closest<HTMLElement>(`[${DROP_TARGET_ATTRIBUTE}]`);
+    if (target) return target;
+  }
+  return null;
 }
 
 /** The chat composer under the point, or null. */

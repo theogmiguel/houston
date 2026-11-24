@@ -64,7 +64,6 @@ function Card({
           lane: { padding: 48, minChatWidth: 640 },
           layout: resolveChatCanvasLayout({ container, preview: null }),
           previewKey: null,
-          registerTimeline: () => {},
           measureDetailsCard: () => {},
           detailsCardTopInset: 0,
           preferredDetailsCard: placement,
