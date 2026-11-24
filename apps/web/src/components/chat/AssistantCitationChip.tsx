@@ -233,6 +233,7 @@ export function AssistantCitationChip({
             anchor={resolvePopoverAnchor}
             side="bottom"
             width="md"
+            padding="none"
             aria-label="Edit citation comment"
             initialFocus={commentInputRef}
             finalFocus={false}
