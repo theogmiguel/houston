@@ -6556,7 +6556,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     if (command.manualContinuationOfRunId !== undefined) {
       const source = projection.runs.find((run) => run.id === command.manualContinuationOfRunId);
       const limited = latestRootProviderFailure(source ?? null, projection.turnItems);
-      // A continuation message would carry on with earlier work, not finish the compaction.
+      // Refused before the resend check: an accepted compaction is not sent the continuation text
+      // and a never-accepted one is not resent. The user runs the compaction again.
       const sourceMessage = projection.messages.find(
         (message) => message.id === source?.userMessageId,
       );

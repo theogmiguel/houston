@@ -30,7 +30,8 @@ answers there.
 
 After **Stop**, **Resume** in the composer asks the agent to continue with "Continue where
 you left off." When the provider had not yet received the stopped message, Resume sends
-that message again, with its context and attachments.
+that message again, with its context and attachments. A stopped compaction is not offered
+for Resume; run it again.
 
 **Settings ▸ Threads** sets whether a hold and a resume follow usage limits: **Hold until
 limits reset** parks a limited thread, and **Resume after usage limits** continues it when
