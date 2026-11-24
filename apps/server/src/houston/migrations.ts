@@ -1443,7 +1443,7 @@ const houstonMigrationEntries = [
   [26, "IssueTrackerBindingProperties", IssueTrackerBindingProperties],
   [27, "NotionPagesAsTaskIssues", NotionPagesAsTaskIssues],
   [28, "PendingDeviceApprovals", PendingDeviceApprovals],
-  [29, "InferenceRequests", InferenceRequests],
+  [30, "InferenceRequests", InferenceRequests],
 ] as const;
 
 /** Every Houston migration id this build knows, for callers that must not run beside an older schema. */
