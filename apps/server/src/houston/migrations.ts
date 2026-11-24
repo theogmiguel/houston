@@ -1416,6 +1416,20 @@ const InferenceRequests = Effect.gen(function* () {
     ON houston_inference_requests(thread_id, received_at) WHERE thread_id IS NOT NULL`;
 });
 
+// Which models Houston's image check found able to read images, by server address and model.
+const InferenceImageVerdicts = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_inference_image_verdicts (
+      server_address TEXT NOT NULL,
+      model TEXT NOT NULL,
+      supported INTEGER NOT NULL,
+      checked_at TEXT NOT NULL,
+      PRIMARY KEY (server_address, model)
+    ) WITHOUT ROWID
+  `;
+});
+
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
@@ -1444,6 +1458,7 @@ const houstonMigrationEntries = [
   [27, "NotionPagesAsTaskIssues", NotionPagesAsTaskIssues],
   [28, "PendingDeviceApprovals", PendingDeviceApprovals],
   [30, "InferenceRequests", InferenceRequests],
+  [31, "InferenceImageVerdicts", InferenceImageVerdicts],
 ] as const;
 
 /** Every Houston migration id this build knows, for callers that must not run beside an older schema. */

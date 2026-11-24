@@ -94,6 +94,12 @@ describe("RPC authorization scopes", () => {
     }
   });
 
+  it("runs an image check, which spends model work and records a verdict, behind operate scope", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.houstonInferenceCheckImages)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+  });
+
   it("rejects unknown RPC method names", () => {
     for (const method of ["server.notRegistered", "toString", "constructor"]) {
       expect(() => requiredScopeForRpcMethod(method)).toThrow(

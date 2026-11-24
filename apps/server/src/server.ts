@@ -149,6 +149,8 @@ import { layerMergeQueue } from "./houston/mergeQueue/layer.ts";
 import * as InferenceDiscovery from "./houston/inference/InferenceDiscovery.ts";
 import * as InferenceServerRegistry from "./houston/inference/InferenceServerRegistry.ts";
 import * as InferenceAdmission from "./houston/inference/InferenceAdmission.ts";
+import * as InferenceImageChecks from "./houston/inference/InferenceImageChecks.ts";
+import * as InferenceImageVerdicts from "./houston/inference/InferenceImageVerdicts.ts";
 import * as InferenceGateway from "./houston/inference/InferenceGateway.ts";
 import * as InferenceGatewayCredentials from "./houston/inference/InferenceGatewayCredentials.ts";
 import * as InferenceGatewayAccess from "./houston/inference/InferenceGatewayAccess.ts";
@@ -622,6 +624,25 @@ const layerHoustonSecrets = HoustonSecrets.layer.pipe(
   ),
 );
 
+// Model servers: verdicts back the probes, and the image check shares the registry and the
+// admission queue with the gateway that carries threads.
+const layerInferenceVerdicts = InferenceImageVerdicts.layer;
+const layerInferenceServers = Layer.mergeAll(
+  InferenceServerRegistry.layer.pipe(Layer.provideMerge(layerInferenceVerdicts)),
+  InferenceDiscovery.layer,
+);
+const layerInferenceAdmission = InferenceAdmission.layer.pipe(
+  Layer.provideMerge(layerInferenceServers),
+);
+const layerInferenceServices = InferenceGatewayAccess.layer.pipe(
+  Layer.provideMerge(
+    Layer.mergeAll(
+      InferenceImageChecks.layer.pipe(Layer.provideMerge(layerInferenceAdmission)),
+      layerInferenceAdmission,
+    ),
+  ),
+);
+
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   layerThreadSettlementWorker,
   layerIdleCompactionWorker,
@@ -662,10 +683,8 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(HoustonTaskProjectSweep.sweep),
   Layer.effectDiscard(HoustonSlackStore.sweep),
   HoustonLayoutWorkspaces.layer,
-  // Model servers registered in Settings: periodic probes and on-demand discovery.
-  InferenceGatewayAccess.layer.pipe(
-    Layer.provideMerge(Layer.mergeAll(InferenceServerRegistry.layer, InferenceDiscovery.layer)),
-  ),
+  // Model servers registered in Settings: periodic probes, discovery and the image check.
+  layerInferenceServices,
   // The gateway's own accounting and stops; the queue layers sit with the route below.
   Layer.mergeAll(InferenceRequests.layer, InferenceStops.layer),
   Layer.effectDiscard(

@@ -32,6 +32,7 @@ import * as AgentSessionScanner from "../project/AgentSessionScanner.ts";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as AntigravityInstallation from "../provider/AntigravityInstallation.ts";
 import * as InferenceDiscovery from "./inference/InferenceDiscovery.ts";
+import * as InferenceImageChecks from "./inference/InferenceImageChecks.ts";
 import * as InferenceServerRegistry from "./inference/InferenceServerRegistry.ts";
 import * as InferenceRequests from "./inference/InferenceRequests.ts";
 import * as InferenceStops from "./inference/InferenceStops.ts";
@@ -147,6 +148,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(AntigravityInstallation.AntigravityInstallation)({ managedDirectory: "/unused" }),
   Layer.mock(BackgroundPolicy.BackgroundPolicy)({}),
   Layer.mock(InferenceDiscovery.InferenceDiscovery)({}),
+  Layer.mock(InferenceImageChecks.InferenceImageChecks)({}),
   Layer.mock(InferenceServerRegistry.InferenceServerRegistry)({}),
   Layer.mock(InferenceRequests.InferenceRequestLog)({}),
   Layer.mock(InferenceStops.InferenceStops)({}),

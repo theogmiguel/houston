@@ -264,6 +264,8 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.houstonInferenceUsage]: AuthOrchestrationReadScope,
   [WS_METHODS.houstonInferenceThreadRequest]: AuthOrchestrationReadScope,
   [WS_METHODS.houstonInferenceThreadStop]: AuthOrchestrationReadScope,
+  // The check spends model work on a configured server and records a verdict.
+  [WS_METHODS.houstonInferenceCheckImages]: AuthOrchestrationOperateScope,
   [WS_METHODS.terminalOpen]: AuthTerminalOperateScope,
   [WS_METHODS.terminalAttach]: AuthTerminalOperateScope,
   [WS_METHODS.terminalObserve]: AuthTerminalReadScope,

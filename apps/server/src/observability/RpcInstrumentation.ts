@@ -291,6 +291,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.houstonInferenceUsage]: "inference",
   [WS_METHODS.houstonInferenceThreadRequest]: "inference",
   [WS_METHODS.houstonInferenceThreadStop]: "inference",
+  [WS_METHODS.houstonInferenceCheckImages]: "inference",
   [WS_METHODS.terminalOpen]: "terminal",
   [WS_METHODS.terminalAttach]: "terminal",
   [WS_METHODS.terminalObserve]: "terminal",

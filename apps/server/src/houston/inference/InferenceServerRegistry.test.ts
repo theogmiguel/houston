@@ -12,6 +12,7 @@ import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as HoustonSecrets from "../secrets/HoustonSecrets.ts";
+import * as InferenceImageVerdicts from "./InferenceImageVerdicts.ts";
 import * as InferenceServerRegistry from "./InferenceServerRegistry.ts";
 
 // A string is a 200 text body, `{ statusCode }` an empty error, anything else a JSON body.
@@ -81,6 +82,7 @@ const probe = (
         shouldRunScopeWork: () => Effect.succeed(false),
       }),
       HoustonSecrets.layerMemory(secrets),
+      InferenceImageVerdicts.layerMemory(),
       layerFakeHttp(live, seen),
     ]),
     Effect.scoped,
@@ -407,6 +409,7 @@ describe("InferenceServerRegistry lifecycle", () => {
             shouldRunScopeWork: () => Effect.succeed(false),
           }),
           HoustonSecrets.layerMemory(secrets),
+          InferenceImageVerdicts.layerMemory(),
           layerFakeHttp({ [`${HOST}/v1/models`]: tensorFoldModels }, seen),
         ]),
         Effect.scoped,
@@ -430,6 +433,7 @@ describe("InferenceServerRegistry lifecycle", () => {
           shouldRunScopeWork: () => Effect.succeed(false),
         }),
         HoustonSecrets.layerMemory(),
+        InferenceImageVerdicts.layerMemory(),
         layerFakeHttp({}, []),
       ]),
       Effect.scoped,
@@ -460,6 +464,7 @@ describe("InferenceServerRegistry lifecycle", () => {
             shouldRunScopeWork: () => Effect.sync(() => mayRun),
           }),
           HoustonSecrets.layerMemory(),
+          InferenceImageVerdicts.layerMemory(),
           layerFakeHttp({ [`${HOST}/v1/models`]: tensorFoldModels }, seen),
         ]),
         Effect.scoped,
@@ -580,6 +585,7 @@ describe("InferenceServerRegistry snapshot additions", () => {
           shouldRunScopeWork: () => Effect.succeed(false),
         }),
         HoustonSecrets.layerMemory(),
+        InferenceImageVerdicts.layerMemory(),
         layerFakeHttp({ [`${HOST}/v1/models`]: tensorFoldModels }, []),
       ]),
       Effect.scoped,
@@ -613,5 +619,38 @@ describe("InferenceServerRegistry snapshot additions", () => {
       expect(idle?.gatewayQueue).toBeUndefined();
       expect(idle?.recentFailure).toBeUndefined();
     }),
+  );
+
+  it.effect("shows a checked image verdict in place of what the engine reports", () =>
+    Effect.gen(function* () {
+      const registry = yield* InferenceServerRegistry.make;
+      yield* registry.refresh();
+      const snapshot = (yield* registry.current).find((candidate) => candidate.id === rtx);
+      expect(snapshot?.models[0]?.capabilities?.image).toEqual({
+        supported: true,
+        source: "checked",
+        checkedAt: "2026-01-01T00:00:00.000Z",
+      });
+    }).pipe(
+      Effect.provide([
+        ServerSettings.layerTest({
+          inferenceServers: { [rtx]: { baseUrl: `${HOST}/v1`, enabled: true } },
+        }),
+        Layer.mock(BackgroundPolicy.BackgroundPolicy)({
+          shouldRunScopeWork: () => Effect.succeed(false),
+        }),
+        HoustonSecrets.layerMemory(),
+        InferenceImageVerdicts.layerMemory([
+          {
+            address: `${HOST}/v1`,
+            model: "GLM-5.3-Flash",
+            supported: true,
+            checkedAt: "2026-01-01T00:00:00.000Z",
+          },
+        ]),
+        layerFakeHttp({ [`${HOST}/v1/models`]: tensorFoldModels }, []),
+      ]),
+      Effect.scoped,
+    ),
   );
 });

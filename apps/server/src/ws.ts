@@ -231,6 +231,7 @@ import * as HoustonSlackService from "./houston/slack/Service.ts";
 import * as HoustonSlackV1Import from "./houston/slack/V1Import.ts";
 import * as HoustonMergeQueueService from "./houston/mergeQueue/Service.ts";
 import * as InferenceDiscovery from "./houston/inference/InferenceDiscovery.ts";
+import * as InferenceImageChecks from "./houston/inference/InferenceImageChecks.ts";
 import * as InferenceServerRegistry from "./houston/inference/InferenceServerRegistry.ts";
 import * as InferenceRequests from "./houston/inference/InferenceRequests.ts";
 import * as InferenceStops from "./houston/inference/InferenceStops.ts";
@@ -1640,6 +1641,7 @@ export const layerWsRpc = (
       const houstonMergeQueue = yield* HoustonMergeQueueService.HoustonMergeQueueService;
       const inferenceRegistry = yield* InferenceServerRegistry.InferenceServerRegistry;
       const inferenceDiscovery = yield* InferenceDiscovery.InferenceDiscovery;
+      const inferenceImageChecks = yield* InferenceImageChecks.InferenceImageChecks;
       const inferenceRequests = yield* InferenceRequests.InferenceRequestLog;
       const inferenceStops = yield* InferenceStops.InferenceStops;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
@@ -3554,6 +3556,7 @@ export const layerWsRpc = (
           inferenceRequests.latestForThread(input.threadId).pipe(Effect.map((last) => ({ last }))),
         [WS_METHODS.houstonInferenceThreadStop]: (input) =>
           inferenceStops.latest(input.threadId).pipe(Effect.map((stop) => ({ stop }))),
+        [WS_METHODS.houstonInferenceCheckImages]: (input) => inferenceImageChecks.check(input),
         [WS_METHODS.terminalOpen]: (input) => terminalManager.open(input),
         [WS_METHODS.terminalAttach]: (input, metadata) =>
           terminalManager.attachOutputStream(input, terminalViewerId(metadata)),

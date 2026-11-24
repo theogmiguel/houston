@@ -44,6 +44,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [27, "NotionPagesAsTaskIssues"],
   [28, "PendingDeviceApprovals"],
   [30, "InferenceRequests"],
+  [31, "InferenceImageVerdicts"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -1070,7 +1071,7 @@ describe("the grids removal migration", () => {
   );
 
   it.effect(
-    "a file database at the main track's head applies 18 to 30 and ends without the table",
+    "a file database at the main track's head applies 18 to 31 and ends without the table",
     () =>
       withDatabaseFile((file) =>
         Effect.gen(function* () {
@@ -1090,6 +1091,7 @@ describe("the grids removal migration", () => {
               [27, "NotionPagesAsTaskIssues"],
               [28, "PendingDeviceApprovals"],
               [30, "InferenceRequests"],
+              [31, "InferenceImageVerdicts"],
             ],
           );
           assert.deepEqual(yield* gridObjects, []);

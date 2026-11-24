@@ -22,10 +22,12 @@ export type InferenceServerId = typeof InferenceServerId.Type;
 export const InferenceServerStatus = Schema.Literals(["checking", "ready", "unreachable", "error"]);
 export type InferenceServerStatus = typeof InferenceServerStatus.Type;
 
-/** Whether a model reads images, as its engine reports it. */
+/** Whether a model reads images: as its engine reports, or as Houston checked with test images. */
 export const InferenceModelImageSupport = Schema.Struct({
   supported: Schema.Boolean,
-  source: Schema.Literals(["reported"]),
+  source: Schema.Literals(["reported", "checked"]),
+  /** When Houston checked; clients offer to check again after a day, as a server can swap weights. */
+  checkedAt: Schema.optional(IsoDateTime),
 });
 export type InferenceModelImageSupport = typeof InferenceModelImageSupport.Type;
 
@@ -293,6 +295,19 @@ export const InferenceServerRefreshInput = Schema.Struct({
   id: Schema.optional(InferenceServerId),
 });
 export type InferenceServerRefreshInput = typeof InferenceServerRefreshInput.Type;
+
+export const InferenceImageCheckInput = Schema.Struct({
+  serverId: InferenceServerId,
+  model: TrimmedNonEmptyString,
+});
+export type InferenceImageCheckInput = typeof InferenceImageCheckInput.Type;
+
+/** `unknown` means the check could not finish, not that the model is text-only. */
+export const InferenceImageCheckResult = Schema.Struct({
+  outcome: Schema.Literals(["supported", "unsupported", "unknown"]),
+  detail: Schema.String,
+});
+export type InferenceImageCheckResult = typeof InferenceImageCheckResult.Type;
 
 export const InferenceUsageInput = Schema.Struct({
   window: InferenceUsageWindow,

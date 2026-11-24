@@ -35,6 +35,7 @@ import { HttpClient, HttpClientRequest } from "effect/http";
 
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import * as Settings from "../../serverSettings.ts";
+import * as InferenceImageVerdicts from "./InferenceImageVerdicts.ts";
 import * as HoustonSecrets from "../secrets/HoustonSecrets.ts";
 
 export class InferenceServerRegistry extends Context.Service<
@@ -322,6 +323,7 @@ export const make = Effect.gen(function* () {
   const settingsService = yield* Settings.ServerSettingsService;
   const secrets = yield* HoustonSecrets.HoustonSecrets;
   const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
+  const imageVerdicts = yield* InferenceImageVerdicts.InferenceImageVerdicts;
   const stateRef = yield* Ref.make<ReadonlyArray<InferenceServerSnapshot>>([]);
   const cacheCounters = yield* Ref.make(new Map<InferenceServerId, PromptCacheCounters>());
   const changes = yield* Effect.acquireRelease(
@@ -582,16 +584,18 @@ export const make = Effect.gen(function* () {
       ],
       { concurrency: "unbounded" },
     );
+    const checkedImages = yield* imageVerdicts.forAddress(endpoint.display);
+    // Houston's own check outranks what the engine says.
     const models = list.models.map((model) => {
       const vision = reported.get(model.id);
-      return vision === undefined
+      const image =
+        checkedImages(model.id) ??
+        (vision === undefined ? undefined : { supported: vision, source: "reported" as const });
+      return image === undefined
         ? model
         : {
             ...model,
-            capabilities: {
-              ...model.capabilities,
-              image: { supported: vision, source: "reported" as const },
-            },
+            capabilities: { ...model.capabilities, image },
           };
     });
     const totals =

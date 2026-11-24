@@ -285,6 +285,8 @@ import {
   HoustonInferenceError,
   InferenceDiscoveryInput,
   InferenceDiscoveryResult,
+  InferenceImageCheckInput,
+  InferenceImageCheckResult,
   InferenceServerRefreshInput,
   InferenceServerRemoveInput,
   InferenceServerSaveInput,
@@ -734,6 +736,7 @@ export const WS_METHODS = {
   houstonInferenceUsage: "houston.inference.usage",
   houstonInferenceThreadRequest: "houston.inference.threadRequest",
   houstonInferenceThreadStop: "houston.inference.threadStop",
+  houstonInferenceCheckImages: "houston.inference.checkImages",
 
   terminalOpen: "terminal.open",
   terminalAttach: "terminal.attach",
@@ -2516,6 +2519,12 @@ const WsHoustonInferenceThreadStopRpc = Rpc.make(WS_METHODS.houstonInferenceThre
   error: EnvironmentAuthorizationError,
 });
 
+const WsHoustonInferenceCheckImagesRpc = Rpc.make(WS_METHODS.houstonInferenceCheckImages, {
+  payload: InferenceImageCheckInput,
+  success: InferenceImageCheckResult,
+  error: EnvironmentAuthorizationError,
+});
+
 const WsTerminalOpenRpc = Rpc.make(WS_METHODS.terminalOpen, {
   payload: TerminalOpenInput,
   success: TerminalSessionSnapshot,
@@ -3235,6 +3244,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonInferenceUsageRpc,
   WsHoustonInferenceThreadRequestRpc,
   WsHoustonInferenceThreadStopRpc,
+  WsHoustonInferenceCheckImagesRpc,
   WsTerminalOpenRpc,
   WsTerminalAttachRpc,
   WsTerminalObserveRpc,

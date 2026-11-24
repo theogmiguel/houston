@@ -31,7 +31,9 @@ const ready: InferenceServerSnapshot = {
       servedContextWindow: 813056,
       trainedContextWindow: 1_000_000,
       reasoningEfforts: ["high", "low"],
-      capabilities: { image: { supported: true, source: "reported" } },
+      capabilities: {
+        image: { supported: true, source: "checked", checkedAt: "2026-11-07T00:00:00Z" },
+      },
     },
   ],
   apiProtocols: ["chat-completions", "messages"],
