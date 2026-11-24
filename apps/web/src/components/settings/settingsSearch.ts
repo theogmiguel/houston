@@ -735,6 +735,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["generated thread titles source control content default provider"],
   },
   {
+    id: "text-generation-fallback",
+    title: "Text generation fallback",
+    to: "/settings/threads",
+    scope: "environment",
+    searchTerms: ["local models only cloud privacy background writing titles commit messages"],
+  },
+  {
     id: "thread-title-instructions",
     title: "Thread title instructions",
     to: "/settings/threads",
@@ -945,7 +952,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Connected agents",
     to: "/settings/providers",
     searchTerms: [
-      "providers agents cli codex claude cursor grok fx kiro opencode antigravity google sign in sign out install subscription instances authentication api key models configuration binary path config directory codex_home shadow home endpoint arguments environment variables display name accent color custom favorite hidden auto compact native sessions import resume",
+      "providers agents cli local models self-hosted ollama lm studio llama.cpp vllm sglang codex claude cursor grok fx kiro opencode antigravity google sign in sign out install subscription instances authentication api key models configuration binary path config directory codex_home shadow home endpoint arguments environment variables display name accent color custom favorite hidden auto compact native sessions import resume",
     ],
   },
   {

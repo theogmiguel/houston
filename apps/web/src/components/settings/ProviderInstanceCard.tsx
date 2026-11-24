@@ -823,6 +823,11 @@ export function ProviderInstanceCard({
     );
   };
 
+  const updateInference = (local: boolean) => {
+    const { inference: _omit, ...rest } = instance;
+    onUpdate(local ? { ...rest, inference: "local" } : rest);
+  };
+
   const updateConfig = (nextConfig: Record<string, unknown> | undefined) => {
     const { config: _omit, ...rest } = instance;
     onUpdate(
@@ -1265,6 +1270,18 @@ export function ProviderInstanceCard({
                 spellCheck={false}
               />
             </div>
+          }
+        />
+        <SettingsRow
+          title="Runs local models"
+          description="Every model this instance can select runs on hardware you control. Local instances come first and handle background writing such as titles and commit messages."
+          control={
+            <Switch
+              checked={instance.inference === "local"}
+              disabled={readOnly}
+              onCheckedChange={(checked) => updateInference(Boolean(checked))}
+              aria-label="Runs local models"
+            />
           }
         />
       </SettingsSection>

@@ -27,7 +27,11 @@ import { EditorId, FileManagerRevealKind, RemoteOpenTarget } from "./editor.ts";
 import { ManagedPolicySummary } from "./managedPolicy.ts";
 import { ModelCapabilities, ProviderOptionDescriptor } from "./model.ts";
 import { RuntimeMode } from "./providerPolicy.ts";
-import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
+import {
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ProviderInstanceInference,
+} from "./providerInstance.ts";
 import { ServerProviderUsageLimits, UsageLimitSourceSnapshots } from "./providerUsageLimits.ts";
 import { ServerSettings } from "./settings.ts";
 import { DesktopUpdateChannelSchema } from "./ipc.ts";
@@ -211,6 +215,7 @@ export const ServerProvider = Schema.Struct({
   driver: ProviderDriverKind,
   displayName: Schema.optional(TrimmedNonEmptyString),
   accentColor: Schema.optional(TrimmedNonEmptyString),
+  inference: Schema.optionalKey(ProviderInstanceInference),
   // Validate driver-supplied remote icons against the driver's trusted origin.
   iconUrl: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(2_048))),
   badgeLabel: Schema.optional(TrimmedNonEmptyString),
