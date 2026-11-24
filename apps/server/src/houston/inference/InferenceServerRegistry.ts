@@ -6,8 +6,11 @@ import {
   type InferenceApiProtocol,
   type InferenceServerConfig,
   InferenceServerId,
+  type InferenceGatewayQueue,
   type InferenceServerLoad,
   type InferenceServerModel,
+  type InferenceServerPromptCache,
+  type InferenceServerRecentFailure,
   type InferenceServerSaveInput,
   type InferenceServerSnapshot,
   HoustonInferenceError,
@@ -45,6 +48,16 @@ export class InferenceServerRegistry extends Context.Service<
     ) => Effect.Effect<ReadonlyArray<InferenceServerSnapshot>>;
     /** Adds or replaces a server and stores its API key; an omitted key keeps the saved one. */
     readonly save: (input: InferenceServerSaveInput) => Effect.Effect<void, HoustonInferenceError>;
+    /** The gateway's view of its own requests to `id`, carried on that server's snapshot. */
+    readonly publishGatewayQueue: (
+      id: InferenceServerId,
+      queue: InferenceGatewayQueue,
+    ) => Effect.Effect<void>;
+    /** The newest gateway failure for `id`; a completed request clears it. */
+    readonly publishRequestFailure: (
+      id: InferenceServerId,
+      failure: InferenceServerRecentFailure | null,
+    ) => Effect.Effect<void>;
     readonly remove: (id: InferenceServerId) => Effect.Effect<void, HoustonInferenceError>;
   }
 >()("@houston-app/cli/houston/inference/InferenceServerRegistry") {}
@@ -63,6 +76,12 @@ type Endpoint =
 /** The secret entry holding one server's API key. The name is scoped to the channel's store. */
 export const inferenceApiKeySecretName = (id: InferenceServerId): string =>
   `houston-inference-server-${id}`;
+
+/** Whether a credential pinned to `pinned` still describes what is configured now. */
+export const routesAlike = (pinned: InferenceServerConfig, current: InferenceServerConfig) =>
+  pinned.baseUrl === current.baseUrl &&
+  pinned.fallbackServerId === current.fallbackServerId &&
+  JSON.stringify(pinned.watchdog) === JSON.stringify(current.watchdog);
 
 export function parseBaseUrl(raw: string): Endpoint {
   let url: URL;
@@ -227,6 +246,65 @@ function readLoad(
   return undefined;
 }
 
+/** Cumulative prompt-token counters from the previous probe, and the share they last produced. */
+export interface PromptCacheCounters {
+  readonly hits: number;
+  readonly queries: number;
+  readonly share?: number;
+  readonly falling?: boolean;
+}
+
+const FALLING_MARGIN = 0.1;
+const SATURATED_SHARE = 0.95;
+
+/**
+ * TensorFold's prompt cache, with the cached share of the prompt tokens queried since `previous`.
+ * Counters below `previous` mean the server restarted, so they count from zero.
+ */
+export function readPromptCache(
+  totals: ReadonlyMap<string, number>,
+  previous: PromptCacheCounters | undefined,
+): { readonly cache?: InferenceServerPromptCache; readonly counters?: PromptCacheCounters } {
+  const budget = totals.get("tensorfold:prompt_cache_budget_bytes");
+  if (budget === undefined) return {};
+  const budgetBytes = Math.round(budget);
+  if (budgetBytes === 0) return { cache: { budgetBytes, status: "none" } };
+  const retained = totals.get("tensorfold:prompt_cache_bytes");
+  const states = totals.get("tensorfold:prompt_cache_states");
+  const hits = totals.get("tensorfold:prefix_cache_hits_total");
+  const queries = totals.get("tensorfold:prefix_cache_queries_total");
+
+  let counters: PromptCacheCounters | undefined;
+  if (hits !== undefined && queries !== undefined) {
+    const reset = previous !== undefined && (hits < previous.hits || queries < previous.queries);
+    const base = reset ? { hits: 0, queries: 0 } : previous;
+    const queried = base === undefined ? 0 : queries - base.queries;
+    if (base === undefined || queried <= 0) {
+      counters = reset ? { hits, queries } : { ...previous, hits, queries };
+    } else {
+      const share = Math.min(1, Math.max(0, (hits - base.hits) / queried));
+      const falling = previous?.share !== undefined && share < previous.share - FALLING_MARGIN;
+      counters = { hits, queries, share, falling };
+    }
+  }
+
+  // Full once there is no room for another state; without its size, past a fixed share.
+  const room = totals.get("tensorfold:prompt_cache_minimum_state_bytes");
+  const saturated =
+    retained !== undefined &&
+    budget - retained < (room !== undefined && room > 0 ? room : budget * (1 - SATURATED_SHARE));
+  return {
+    cache: {
+      budgetBytes,
+      ...(retained === undefined ? {} : { retainedBytes: Math.round(retained) }),
+      ...(states === undefined ? {} : { states: Math.round(states) }),
+      ...(counters?.share === undefined ? {} : { recentCachedShare: counters.share }),
+      status: saturated && counters?.falling === true ? "saturated-falling" : "ok",
+    },
+    ...(counters === undefined ? {} : { counters }),
+  };
+}
+
 export const PROTOCOL_PATHS: ReadonlyArray<readonly [InferenceApiProtocol, string]> = [
   ["chat-completions", "chat/completions"],
   ["completions", "completions"],
@@ -245,6 +323,7 @@ export const make = Effect.gen(function* () {
   const secrets = yield* HoustonSecrets.HoustonSecrets;
   const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
   const stateRef = yield* Ref.make<ReadonlyArray<InferenceServerSnapshot>>([]);
+  const cacheCounters = yield* Ref.make(new Map<InferenceServerId, PromptCacheCounters>());
   const changes = yield* Effect.acquireRelease(
     PubSub.unbounded<ReadonlyArray<InferenceServerSnapshot>>(),
     PubSub.shutdown,
@@ -519,6 +598,14 @@ export const make = Effect.gen(function* () {
         ? sumMetrics(metricsText.body)
         : undefined;
     const metrics = totals === undefined ? undefined : readLoad(totals);
+    const { cache, counters } =
+      totals === undefined ? {} : readPromptCache(totals, (yield* Ref.get(cacheCounters)).get(id));
+    yield* Ref.update(cacheCounters, (all) => {
+      const next = new Map(all);
+      if (counters === undefined) next.delete(id);
+      else next.set(id, counters);
+      return next;
+    });
     const engine = ownerEngine ?? metrics?.engine;
     // Batch size means concurrent requests only where that is verified for the engine.
     const detectedConcurrency =
@@ -537,16 +624,70 @@ export const make = Effect.gen(function* () {
       ...(metrics === undefined ? {} : { load: metrics.load }),
       ...(maxConcurrentRequests === undefined ? {} : { maxConcurrentRequests }),
       ...(protocols.length === 0 ? {} : { apiProtocols: protocols }),
+      ...(cache === undefined ? {} : { promptCache: cache }),
     } as const;
   });
+
+  const gatewayQueues = yield* Ref.make(new Map<InferenceServerId, InferenceGatewayQueue>());
+  const recentFailures = yield* Ref.make(
+    new Map<InferenceServerId, InferenceServerRecentFailure>(),
+  );
+  const withGatewayState = (
+    snapshots: ReadonlyArray<InferenceServerSnapshot>,
+    queues: ReadonlyMap<InferenceServerId, InferenceGatewayQueue>,
+    failures: ReadonlyMap<InferenceServerId, InferenceServerRecentFailure>,
+  ) =>
+    snapshots.map((snapshot) => {
+      const queue = queues.get(snapshot.id);
+      const failure = failures.get(snapshot.id);
+      const { gatewayQueue: _previousQueue, recentFailure: _previousFailure, ...rest } = snapshot;
+      return {
+        ...rest,
+        ...(queue === undefined ? {} : { gatewayQueue: queue }),
+        ...(failure === undefined ? {} : { recentFailure: failure }),
+      };
+    });
 
   const publish = Effect.fn("InferenceServerRegistry.publish")(function* (
     snapshots: ReadonlyArray<InferenceServerSnapshot>,
   ) {
-    const changed = yield* Ref.modify(stateRef, (previous) =>
-      Equal.equals(previous, snapshots) ? [false, previous] : [true, snapshots],
+    const next = withGatewayState(
+      snapshots,
+      yield* Ref.get(gatewayQueues),
+      yield* Ref.get(recentFailures),
     );
-    if (changed) yield* PubSub.publish(changes, snapshots);
+    const changed = yield* Ref.modify(stateRef, (previous) =>
+      Equal.equals(previous, next) ? [false, previous] : [true, next],
+    );
+    if (changed) yield* PubSub.publish(changes, next);
+  });
+
+  // Untraced: it runs on every admission change; the gateway request covers it.
+  const publishGatewayQueue = Effect.fnUntraced(function* (
+    id: InferenceServerId,
+    queue: InferenceGatewayQueue,
+  ) {
+    const idle = queue.active.length === 0 && queue.waiting.length === 0;
+    yield* Ref.update(gatewayQueues, (queues) => {
+      const next = new Map(queues);
+      if (idle) next.delete(id);
+      else next.set(id, queue);
+      return next;
+    });
+    yield* publish(yield* Ref.get(stateRef));
+  });
+
+  const publishRequestFailure = Effect.fnUntraced(function* (
+    id: InferenceServerId,
+    failure: InferenceServerRecentFailure | null,
+  ) {
+    yield* Ref.update(recentFailures, (failures) => {
+      const next = new Map(failures);
+      if (failure === null) next.delete(id);
+      else next.set(id, failure);
+      return next;
+    });
+    yield* publish(yield* Ref.get(stateRef));
   });
 
   // Serialized so a slow probe of old settings cannot resurrect a removed server.
@@ -644,6 +785,16 @@ export const make = Effect.gen(function* () {
       ...(input.maxConcurrentRequests === undefined
         ? {}
         : { maxConcurrentRequests: input.maxConcurrentRequests }),
+      ...(input.fallbackServerId === undefined
+        ? existing?.fallbackServerId === undefined
+          ? {}
+          : { fallbackServerId: existing.fallbackServerId }
+        : { fallbackServerId: input.fallbackServerId }),
+      ...(input.watchdog === undefined
+        ? existing?.watchdog === undefined
+          ? {}
+          : { watchdog: existing.watchdog }
+        : { watchdog: input.watchdog }),
     };
 
     if (input.apiKey !== undefined) {
@@ -713,6 +864,8 @@ export const make = Effect.gen(function* () {
   return InferenceServerRegistry.of({
     current: Ref.get(stateRef),
     refresh,
+    publishGatewayQueue,
+    publishRequestFailure,
     save,
     remove,
     get streamChanges() {

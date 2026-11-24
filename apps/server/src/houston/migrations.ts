@@ -1380,6 +1380,42 @@ const PendingDeviceApprovals = Effect.gen(function* () {
   `;
 });
 
+// One row per request the inference gateway served. It never holds request or response text:
+// server, model, purpose, thread and run ids, status, bounded failure cause, HTTP status, token
+// counts, timings and the static-prefix fingerprint only. The log sweeps rows past its retention.
+const InferenceRequests = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_inference_requests (
+      request_id TEXT PRIMARY KEY,
+      server_id TEXT NOT NULL,
+      model TEXT NOT NULL,
+      thread_id TEXT,
+      run_id TEXT,
+      parent_run_id TEXT,
+      purpose TEXT NOT NULL,
+      status TEXT NOT NULL,
+      fallback_from TEXT,
+      static_prefix_hash TEXT,
+      received_at INTEGER NOT NULL,
+      queue_wait_ms INTEGER,
+      ttft_ms INTEGER,
+      decode_ms INTEGER,
+      duration_ms INTEGER,
+      prompt_tokens INTEGER,
+      cached_prompt_tokens INTEGER,
+      completion_tokens INTEGER,
+      failure_cause TEXT,
+      upstream_http_status INTEGER,
+      reasoning_tokens INTEGER
+    )
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_inference_requests_received
+    ON houston_inference_requests(received_at)`;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_inference_requests_thread
+    ON houston_inference_requests(thread_id, received_at) WHERE thread_id IS NOT NULL`;
+});
+
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
@@ -1407,6 +1443,7 @@ const houstonMigrationEntries = [
   [26, "IssueTrackerBindingProperties", IssueTrackerBindingProperties],
   [27, "NotionPagesAsTaskIssues", NotionPagesAsTaskIssues],
   [28, "PendingDeviceApprovals", PendingDeviceApprovals],
+  [29, "InferenceRequests", InferenceRequests],
 ] as const;
 
 /** Every Houston migration id this build knows, for callers that must not run beside an older schema. */

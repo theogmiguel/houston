@@ -489,3 +489,129 @@ describe("parseBaseUrl", () => {
     });
   });
 });
+
+describe("readPromptCache", () => {
+  const totals = (values: Readonly<Record<string, number>>) =>
+    new Map(Object.entries(values).map(([name, value]) => [`tensorfold:${name}`, value]));
+  const full = { prompt_cache_budget_bytes: 1_000, prompt_cache_bytes: 990 };
+  const half = { prompt_cache_budget_bytes: 1_000, prompt_cache_bytes: 500 };
+  const counted = (hits: number, queries: number) => ({
+    prefix_cache_hits_total: hits,
+    prefix_cache_queries_total: queries,
+  });
+  const before = { hits: 140, queries: 200, share: 0.9, falling: false };
+
+  it.each([
+    [
+      "first sight has no share",
+      full,
+      counted(50, 100),
+      undefined,
+      { status: "ok" },
+      { hits: 50, queries: 100 },
+    ],
+    [
+      "an interval's share",
+      full,
+      counted(140, 200),
+      { hits: 50, queries: 100 },
+      { recentCachedShare: 0.9, status: "ok" },
+      before,
+    ],
+    [
+      "an idle interval keeps the last share",
+      full,
+      counted(140, 200),
+      before,
+      { recentCachedShare: 0.9, status: "ok" },
+      before,
+    ],
+    [
+      "a restart counts from zero",
+      full,
+      counted(30, 100),
+      { hits: 900, queries: 1_000, share: 0.9, falling: false },
+      { recentCachedShare: 0.3, status: "saturated-falling" },
+      { hits: 30, queries: 100, share: 0.3, falling: true },
+    ],
+    [
+      "a falling share in a full cache",
+      full,
+      counted(160, 300),
+      before,
+      { recentCachedShare: 0.2, status: "saturated-falling" },
+      { hits: 160, queries: 300, share: 0.2, falling: true },
+    ],
+    [
+      "a falling share with room to spare",
+      half,
+      counted(160, 300),
+      before,
+      { recentCachedShare: 0.2, status: "ok" },
+      { hits: 160, queries: 300, share: 0.2, falling: true },
+    ],
+  ] as const)("%s", (_, cache, counters, previous, expected, next) => {
+    const read = InferenceServerRegistry.readPromptCache(
+      totals({ ...cache, ...counters }),
+      previous,
+    );
+    expect(read.cache).toMatchObject(expected);
+    if (!("recentCachedShare" in expected)) expect(read.cache?.recentCachedShare).toBeUndefined();
+    expect(read.counters).toEqual(next);
+  });
+
+  it("knows nothing without a budget", () => {
+    expect(InferenceServerRegistry.readPromptCache(totals(counted(1, 2)), undefined)).toEqual({});
+  });
+});
+
+describe("InferenceServerRegistry snapshot additions", () => {
+  const service = () =>
+    Effect.gen(function* () {
+      const registry = yield* InferenceServerRegistry.make;
+      yield* registry.refresh();
+      return registry;
+    }).pipe(
+      Effect.provide([
+        ServerSettings.layerTest({
+          inferenceServers: { [rtx]: { baseUrl: `${HOST}/v1`, enabled: true } },
+        }),
+        Layer.mock(BackgroundPolicy.BackgroundPolicy)({
+          shouldRunScopeWork: () => Effect.succeed(false),
+        }),
+        HoustonSecrets.layerMemory(),
+        layerFakeHttp({ [`${HOST}/v1/models`]: tensorFoldModels }, []),
+      ]),
+      Effect.scoped,
+    );
+
+  it.effect("carries the queue and a recent failure, and clears them when idle", () =>
+    Effect.gen(function* () {
+      const registry = yield* service();
+      yield* registry.publishGatewayQueue(rtx, {
+        capacity: 2,
+        active: [{ purpose: "interactive" }],
+        waiting: [{ purpose: "background", position: 1 }],
+      });
+      yield* registry.publishRequestFailure(rtx, {
+        at: "2026-01-01T00:00:00.000Z",
+        status: "failed",
+        cause: "transport",
+        advice: "Check that the model server is running and reachable.",
+      });
+      const busy = (yield* registry.current).find((snapshot) => snapshot.id === rtx);
+      expect(busy?.gatewayQueue).toEqual({
+        capacity: 2,
+        active: [{ purpose: "interactive" }],
+        waiting: [{ purpose: "background", position: 1 }],
+      });
+      expect(busy?.recentFailure).toMatchObject({ status: "failed", cause: "transport" });
+
+      yield* registry.publishGatewayQueue(rtx, { capacity: 2, active: [], waiting: [] });
+      yield* registry.publishRequestFailure(rtx, null);
+      const idle = (yield* registry.current).find((snapshot) => snapshot.id === rtx);
+      expect(idle?.gatewayQueue).toBeUndefined();
+      expect(idle?.recentFailure).toBeUndefined();
+    }),
+  );
+});
