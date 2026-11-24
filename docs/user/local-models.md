@@ -90,13 +90,15 @@ checked or is down is not reported this way.
 
 ## Use a server in an agent
 
-Pi and OpenCode can send their model traffic through a registered server. Open the agent's
-instance in **Settings → Providers**, set **Model server**, and pick a registered server. The
-instance counts as local while that server is enabled, so it leads the provider list and handles
-background writing; turning the server off makes it a cloud instance again. A linked instance
-whose server is down, removed or not ready waits with a message naming the server rather than
-falling back to its own cloud models. Changing the link affects new sessions; a running session
-keeps the route it started with.
+Pi, OpenCode, Codex and Claude can send their model traffic through a registered server. Open the
+agent's instance in **Settings → Providers**, set **Model server**, and pick a registered server.
+The instance counts as local while that server is enabled, so it leads the provider list and
+handles background writing; turning the server off makes it a cloud instance again. A linked
+instance whose server is down, removed or not ready waits with a message naming the server rather
+than falling back to its own cloud models. Changing the link affects new sessions; a running
+session keeps the route it started with.
+
+Codex and Claude support on a model server is **experimental**.
 
 A linked Pi instance discovers the server's models through Houston's gateway and offers them as
 `houston-<server>` models, with the context window and output limit the server reports. Pi gets a
@@ -105,8 +107,30 @@ OpenCode receives the server as a `houston-<server>` provider in its configurati
 OpenCode process restarts when the served models change. Its requests are counted per thread
 from OpenCode's own session id.
 
-Other agents cannot use an inference server yet because they have no OpenAI-compatible endpoint
-setting; linking one shows that refusal by name.
+### Codex on a model server
+
+A linked Codex instance runs its app-server with a private model provider that points at Houston's
+gateway. It needs a server that serves the **OpenAI Responses** API; a server that does not is
+refused by name. Codex receives a model catalog for the models the server lists, so a model's
+window and reasoning efforts come from the server, and it keeps its own launch arguments for text
+generation such as commit messages. The gateway token reaches Codex only through an environment
+variable Codex reads, never through its arguments or configuration files.
+
+While the server is enabled, the instance waits for it instead of using the ChatGPT or OpenAI
+login, even when the server is down or does not serve Responses. Only turning the server off in
+**Settings → Inference** makes the instance a cloud Codex again.
+
+### Claude on a model server
+
+A linked Claude instance starts the Claude Agent SDK with `ANTHROPIC_BASE_URL` set to the gateway
+route and an `ANTHROPIC_AUTH_TOKEN` scoped to one thread session. The token is passed only through
+the SDK's environment and is never written to `~/.claude.json` or Claude's settings files. It needs
+a server that serves the **Anthropic Messages** API; a server that does not is refused by name
+("<server> does not serve the Anthropic Messages API Claude needs"). The model list comes from the
+server. As with Codex, while the server is enabled a local instance waits rather than contacting
+Anthropic, and only turning the server off makes it a cloud instance again.
+
+Other agents cannot use an inference server yet; linking one shows that refusal by name.
 
 ### Lean tools
 
