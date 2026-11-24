@@ -301,6 +301,75 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("nonBlockingSpa
     }),
   );
 
+  it.effect.each([
+    { slot: "free", busy: false },
+    { slot: "handed over by a check that ended", busy: true },
+  ])("callers interrupted at any point give back the slot they took: $slot", ({ busy }) =>
+    Effect.gen(function* () {
+      let answers: Array<() => void> = [];
+      let answering = true;
+      using _access = vi
+        .spyOn(NodeFSP, "access")
+        .mockImplementation((path) =>
+          answering || path === "/healthy"
+            ? Promise.resolve()
+            : new Promise<void>((resolve) => answers.push(resolve)),
+        );
+      const timedOut = () =>
+        PlatformError.systemError({ _tag: "TimedOut", module: "test", method: "check" });
+      const turns = Effect.gen(function* () {
+        for (let turn = 0; turn < 3; turn++) yield* TestClock.adjust("1 millis");
+      });
+      const stuck: Array<number> = [];
+      let point = 0;
+      for (let reached = true; reached; point++) {
+        reached = false;
+        const checks = NonBlockingSpawner.makeChecks();
+        const run = (path: string) => checks.run(path, path, NodeFS.constants.F_OK, timedOut);
+        // As many callers as there are slots, so one leak each would take them all.
+        for (let caller = 0; caller < NonBlockingSpawner.CHECK_LIMIT; caller++) {
+          answering = !busy;
+          if (busy) {
+            for (let held = 0; held < NonBlockingSpawner.CHECK_LIMIT; held++) {
+              yield* Effect.forkChild(run(`/held/${held}`));
+            }
+            yield* turns;
+          }
+          const native = new Scheduler.MixedScheduler();
+          let checking: Fiber.Fiber<unknown, unknown> | undefined;
+          let operations = 0;
+          const interrupting: Scheduler.Scheduler = {
+            executionMode: "async",
+            makeDispatcher: () => native.makeDispatcher(),
+            shouldYield: (fiber) => {
+              checking ??= fiber;
+              if (operations++ !== point) return false;
+              reached = true;
+              checking.interruptUnsafe();
+              return true;
+            },
+          };
+          const interrupted = yield* run("/healthy").pipe(
+            Effect.provideService(Scheduler.Scheduler, interrupting),
+            Effect.forkChild,
+          );
+          yield* turns;
+          answering = true;
+          for (const answer of answers) answer();
+          answers = [];
+          yield* Fiber.await(interrupted);
+          yield* turns;
+        }
+        const later = yield* Effect.forkChild(run("/healthy"));
+        yield* turns;
+        if (later.pollUnsafe()?._tag !== "Success") stuck.push(point);
+        yield* Fiber.interrupt(later);
+      }
+      expect(point).toBeGreaterThan(10);
+      expect(stuck).toEqual([]);
+    }),
+  );
+
   it.effect("an interrupted check does not clear the mark of a newer one that hung", () =>
     Effect.gen(function* () {
       const answers: Array<() => void> = [];

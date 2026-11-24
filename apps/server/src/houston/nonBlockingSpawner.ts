@@ -87,23 +87,25 @@ export const makeChecks = () => {
     for (const waiter of waiters) if (waiter()) waiters.delete(waiter);
   };
 
-  const acquire = Effect.callback<"slot" | "unchecked">((resume) => {
-    const attempt = () => {
-      if (inFlight < CHECK_LIMIT) {
-        inFlight++;
-        resume(Effect.succeed("slot"));
-        return true;
-      }
-      if (hung >= inFlight) {
-        resume(Effect.succeed("unchecked"));
-        return true;
-      }
-      return false;
-    };
-    if (attempt()) return;
-    waiters.add(attempt);
-    return Effect.sync(() => waiters.delete(attempt));
-  });
+  const acquire = (onSlot: () => void) =>
+    Effect.callback<"slot" | "unchecked">((resume) => {
+      const attempt = () => {
+        if (inFlight < CHECK_LIMIT) {
+          inFlight++;
+          onSlot();
+          resume(Effect.succeed("slot"));
+          return true;
+        }
+        if (hung >= inFlight) {
+          resume(Effect.succeed("unchecked"));
+          return true;
+        }
+        return false;
+      };
+      if (attempt()) return;
+      waiters.add(attempt);
+      return Effect.sync(() => waiters.delete(attempt));
+    });
 
   const run = Effect.fnUntraced(function* (
     directory: string,
@@ -125,7 +127,17 @@ export const makeChecks = () => {
           Deferred.doneUnsafe(done, Effect.void);
         });
         return yield* Effect.gen(function* () {
-          const slot = yield* restore(acquire);
+          // An interrupt can land between taking a slot and returning it from the wait.
+          let held = false;
+          const slot = yield* restore(acquire(() => (held = true))).pipe(
+            Effect.onInterrupt(() =>
+              Effect.sync(() => {
+                if (!held) return;
+                inFlight--;
+                wake();
+              }),
+            ),
+          );
           if (slot === "unchecked") return slot as CheckResult;
           let abandoned = false;
           let marked = false;
