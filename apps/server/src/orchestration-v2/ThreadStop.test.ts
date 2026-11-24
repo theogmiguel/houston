@@ -1,4 +1,4 @@
-import { assert, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import {
   CommandId,
   ContextTransferId,
@@ -12,6 +12,7 @@ import {
   ProviderSessionId,
   ProviderThreadId,
   ProviderTurnId,
+  RunId,
   RuntimeRequestId,
   ScheduledTaskId,
   ThreadId,
@@ -24,6 +25,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
+import * as EventSink from "./EventSink.ts";
 import * as EventStore from "./EventStore.ts";
 import * as TestClock from "effect/testing/TestClock";
 
@@ -1742,3 +1744,274 @@ it.effect.each(["Stop", "Force stop"] as const)(
       );
     }).pipe(Effect.provide(layerTest)),
 );
+
+describe("Stop on a parent with running sub-agents", () => {
+  const projectId = ProjectId.make("project:thread-stop");
+
+  const createThread = (
+    threadId: ThreadId,
+    createdBy: "user" | "agent",
+    creationSource: "web" | "mcp",
+  ) =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make(`create:${threadId}`),
+        threadId,
+        projectId,
+        title: threadId,
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdBy,
+        creationSource,
+      });
+    });
+
+  const awaitTaskUpdate = (afterSequence: number, taskId: NodeId, status: string) =>
+    Effect.gen(function* () {
+      const sink = yield* EventSink.EventSinkV2;
+      yield* sink.stream({ afterSequence, eventType: "subagent.updated" }).pipe(
+        Stream.filter(
+          (stored) =>
+            stored.event.type === "subagent.updated" &&
+            stored.event.payload.id === taskId &&
+            stored.event.payload.status === status,
+        ),
+        Stream.take(1),
+        Stream.runDrain,
+      );
+    });
+
+  // A parent whose run is live with two delegated children, one of which delegated a
+  // grandchild, and nothing queued behind the run.
+  const stopParentWithSubagents = (
+    parentThreadId: ThreadId,
+    type: "thread.stop" | "run.interrupt",
+  ) =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      yield* createThread(parentThreadId, "user", "web");
+      yield* send(parentThreadId, "parent", "start_immediately");
+      const workingChildThreadId = yield* delegate(parentThreadId, `${parentThreadId} working`);
+      const grandchildThreadId = yield* delegate(workingChildThreadId, `${parentThreadId} nested`);
+      const finishingChildThreadId = yield* delegate(parentThreadId, `${parentThreadId} finishing`);
+      const stoppedRun = (yield* orchestrator.getThreadProjection(parentThreadId)).runs.at(-1)!;
+      const stopCommandId = CommandId.make(`stop:${parentThreadId}`);
+      yield* orchestrator.dispatch(
+        type === "thread.stop"
+          ? { type, commandId: stopCommandId, threadId: parentThreadId }
+          : {
+              type,
+              commandId: stopCommandId,
+              threadId: parentThreadId,
+              runId: stoppedRun.id,
+              holdQueue: true,
+            },
+      );
+      return {
+        stoppedRunId: stoppedRun.id,
+        stopCommandId,
+        workingChildThreadId,
+        grandchildThreadId,
+        finishingChildThreadId,
+      };
+    });
+
+  const resume = (threadId: ThreadId, sourceRunId: RunId, suffix: string) =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      return yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make(`resume:${threadId}:${suffix}`),
+        threadId,
+        messageId: MessageId.make(`resume:${threadId}:${suffix}`),
+        manualContinuationOfRunId: sourceRunId,
+        text: "Continue where you left off.",
+        attachments: [],
+        dispatchMode: { type: "start_immediately" },
+        createdBy: "user",
+        creationSource: "web",
+      });
+    });
+
+  it.effect.each(["thread.stop", "run.interrupt"] as const)(
+    "%s stops every sub-agent thread after the parent's stop and discards their results, even a late one",
+    (type) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const sink = yield* EventSink.EventSinkV2;
+        const threads = yield* ThreadManagementService.ThreadManagementService;
+        const sql = yield* SqlClient.SqlClient;
+        const parentThreadId = ThreadId.make(`thread:stop-subagents:${type}`);
+        const stop = yield* stopParentWithSubagents(parentThreadId, type);
+
+        // The stop is recorded first; the children are stopped by the walk it queues.
+        const stopped = yield* orchestrator.getThreadProjection(parentThreadId);
+        assert.deepEqual(
+          stopped.runs.map((run) => run.status),
+          ["interrupted"],
+        );
+        assert.equal(stopped.runs[0]?.delegatedCompletion?.disposition, "stopped");
+        assert.deepEqual(
+          stopped.subagents.map((task) => task.completionDelivery?.state),
+          ["disposed", "disposed"],
+        );
+        for (const childThreadId of [stop.workingChildThreadId, stop.grandchildThreadId]) {
+          assert.deepEqual((yield* threadState(childThreadId)).runs, ["starting"]);
+        }
+        const walks = yield* sql<{ readonly command_id: string }>`
+          SELECT command_id FROM orchestration_v2_effect_outbox
+          WHERE effect_type = 'delegated-tasks.stop'
+        `;
+        assert.deepEqual(
+          walks.map((row) => row.command_id),
+          [stop.stopCommandId],
+        );
+
+        // A child that finishes after the parent's stop delivers nothing and starts nothing.
+        const finishingTask = stopped.subagents.find(
+          (task) => task.childThreadId === stop.finishingChildThreadId,
+        )!;
+        const finishingRun = (yield* orchestrator.getThreadProjection(stop.finishingChildThreadId))
+          .runs[0]!;
+        const now = yield* DateTime.now;
+        const beforeLateResult = yield* sink.latestSequence();
+        // Composed state: the child's run jumps from starting to completed.
+        yield* sink.write({
+          events: [
+            {
+              id: EventId.make(`event:${finishingRun.id}:late-completed`),
+              type: "run.updated",
+              threadId: stop.finishingChildThreadId,
+              runId: finishingRun.id,
+              occurredAt: now,
+              payload: { ...finishingRun, status: "completed", startedAt: now, completedAt: now },
+            },
+          ],
+        });
+        yield* awaitTaskUpdate(beforeLateResult, finishingTask.id, "completed");
+        const afterLateResult = yield* orchestrator.getThreadProjection(parentThreadId);
+        const lateTask = afterLateResult.subagents.find((task) => task.id === finishingTask.id)!;
+        assert.isNotNull(lateTask.result);
+        assert.equal(lateTask.completionDelivery?.state, "disposed");
+        assert.deepEqual(afterLateResult.runs, stopped.runs);
+        assert.deepEqual(afterLateResult.messages, stopped.messages);
+
+        // The walk stops the working child and, through it, the grandchild; the stopped
+        // child's own result is discarded too.
+        const workingTask = stopped.subagents.find(
+          (task) => task.childThreadId === stop.workingChildThreadId,
+        )!;
+        const beforeWalk = yield* sink.latestSequence();
+        yield* threads.stopDelegatedTasks({
+          threadId: parentThreadId,
+          commandId: stop.stopCommandId,
+        });
+        assert.deepEqual((yield* threadState(stop.workingChildThreadId)).runs, ["interrupted"]);
+        assert.deepEqual((yield* threadState(stop.grandchildThreadId)).runs, ["interrupted"]);
+        yield* awaitTaskUpdate(beforeWalk, workingTask.id, "interrupted");
+        const walked = yield* orchestrator.getThreadProjection(parentThreadId);
+        assert.equal(
+          walked.subagents.find((task) => task.id === workingTask.id)?.completionDelivery?.state,
+          "disposed",
+        );
+        assert.deepEqual(walked.runs, stopped.runs);
+        assert.deepEqual(walked.messages, stopped.messages);
+      }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect.each([
+    ["a sibling thread", "agent"],
+    ["a peer thread", "user"],
+    ["a child launched as its own thread", "agent"],
+    ["a scheduled task", null],
+  ] as const)(
+    "after Stop, a message from %s starts a run at once and Resume of the stopped run is refused",
+    ([source, senderCreatedBy]) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const projections = yield* ProjectionStore.ProjectionStoreV2;
+        const threads = yield* ThreadManagementService.ThreadManagementService;
+        const parentThreadId = ThreadId.make(`thread:stop-then-message:${source}`);
+        const stop = yield* stopParentWithSubagents(parentThreadId, "thread.stop");
+        yield* threads.stopDelegatedTasks({
+          threadId: parentThreadId,
+          commandId: stop.stopCommandId,
+        });
+        assert.deepEqual((yield* threadState(parentThreadId)).runs, ["interrupted"]);
+
+        // Pins current behaviour: nothing holds an automatic message after Stop.
+        // A planned change is expected to hold these until the user resumes or sends.
+        const messageId = MessageId.make(`message:${parentThreadId}:automatic`);
+        if (senderCreatedBy === null) {
+          // Composed fixture: copies the bound-thread `sendToThread` call in ScheduledTaskService
+          // (`sendBound`), so a change inside that service is not seen here.
+          yield* threads.sendToThread({
+            projectId,
+            commandId: CommandId.make(`scheduled:${parentThreadId}`),
+            threadId: parentThreadId,
+            messageId,
+            scheduledTaskId: ScheduledTaskId.make(`scheduled:${parentThreadId}`),
+            text: "Nightly check",
+            attachments: [],
+            mode: "queue",
+            createdBy: "user",
+            creationSource: "web",
+          });
+        } else {
+          // The orchestrator sees only the sender's thread id, so these senders differ
+          // only in how their threads were created (composed fixture).
+          const senderThreadId = ThreadId.make(`thread:sender:${source}`);
+          yield* createThread(
+            senderThreadId,
+            senderCreatedBy,
+            senderCreatedBy === "user" ? "web" : "mcp",
+          );
+          yield* threads.sendToThread({
+            projectId,
+            commandId: CommandId.make(`agent-send:${parentThreadId}`),
+            threadId: parentThreadId,
+            senderThreadId,
+            messageId,
+            text: "Status?",
+            attachments: [],
+            mode: "auto",
+            createdBy: "agent",
+            creationSource: "mcp",
+          });
+        }
+        const started = yield* orchestrator.getThreadProjection(parentThreadId);
+        assert.deepEqual(
+          started.runs.map((run) => run.status),
+          ["interrupted", "starting"],
+        );
+        const automaticRun = started.runs[1]!;
+        assert.equal(automaticRun.userMessageId, messageId);
+
+        const refused = "This thread can no longer be resumed from that run.";
+        const whileRunning = yield* Effect.flip(resume(parentThreadId, stop.stoppedRunId, "live"));
+        assert.equal(whileRunning.cause, refused);
+
+        const now = yield* DateTime.now;
+        // Composed state: the automatic run jumps from starting to completed.
+        yield* projections.apply({
+          id: EventId.make(`event:${automaticRun.id}:completed`),
+          type: "run.updated",
+          threadId: parentThreadId,
+          runId: automaticRun.id,
+          occurredAt: now,
+          payload: { ...automaticRun, status: "completed", startedAt: now, completedAt: now },
+        });
+        const afterRun = yield* Effect.flip(resume(parentThreadId, stop.stoppedRunId, "after"));
+        assert.equal(afterRun.cause, refused);
+        assert.deepEqual(
+          (yield* orchestrator.getThreadProjection(parentThreadId)).runs.map((run) => run.status),
+          ["interrupted", "completed"],
+        );
+      }).pipe(Effect.provide(layerTest)),
+  );
+});

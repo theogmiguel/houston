@@ -1,66 +1,23 @@
-import { formatDiffCount } from "@houston-app/client-runtime/diff-count";
 import {
-  ROW_DIFF_COUNTS_CLS,
-  ROW_DIFF_ADDED_CLS,
-  ROW_DIFF_REMOVED_CLS,
   ROW_DRAFT_CROSS_CLS,
   ROW_DRAFT_MARK_CLS,
   ROW_DRAFT_PENCIL_CLS,
 } from "../ui/sidebar-rail-recipes";
-import { scopeProjectRef, scopeThreadRef } from "@houston-app/client-runtime/environment";
+import { scopeThreadRef } from "@houston-app/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@houston-app/client-runtime/state/models";
 import { FolderGit2Icon, GitBranchIcon, SquarePenIcon, XIcon } from "lucide-react";
-import { useEffect, type RefObject } from "react";
 
 import { useThreadHasUnsentDraft } from "../../composerDraftStore";
-import { formatDiffCounts } from "../../threads/sidebarModel";
 import { discardComposerDraft } from "../../lib/discardComposerDraft";
 import { cn } from "../../lib/utils";
 import { useT } from "~/i18n/useT";
 import { useEnvironmentMachines, usePrimaryEnvironmentId } from "../../state/environments";
-import { useProject } from "../../state/entities";
-import { useEnvironmentQuery } from "../../state/query";
 import { useThreadRunningTerminalIds } from "../../state/terminalSessions";
-import { vcsEnvironment } from "../../state/vcs";
 import { formatWorktreePathForDisplay } from "../../worktreeCleanup";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
-import { useSidebarRowSubscriptionLease } from "../Sidebar.logic";
 import { ThreadTerminalStatusButton } from "../ThreadStatusIndicators";
 import { RowMetaItem } from "../ui/sidebar-row-meta";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-
-/**
- * The checkout's uncommitted line totals. The status subscription is held only
- * while the row is on screen or close to it, so a long rail does not keep one
- * live query per thread.
- */
-export function useThreadDiffTotals(
-  thread: EnvironmentThreadShell,
-  rowRef: RefObject<HTMLElement | null>,
-  active: boolean,
-): { insertions: number; deletions: number } | null {
-  const { leaseLiveStatus, rowRef: observeRow } = useSidebarRowSubscriptionLease(active);
-  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- attaches the viewport observer that leases the live status to the mounted row
-  useEffect(() => {
-    const row = rowRef.current;
-    return row === null ? undefined : observeRow(row);
-  });
-  const project = useProject(
-    thread.worktreePath === null ? scopeProjectRef(thread.environmentId, thread.projectId) : null,
-  );
-  const cwd = thread.worktreePath ?? project?.workspaceRoot ?? null;
-  const status = useEnvironmentQuery(
-    leaseLiveStatus && cwd !== null
-      ? vcsEnvironment.status({
-          environmentId: thread.environmentId,
-          input: { cwd, includeRemote: false },
-        })
-      : null,
-  );
-  const totals = status.data?.workingTree;
-  if (totals === undefined || (totals.insertions === 0 && totals.deletions === 0)) return null;
-  return { insertions: totals.insertions, deletions: totals.deletions };
-}
 
 /** A worktree thread shows the worktree mark; every other thread shows the plain branch mark. */
 export function ThreadCheckoutMark({
@@ -137,32 +94,6 @@ export function ThreadDraftItem({
     <RowMetaItem label={t("Unsent draft")}>
       <DraftMark threadRef={threadRef} title={thread.title} />
     </RowMetaItem>
-  );
-}
-
-/** The checkout's uncommitted line totals, in the muted ink until the row is hovered or open. */
-export function ThreadDiffCounts({
-  thread,
-  rowRef,
-  focused,
-}: {
-  thread: EnvironmentThreadShell;
-  rowRef: RefObject<HTMLElement | null>;
-  focused: boolean;
-}) {
-  const t = useT();
-  const diff = useThreadDiffTotals(thread, rowRef, focused);
-  if (diff === null) return null;
-  return (
-    <span
-      role="img"
-      aria-label={t("Uncommitted changes {counts}", { counts: formatDiffCounts(diff) })}
-      data-thread-diff=""
-      className={`shrink-0 ${ROW_DIFF_COUNTS_CLS}`}
-    >
-      <span className={ROW_DIFF_ADDED_CLS}>+{formatDiffCount(diff.insertions)}</span>{" "}
-      <span className={ROW_DIFF_REMOVED_CLS}>−{formatDiffCount(diff.deletions)}</span>
-    </span>
   );
 }
 

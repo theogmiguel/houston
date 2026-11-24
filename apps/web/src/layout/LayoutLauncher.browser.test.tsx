@@ -111,7 +111,11 @@ vi.mock(import("./useThreadSurfaceOpeners"), () => ({
 
 import { render } from "../../test/render";
 import { buildLayout } from "./layoutFixtures";
-import { createLayoutLauncherContent, selectFocusedTab } from "./layoutModel";
+import {
+  createLayoutLauncherContent,
+  isBlankLayoutWorkspace,
+  selectFocusedTab,
+} from "./layoutModel";
 import { LayoutLauncher } from "./LayoutLauncher";
 import { useLayoutStore } from "./layoutStore";
 
@@ -294,7 +298,8 @@ describe("LayoutLauncher", () => {
     });
     const kinds = useLayoutStore
       .getState()
-      .layout.workspaces.flatMap((workspace) =>
+      .layout.workspaces.filter((workspace) => !isBlankLayoutWorkspace(workspace))
+      .flatMap((workspace) =>
         workspace.columns.flatMap((column) =>
           column.panes.flatMap((pane) => pane.tabs.map((tab) => tab.content.kind)),
         ),

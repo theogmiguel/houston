@@ -1,7 +1,11 @@
 // Delivery states for queued, steered and interrupting messages. The transition rules are one
 // pure function; the writer applies them to the stored user_message turn item.
 import {
+  type CommandId,
   type MessageId,
+  type OrchestrationV2Command,
+  type OrchestrationV2ConversationMessage,
+  type OrchestrationV2Run,
   type OrchestrationV2TurnItem,
   type ProviderInstanceId,
   type ProviderSessionId,
@@ -103,6 +107,25 @@ const adopt = (
 // The next delivery, or `current` when the state diagram ignores `signal`. Only provider
 // evidence adopts: a report, or the message's own turn running.
 export function nextDelivery(current: MessageDelivery, signal: DeliverySignal): MessageDelivery {
+  // A steer the provider took back unread is sent again as a turn of its own.
+  if (
+    signal.type === "rerouted" &&
+    current.state === "dropped" &&
+    current.reason === "providerCancelled" &&
+    current.route === "activeTurn"
+  ) {
+    const { reason: _reason, message: _message, ...rest } = current;
+    return {
+      ...rest,
+      route: "ownTurn",
+      rerouted: signal.reason,
+      state: "accepted",
+      adoption: null,
+      evidence: null,
+      providerTurnId: null,
+      at: signal.at,
+    };
+  }
   if (current.state === "adopted" || current.state === "dropped") return current;
   const ownTurnRunning = signal.type === "turnRunning" && current.route === "ownTurn";
   if (current.state === "unconfirmed") {
@@ -155,6 +178,48 @@ export function nextDelivery(current: MessageDelivery, signal: DeliverySignal): 
         ? { ...current, route: "ownTurn", rerouted: signal.reason, at: signal.at }
         : current;
   }
+}
+
+/**
+ * The turn that sends a steer its turn never read, reusing the message's id so a retry cannot
+ * duplicate it. Notifications and completions wait in the queue on the steered run's model.
+ */
+export function steerFollowUpCommand(input: {
+  readonly commandId: CommandId;
+  readonly message: OrchestrationV2ConversationMessage;
+  readonly run: Pick<OrchestrationV2Run, "modelSelection">;
+  /** For a steer the provider dropped: its ended run, and the last run queued before it. */
+  readonly placement?: { readonly ofRunId: RunId; readonly afterRunOrdinal: number };
+}): Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }> {
+  const { message, placement } = input;
+  const queued = message.delegatedCompletion !== undefined || message.notification !== undefined;
+  return {
+    type: "message.dispatch",
+    commandId: input.commandId,
+    threadId: message.threadId,
+    messageId: message.id,
+    text: message.text,
+    ...(message.context ? { context: message.context } : {}),
+    attachments: message.attachments,
+    ...(message.delegatedCompletion === undefined
+      ? {}
+      : { modelSelection: input.run.modelSelection }),
+    dispatchMode: { type: queued ? "queue_after_active" : "start_immediately" },
+    createdBy: message.createdBy,
+    creationSource: message.creationSource,
+    ...(message.delegatedCompletion === undefined
+      ? {}
+      : { delegatedCompletion: message.delegatedCompletion }),
+    ...(message.notification === undefined ? {} : { notification: message.notification }),
+    ...(message.scheduledTaskId === undefined ? {} : { scheduledTaskId: message.scheduledTaskId }),
+    ...(message.senderThreadId === undefined ? {} : { senderThreadId: message.senderThreadId }),
+    ...(placement === undefined
+      ? {}
+      : {
+          steerFollowUpOfRunId: placement.ofRunId,
+          steerFollowUpAfterRunOrdinal: placement.afterRunOrdinal,
+        }),
+  };
 }
 
 /** The delivery signal a provider event carries; assistant output and tool activity carry none. */

@@ -9,10 +9,12 @@ import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { getLayoutBehavior } from "./layoutBehavior";
 import {
   createLayoutLauncherContent,
+  findLayoutPane,
   findLayoutTab,
   findLayoutTabByContent,
   selectFocusedChatTab,
   selectFocusedTab,
+  type LayoutLauncherContent,
   type LayoutOpenPlacement,
   type LayoutTabContent,
 } from "./layoutModel";
@@ -111,8 +113,23 @@ export function closeLayoutProject(
  * it. Its surfaces open for the thread focus was on.
  */
 export function openLayoutNewTab(placement: LayoutOpenPlacement = "active-pane"): void {
-  const store = useLayoutStore.getState();
-  const from = selectFocusedChatTab(store.layout)?.tab.content;
+  useLayoutStore.getState().openTab(createLayoutNewTabContent(null), {
+    placement,
+    position: getLayoutBehavior().newTabPosition,
+  });
+}
+
+/**
+ * The launcher a new tab shows. It offers the surfaces of the thread the pane's active tab
+ * shows, or of the focused tab when `paneId` is null.
+ */
+export function createLayoutNewTabContent(paneId: string | null): LayoutLauncherContent {
+  const layout = useLayoutStore.getState().layout;
+  const pane = paneId === null ? null : findLayoutPane(layout, paneId)?.pane;
+  const from =
+    paneId === null
+      ? selectFocusedChatTab(layout)?.tab.content
+      : pane?.tabs.find((tab) => tab.id === pane.activeTabId)?.content;
   // A surface's launcher offers that surface's thread, as its "+" did.
   const context: ThreadRouteTarget | null =
     from?.kind === "chat"
@@ -122,10 +139,7 @@ export function openLayoutNewTab(placement: LayoutOpenPlacement = "active-pane")
         : from?.kind === "surface"
           ? { kind: "server", threadRef: from.threadRef }
           : null;
-  store.openTab(createLayoutLauncherContent(context), {
-    placement,
-    position: getLayoutBehavior().newTabPosition,
-  });
+  return createLayoutLauncherContent(context);
 }
 
 /**

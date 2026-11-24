@@ -16,6 +16,7 @@ import {
   findProjectForRepository,
   findScopedProject,
   mergePullRequestLists,
+  pullRequestDiffStatKey,
   pullRequestEntryKey,
   groupPullRequestsByInvolvement,
   pullRequestStatsBatches,
@@ -39,6 +40,7 @@ import {
   settlePullRequestOverrides,
   clusterPullRequestStacks,
   pullRequestStackLayerRank,
+  withDiffStat,
 } from "./pullRequestList.logic";
 import { INVOLVEMENT_TABS } from "./pullRequestListOptions";
 import {
@@ -943,5 +945,30 @@ describe("involvement tabs", () => {
       ["reviewing", "Review requested"],
       ["linked", "Agents"],
     ]);
+  });
+});
+
+describe("merging line counts into a row", () => {
+  const unmeasured = entry({ number: 1, additions: 0, deletions: 0 });
+  const countsFor = (additions: number, deletions: number) =>
+    new Map([[pullRequestDiffStatKey(unmeasured), { additions, deletions }]]);
+
+  it("returns the same merged entry while its counts hold", () => {
+    const shown = withDiffStat(unmeasured, countsFor(12, 3));
+    expect(shown).toMatchObject({ additions: 12, deletions: 3 });
+    expect(withDiffStat(unmeasured, countsFor(12, 3))).toBe(shown);
+  });
+
+  it("returns a new merged entry once its counts change", () => {
+    const shown = withDiffStat(unmeasured, countsFor(12, 3));
+    const changed = withDiffStat(unmeasured, countsFor(20, 3));
+    expect(changed).not.toBe(shown);
+    expect(changed).toMatchObject({ additions: 20, deletions: 3 });
+  });
+
+  it("leaves an entry that already has counts, or none to merge, untouched", () => {
+    const measured = entry({ number: 2, additions: 5, deletions: 1 });
+    expect(withDiffStat(measured, countsFor(12, 3))).toBe(measured);
+    expect(withDiffStat(unmeasured, new Map())).toBe(unmeasured);
   });
 });

@@ -38,16 +38,16 @@ EXPECTED_LINUX_ARCHES = {"x86_64", "aarch64"}
 EXPECTED_WINDOWS_ARCHES = {"x86_64"}
 EXPECTED_MACOS_ARCHES = {"x86_64", "aarch64"}
 
-# The desktop package names its artifacts Houston-<version>-<arch>.<ext>; the
-# arch token is electron-builder's: x86_64 for AppImage and Windows x64, amd64
-# for deb, and x64/arm64 for NSIS and macOS.
+# The desktop package names its artifacts Houston-<version>-<arch>.<ext>, except
+# the Linux AppImage: electron-updater replaces that one in place only when the
+# name carries no version, so it is Houston-<arch>.AppImage. The arch token is
+# electron-builder's: x86_64 for AppImage and Windows x64, amd64 for deb, and
+# x64/arm64 for NSIS and macOS.
 VERSION_PATTERN = r"\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.]*)?"
 BUNDLES = (
     (
         "appimage",
-        re.compile(
-            rf"^Houston-(?P<version>{VERSION_PATTERN})-(?P<arch>x86_64|arm64|armv7l|i386)\.AppImage$"
-        ),
+        re.compile(r"^Houston-(?P<arch>x86_64|arm64|armv7l|i386)\.AppImage$"),
     ),
     (
         "deb",
@@ -109,7 +109,7 @@ def match_bundle(name: str):
     for kind, pattern in BUNDLES:
         found = pattern.match(name)
         if found:
-            return kind, found.group("version"), ARCHES[found.group("arch")]
+            return kind, found.groupdict().get("version"), ARCHES[found.group("arch")]
     return None
 
 
@@ -214,18 +214,20 @@ def collect(
         found = match_bundle(path.name)
         if found is None:
             raise Refused(
-                f"unrecognised artifact {path.name}; expected only Houston-<version>-<arch>.AppImage, "
+                f"unrecognised artifact {path.name}; expected only Houston-<arch>.AppImage, "
                 f"Houston-<version>-<arch>.deb, Houston-<version>-<arch>-setup.exe, "
                 f"Houston-<version>-<arch>.app.tar.gz, Houston-<version>-<arch>.dmg, their .sig files, "
                 f"and electron-updater's latest*.yml"
             )
         kind, file_version, arch = found
-        if file_version != artifact_version:
+        # The AppImage is versionless so it can be replaced in place; every other
+        # filename carries the release's version.
+        if kind != "appimage" and file_version != artifact_version:
             raise Refused(
                 f"{path.name} carries version {file_version}, but this release is {version}; "
-                f"every filename must carry {artifact_version}"
+                f"every filename except the versionless AppImage must carry {artifact_version}"
             )
-        bundle = Bundle(kind, path, file_version, arch)
+        bundle = Bundle(kind, path, artifact_version, arch)
         if kind == "nsis":
             if arch in windows:
                 raise Refused(

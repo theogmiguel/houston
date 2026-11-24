@@ -8,18 +8,12 @@ import * as CliError from "effect/cli/CliError";
 
 import * as ServerConfig from "../config.ts";
 import { HostedLaunch, isHostedLaunch, withHostedBaseDir } from "../houston/baseDir.ts";
+import { guardProcessOutput } from "../houston/outputGuard.ts";
 import { awaitLauncherLoss } from "../launcherWatch.ts";
 import { runServer } from "../server.ts";
 import { type CliServerFlags, resolveServerConfig, sharedServerCommandFlags } from "./config.ts";
 
 const encodeCommand = Schema.encodeEffect(Schema.fromJsonString(Schema.String));
-
-// The desktop launcher reads this process's stdout and stderr. Once it is gone,
-// every log write fails, and Node turns an unhandled stream error into a crash
-// that skips shutdown and leaves the ownership lock and runtime record behind.
-function ignoreClosedLauncherPipe(error: NodeJS.ErrnoException): void {
-  if (error.code !== "EPIPE" && error.code !== "ERR_STREAM_DESTROYED") throw error;
-}
 
 const runServerCommand = Effect.fn("server.runServerCommand")(function* (
   flags: CliServerFlags,
@@ -29,6 +23,9 @@ const runServerCommand = Effect.fn("server.runServerCommand")(function* (
     readonly rejectRunningServer?: boolean;
   },
 ) {
+  // In every launch mode, before the first log line: a failed output write would otherwise crash
+  // the server, skipping shutdown and leaving the ownership lock and runtime record behind.
+  yield* Effect.sync(() => guardProcessOutput());
   const logLevel = yield* GlobalFlag.LogLevel;
   const config = yield* withHostedBaseDir(flags, (hostedFlags) =>
     resolveServerConfig(hostedFlags, logLevel, options),
@@ -38,10 +35,6 @@ const runServerCommand = Effect.fn("server.runServerCommand")(function* (
     Effect.provideService(HostedLaunch, yield* isHostedLaunch(flags)),
   );
   if (config.mode !== "desktop" || config.desktopBootstrapToken === undefined) return yield* run;
-  yield* Effect.sync(() => {
-    process.stdout.on("error", ignoreClosedLauncherPipe);
-    process.stderr.on("error", ignoreClosedLauncherPipe);
-  });
   // Houston's Electron host owns the server's lifetime: it must outlive the window
   // and is stopped deliberately, so the launcher-loss watch would kill it early.
   if (process.env.HOUSTON_DESKTOP_DETACHED === "1") return yield* run;

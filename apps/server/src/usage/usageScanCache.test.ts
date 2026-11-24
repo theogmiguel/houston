@@ -64,7 +64,15 @@ describe("scan cache round trip", () => {
       [
         "/a.jsonl",
         100,
-        [record(), record({ dedupeKey: "msg_2:", model: "claude-opus-5-5", speed: "fast" })],
+        [
+          record(),
+          record({
+            dedupeKey: "msg_2:",
+            model: "claude-opus-5-5",
+            speed: "fast",
+            cacheCreation1hTokens: 8,
+          }),
+        ],
       ],
       [
         "/b.jsonl",
@@ -250,11 +258,11 @@ describe("scan cache round trip", () => {
     },
   );
 
-  it("re-parses a Claude transcript cached before advisor usage was counted", () => {
+  it.each([9, 10])("re-parses a Claude transcript cached by v%i", (version) => {
     const original = cacheWith([["/claude.jsonl", 100, [record()]]]);
-    const v9 = { ...JSON.parse(makeScanCacheWriter()(original, {})), version: 9 };
+    const legacy = { ...JSON.parse(makeScanCacheWriter()(original, {})), version };
 
-    const restored = decodeScanCache(JSON.parse(JSON.stringify(v9)), TEST_FORMAT_MAP);
+    const restored = decodeScanCache(JSON.parse(JSON.stringify(legacy)), TEST_FORMAT_MAP);
     expect(restored.get("/claude.jsonl")).toEqual({
       ...original.get("/claude.jsonl"),
       size: -1,

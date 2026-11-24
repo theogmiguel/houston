@@ -8,21 +8,21 @@ import { QuoteIcon, XIcon } from "lucide-react";
 import {
   useEffect,
   useEffectEvent,
-  useLayoutEffect,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { createPortal } from "react-dom";
 import {
   findAssistantCitationSourceAnchor,
   type AssistantCitationSourceAnchor,
 } from "~/lib/assistantTextSelection";
+import { isSelectionRectVisible } from "~/lib/selectionActions";
 import {
   assistantCitationHash,
   assistantCitationNavigation,
 } from "../../lib/assistantCitationNavigation";
 import { ContextChip, ContextChipAction, ContextChipLabel } from "../ContextChip";
+import { Popover, PopoverPopup } from "../ui/popover";
 import { QuoteCard, QuoteCardBlock, QuoteCardComment, QuoteCardText } from "../ui/quote-card";
 import { AssistantCitationCommentEditor } from "./AssistantCitationCommentEditor";
 import { resolveAssistantCitationCommentDismissal } from "./assistantCitationCommentDismissal";
@@ -102,33 +102,27 @@ export function AssistantCitationChip({
 }) {
   const navigate = useNavigate();
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
-  const [commentHost] = useState(() => {
-    const host = document.createElement("div");
-    host.dataset.citationCommentEditorHost = "true";
-    return host;
-  });
+  const chipRef = useRef<HTMLSpanElement>(null);
   const draftCommentRef = useRef<string | null>(null);
   const [unavailableSourceAnchor, setUnavailableSourceAnchor] =
     useState<AssistantCitationSourceAnchor | null>(null);
   const commentOpen = commentEditor?.open ?? false;
   const sourceAnchor = commentEditor?.sourceAnchor;
   const activeSourceAnchor = sourceAnchor === unavailableSourceAnchor ? undefined : sourceAnchor;
-  // The comment editor reads in flow under the answer, not in a popover over the selection.
-  const attachCommentHost = useEffectEvent(() => {
-    if (!commentOpen) return undefined;
-    const anchor =
-      activeSourceAnchor?.source ?? findAssistantCitationSourceAnchor(document, citation)?.source;
-    const root =
-      anchor?.closest<HTMLElement>("[data-assistant-citation-source]") ??
-      (anchor instanceof HTMLElement ? anchor : null);
-    if (!root?.parentElement) return undefined;
-    root.insertAdjacentElement("afterend", commentHost);
-    return () => {
-      commentHost.remove();
+  const fallbackSourceAnchor =
+    commentOpen && !activeSourceAnchor
+      ? findAssistantCitationSourceAnchor(document, citation)
+      : null;
+  const editorAnchor = activeSourceAnchor ?? fallbackSourceAnchor ?? undefined;
+  // The range positions the popover and the source gives it the scroll ancestors that track. A
+  // comment opened without a source anchors to the composer chip instead.
+  const resolvePopoverAnchor = () => {
+    if (!editorAnchor) return chipRef.current;
+    return {
+      getBoundingClientRect: () => editorAnchor.range.getBoundingClientRect(),
+      contextElement: editorAnchor.source,
     };
-  });
-  // oxlint-disable-next-line houston/no-unreasoned-state-sync react/exhaustive-effect-dependencies -- keeps the portal host attached to the cited answer while the editor is open
-  useLayoutEffect(() => attachCommentHost(), [commentOpen]);
+  };
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- drops the uncommitted comment draft held in a ref once the parent closes the comment editor
   useEffect(() => {
     if (!commentOpen) draftCommentRef.current = null;
@@ -161,6 +155,35 @@ export function AssistantCitationChip({
       onUnavailable: onSourceUnavailable,
     });
   }, [citation, commentOpen, sourceAnchor, unavailableSourceAnchor]);
+  const onScrollAway = useEffectEvent(() => {
+    if (settleDraftOnClose("scroll-out")) {
+      commentEditor?.onOpenChange(false);
+    }
+  });
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- tracks the cited range in the thread viewport and dismisses the editor once it scrolls out
+  useEffect(() => {
+    if (!commentOpen || !editorAnchor) return;
+    const { range, viewport } = editorAnchor;
+    let frame: number | null = null;
+    const check = () => {
+      frame = null;
+      const visible = isSelectionRectVisible(range.getBoundingClientRect(), [
+        viewport.getBoundingClientRect(),
+      ]);
+      if (!visible) onScrollAway();
+    };
+    const schedule = () => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(check);
+    };
+    viewport.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    return () => {
+      viewport.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
+  }, [commentOpen, editorAnchor]);
   const label = assistantCitationLabel(citation);
   const sourceLinkProps = {
     to: "/$environmentId/$threadId" as const,
@@ -190,54 +213,65 @@ export function AssistantCitationChip({
   );
   return (
     <ContextChip
+      ref={chipRef}
       kind="citation"
       contentEditable={false}
       data-assistant-citation-chip="true"
       data-markdown-copy={serializeAssistantCitation(citation)}
     >
       {composerSourceLink}
-      {commentEditor && commentOpen
-        ? createPortal(
-            <div
-              data-citation-comment-inline="true"
-              className="mt-3"
-              aria-label="Edit citation comment"
-            >
-              <AssistantCitationCommentEditor
-                key={serializeAssistantCitation(citation)}
-                citation={citation}
-                inputRef={commentInputRef}
-                onDraftChange={(comment) => {
-                  draftCommentRef.current = comment;
-                  commentEditor.onDraftChange?.(comment);
-                }}
-                onSubmit={(comment) => {
-                  if (!commentEditor.onSave(comment)) return false;
-                  commentEditor.onOpenChange(false);
-                  commentEditor.onRestoreFocus?.();
-                  return true;
-                }}
-                {...(commentEditor.onSaveAndSend
-                  ? {
-                      onSubmitAndSend: (comment: string) => {
-                        if (!commentEditor.onSaveAndSend?.(comment)) return false;
-                        commentEditor.onOpenChange(false);
-                        return true;
-                      },
-                    }
-                  : {})}
-                onCancel={() => {
-                  if (commentEditor.onCancel) {
-                    commentEditor.onCancel();
-                  } else {
-                    commentEditor.onOpenChange(false);
+      {commentEditor && commentOpen ? (
+        <Popover
+          open
+          onOpenChange={(open, details) => {
+            if (open) return;
+            if (!settleDraftOnClose(details.reason)) return;
+            commentEditor.onOpenChange(false);
+          }}
+        >
+          <PopoverPopup
+            anchor={resolvePopoverAnchor}
+            side="bottom"
+            width="md"
+            padding="none"
+            aria-label="Edit citation comment"
+            initialFocus={commentInputRef}
+            finalFocus={false}
+          >
+            <AssistantCitationCommentEditor
+              key={serializeAssistantCitation(citation)}
+              citation={citation}
+              inputRef={commentInputRef}
+              onDraftChange={(comment) => {
+                draftCommentRef.current = comment;
+                commentEditor.onDraftChange?.(comment);
+              }}
+              onSubmit={(comment) => {
+                if (!commentEditor.onSave(comment)) return false;
+                commentEditor.onOpenChange(false);
+                commentEditor.onRestoreFocus?.();
+                return true;
+              }}
+              {...(commentEditor.onSaveAndSend
+                ? {
+                    onSubmitAndSend: (comment: string) => {
+                      if (!commentEditor.onSaveAndSend?.(comment)) return false;
+                      commentEditor.onOpenChange(false);
+                      return true;
+                    },
                   }
-                }}
-              />
-            </div>,
-            commentHost,
-          )
-        : null}
+                : {})}
+              onCancel={() => {
+                if (commentEditor.onCancel) {
+                  commentEditor.onCancel();
+                } else {
+                  commentEditor.onOpenChange(false);
+                }
+              }}
+            />
+          </PopoverPopup>
+        </Popover>
+      ) : null}
       {onRemove ? (
         <ContextChipAction
           aria-label="Remove citation"
