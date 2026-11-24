@@ -109,11 +109,15 @@ it.each([1440, 800])(
     expect(card.right).toBeLessThanOrEqual(pane.right);
     expect(stack.getBoundingClientRect().bottom).toBeLessThanOrEqual(pane.bottom);
     // The context tab hangs under the card once the environment reports it, inside the pane.
-    const contextTray = await vi.waitFor(() => {
-      const found = document.querySelector<HTMLElement>("[data-composer-context-tray]");
-      expect(found).not.toBeNull();
-      return found!;
-    });
+    // The first case also pays the app's boot, which outlasts the default 1 s wait.
+    const contextTray = await vi.waitFor(
+      () => {
+        const found = document.querySelector<HTMLElement>("[data-composer-context-tray]");
+        expect(found).not.toBeNull();
+        return found!;
+      },
+      { timeout: 5_000 },
+    );
     // The bottom-anchored stack grows by the tab, so the card is measured again.
     expect(contextTray.getBoundingClientRect().bottom).toBeGreaterThan(composerBoxes().card.bottom);
     expect(contextTray.getBoundingClientRect().bottom).toBeLessThanOrEqual(pane.bottom);

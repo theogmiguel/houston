@@ -1276,6 +1276,8 @@ it.layer(layerTest)("OrchestrationV2LayerLive", (it) => {
             providerThreadId: providerThread.id,
             providerTurnId: providerTurn.id,
             messageId: steerMessageId,
+            // Only known at dispatch: where a requeue of this steer would belong in the queue.
+            steerFollowUpAfterRunOrdinal: run.ordinal,
           },
         ],
       );

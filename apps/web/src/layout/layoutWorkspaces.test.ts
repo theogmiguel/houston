@@ -8,6 +8,7 @@ import {
   closeLayoutTab,
   createLayoutState,
   focusLayoutWorkspace,
+  isBlankLayoutWorkspace,
   normalizeLayout,
   findLayoutTabByContent,
   openLayoutTab,
@@ -29,6 +30,7 @@ import {
   setLayoutWorkspaceHidden,
   setLayoutWorkspacePinned,
   WORKSPACE_NAME_MAX_CHARS,
+  workspaceDisplayName,
 } from "./layoutWorkspaces";
 
 const environmentId = EnvironmentId.make("local");
@@ -89,7 +91,7 @@ describe("createLayoutWorkspaceNamed", () => {
     const { state: next, refusal } = createLayoutWorkspaceNamed(state, "Research");
     expect(refusal).toBeNull();
     expect(selectFocusedWorkspace(next).name).toBe("Research");
-    expect(selectFocusedWorkspace(next).columns).toHaveLength(0);
+    expect(isBlankLayoutWorkspace(selectFocusedWorkspace(next))).toBe(true);
   });
 
   it("refuses a name over the limit, naming the limit and the length", () => {
@@ -184,9 +186,9 @@ describe("deleteLayoutWorkspace", () => {
       scopedThreadKey(scopeThreadRef(environmentId, ThreadId.make("b"))),
     ]);
     const { state: next } = deleteLayoutWorkspace(state, second.id, { deletedThreads });
-    const tabs = next.workspaces.flatMap((w) =>
-      w.columns.flatMap((c) => c.panes.flatMap((p) => p.tabs)),
-    );
+    const tabs = next.workspaces
+      .filter((w) => !isBlankLayoutWorkspace(w))
+      .flatMap((w) => w.columns.flatMap((c) => c.panes.flatMap((p) => p.tabs)));
     expect(tabs.map((tab) => tab.content)).toEqual([chat("a")]);
   });
 
@@ -280,7 +282,7 @@ describe("reorderLayoutWorkspace", () => {
   it("keeps the empty workspace at the bottom", () => {
     const state = twoWorkspaces();
     const empty = state.workspaces.at(-1)!;
-    expect(empty.columns).toHaveLength(0);
+    expect(isBlankLayoutWorkspace(empty)).toBe(true);
     const moved = reorderLayoutWorkspace(state, state.workspaces[0]!.id, empty.id, "after");
     expect(moved.workspaces.at(-1)).toBe(empty);
     expect(moved.workspaces[1]!.id).toBe(state.workspaces[0]!.id);
@@ -343,5 +345,17 @@ describe("moveLayoutChatToWorkspace", () => {
     expect(next).toBe(state);
     expect(refusal).toContain("'nope'");
     expect(refusal).toContain(state.workspaces[0]!.id);
+  });
+});
+
+describe("workspaceDisplayName", () => {
+  it("calls an unnamed blank workspace empty instead of naming it after its launcher", () => {
+    const blank = createLayoutState().workspaces[0]!;
+    expect(workspaceDisplayName(blank, 0, () => "New tab")).toBe("Empty workspace");
+  });
+
+  it("names an unnamed workspace holding a chat after the title given", () => {
+    const state = openLayoutTab(createLayoutState(), chat("a"));
+    expect(workspaceDisplayName(state.workspaces[0]!, 0, () => "A chat")).toBe("A chat");
   });
 });

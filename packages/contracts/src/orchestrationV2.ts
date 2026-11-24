@@ -3232,6 +3232,10 @@ export const OrchestrationV2Command = Schema.Union([
     usageLimitContinuationOfRunId: Schema.optional(RunId),
     manualContinuationOfRunId: Schema.optional(RunId),
     usageLimitRecoveryRequestId: Schema.optional(CommandId),
+    /** Server-set: the ended run whose steer the provider dropped unread. */
+    steerFollowUpOfRunId: Schema.optional(RunId),
+    /** Server-set: the latest run ordinal when that steer was sent; the follow-up queues after it. */
+    steerFollowUpAfterRunOrdinal: Schema.optional(NonNegativeInt),
     deliveryIntent: Schema.optional(Schema.Literals(["auto", "steer", "restart"])),
     /**
      * How a direct send handles a provider switch the previous session's background work would

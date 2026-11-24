@@ -6,6 +6,7 @@ import { LAYOUT_KEYBINDING_COMMANDS, type LayoutKeybindingCommand } from "@houst
 
 import {
   findLayoutPane,
+  isBlankLayoutWorkspace,
   selectFocusedPane,
   selectFocusedWorkspace,
   type LayoutState,
@@ -65,7 +66,7 @@ export const WORKSPACE_HINT_COMMANDS: ReadonlySet<LayoutKeybindingCommand> = new
  */
 export function countedLayoutWorkspaces(layout: LayoutState) {
   return layout.workspaces.filter(
-    (workspace) => workspace.columns.length > 0 || workspace.id === layout.focusedWorkspaceId,
+    (workspace) => !isBlankLayoutWorkspace(workspace) || workspace.id === layout.focusedWorkspaceId,
   );
 }
 

@@ -2,8 +2,10 @@ import * as Layer from "effect/Layer";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as Logger from "effect/Logger";
 import * as PlatformError from "effect/PlatformError";
 import * as Queue from "effect/Queue";
+import * as References from "effect/References";
 import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stdio from "effect/Stdio";
@@ -898,6 +900,336 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         yield* Deferred.succeed(exited, exitError);
 
         assert.strictEqual(yield* Deferred.await(termination), exitError);
+      }),
+    );
+
+    const defectSentinel = "codex-handler-defect-sentinel";
+    // The sentinel sits everywhere a crash's own text can: message (including a line shaped
+    // like a stack frame), `name`, cause and a custom property.
+    const makeDefect = () =>
+      Object.assign(
+        new Error(`${defectSentinel}\n    at ${defectSentinel} (sentinel.ts:1:1)`, {
+          cause: new Error(defectSentinel),
+        }),
+        { name: defectSentinel, detail: defectSentinel },
+      );
+
+    interface LoggedError {
+      readonly message: string;
+      readonly annotations: Record<string, unknown>;
+    }
+
+    const captureErrorLogs = (logged: Array<LoggedError>) =>
+      Logger.layer([
+        Logger.make(({ logLevel, message, fiber }) => {
+          if (logLevel === "Error") {
+            logged.push({
+              message: String([message].flat()),
+              annotations: { ...fiber.getRef(References.CurrentLogAnnotations) },
+            });
+          }
+        }),
+      ]);
+
+    const expectTransportFailure = (
+      effect: Effect.Effect<unknown, CodexError.CodexAppServerError>,
+    ) =>
+      effect.pipe(
+        Effect.match({
+          onFailure: (error) => error,
+          onSuccess: () => assert.fail("Expected the retired transport to fail the request"),
+        }),
+      );
+
+    it.effect.each([
+      {
+        outcome: "dies",
+        method: "item/tool/requestUserInput",
+        loggedMethod: "item/tool/requestUserInput",
+      },
+      { outcome: "throws", method: defectSentinel, loggedMethod: "unknown" },
+    ] as const)(
+      "answers a request whose handler $outcome and keeps the session and the defect text out of logs",
+      ({ outcome, method, loggedMethod }) =>
+        Effect.gen(function* () {
+          const { stdio, input, output } = yield* makeInMemoryStdio();
+          const logged: Array<LoggedError> = [];
+          let terminations = 0;
+          yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
+            stdio,
+            onRequest: (request) => {
+              if (request.id === 2) return Effect.succeed({ answered: true });
+              if (outcome === "throws") throw makeDefect();
+              return Effect.die(makeDefect());
+            },
+            onTermination: () =>
+              Effect.sync(() => {
+                terminations++;
+              }),
+          }).pipe(Effect.provide(captureErrorLogs(logged)));
+
+          yield* Queue.offer(input, encodeJsonl({ id: 1, method, params: {} }));
+          assert.deepEqual(yield* decodeJson(yield* Queue.take(output)), {
+            id: 1,
+            error: { code: -32603, message: "Internal error" },
+          });
+
+          // The session lives on: the next request is still answered.
+          yield* Queue.offer(input, encodeJsonl({ id: 2, method, params: {} }));
+          assert.deepEqual(yield* decodeJson(yield* Queue.take(output)), {
+            id: 2,
+            result: { answered: true },
+          });
+          assert.equal(terminations, 0);
+          assert.lengthOf(logged, 1);
+          assert.notInclude(JSON.stringify(logged), defectSentinel);
+          assert.equal(logged[0]!.annotations.method, loggedMethod);
+        }),
+    );
+
+    it.effect("retires the transport once when a notification handler dies", () =>
+      Effect.gen(function* () {
+        const logged: Array<LoggedError> = [];
+        const { stdio, input, output } = yield* makeInMemoryStdio();
+        const terminations: Array<CodexError.CodexAppServerError> = [];
+        const terminated = yield* Deferred.make<void>();
+        const transport = yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
+          stdio,
+          onNotification: () => Effect.die(makeDefect()),
+          onTermination: (error) =>
+            Effect.sync(() => terminations.push(error)).pipe(
+              Effect.andThen(Deferred.succeed(terminated, undefined)),
+              Effect.asVoid,
+            ),
+        }).pipe(Effect.provide(captureErrorLogs(logged)));
+        const pending = yield* transport.request("thread/read", {}).pipe(Effect.forkScoped);
+        yield* Queue.take(output);
+
+        yield* Queue.offer(input, encodeJsonl({ method: "turn/started", params: {} }));
+        yield* Queue.offer(input, encodeJsonl({ method: "turn/completed", params: {} }));
+
+        const failure = yield* expectTransportFailure(Fiber.join(pending));
+        yield* Deferred.await(terminated);
+        assert.instanceOf(failure, CodexError.CodexAppServerTransportError);
+        assert.equal(failure.operation, "read-input-stream");
+        assert.include(String(failure.cause), "'turn/started'");
+        assert.notInclude(String(failure.cause), defectSentinel);
+        assert.lengthOf(logged, 1);
+        assert.notInclude(JSON.stringify(logged), defectSentinel);
+        assert.deepEqual(terminations, [failure]);
+        assert.strictEqual(
+          yield* expectTransportFailure(transport.request("thread/read", {})),
+          failure,
+        );
+      }),
+    );
+
+    it.effect("names an unknown notification method without copying it into the failure", () =>
+      Effect.gen(function* () {
+        const logged: Array<LoggedError> = [];
+        const { stdio, input } = yield* makeInMemoryStdio();
+        const terminated = yield* Deferred.make<CodexError.CodexAppServerError>();
+        yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
+          stdio,
+          onNotification: () => Effect.die(makeDefect()),
+          onTermination: (error) => Deferred.succeed(terminated, error).pipe(Effect.asVoid),
+        }).pipe(Effect.provide(captureErrorLogs(logged)));
+
+        yield* Queue.offer(input, encodeJsonl({ method: defectSentinel, params: {} }));
+
+        const failure = yield* Deferred.await(terminated);
+        assert.instanceOf(failure, CodexError.CodexAppServerTransportError);
+        assert.include(String(failure.cause), "'unknown'");
+        assert.notInclude(String(failure.cause), defectSentinel);
+        assert.lengthOf(logged, 1);
+        assert.notInclude(JSON.stringify(logged), defectSentinel);
+      }),
+    );
+
+    it.effect("retires the transport when the reader dies", () =>
+      Effect.gen(function* () {
+        const logged: Array<LoggedError> = [];
+        const { stdio: baseStdio, output } = yield* makeInMemoryStdio();
+        const terminated = yield* Deferred.make<CodexError.CodexAppServerError>();
+        const readerStarted = yield* Deferred.make<void>();
+        const transport = yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
+          stdio: Stdio.make({
+            ...baseStdio,
+            stdin: Stream.fromEffect(
+              Deferred.await(readerStarted).pipe(Effect.andThen(Effect.die(makeDefect()))),
+            ),
+          }),
+          onTermination: (error) => Deferred.succeed(terminated, error).pipe(Effect.asVoid),
+        }).pipe(Effect.provide(captureErrorLogs(logged)));
+        const pending = yield* transport.request("thread/read", {}).pipe(Effect.forkScoped);
+        yield* Queue.take(output);
+        yield* Deferred.succeed(readerStarted, undefined);
+
+        const failure = yield* expectTransportFailure(Fiber.join(pending));
+        assert.instanceOf(failure, CodexError.CodexAppServerTransportError);
+        assert.equal(failure.operation, "read-input-stream");
+        assert.notInclude(String(failure.cause), defectSentinel);
+        assert.lengthOf(logged, 1);
+        assert.notInclude(JSON.stringify(logged), defectSentinel);
+        assert.strictEqual(yield* Deferred.await(terminated), failure);
+      }),
+    );
+
+    it.effect("retires the transport when the writer dies", () =>
+      Effect.gen(function* () {
+        const logged: Array<LoggedError> = [];
+        const { stdio: baseStdio } = yield* makeInMemoryStdio();
+        const terminated = yield* Deferred.make<CodexError.CodexAppServerError>();
+        const transport = yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
+          stdio: Stdio.make({
+            ...baseStdio,
+            stdout: () => Sink.forEach(() => Effect.die(makeDefect())),
+          }),
+          onTermination: (error) => Deferred.succeed(terminated, error).pipe(Effect.asVoid),
+        }).pipe(Effect.provide(captureErrorLogs(logged)));
+
+        const failure = yield* expectTransportFailure(transport.request("thread/read", {}));
+        assert.instanceOf(failure, CodexError.CodexAppServerTransportError);
+        assert.equal(failure.operation, "write-output-stream");
+        assert.notInclude(String(failure.cause), defectSentinel);
+        assert.lengthOf(logged, 1);
+        assert.notInclude(JSON.stringify(logged), defectSentinel);
+        assert.strictEqual(yield* Deferred.await(terminated), failure);
+      }),
+    );
+
+    it.effect("fails pending requests when the exit status lookup dies", () =>
+      Effect.gen(function* () {
+        const logged: Array<LoggedError> = [];
+        const { stdio, input, output } = yield* makeInMemoryStdio();
+        const terminated = yield* Deferred.make<CodexError.CodexAppServerError>();
+        const transport = yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
+          stdio,
+          terminationError: Effect.die(makeDefect()),
+          onTermination: (error) => Deferred.succeed(terminated, error).pipe(Effect.asVoid),
+        }).pipe(Effect.provide(captureErrorLogs(logged)));
+        const pending = yield* transport.request("thread/read", {}).pipe(Effect.forkScoped);
+        yield* Queue.take(output);
+
+        yield* Queue.end(input);
+
+        const failure = yield* expectTransportFailure(Fiber.join(pending));
+        assert.instanceOf(failure, CodexError.CodexAppServerTransportError);
+        assert.equal(failure.operation, "read-process-exit-status");
+        assert.notInclude(String(failure.cause), defectSentinel);
+        assert.lengthOf(logged, 1);
+        assert.notInclude(JSON.stringify(logged), defectSentinel);
+        assert.strictEqual(yield* Deferred.await(terminated), failure);
+      }),
+    );
+
+    it.effect.each([
+      { label: "an Error", makeCrash: makeDefect, kind: "Error" },
+      {
+        label: "a tagged error",
+        makeCrash: () => CodexError.CodexAppServerRequestError.internalError(defectSentinel),
+        kind: "CodexAppServerRequestError",
+      },
+    ] as const)(
+      "logs the kind and stack frames of $label, not its message",
+      ({ makeCrash, kind }) =>
+        Effect.gen(function* () {
+          const { stdio, input, output } = yield* makeInMemoryStdio();
+          const logged: Array<LoggedError> = [];
+          yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
+            stdio,
+            onRequest: () => Effect.die(makeCrash()),
+          }).pipe(Effect.provide(captureErrorLogs(logged)));
+
+          yield* Queue.offer(input, encodeJsonl({ id: 1, method: "item/tool/requestUserInput" }));
+          yield* Queue.take(output);
+
+          assert.lengthOf(logged, 1);
+          const { crashKind, crashFrames } = logged[0]!.annotations;
+          assert.equal(crashKind, kind);
+          assert.isArray(crashFrames);
+          const frames = crashFrames as ReadonlyArray<string>;
+          assert.isNotEmpty(frames);
+          assert.isAtMost(frames.length, 16);
+          for (const frame of frames) {
+            assert.match(frame, /^at /);
+            assert.isAtMost(frame.length, 256);
+          }
+          assert.isTrue(frames.some((frame) => frame.includes("protocol.test.ts")));
+          assert.notInclude(JSON.stringify(logged), defectSentinel);
+        }),
+    );
+
+    it.effect.each([
+      { label: "a string", crash: defectSentinel, kind: "string" },
+      { label: "a plain object", crash: { secret: defectSentinel }, kind: "Object" },
+      { label: "undefined", crash: undefined, kind: "undefined" },
+      { label: "null", crash: null, kind: "null" },
+      { label: "an object with a free-text _tag", crash: { _tag: defectSentinel }, kind: "object" },
+      {
+        label: "an instance of a class with a free-text name",
+        crash: new (Object.defineProperty(
+          class {
+            readonly detail = defectSentinel;
+          },
+          "name",
+          { value: defectSentinel },
+        ))(),
+        kind: "object",
+      },
+    ] as const)("logs only a safe kind when the crash is $label", ({ crash, kind }) =>
+      Effect.gen(function* () {
+        const { stdio, input, output } = yield* makeInMemoryStdio();
+        const logged: Array<LoggedError> = [];
+        yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
+          stdio,
+          onRequest: () => Effect.die(crash),
+        }).pipe(Effect.provide(captureErrorLogs(logged)));
+
+        yield* Queue.offer(input, encodeJsonl({ id: 1, method: "item/tool/requestUserInput" }));
+        assert.deepEqual(yield* decodeJson(yield* Queue.take(output)), {
+          id: 1,
+          error: { code: -32603, message: "Internal error" },
+        });
+
+        assert.lengthOf(logged, 1);
+        assert.equal(logged[0]!.annotations.crashKind, kind);
+        assert.deepEqual(logged[0]!.annotations.crashFrames, []);
+        assert.notInclude(JSON.stringify(logged), defectSentinel);
+      }),
+    );
+
+    it.effect("keeps typed handler failures and scope shutdown as they were", () =>
+      Effect.gen(function* () {
+        let terminations = 0;
+        yield* Effect.gen(function* () {
+          const { stdio, input, output } = yield* makeInMemoryStdio();
+          const notified = yield* Deferred.make<void>();
+          const transport = yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
+            stdio,
+            onNotification: (notification) =>
+              notification.method === "turn/completed"
+                ? Deferred.succeed(notified, undefined).pipe(Effect.asVoid)
+                : Effect.void,
+            onRequest: (request) =>
+              Effect.fail(CodexError.CodexAppServerRequestError.methodNotFound(request.method)),
+            onTermination: () =>
+              Effect.sync(() => {
+                terminations++;
+              }),
+          });
+
+          yield* Queue.offer(input, encodeJsonl({ id: 1, method: "item/tool/requestUserInput" }));
+          assert.deepEqual(yield* decodeJson(yield* Queue.take(output)), {
+            id: 1,
+            error: { code: -32601, message: "Method not found: item/tool/requestUserInput" },
+          });
+          yield* Queue.offer(input, encodeJsonl({ method: "turn/completed", params: {} }));
+          yield* Deferred.await(notified);
+          yield* transport.request("thread/read", {}).pipe(Effect.forkScoped);
+          yield* Queue.take(output);
+        }).pipe(Effect.scoped);
+        assert.equal(terminations, 0);
       }),
     );
   },
