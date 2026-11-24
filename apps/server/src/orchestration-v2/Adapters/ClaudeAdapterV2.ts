@@ -471,7 +471,7 @@ export const ClaudeProviderCapabilitiesV2 = {
     // Steers no longer cancel tools; kept true so automatic notices still queue instead of
     // steering, since a dropped notice has no delivery record to requeue it from.
     activeSteeringInterruptsTools: true,
-    // A "now" steer aborts a running compaction and Claude starts it again from the beginning.
+    // Off until a fixture proves that a "next" steer leaves a running compaction alone.
     activeSteeringDuringCompaction: false,
     supportsSteeringByInterruptRestart: false,
     supportsQueuedMessages: true,

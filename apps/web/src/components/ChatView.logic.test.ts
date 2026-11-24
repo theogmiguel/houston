@@ -1388,7 +1388,8 @@ describe("compactionBlocksSteering", () => {
   });
   // The provider's capability: a steer leaves its compaction inside the turn running.
   const verified = { steersDuringCompaction: true };
-  // Claude's steer aborts the compaction; other providers have not declared the capability.
+  // Claude stays off until a fixture proves that a "next" steer leaves a running compaction alone;
+  // other providers have not declared the capability.
   const unverified = { steersDuringCompaction: false };
 
   it("steers into a provider's compaction inside an ordinary run only where it is declared safe", () => {
