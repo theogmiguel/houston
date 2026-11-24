@@ -1182,6 +1182,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     beforeEmitInbound?: CodexReplay.CodexAppServerReplayDriver["beforeEmitInbound"],
     onUsageLimits?: CodexAdapterV2.CodexAdapterV2Options["onUsageLimits"],
     promptSuggestions: Effect.Effect<boolean> = Effect.succeed(false),
+    onNotification: (method: string, params: unknown) => Effect.Effect<void> = () => Effect.void,
   ) =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -1219,6 +1220,10 @@ describe("CodexAdapterV2 post-settle continuation", () => {
                       request: (method, params) =>
                         onRequest(method, params).pipe(
                           Effect.andThen(client.request(method, params)),
+                        ),
+                      handleServerNotification: (method, handler) =>
+                        client.handleServerNotification(method, (payload) =>
+                          onNotification(method, payload).pipe(Effect.andThen(handler(payload))),
                         ),
                       raw: {
                         ...client.raw,
@@ -2454,11 +2459,199 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     ),
   );
 
-  it.effect("preserves Houston context on the wire and restores it after compaction", () =>
+  const restoreContextEntries = (
+    id: number,
+    nativeThreadId: string,
+    params: Effect.Success<ReturnType<typeof CodexAdapterV2.buildCodexTurnStartParams>>,
+  ): Array<CodexReplay.CodexAppServerReplayEntry> => [
+    {
+      type: "expect_outbound",
+      label: "restore context",
+      frame: {
+        id,
+        method: "thread/inject_items",
+        params: {
+          threadId: nativeThreadId,
+          items: Object.entries(params.additionalContext ?? {}).map(([key, entry]) => ({
+            type: "message",
+            role: "developer",
+            content: [{ type: "input_text", text: `<${key}>${entry.value}</${key}>` }],
+          })),
+        },
+      },
+    },
+    { type: "emit_inbound", label: "restored", frame: { id, result: {} } },
+  ];
+
+  /** Records the order in which the adapter handles compaction, turn completion and restores. */
+  const makeRestoreOrderRecorder = Effect.gen(function* () {
+    const order: Array<string> = [];
+    const restoreRequested = yield* Deferred.make<void>();
+    return {
+      order,
+      restoreRequested: Deferred.await(restoreRequested),
+      onRequest: (method: string) =>
+        method === "thread/inject_items"
+          ? Effect.sync(() => order.push(method)).pipe(
+              Effect.andThen(Deferred.succeed(restoreRequested, undefined)),
+            )
+          : Effect.void,
+      onNotification: (method: string, params: unknown) =>
+        Effect.sync(() => {
+          if (method === "turn/completed") order.push(method);
+          if (method === "item/completed")
+            order.push(
+              `${method}:${(params as { readonly item: { readonly type: string } }).item.type}`,
+            );
+        }),
+    };
+  });
+
+  const setContextMcpSession = (threadId: ThreadId) =>
+    Effect.gen(function* () {
+      yield* (yield* McpProviderSessions.McpProviderSessions).set({
+        environmentId: EnvironmentId.make("test"),
+        threadId,
+        providerSessionId: "context-session",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        endpoint: "http://127.0.0.1:43123/mcp",
+        authorizationHeader: "Bearer test",
+        browserToolsAvailable: true,
+      });
+    });
+
+  // Composed fixture: no recorded Codex transcript of an automatic mid-turn compaction exists.
+  it.effect.each([
+    { compactions: 1, status: "completed" },
+    { compactions: 2, status: "completed" },
+    { compactions: 1, status: "failed" },
+    { compactions: 1, status: "interrupted" },
+  ] as const)(
+    "restores Houston context once, after a turn that compacted $compactions time(s) ends $status",
+    ({ compactions, status }) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const nativeThreadId = "context-thread";
+          const nativeTurnId = "context-turn";
+          const params = yield* CodexAdapterV2.buildCodexTurnStartParams({
+            nativeThreadId,
+            codexInput: [{ type: "text", text: "work" }],
+            runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
+            modelSelection: CODEX_TEST_MODEL_SELECTION,
+            hasHoustonMcp: true,
+          });
+          assert.include(
+            params.additionalContext?.houston_code_orchestration_01?.value ?? "",
+            "delegate_task",
+          );
+          const itemCompleted = (item: Record<string, unknown>) => ({
+            type: "emit_inbound" as const,
+            label: `item/completed/${String(item.id)}`,
+            frame: {
+              method: "item/completed",
+              params: { threadId: nativeThreadId, turnId: nativeTurnId, item },
+            },
+          });
+          const entries = codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "work" });
+          const transcript = makeCodexReplayTranscript({
+            scenario: `restore-context-${compactions}-${status}`,
+            entries: [
+              ...entries.slice(0, 5),
+              {
+                type: "expect_outbound",
+                label: "context turn",
+                frame: { id: 3, method: "turn/start", params },
+              },
+              ...entries.slice(6),
+              itemCompleted({ type: "contextCompaction", id: "compact-1" }),
+              itemCompleted({
+                type: "agentMessage",
+                id: "after-compaction",
+                text: "Still working.",
+              }),
+              ...(compactions === 2
+                ? [itemCompleted({ type: "contextCompaction", id: "compact-2" })]
+                : []),
+              {
+                type: "emit_inbound",
+                label: "done",
+                frame: {
+                  method: "turn/completed",
+                  params: {
+                    threadId: nativeThreadId,
+                    turn: {
+                      ...makeCodexReplayTurn({ id: nativeTurnId, status }),
+                      error:
+                        status === "failed"
+                          ? {
+                              message: "Stream disconnected",
+                              codexErrorInfo: "other",
+                              additionalDetails: null,
+                            }
+                          : null,
+                    },
+                  },
+                },
+              },
+              ...restoreContextEntries(4, nativeThreadId, params),
+            ],
+          });
+          const recorder = yield* makeRestoreOrderRecorder;
+          const harness = yield* makeCodexReplayHarness(
+            transcript,
+            undefined,
+            recorder.onRequest,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            recorder.onNotification,
+          );
+          yield* setContextMcpSession(harness.threadId);
+          yield* harness.runtime.startTurn(
+            makeCodexTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now: yield* DateTime.now,
+              attemptId: RunAttemptId.make("context-attempt"),
+              text: "work",
+            }),
+          );
+          yield* harness.firstTerminal;
+          yield* recorder.restoreRequested;
+          assert.equal(harness.terminalEvents()[0]?.status, status);
+          // Items injected into a running Codex turn become its pending input and make it sample again.
+          assert.deepEqual(
+            recorder.order,
+            [
+              "item/completed:contextCompaction",
+              "item/completed:agentMessage",
+              ...(compactions === 2 ? ["item/completed:contextCompaction"] : []),
+              "turn/completed",
+              "thread/inject_items",
+            ],
+            "restored Houston context while the compacting turn was still running",
+          );
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              IdAllocator.layer,
+              McpProviderSessions.layer,
+              NodeServices.layer,
+              NodeCrypto.layer,
+            ),
+          ),
+        ),
+      ),
+  );
+
+  // Composed fixture: a context turn, then a /compact turn between turns.
+  it.effect("restores Houston context once after a /compact turn between turns", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const nativeThreadId = "context-thread";
         const nativeTurnId = "context-turn";
+        const compactTurnId = "compact-turn";
         const params = yield* CodexAdapterV2.buildCodexTurnStartParams({
           nativeThreadId,
           codexInput: [{ type: "text", text: "work" }],
@@ -2466,13 +2659,20 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           modelSelection: CODEX_TEST_MODEL_SELECTION,
           hasHoustonMcp: true,
         });
-        assert.include(
-          params.additionalContext?.houston_code_orchestration_01?.value ?? "",
-          "delegate_task",
-        );
+        const turnCompleted = (id: string) => ({
+          type: "emit_inbound" as const,
+          label: `turn/completed/${id}`,
+          frame: {
+            method: "turn/completed",
+            params: {
+              threadId: nativeThreadId,
+              turn: makeCodexReplayTurn({ id, status: "completed" }),
+            },
+          },
+        });
         const entries = codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "work" });
         const transcript = makeCodexReplayTranscript({
-          scenario: "restore-context",
+          scenario: "restore-context-between-turns",
           entries: [
             ...entries.slice(0, 5),
             {
@@ -2481,6 +2681,28 @@ describe("CodexAdapterV2 post-settle continuation", () => {
               frame: { id: 3, method: "turn/start", params },
             },
             ...entries.slice(6),
+            turnCompleted(nativeTurnId),
+            {
+              type: "expect_outbound",
+              label: "compact",
+              frame: {
+                id: 4,
+                method: "thread/compact/start",
+                params: { threadId: nativeThreadId },
+              },
+            },
+            { type: "emit_inbound", label: "compact", frame: { id: 4, result: {} } },
+            {
+              type: "emit_inbound",
+              label: "compact started",
+              frame: {
+                method: "turn/started",
+                params: {
+                  threadId: nativeThreadId,
+                  turn: makeCodexReplayTurn({ id: compactTurnId, status: "inProgress" }),
+                },
+              },
+            },
             {
               type: "emit_inbound",
               label: "compacted",
@@ -2488,51 +2710,27 @@ describe("CodexAdapterV2 post-settle continuation", () => {
                 method: "item/completed",
                 params: {
                   threadId: nativeThreadId,
-                  turnId: nativeTurnId,
-                  item: { type: "contextCompaction", id: "compact-context" },
+                  turnId: compactTurnId,
+                  item: { type: "contextCompaction", id: "compact-item" },
                 },
               },
             },
-            {
-              type: "expect_outbound",
-              label: "restore context",
-              frame: {
-                id: 4,
-                method: "thread/inject_items",
-                params: {
-                  threadId: nativeThreadId,
-                  items: Object.entries(params.additionalContext ?? {}).map(([key, entry]) => ({
-                    type: "message",
-                    role: "developer",
-                    content: [{ type: "input_text", text: `<${key}>${entry.value}</${key}>` }],
-                  })),
-                },
-              },
-            },
-            { type: "emit_inbound", label: "restored", frame: { id: 4, result: {} } },
-            {
-              type: "emit_inbound",
-              label: "done",
-              frame: {
-                method: "turn/completed",
-                params: {
-                  threadId: nativeThreadId,
-                  turn: makeCodexReplayTurn({ id: nativeTurnId, status: "completed" }),
-                },
-              },
-            },
+            turnCompleted(compactTurnId),
+            ...restoreContextEntries(5, nativeThreadId, params),
           ],
         });
-        const harness = yield* makeCodexReplayHarness(transcript);
-        yield* (yield* McpProviderSessions.McpProviderSessions).set({
-          environmentId: EnvironmentId.make("test"),
-          threadId: harness.threadId,
-          providerSessionId: "context-session",
-          providerInstanceId: ProviderInstanceId.make("codex"),
-          endpoint: "http://127.0.0.1:43123/mcp",
-          authorizationHeader: "Bearer test",
-          browserToolsAvailable: true,
-        });
+        const recorder = yield* makeRestoreOrderRecorder;
+        const harness = yield* makeCodexReplayHarness(
+          transcript,
+          undefined,
+          recorder.onRequest,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          recorder.onNotification,
+        );
+        yield* setContextMcpSession(harness.threadId);
         yield* harness.runtime.startTurn(
           makeCodexTestTurnInput({
             threadId: harness.threadId,
@@ -2542,8 +2740,28 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             text: "work",
           }),
         );
-        yield* harness.firstTerminal;
-        assert.equal(harness.terminalEvents()[0]?.status, "completed");
+        yield* harness.awaitTerminal(1);
+        yield* harness.runtime.compactThread!(
+          makeCodexTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("compact-attempt"),
+            text: "/compact",
+          }),
+        );
+        yield* harness.awaitTerminal(2);
+        yield* recorder.restoreRequested;
+        assert.deepEqual(
+          harness.terminalEvents().map((event) => event.status),
+          ["completed", "completed"],
+        );
+        assert.deepEqual(recorder.order, [
+          "turn/completed",
+          "item/completed:contextCompaction",
+          "turn/completed",
+          "thread/inject_items",
+        ]);
       }).pipe(
         Effect.provide(
           Layer.mergeAll(
