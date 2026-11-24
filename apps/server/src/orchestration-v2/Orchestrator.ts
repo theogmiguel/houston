@@ -15190,11 +15190,19 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     if (run.status !== "completed") return;
     // Every completed run comes here, so check the driver and the stored drops before the thread.
     const adapter = yield* providerAdapters.get(run.providerInstanceId).pipe(Effect.option);
-    if (Option.isNone(adapter) || adapter.value.driver !== "claudeAgent") return;
+    if (Option.isSome(adapter) && adapter.value.driver !== "claudeAgent") return;
     const dropped = (yield* projectionStore.getDroppedSteers(threadId, run.id)).flatMap((item) =>
       item.type === "user_message" ? [item] : [],
     );
     if (dropped.length === 0) return;
+    if (Option.isNone(adapter)) {
+      yield* Effect.logWarning("Dropped steers stay unsent: their provider is not registered", {
+        threadId,
+        runId: run.id,
+        providerInstanceId: run.providerInstanceId,
+      });
+      return;
+    }
     const { messages, runs } = yield* projectionStore.getThreadRecords(
       threadId,
       ["messages", "runs"],
