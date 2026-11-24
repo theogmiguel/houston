@@ -6,13 +6,17 @@ import {
   isSharedAddressSpaceHost,
 } from "@houston-app/shared/hostClassification";
 import { QrCode } from "@houston-app/shared/qrCode";
-import { buildPairingAppLink } from "@houston-app/shared/remote";
+import { buildPairingAppLink, setPairingServerKeyOnUrl } from "@houston-app/shared/remote";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Result from "effect/Result";
 import { HttpServer } from "effect/http";
 import * as NetAddress from "effect/net/NetAddress";
 
 import * as ServerConfig from "./config.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
+import * as ServerE2eeIdentity from "./auth/ServerE2eeIdentity.ts";
+import * as ServerSettings from "./serverSettings.ts";
 
 export interface HeadlessServeAccessInfo {
   readonly connectionString: string;
@@ -193,12 +197,20 @@ const resolveListeningPort = (address: unknown, fallbackPort: number): number =>
   return fallbackPort;
 };
 
-export const buildPairingUrl = (connectionString: string, token: string): string => {
+export const buildPairingUrl = (
+  connectionString: string,
+  token: string,
+  options?: { readonly serverIdentityKey?: string | undefined },
+): string => {
   const url = new URL(connectionString);
   url.pathname = "/pair";
   url.searchParams.delete("token");
   url.hash = new URLSearchParams([["token", token]]).toString();
-  return url.toString();
+  // Older clients ignore the unknown hash param; newer ones pin the server's
+  // E2EE identity key from it.
+  return options?.serverIdentityKey
+    ? setPairingServerKeyOnUrl(url, options.serverIdentityKey).toString()
+    : url.toString();
 };
 
 export const renderTerminalQrCode = (value: string, margin = 2): string => {
@@ -245,10 +257,24 @@ export const issueHeadlessServeAccessInfo = Effect.fn("issueHeadlessServeAccessI
     { privateNetworkOnly: serverConfig.privateNetworkOnly },
   );
   const issued = yield* serverAuth.issueStartupPairingCredential();
+  const settingsService = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
+  const identity = yield* Effect.serviceOption(ServerE2eeIdentity.ServerE2eeIdentity);
+  // A pinned client demands E2EE, so embed the key only while the host offers it.
+  const e2eeMode = Option.isSome(settingsService)
+    ? (yield* settingsService.value.getSettings.pipe(Effect.orDie)).e2eeMode
+    : "off";
+  const serverIdentityKey =
+    e2eeMode !== "off" && Option.isSome(identity)
+      ? yield* Effect.result(identity.value.getDescriptor).pipe(
+          Effect.map((outcome) =>
+            Result.isSuccess(outcome) ? outcome.success.publicKeyBase64Url : undefined,
+          ),
+        )
+      : undefined;
 
   return {
     connectionString,
     token: issued.credential,
-    pairingUrl: buildPairingUrl(connectionString, issued.credential),
+    pairingUrl: buildPairingUrl(connectionString, issued.credential, { serverIdentityKey }),
   } satisfies HeadlessServeAccessInfo;
 });

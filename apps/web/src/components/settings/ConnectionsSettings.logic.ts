@@ -1,7 +1,11 @@
 import * as DateTime from "effect/DateTime";
 
 import { resolveDesktopPairingUrl, resolveHostedPairingUrl } from "./pairingUrls";
-import { getPairingTokenFromUrl, setPairingTokenOnUrl } from "@houston-app/shared/remote";
+import {
+  getPairingTokenFromUrl,
+  setPairingServerKeyOnUrl,
+  setPairingTokenOnUrl,
+} from "@houston-app/shared/remote";
 import { readHostedPairingRequest } from "../../hostedPairing";
 import {
   type ServerClientSessionRecord,
@@ -470,19 +474,26 @@ export function endpointDefaultPreferenceKey(endpoint: AdvertisedEndpoint): stri
 export function resolveAdvertisedEndpointPairingUrl(
   endpoint: AdvertisedEndpoint,
   credential: string,
+  serverIdentityKey?: string | null,
 ): string {
   if (endpoint.compatibility.hostedHttpsApp === "compatible") {
     return (
       resolveHostedPairingUrl(endpoint.httpBaseUrl, credential) ??
-      resolveDesktopPairingUrl(endpoint.httpBaseUrl, credential)
+      resolveDesktopPairingUrl(endpoint.httpBaseUrl, credential, serverIdentityKey)
     );
   }
-  return resolveDesktopPairingUrl(endpoint.httpBaseUrl, credential);
+  return resolveDesktopPairingUrl(endpoint.httpBaseUrl, credential, serverIdentityKey);
 }
 
-export function resolveCurrentOriginPairingUrl(credential: string): string {
+export function resolveCurrentOriginPairingUrl(
+  credential: string,
+  serverIdentityKey?: string | null,
+): string {
   const url = new URL("/pair", window.location.href);
-  return setPairingTokenOnUrl(url, credential).toString();
+  const withToken = setPairingTokenOnUrl(url, credential);
+  return serverIdentityKey
+    ? setPairingServerKeyOnUrl(withToken, serverIdentityKey).toString()
+    : withToken.toString();
 }
 
 export function isHostedAppPairingUrl(value: string): boolean {

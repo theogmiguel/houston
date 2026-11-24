@@ -1094,6 +1094,20 @@ export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 export const ResponseStreamingMode = Schema.Literals(["turn", "paragraph"]);
 export type ResponseStreamingMode = typeof ResponseStreamingMode.Type;
 
+/**
+ * Which transports may reach this server from another machine. `any` keeps
+ * every route; `private-e2ee-only` refuses tunnel, proxy, and plain-LAN peers
+ * and answers only loopback, Tailscale/WireGuard, and SSH-forwarded ones.
+ */
+export const RemoteTransportPolicy = Schema.Literals(["any", "private-e2ee-only"]);
+export type RemoteTransportPolicy = typeof RemoteTransportPolicy.Type;
+export const DEFAULT_REMOTE_TRANSPORT_POLICY: RemoteTransportPolicy = "any";
+
+/** Application-layer E2EE on the WebSocket RPC channel. */
+export const E2eeMode = Schema.Literals(["off", "prefer", "require"]);
+export type E2eeMode = typeof E2eeMode.Type;
+export const DEFAULT_E2EE_MODE: E2eeMode = "off";
+
 const StorageRetentionDays = Schema.NullOr(
   Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3650 })),
 );
@@ -1370,6 +1384,13 @@ export const ServerSettings = Schema.Struct({
   keepAwakeWhileAgentsWork: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   /** Empty starts new terminals with the login shell; otherwise an executable shell command. */
   terminalShell: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+
+  /** Restricts remote access to loopback, Tailscale, and SSH transports. */
+  remoteTransportPolicy: RemoteTransportPolicy.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_REMOTE_TRANSPORT_POLICY)),
+  ),
+  /** Application-layer E2EE for remote WebSocket clients. */
+  e2eeMode: E2eeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_E2EE_MODE))),
 
   enableAgentBrowserAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   cloudSpeechCredentials: CloudSpeechCredentials.pipe(
@@ -1834,6 +1855,8 @@ export const ServerSettingsPatch = Schema.Struct({
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
   keepAwakeWhileAgentsWork: Schema.optionalKey(Schema.Boolean),
   terminalShell: Schema.optionalKey(TrimmedString),
+  remoteTransportPolicy: Schema.optionalKey(RemoteTransportPolicy),
+  e2eeMode: Schema.optionalKey(E2eeMode),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
   cloudSpeechCredentials: Schema.optionalKey(
     Schema.Struct({

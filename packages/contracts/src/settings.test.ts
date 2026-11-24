@@ -790,3 +790,22 @@ describe("terminal shell", () => {
     });
   });
 });
+
+describe("remote control security settings", () => {
+  it("defaults to any transport and encryption off", () => {
+    expect(DEFAULT_SERVER_SETTINGS.remoteTransportPolicy).toBe("any");
+    expect(DEFAULT_SERVER_SETTINGS.e2eeMode).toBe("off");
+    expect(decodeServerSettings({}).remoteTransportPolicy).toBe("any");
+    expect(decodeServerSettings({}).e2eeMode).toBe("off");
+  });
+
+  it("accepts each policy and mode through a settings patch", () => {
+    expect(decodeServerSettingsPatch({ remoteTransportPolicy: "private-e2ee-only" })).toEqual({
+      remoteTransportPolicy: "private-e2ee-only",
+    });
+    for (const e2eeMode of ["off", "prefer", "require"] as const) {
+      expect(decodeServerSettingsPatch({ e2eeMode })).toEqual({ e2eeMode });
+    }
+    expect(() => decodeServerSettingsPatch({ e2eeMode: "always" as never })).toThrow();
+  });
+});

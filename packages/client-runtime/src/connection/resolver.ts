@@ -164,6 +164,9 @@ const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")
     return {
       ...authorized,
       target,
+      ...(profile.serverIdentityKey === undefined
+        ? {}
+        : { e2eeServerIdentityKey: profile.serverIdentityKey }),
     } satisfies PreparedConnection;
   });
 });

@@ -69,6 +69,7 @@ import {
 import { Spinner } from "../ui/spinner";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
+import { EncryptedRemoteControlSettings } from "./EncryptedRemoteControlSettings";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Button } from "../ui/button";
@@ -296,6 +297,9 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
   const canMaintain = useEnvironmentScope(primaryEnvironmentId, AuthEnvironmentMaintainScope);
   const canManageLocalBackend = !isLocalEnvironmentDisabled() && canMaintain;
   const showsAccess = view === "access";
+  // Embedded in pairing links only while the host offers E2EE; see serverSettings.
+  const pairingServerIdentityKey =
+    primaryServerConfig?.transportSecurity?.identityPublicKey ?? null;
   const authAccessChanges = useEnvironmentQuery(
     showsAccess && canReadAccess && primaryEnvironmentId !== null
       ? authEnvironment.accessChanges({
@@ -822,6 +826,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
         endpointUrl={desktopServerExposureState?.endpointUrl}
         endpoints={visibleDesktopAdvertisedEndpoints}
         defaultEndpointKey={defaultDesktopAdvertisedEndpointKey}
+        serverIdentityKey={pairingServerIdentityKey}
         isLoading={isLoadingDesktopAccessManagement}
         pairingLinks={visibleDesktopPairingLinks}
         createdPairingCredentials={createdPairingCredentials}
@@ -1024,6 +1029,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
       endpointUrl={desktopServerExposureState?.endpointUrl}
       endpoints={visibleDesktopAdvertisedEndpoints}
       defaultEndpointKey={defaultDesktopAdvertisedEndpointKey}
+      serverIdentityKey={pairingServerIdentityKey}
     />
   );
 
@@ -1040,6 +1046,15 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
             {renderEnvironmentIconRow()}
             {renderNetworkAccessRow()}
             {renderTailscaleRow()}
+            {primaryEnvironmentId !== null ? (
+              <EncryptedRemoteControlSettings
+                environmentId={primaryEnvironmentId}
+                canChange={canChangeSettings}
+                fingerprint={
+                  primaryServerConfig?.transportSecurity?.identityPublicKeyFingerprint ?? null
+                }
+              />
+            ) : null}
             {renderWslBackendRow()}
             {renderEndpointRows()}
             {canManageLocalBackend ? (
@@ -1136,6 +1151,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
                         endpointUrl={desktopServerExposureState?.endpointUrl}
                         endpoints={visibleDesktopAdvertisedEndpoints}
                         defaultEndpointKey={defaultDesktopAdvertisedEndpointKey}
+                        serverIdentityKey={pairingServerIdentityKey}
                         isLoading={isLoadingDesktopAccessManagement}
                         pairingLinks={visibleDesktopPairingLinks}
                         createdPairingCredentials={createdPairingCredentials}

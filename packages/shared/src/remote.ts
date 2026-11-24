@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 
 const PAIRING_TOKEN_PARAM = "token";
+const PAIRING_SERVER_KEY_PARAM = "pk";
 const HOSTED_PAIRING_HOST_PARAM = "host";
 const HOSTED_PAIRING_LABEL_PARAM = "label";
 const PAIRING_APP_LINK_PARAM = "pairingUrl";
@@ -138,6 +139,8 @@ export interface ResolvedRemotePairingTarget {
   readonly credential: string;
   readonly httpBaseUrl: string;
   readonly wsBaseUrl: string;
+  /** The server's E2EE identity key pinned by the pairing link, when present. */
+  readonly serverIdentityKey?: string;
 }
 
 export interface HostedPairingRequest {
@@ -171,6 +174,23 @@ export const setPairingTokenOnUrl = (url: URL, credential: string): URL => {
   const next = new URL(url.toString());
   next.searchParams.delete(PAIRING_TOKEN_PARAM);
   next.hash = new URLSearchParams([[PAIRING_TOKEN_PARAM, credential]]).toString();
+  return next;
+};
+
+/** The server's pinned E2EE identity key carried beside the pairing token. */
+export const getPairingServerKeyFromUrl = (url: URL): string | null => {
+  const hashKey = readHashParams(url).get(PAIRING_SERVER_KEY_PARAM)?.trim() ?? "";
+  if (hashKey.length > 0) return hashKey;
+  const searchKey = url.searchParams.get(PAIRING_SERVER_KEY_PARAM)?.trim() ?? "";
+  return searchKey.length > 0 ? searchKey : null;
+};
+
+export const setPairingServerKeyOnUrl = (url: URL, serverKey: string): URL => {
+  const next = new URL(url.toString());
+  next.searchParams.delete(PAIRING_SERVER_KEY_PARAM);
+  const hashParams = readHashParams(next);
+  hashParams.set(PAIRING_SERVER_KEY_PARAM, serverKey);
+  next.hash = hashParams.toString();
   return next;
 };
 
@@ -227,10 +247,12 @@ export const resolveRemotePairingTarget = (input: {
         hostedPairingRequest.host,
         "hosted-pairing-host",
       );
+      const serverIdentityKey = getPairingServerKeyFromUrl(url);
       return {
         credential: hostedPairingRequest.token,
         httpBaseUrl: toHttpBaseUrl(hostedBackendUrl),
         wsBaseUrl: toWsBaseUrl(hostedBackendUrl),
+        ...(serverIdentityKey === null ? {} : { serverIdentityKey }),
       };
     }
 
@@ -238,10 +260,12 @@ export const resolveRemotePairingTarget = (input: {
     if (!credential) {
       throw new RemotePairingTokenMissingError({ host: url.host });
     }
+    const serverIdentityKey = getPairingServerKeyFromUrl(url);
     return {
       credential,
       httpBaseUrl: toHttpBaseUrl(url),
       wsBaseUrl: toWsBaseUrl(url),
+      ...(serverIdentityKey === null ? {} : { serverIdentityKey }),
     };
   }
 

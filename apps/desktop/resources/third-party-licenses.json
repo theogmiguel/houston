@@ -288,7 +288,7 @@
       "version": "source",
       "license": "MIT",
       "repository": "https://github.com/MiaAI-Lab/m3code",
-      "note": "Adapted source: portions of Houston's local model support (provider instances marked local, local-first background writing, the model server registry, discovery and Settings → Inference) are ported from this fork of T3 Code.",
+      "note": "Adapted source: portions of Houston's local model support (provider instances marked local, local-first background writing, the model server registry, discovery and Settings → Inference) and encrypted remote control (transport policy, WebSocket end-to-end encryption, connection security badge) are ported from this fork of T3 Code.",
       "textIds": [
         "946594d68c787f38"
       ]

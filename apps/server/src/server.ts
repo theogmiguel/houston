@@ -172,6 +172,8 @@ import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as AuthHttp from "./auth/http.ts";
 import * as ReplayMarkers from "./auth/replayMarkers.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
+import * as ServerE2eeIdentity from "./auth/ServerE2eeIdentity.ts";
+import * as SecureRandomLayer from "effect/crypto/SecureRandom";
 import * as CodexManagedTokenBroker from "./provider/CodexManagedTokenBroker.ts";
 import * as WebhookRoute from "./scheduledTasks/webhookRoute.ts";
 import * as McpOAuth from "./auth/McpOAuth.ts";
@@ -776,6 +778,10 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   Layer.provideMerge(layerServerEnvironment),
   Layer.provideMerge(layerAuth),
   Layer.provideMerge(AssetSigner.layer),
+  // The E2EE identity key lives in the secret store and is read by the WS layer.
+  Layer.provideMerge(
+    ServerE2eeIdentity.layer.pipe(Layer.provide(SecureRandomLayer.layerWebCrypto)),
+  ),
   Layer.provideMerge(ServerSecretStore.layer),
 );
 

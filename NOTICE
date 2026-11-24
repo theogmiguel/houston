@@ -80,8 +80,9 @@ m3code — MIT
 ================================================================================
 
 Portions of Houston's local model support (provider instances marked local, local-first
-background writing, the model server registry, discovery and Settings → Inference) are
-adapted from m3code, https://github.com/MiaAI-Lab/m3code, a fork of T3 Code. MIT asks
+background writing, the model server registry, discovery and Settings → Inference) and its
+encrypted remote control (the transport policy, the WebSocket end-to-end encryption handshake
+and records, and the connection security badge) are adapted from m3code, https://github.com/MiaAI-Lab/m3code, a fork of T3 Code. MIT asks
 that a copy of the software carry this notice, so here it is in full:
 
   MIT License

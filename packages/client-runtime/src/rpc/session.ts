@@ -8,6 +8,12 @@ import {
   joinSocketFrameParts,
   SOCKET_FRAME_PARTS_QUERY_PARAM,
 } from "@houston-app/shared/socketFrameParts";
+import {
+  decodeIdentityKey,
+  layerE2eeCrypto,
+  SOCKET_E2EE_QUERY_PARAM,
+  wrapClientSocketWithE2ee,
+} from "@houston-app/shared/socketE2ee";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -220,11 +226,38 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
       });
       return socket;
     };
+    // A pinned E2EE identity key means this session must be end-to-end
+    // encrypted: the socket asks for it and refuses a plaintext fallback.
+    const pinnedServerKey =
+      connection.e2eeServerIdentityKey !== undefined
+        ? decodeIdentityKey(connection.e2eeServerIdentityKey)
+        : undefined;
+    if (connection.e2eeServerIdentityKey !== undefined && pinnedServerKey === undefined) {
+      return yield* new ConnectionBlockedError({
+        reason: "configuration",
+        detail: "The saved end-to-end encryption key is invalid. Re-pair this environment.",
+      });
+    }
     const socketUrl = new URL(connection.socketUrl);
     socketUrl.searchParams.set(SOCKET_FRAME_PARTS_QUERY_PARAM, "1");
+    if (pinnedServerKey !== undefined) {
+      socketUrl.searchParams.set(SOCKET_E2EE_QUERY_PARAM, "1");
+    }
+    // E2EE sits inside the frame joiner: records are binary and pass through
+    // untouched, and the joined plaintext parts are what the RPC client reads.
     const layerSocket = Layer.effect(
       Socket.Socket,
-      Effect.map(Effect.service(Socket.Socket), joinSocketFrameParts),
+      pinnedServerKey !== undefined
+        ? Effect.map(
+            Effect.flatMap(Effect.service(Socket.Socket), (socket) =>
+              wrapClientSocketWithE2ee(socket, {
+                environmentId: connection.environmentId,
+                expectedServerIdentityKey: pinnedServerKey,
+              }),
+            ),
+            joinSocketFrameParts,
+          )
+        : Effect.map(Effect.service(Socket.Socket), joinSocketFrameParts),
     ).pipe(
       Layer.provide(
         Socket.layerWebSocket(socketUrl.toString(), {
@@ -232,6 +265,7 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
         }),
       ),
       Layer.provide(Layer.succeed(Socket.WebSocketConstructor, countingWebSocketConstructor)),
+      Layer.provide(layerE2eeCrypto),
     );
     const layerProtocol = Layer.effect(
       RpcClient.Protocol,
