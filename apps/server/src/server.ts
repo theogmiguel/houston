@@ -148,6 +148,12 @@ import * as SlackWebApi from "./houston/slack/WebApi.ts";
 import { layerMergeQueue } from "./houston/mergeQueue/layer.ts";
 import * as InferenceDiscovery from "./houston/inference/InferenceDiscovery.ts";
 import * as InferenceServerRegistry from "./houston/inference/InferenceServerRegistry.ts";
+import * as InferenceAdmission from "./houston/inference/InferenceAdmission.ts";
+import * as InferenceGateway from "./houston/inference/InferenceGateway.ts";
+import * as InferenceGatewayCredentials from "./houston/inference/InferenceGatewayCredentials.ts";
+import * as InferenceRequests from "./houston/inference/InferenceRequests.ts";
+import * as InferenceRouting from "./houston/inference/InferenceRouting.ts";
+import * as InferenceStops from "./houston/inference/InferenceStops.ts";
 import * as HoustonMergeQueueStore from "./houston/mergeQueue/Store.ts";
 import * as HoustonMergeQueueThreads from "./houston/mergeQueue/Threads.ts";
 import * as GitHubRest from "@houston-app/source-control-github/server/GitHubRest";
@@ -655,6 +661,8 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   HoustonLayoutWorkspaces.layer,
   // Model servers registered in Settings: periodic probes and on-demand discovery.
   Layer.mergeAll(InferenceServerRegistry.layer, InferenceDiscovery.layer),
+  // The gateway's own accounting and stops; the queue layers sit with the route below.
+  Layer.mergeAll(InferenceRequests.layer, InferenceStops.layer),
   Layer.effectDiscard(
     Effect.gen(function* () {
       const service = yield* HoustonThreadMembership.HoustonThreadMembership;
@@ -816,6 +824,11 @@ const layerMakeRoutes = Layer.mergeAll(
   McpHttpServer.layer.pipe(
     Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
     Layer.provide(McpOAuth.layerMcpClientAuthenticator),
+  ),
+  // The gateway authenticates its own bearer credential; environment auth does not apply.
+  InferenceGateway.routeLayer.pipe(
+    Layer.provide(InferenceGateway.layer),
+    Layer.provide(Layer.mergeAll(InferenceAdmission.layer, InferenceRouting.layer)),
   ),
   // Follows delegated tasks running in linked environments, including after a restart.
   Layer.effectDiscard(
@@ -1030,6 +1043,7 @@ const layerMakeServer = Layer.unwrap(
           Layer.provide(ServerEnvironment.layer.pipe(Layer.provide(ServerSecretStore.layer))),
         ),
       ),
+      Layer.provideMerge(InferenceGatewayCredentials.layer),
       Layer.provide(layerActivation),
       Layer.provideMerge(layerHttpServer),
       Layer.provide(layerApplicationObservability),

@@ -45,6 +45,8 @@ import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as AntigravityInstallation from "./provider/AntigravityInstallation.ts";
 import * as InferenceDiscovery from "./houston/inference/InferenceDiscovery.ts";
 import * as InferenceServerRegistry from "./houston/inference/InferenceServerRegistry.ts";
+import * as InferenceRequests from "./houston/inference/InferenceRequests.ts";
+import * as InferenceStops from "./houston/inference/InferenceStops.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as CommandOutputHub from "./orchestration-v2/CommandOutputHub.ts";
@@ -685,6 +687,8 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(BackgroundPolicy.BackgroundPolicy)({}),
   Layer.mock(InferenceDiscovery.InferenceDiscovery)({}),
   Layer.mock(InferenceServerRegistry.InferenceServerRegistry)({}),
+  Layer.mock(InferenceRequests.InferenceRequestLog)({}),
+  Layer.mock(InferenceStops.InferenceStops)({}),
   Layer.mock(CheckpointDiffQuery.CheckpointDiffQuery)({}),
   Layer.mock(CommandOutputHub.CommandOutputHub)({}),
   Layer.mock(CodexInstallation.CodexInstallation)({ managedDirectory: "/unused" }),

@@ -84,6 +84,16 @@ describe("RPC authorization scopes", () => {
     }
   });
 
+  it("reads gateway usage and a thread's inference history behind orchestration read", () => {
+    for (const method of [
+      WS_METHODS.houstonInferenceUsage,
+      WS_METHODS.houstonInferenceThreadRequest,
+      WS_METHODS.houstonInferenceThreadStop,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationReadScope);
+    }
+  });
+
   it("rejects unknown RPC method names", () => {
     for (const method of ["server.notRegistered", "toString", "constructor"]) {
       expect(() => requiredScopeForRpcMethod(method)).toThrow(

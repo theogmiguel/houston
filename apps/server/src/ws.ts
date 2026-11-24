@@ -231,6 +231,8 @@ import * as HoustonSlackV1Import from "./houston/slack/V1Import.ts";
 import * as HoustonMergeQueueService from "./houston/mergeQueue/Service.ts";
 import * as InferenceDiscovery from "./houston/inference/InferenceDiscovery.ts";
 import * as InferenceServerRegistry from "./houston/inference/InferenceServerRegistry.ts";
+import * as InferenceRequests from "./houston/inference/InferenceRequests.ts";
+import * as InferenceStops from "./houston/inference/InferenceStops.ts";
 import * as HoustonTerminalShells from "./houston/terminalShells.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
@@ -1629,6 +1631,8 @@ export const layerWsRpc = (
       const houstonMergeQueue = yield* HoustonMergeQueueService.HoustonMergeQueueService;
       const inferenceRegistry = yield* InferenceServerRegistry.InferenceServerRegistry;
       const inferenceDiscovery = yield* InferenceDiscovery.InferenceDiscovery;
+      const inferenceRequests = yield* InferenceRequests.InferenceRequestLog;
+      const inferenceStops = yield* InferenceStops.InferenceStops;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager.TerminalManager;
@@ -3509,6 +3513,11 @@ export const layerWsRpc = (
             Effect.map((servers) => ({ servers })),
           ),
         [WS_METHODS.houstonInferenceDiscover]: (input) => inferenceDiscovery.discover(input),
+        [WS_METHODS.houstonInferenceUsage]: (input) => inferenceRequests.summarize(input.window),
+        [WS_METHODS.houstonInferenceThreadRequest]: (input) =>
+          inferenceRequests.latestForThread(input.threadId).pipe(Effect.map((last) => ({ last }))),
+        [WS_METHODS.houstonInferenceThreadStop]: (input) =>
+          inferenceStops.latest(input.threadId).pipe(Effect.map((stop) => ({ stop }))),
         [WS_METHODS.terminalOpen]: (input) => terminalManager.open(input),
         [WS_METHODS.terminalAttach]: (input, metadata) =>
           terminalManager.attachOutputStream(input, terminalViewerId(metadata)),
