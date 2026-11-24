@@ -46,6 +46,7 @@ import {
   MessageDeliveryQueueHoldReason,
 } from "./houston/messageDelivery.ts";
 import { HoustonBlockingBackgroundWork } from "./houston/backgroundWork.ts";
+import { HoustonProviderTurnCompaction } from "./houston/contextWindow.ts";
 import { HoustonSideThread, makeHoustonSideThreadCommands } from "./houston/sideThreads.ts";
 import { HoustonMergeQueueNotifyCommand } from "./houston/mergeQueue.ts";
 import { HoustonSlackAnswerCommand } from "./houston/slack.ts";
@@ -230,6 +231,7 @@ export const OrchestrationV2ProviderTurnTokenUsage = Schema.Struct({
   reasoningOutputTokens: Schema.optional(NonNegativeInt),
   promptCacheTtlMs: Schema.optional(PositiveInt),
   autoCompactThreshold: Schema.optional(PositiveInt),
+  ...HoustonProviderTurnCompaction.fields,
   promptCacheExpiresAt: Schema.optional(Schema.String),
   updatedAt: Schema.String,
 });
