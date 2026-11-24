@@ -302,7 +302,7 @@ function piGatewayModels(server: ManagedInferenceServer) {
               PI_THINKING_LEVELS.map((level) => [level, efforts.has(level) ? level : null]),
             ),
           }),
-      input: ["text"],
+      input: model.images === false ? ["text"] : ["text", "image"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: model.contextWindow ?? PI_DEFAULT_CONTEXT_WINDOW,
       maxTokens: Math.min(
