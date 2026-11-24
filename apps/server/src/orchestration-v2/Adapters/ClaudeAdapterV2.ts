@@ -149,6 +149,7 @@ import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
+import { CHECK_TIMEOUT, checkWorkingDirectory } from "../../houston/nonBlockingSpawner.ts";
 import * as TraceContext from "../../houston/observability/TraceContext.ts";
 import { snapshotMcpApp } from "../../mcpApps/McpAppSnapshot.ts";
 import { resolveClaudeSdkExecutablePath } from "../../provider/Drivers/ClaudeExecutable.ts";
@@ -364,7 +365,38 @@ const CLAUDE_STOP_CONFIRM_TIMEOUT_MS = 10_000;
 // minutes of complete silence means Claude stopped answering the request.
 export const CLAUDE_REQUEST_SILENCE_LIMIT = "10 minutes" as const;
 
+/** The project directory a Claude launch could not enter: missing, not a directory, or denied. */
+export class ClaudeWorkingDirectoryError extends Schema.TaggedError<ClaudeWorkingDirectoryError>()(
+  "ClaudeWorkingDirectoryError",
+  { cwd: Schema.String, timedOut: Schema.optional(Schema.String) },
+) {
+  override get message(): string {
+    return this.timedOut === undefined
+      ? `Claude could not start in ${this.cwd}: the folder is missing or cannot be entered. Check that the project folder exists and its drive or network share is reachable, then send the message again.`
+      : `Claude could not start in ${this.cwd}: the folder did not answer within ${this.timedOut}. Check that its drive or network share is reachable, then send the message again.`;
+  }
+}
+
+const checkClaudeWorkingDirectory = (cwd: string) =>
+  checkWorkingDirectory(cwd, "claude").pipe(
+    Effect.mapError(
+      (error) =>
+        new ClaudeWorkingDirectoryError({
+          cwd,
+          ...(error.reason._tag === "TimedOut" ? { timedOut: Duration.format(CHECK_TIMEOUT) } : {}),
+        }),
+    ),
+  );
+
+// The shell enters the cwd itself: as a native cwd, a mount that hangs chdir freezes the server.
+// A cwd it cannot enter is reported on fd 3, a socket pair, and it exits 125 once the server
+// has read that. cd sets OLDPWD, which is put back as the CLI was given it.
 const CLAUDE_GROUP_WATCH_SCRIPT = [
+  'houston_oldpwd="${OLDPWD-}" houston_oldpwd_set="${OLDPWD+x}"',
+  'cd -P -- "$1" 2>/dev/null || { echo cwd >&3; read -r _ <&3; exit 125; }',
+  'if [ -n "$houston_oldpwd_set" ]; then OLDPWD="$houston_oldpwd"; else unset OLDPWD; fi',
+  "unset houston_oldpwd houston_oldpwd_set",
+  "shift",
   "{ trap '' TERM; read -r _ <&3; kill -TERM 0; sleep 5; kill -KILL 0; } </dev/null >/dev/null 2>&1 &",
   'exec "$@" 3<&-',
 ].join("\n");
@@ -377,18 +409,32 @@ const CLAUDE_GROUP_WATCH_SCRIPT = [
 export function spawnClaudeProcessGroup(
   options: ClaudeSpawnOptions,
   onExit?: () => void,
+  onUnenterableCwd?: (error: ClaudeWorkingDirectoryError) => void,
 ): ClaudeSpawnedProcess {
+  // Relative to the server's cwd, as a native cwd is; the `./` keeps CDPATH out of it.
+  const cwd = options.cwd ?? ".";
   const child = NodeChildProcess.spawn(
     "/bin/sh",
-    ["-c", CLAUDE_GROUP_WATCH_SCRIPT, "houston-claude", options.command, ...options.args],
+    [
+      "-c",
+      CLAUDE_GROUP_WATCH_SCRIPT,
+      "houston-claude",
+      cwd.startsWith("/") ? cwd : `./${cwd}`,
+      options.command,
+      ...options.args,
+    ],
     {
-      cwd: options.cwd,
       env: options.env,
       signal: options.signal,
       stdio: ["pipe", "pipe", "ignore", "pipe"],
       detached: true,
     },
   );
+  const launchSocket = child.stdio[3];
+  launchSocket?.once("data", () => {
+    onUnenterableCwd?.(new ClaudeWorkingDirectoryError({ cwd }));
+    launchSocket.destroy();
+  });
   child.once("exit", () => {
     try {
       signalProcessGroup(child.pid ?? 0, "SIGKILL");
@@ -1175,6 +1221,13 @@ export const layerQueryRunner: Layer.Layer<
       allocateSessionId: random.uuidV4(),
       open: Effect.fn("ClaudeAgentSdkQueryRunner.open")(
         function* (input: ClaudeAgentSdkQueryOpenInput) {
+          // The launch script's cd cannot time out, so a hung folder must fail here, bounded.
+          const cwd = input.options.cwd;
+          if (platform !== "win32" && cwd !== undefined) {
+            yield* checkClaudeWorkingDirectory(cwd).pipe(
+              Effect.mapError((error) => queryRunnerError(error, "open")),
+            );
+          }
           const protocolLogger = makeClaudeAgentSdkProtocolLogger({
             nativeEventLogger,
             threadId: input.threadId,
@@ -1222,12 +1275,17 @@ export const layerQueryRunner: Layer.Layer<
                   executableArgs: [...launch.args, ...(queryOptions.executableArgs ?? [])],
                 };
           const unit = launch?.unit;
+          // Set before the launch exits, so the stream's failure can name the folder instead.
+          let launchFailure: ClaudeWorkingDirectoryError | undefined;
           const stopScope =
             unit === undefined ? undefined : () => void runFork(agentScope.stop(unit));
           const spawnProcess =
             options.spawnClaudeCodeProcess ??
             ((spawnOptions: ClaudeSpawnOptions) => {
-              if (platform !== "win32") return spawnClaudeProcessGroup(spawnOptions, stopScope);
+              if (platform !== "win32")
+                return spawnClaudeProcessGroup(spawnOptions, stopScope, (error) => {
+                  launchFailure = error;
+                });
               const child = NodeChildProcess.spawn(spawnOptions.command, spawnOptions.args, {
                 cwd: spawnOptions.cwd,
                 env: spawnOptions.env,
@@ -1348,7 +1406,7 @@ export const layerQueryRunner: Layer.Layer<
 
           return {
             messages: Stream.fromAsyncIterable(claudeQueryMessages(queryRuntime), (cause) =>
-              queryRunnerError(cause, "fromAsyncIterable"),
+              queryRunnerError(launchFailure ?? cause, "fromAsyncIterable"),
             ).pipe(
               Stream.tap((message) =>
                 logProtocolEvent({
@@ -11516,6 +11574,17 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 detail: `Claude provider turn ${currentTurn.providerTurnId} is still active.`,
                 reason: "previous_turn_active",
               });
+            }
+            // The skill, settings and path reads below are unbounded, so a hung folder fails here.
+            // Any other error is left to the open: a live session can outlast its folder.
+            const { cwd } = turnInput.runtimePolicy;
+            if (hostPlatform !== "win32" && cwd !== null) {
+              yield* checkClaudeWorkingDirectory(cwd).pipe(
+                Effect.catchIf(
+                  (error) => error.timedOut === undefined,
+                  () => Effect.void,
+                ),
+              );
             }
             yield* Ref.update(lastTurnRouteByNativeThread, (current) => {
               const updated = new Map(current);
