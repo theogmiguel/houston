@@ -677,6 +677,7 @@ export const make = Effect.gen(function* () {
     yield* publish(yield* Ref.get(stateRef));
   });
 
+  // Untraced: it runs when a gateway request settles, under that request's own span.
   const publishRequestFailure = Effect.fnUntraced(function* (
     id: InferenceServerId,
     failure: InferenceServerRecentFailure | null,

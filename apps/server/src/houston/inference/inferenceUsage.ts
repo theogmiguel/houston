@@ -24,6 +24,7 @@ export interface UsageMeter {
 }
 
 // Accounting never holds more than this per SSE line or per non-streaming body.
+const TRAILING_CR = /\r$/;
 const MAX_LINE_CHARS = 2 * 1024 * 1024;
 const MAX_BODY_CHARS = 4 * 1024 * 1024;
 
@@ -286,7 +287,7 @@ export function makeUsageMeter(
         pending = "";
         continue;
       }
-      const line = (pending + piece).replace(/\r$/, "");
+      const line = (pending + piece).replace(TRAILING_CR, "");
       pending = "";
       if (readLine(line)) content = true;
     }

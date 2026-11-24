@@ -1,4 +1,4 @@
-import type { RunId, ThreadId } from "@houston-app/contracts";
+import type { RunId } from "@houston-app/contracts";
 import {
   type InferenceApiProtocol,
   type InferenceRequestPurpose,
@@ -84,10 +84,13 @@ const errorResponse = (status: number, type: string, message: string) =>
     { status, headers: { "cache-control": "no-store" } },
   );
 
+const BEARER = /^bearer\s+/i;
+const ROUTE = /^\/inference\/([^/]+)\/v1\/(.+)$/;
+
 const presentedToken = (request: HttpServerRequest.HttpServerRequest): string => {
   const authorization = request.headers.authorization;
-  if (authorization !== undefined && /^bearer\s+/i.test(authorization)) {
-    return authorization.replace(/^bearer\s+/i, "").trim();
+  if (authorization !== undefined && BEARER.test(authorization)) {
+    return authorization.replace(BEARER, "").trim();
   }
   return request.headers["x-api-key"]?.trim() ?? "";
 };
@@ -359,7 +362,7 @@ const make = Effect.gen(function* () {
   ) {
     const receivedAt = yield* Clock.currentTimeMillis;
     const path = new URL(request.url, "http://gateway").pathname;
-    const match = /^\/inference\/([^/]+)\/v1\/(.+)$/.exec(path);
+    const match = ROUTE.exec(path);
     if (match === null) return errorResponse(404, "not_found", "Unknown inference route.");
     const serverId = InferenceServerId.make(decodeURIComponent(match[1]!));
     const route = match[2]!;

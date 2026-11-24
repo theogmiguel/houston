@@ -124,6 +124,7 @@ function restoreEvent(names: NamespaceNames, event: unknown): unknown {
 
 const EMPTY = new Uint8Array(0);
 const DATA_PREFIX = /^data: ?/;
+const LINE_TAIL = /\r?\n?$/;
 
 export interface ResponseRestorer {
   readonly push: (chunk: Uint8Array) => Uint8Array;
@@ -163,7 +164,7 @@ export function makeResponseRestorer(names: NamespaceNames, streaming: boolean):
         parts.push(line);
         continue;
       }
-      const tail = /\r?\n?$/.exec(text)![0];
+      const tail = LINE_TAIL.exec(text)![0];
       const json = rewriteJson(text.slice(prefix.length, text.length - tail.length));
       parts.push(json === undefined ? line : Buffer.from(`${prefix}${json}${tail}`, "utf8"));
     }

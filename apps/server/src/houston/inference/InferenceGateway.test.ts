@@ -5,13 +5,7 @@ import * as NodeNet from "node:net";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { expect, it } from "@effect/vitest";
-import {
-  MessageId,
-  ProviderInstanceId,
-  RunId,
-  ScheduledTaskId,
-  ThreadId,
-} from "@houston-app/contracts";
+import { MessageId, RunId, ScheduledTaskId, ThreadId } from "@houston-app/contracts";
 import {
   InferenceServerId,
   type InferenceServerSnapshot,
