@@ -236,6 +236,26 @@ describe("ThreadCard hover actions over the fading time", () => {
 });
 
 describe("ThreadCard on a shelf", () => {
+  it("states an On hold row's wake time with the alarm clock in the status place", async () => {
+    await using screen = await render(
+      <div style={{ width: 264 }}>
+        {card(thread({ snoozedUntil: "2099-01-01T09:00:00.000Z" }), {
+          shelf: "snoozed",
+          timeLabel: "tomorrow at 9:00 AM",
+        })}
+      </div>,
+    );
+    const row = rowOf(screen.container);
+    const projectLine = row.querySelector<HTMLElement>("[data-thread-project-line]")!;
+    const held = projectLine.querySelector<HTMLElement>("[data-thread-held]")!;
+    expect(held).not.toBeNull();
+    expect(held.querySelector("[data-thread-time]")?.textContent).toBe("tomorrow at 9:00 AM");
+    const glyph = screen.getByRole("img", { name: "On hold" }).element();
+    expect(held.contains(glyph)).toBe(true);
+    expect(glyph.querySelector("[data-status-kind='back']")).not.toBeNull();
+    expect(row.querySelector("[data-thread-meta] [data-thread-time]")).toBeNull();
+  });
+
   it("opens the row without selecting it when a selection modifier is held", async () => {
     const onSelect = vi.fn();
     const onOpen = vi.fn();
