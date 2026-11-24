@@ -111,53 +111,57 @@ export const makeChecks = () => {
     mode: number,
     timedOut: (waited: Duration.Duration) => PlatformError.PlatformError,
   ) {
-    for (let previous = pending.get(directory); previous; previous = pending.get(directory)) {
-      yield* Deferred.await(previous);
-    }
-    if (hungDirectories.has(directory)) return yield* timedOut(Duration.zero);
-    const done = Deferred.makeUnsafe<void>();
-    pending.set(directory, done);
-    const release = Effect.sync(() => {
-      if (pending.get(directory) === done) pending.delete(directory);
-      Deferred.doneUnsafe(done, Effect.void);
-    });
+    // Interruptible only where it waits, so an entry in `pending` always reaches its release.
     return yield* Effect.uninterruptibleMask((restore) =>
       Effect.gen(function* () {
-        const slot = yield* restore(acquire);
-        if (slot === "unchecked") return slot as CheckResult;
-        let abandoned = false;
-        let settled: { readonly value: CheckResult } | undefined;
-        const call = NodeFSP.access(path, mode).then(
-          () => undefined,
-          (error: NodeJS.ErrnoException) => error,
-        );
-        void call.then((value) => {
-          settled = { value };
-          inFlight--;
-          if (abandoned) {
-            hung--;
-            hungDirectories.delete(directory);
-          }
-          wake();
+        for (let previous = pending.get(directory); previous; previous = pending.get(directory)) {
+          yield* restore(Deferred.await(previous));
+        }
+        if (hungDirectories.has(directory)) return yield* timedOut(Duration.zero);
+        const done = Deferred.makeUnsafe<void>();
+        pending.set(directory, done);
+        const release = Effect.sync(() => {
+          if (pending.get(directory) === done) pending.delete(directory);
+          Deferred.doneUnsafe(done, Effect.void);
         });
-        // A call that answered as the limit expired is not hung: nothing would clear the mark.
-        const abandon = (directoryHangs: boolean) =>
-          Effect.sync(() => {
-            if (settled !== undefined) return;
-            abandoned = true;
-            hung++;
-            if (directoryHangs) hungDirectories.add(directory);
+        return yield* Effect.gen(function* () {
+          const slot = yield* restore(acquire);
+          if (slot === "unchecked") return slot as CheckResult;
+          let abandoned = false;
+          let marked = false;
+          let settled: { readonly value: CheckResult } | undefined;
+          const call = NodeFSP.access(path, mode).then(
+            () => undefined,
+            (error: NodeJS.ErrnoException) => error,
+          );
+          void call.then((value) => {
+            settled = { value };
+            inFlight--;
+            if (abandoned) hung--;
+            // An interrupted check sets no mark, and must not clear a newer check's.
+            if (marked) hungDirectories.delete(directory);
             wake();
           });
-        const result = yield* restore(
-          Effect.promise(() => call).pipe(Effect.timeoutOption(CHECK_TIMEOUT)),
-        ).pipe(Effect.onInterrupt(() => abandon(false)));
-        if (result._tag === "Some") return result.value as CheckResult;
-        if (settled !== undefined) return settled.value;
-        yield* abandon(true);
-        return yield* timedOut(CHECK_TIMEOUT);
+          // A call that answered as the limit expired is not hung: nothing would clear the mark.
+          const abandon = (directoryHangs: boolean) =>
+            Effect.sync(() => {
+              if (settled !== undefined) return;
+              abandoned = true;
+              hung++;
+              marked = directoryHangs;
+              if (marked) hungDirectories.add(directory);
+              wake();
+            });
+          const result = yield* restore(
+            Effect.promise(() => call).pipe(Effect.timeoutOption(CHECK_TIMEOUT)),
+          ).pipe(Effect.onInterrupt(() => abandon(false)));
+          if (result._tag === "Some") return result.value as CheckResult;
+          if (settled !== undefined) return settled.value;
+          yield* abandon(true);
+          return yield* timedOut(CHECK_TIMEOUT);
+        }).pipe(Effect.ensuring(release));
       }),
-    ).pipe(Effect.ensuring(release));
+    );
   });
 
   return { run };

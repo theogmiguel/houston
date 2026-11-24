@@ -14,6 +14,7 @@ import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
+import * as Scheduler from "effect/Scheduler";
 import * as Stream from "effect/Stream";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
@@ -255,6 +256,94 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("nonBlockingSpa
         for (let tick = 0; tick < 3; tick++) await Promise.resolve();
       });
       expect(yield* check).toMatchObject({ _tag: "Success" });
+    }),
+  );
+
+  it.effect("a check interrupted at any point leaves its healthy directory checkable", () =>
+    Effect.gen(function* () {
+      using _access = vi.spyOn(NodeFSP, "access").mockImplementation(() => Promise.resolve());
+      const timedOut = () =>
+        PlatformError.systemError({ _tag: "TimedOut", module: "test", method: "check" });
+      const stuck: Array<number> = [];
+      let point = 0;
+      for (let reached = true; reached; point++) {
+        reached = false;
+        const checks = NonBlockingSpawner.makeChecks();
+        const check = checks.run("/healthy", "/healthy", NodeFS.constants.F_OK, timedOut);
+        // Yields just before one operation, with the check's fiber interrupted there.
+        const native = new Scheduler.MixedScheduler();
+        let checking: Fiber.Fiber<unknown, unknown> | undefined;
+        let operations = 0;
+        const interrupting: Scheduler.Scheduler = {
+          executionMode: "async",
+          makeDispatcher: () => native.makeDispatcher(),
+          shouldYield: (fiber) => {
+            checking ??= fiber;
+            if (operations++ !== point) return false;
+            reached = true;
+            checking.interruptUnsafe();
+            return true;
+          },
+        };
+        const interrupted = yield* check.pipe(
+          Effect.provideService(Scheduler.Scheduler, interrupting),
+          Effect.forkChild,
+        );
+        yield* Fiber.await(interrupted);
+        const later = yield* Effect.forkChild(check);
+        for (let turn = 0; turn < 3; turn++) yield* TestClock.adjust("1 millis");
+        if (later.pollUnsafe()?._tag !== "Success") stuck.push(point);
+        yield* Fiber.interrupt(later);
+      }
+      // Every operation of the check was a point, its file-system call included.
+      expect(point).toBeGreaterThan(10);
+      expect(stuck).toEqual([]);
+    }),
+  );
+
+  it.effect("an interrupted check does not clear the mark of a newer one that hung", () =>
+    Effect.gen(function* () {
+      const answers: Array<() => void> = [];
+      using _access = vi
+        .spyOn(NodeFSP, "access")
+        .mockImplementation(() => new Promise<void>((resolve) => answers.push(resolve)));
+      const checks = NonBlockingSpawner.makeChecks();
+      const check = checks
+        .run(`${HUNG}/a`, `${HUNG}/a`, NodeFS.constants.F_OK, (waited) =>
+          PlatformError.systemError({
+            _tag: "TimedOut",
+            module: "test",
+            method: "check",
+            description: Duration.format(waited),
+          }),
+        )
+        .pipe(Effect.flip);
+      const answer = (index: number) =>
+        Effect.promise(async () => {
+          answers[index]?.();
+          for (let tick = 0; tick < 5; tick++) await Promise.resolve();
+        });
+
+      const older = yield* Effect.forkChild(check);
+      yield* TestClock.adjust("1 millis");
+      yield* Fiber.interrupt(older);
+      const newer = yield* Effect.forkChild(check);
+      yield* TestClock.adjust(NonBlockingSpawner.CHECK_TIMEOUT);
+      yield* Fiber.join(newer);
+      expect(answers).toHaveLength(2);
+
+      yield* answer(0);
+      const marked = yield* Effect.forkChild(check);
+      yield* TestClock.adjust("1 millis");
+      expect(answers).toHaveLength(2);
+      expect((yield* Fiber.join(marked)).message).toContain(Duration.format(Duration.zero));
+
+      // The newer check clears the mark it set.
+      yield* answer(1);
+      const again = yield* Effect.forkChild(check);
+      yield* TestClock.adjust("1 millis");
+      expect(answers).toHaveLength(3);
+      yield* Fiber.interrupt(again);
     }),
   );
 

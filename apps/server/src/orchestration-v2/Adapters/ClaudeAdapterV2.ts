@@ -377,6 +377,17 @@ export class ClaudeWorkingDirectoryError extends Schema.TaggedError<ClaudeWorkin
   }
 }
 
+const checkClaudeWorkingDirectory = (cwd: string) =>
+  checkWorkingDirectory(cwd, "claude").pipe(
+    Effect.mapError(
+      (error) =>
+        new ClaudeWorkingDirectoryError({
+          cwd,
+          ...(error.reason._tag === "TimedOut" ? { timedOut: Duration.format(CHECK_TIMEOUT) } : {}),
+        }),
+    ),
+  );
+
 // The shell enters the cwd itself: as a native cwd, a mount that hangs chdir freezes the server.
 // A cwd it cannot enter is reported on fd 3, a socket pair, and it exits 125 once the server
 // has read that. cd sets OLDPWD, which is put back as the CLI was given it.
@@ -1213,18 +1224,8 @@ export const layerQueryRunner: Layer.Layer<
           // The launch script's cd cannot time out, so a hung folder must fail here, bounded.
           const cwd = input.options.cwd;
           if (platform !== "win32" && cwd !== undefined) {
-            yield* checkWorkingDirectory(cwd, "claude").pipe(
-              Effect.mapError((error) =>
-                queryRunnerError(
-                  new ClaudeWorkingDirectoryError({
-                    cwd,
-                    ...(error.reason._tag === "TimedOut"
-                      ? { timedOut: Duration.format(CHECK_TIMEOUT) }
-                      : {}),
-                  }),
-                  "open",
-                ),
-              ),
+            yield* checkClaudeWorkingDirectory(cwd).pipe(
+              Effect.mapError((error) => queryRunnerError(error, "open")),
             );
           }
           const protocolLogger = makeClaudeAgentSdkProtocolLogger({
@@ -11525,6 +11526,17 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 detail: `Claude provider turn ${currentTurn.providerTurnId} is still active.`,
                 reason: "previous_turn_active",
               });
+            }
+            // The skill, settings and path reads below are unbounded, so a hung folder fails here.
+            // Any other error is left to the open: a live session can outlast its folder.
+            const { cwd } = turnInput.runtimePolicy;
+            if (hostPlatform !== "win32" && cwd !== null) {
+              yield* checkClaudeWorkingDirectory(cwd).pipe(
+                Effect.catchIf(
+                  (error) => error.timedOut === undefined,
+                  () => Effect.void,
+                ),
+              );
             }
             yield* Ref.update(lastTurnRouteByNativeThread, (current) => {
               const updated = new Map(current);
