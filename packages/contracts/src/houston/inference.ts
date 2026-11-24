@@ -1,7 +1,13 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { IsoDateTime, NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "../baseSchemas.ts";
+import {
+  IsoDateTime,
+  NonNegativeInt,
+  PositiveInt,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "../baseSchemas.ts";
 import { SecretLiteral } from "../settingsSecretValue.ts";
 
 const INFERENCE_SERVER_ID_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
@@ -46,6 +52,132 @@ export const InferenceServerLoad = Schema.Struct({
 });
 export type InferenceServerLoad = typeof InferenceServerLoad.Type;
 
+/** The server's retained prompt states; omitted when it does not report a budget. */
+export const InferenceServerPromptCache = Schema.Struct({
+  budgetBytes: NonNegativeInt,
+  retainedBytes: Schema.optional(NonNegativeInt),
+  states: Schema.optional(NonNegativeInt),
+  /** Prompt tokens restored from cache over the latest probe interval that saw requests. */
+  recentCachedShare: Schema.optional(
+    Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
+  ),
+  /** `saturated-falling`: full, and the cached share dropped since the interval before. */
+  status: Schema.Literals(["none", "ok", "saturated-falling"]),
+});
+export type InferenceServerPromptCache = typeof InferenceServerPromptCache.Type;
+
+/** Who asked: a user's turn, a scheduled task, or the environment's own background writing. */
+export const InferenceRequestPurpose = Schema.Literals(["interactive", "scheduled", "background"]);
+export type InferenceRequestPurpose = typeof InferenceRequestPurpose.Type;
+
+/** Bounded request diagnosis; upstream messages and private request/response data are never stored. */
+export const InferenceFailureCause = Schema.Literals([
+  "unknown",
+  "transport",
+  "cancelled",
+  "upstream-http",
+  "context-overflow",
+  "unsupported-field",
+  "tool-format",
+  "empty-completed",
+  "watchdog-loop",
+  "watchdog-reasoning-limit",
+  "watchdog-idle",
+]);
+export type InferenceFailureCause = typeof InferenceFailureCause.Type;
+
+/** Requests the gateway is holding or running against this server; other clients are not counted. */
+export const InferenceGatewayQueue = Schema.Struct({
+  capacity: NonNegativeInt,
+  active: Schema.Array(
+    Schema.Struct({ threadId: Schema.optional(ThreadId), purpose: InferenceRequestPurpose }),
+  ),
+  waiting: Schema.Array(
+    Schema.Struct({
+      threadId: Schema.optional(ThreadId),
+      purpose: InferenceRequestPurpose,
+      position: NonNegativeInt,
+    }),
+  ),
+});
+export type InferenceGatewayQueue = typeof InferenceGatewayQueue.Type;
+
+/** Why the gateway stopped a reply: it repeated itself, only reasoned, or went quiet. */
+export const InferenceStopReason = Schema.Literals(["loop", "reasoning-limit", "idle"]);
+export type InferenceStopReason = typeof InferenceStopReason.Type;
+
+/** The latest reply the gateway stopped in a thread. */
+export const InferenceThreadStop = Schema.Struct({
+  serverId: InferenceServerId,
+  model: TrimmedNonEmptyString,
+  reason: InferenceStopReason,
+  at: IsoDateTime,
+});
+export type InferenceThreadStop = typeof InferenceThreadStop.Type;
+
+const Distribution = Schema.Struct({
+  n: NonNegativeInt,
+  p50: Schema.NullOr(Schema.Number),
+  p95: Schema.NullOr(Schema.Number),
+});
+
+export const InferenceUsageWindow = Schema.Literals(["24h", "7d"]);
+export type InferenceUsageWindow = typeof InferenceUsageWindow.Type;
+
+/** Measured by the gateway; requests that bypass it are not included. Missing measurements leave n. */
+export const InferenceUsageRow = Schema.Struct({
+  serverId: InferenceServerId,
+  model: TrimmedNonEmptyString,
+  purpose: InferenceRequestPurpose,
+  requests: NonNegativeInt,
+  failed: NonNegativeInt,
+  promptTokens: NonNegativeInt,
+  cachedPromptTokens: NonNegativeInt,
+  /** Prompt tokens of the requests whose server reported cache usage; the cached-share denominator. */
+  promptTokensWithCacheData: Schema.optional(NonNegativeInt),
+  completionTokens: NonNegativeInt,
+  /** The window's most recent failed or rejected request. */
+  lastFailure: Schema.optional(
+    Schema.Struct({
+      status: Schema.Literals(["failed", "rejected"]),
+      at: IsoDateTime,
+      cause: Schema.optional(InferenceFailureCause),
+      httpStatus: Schema.optional(NonNegativeInt),
+      advice: Schema.optional(TrimmedNonEmptyString),
+    }),
+  ),
+  queueWaitMs: Distribution,
+  ttftMs: Distribution,
+  decodeTokensPerSecond: Distribution,
+});
+export type InferenceUsageRow = typeof InferenceUsageRow.Type;
+
+export const InferenceUsageSummary = Schema.Struct({
+  window: InferenceUsageWindow,
+  generatedAt: IsoDateTime,
+  rows: Schema.Array(InferenceUsageRow),
+});
+export type InferenceUsageSummary = typeof InferenceUsageSummary.Type;
+
+/** The latest gateway request a thread made, for its prompt budget. */
+export const InferenceThreadLastRequest = Schema.Struct({
+  serverId: InferenceServerId,
+  model: TrimmedNonEmptyString,
+  completedAt: IsoDateTime,
+  promptTokens: Schema.NullOr(NonNegativeInt),
+  cachedPromptTokens: Schema.NullOr(NonNegativeInt),
+  completionTokens: Schema.NullOr(NonNegativeInt),
+  queueWaitMs: Schema.NullOr(NonNegativeInt),
+  ttftMs: Schema.NullOr(NonNegativeInt),
+  decodeTokensPerSecond: Schema.NullOr(Schema.Number),
+  /** Set when the request went to a fallback because this server could not take it. */
+  fallbackFrom: Schema.optional(InferenceServerId),
+  /** Compared with the thread's previous request; absent when there is none or unmeasured. */
+  staticPrefixChanged: Schema.optional(Schema.Boolean),
+  serverChanged: Schema.optional(Schema.Boolean),
+});
+export type InferenceThreadLastRequest = typeof InferenceThreadLastRequest.Type;
+
 /** Request protocols a server serves under its base URL. */
 export const InferenceApiProtocol = Schema.Literals([
   "chat-completions",
@@ -62,8 +194,25 @@ export const InferenceServerConfig = Schema.Struct({
   baseUrl: TrimmedNonEmptyString,
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   maxConcurrentRequests: Schema.optional(PositiveInt),
+  /**
+   * Serves this server's requests while it is down or unreachable, if it serves the same model
+   * and protocol; never for overflow.
+   */
+  fallbackServerId: Schema.optional(InferenceServerId),
+  /** The gateway stops a reply that loops, only reasons, or goes silent; on unless turned off. */
+  watchdog: Schema.optional(Schema.Struct({ enabled: Schema.optional(Schema.Boolean) })),
 });
 export type InferenceServerConfig = typeof InferenceServerConfig.Type;
+
+/** The newest gateway request a server failed or refused, for its row in Settings. */
+export const InferenceServerRecentFailure = Schema.Struct({
+  at: IsoDateTime,
+  status: Schema.Literals(["failed", "rejected"]),
+  cause: Schema.optional(InferenceFailureCause),
+  advice: Schema.optional(TrimmedNonEmptyString),
+  httpStatus: Schema.optional(NonNegativeInt),
+});
+export type InferenceServerRecentFailure = typeof InferenceServerRecentFailure.Type;
 
 export const InferenceServerSnapshot = Schema.Struct({
   id: InferenceServerId,
@@ -78,6 +227,9 @@ export const InferenceServerSnapshot = Schema.Struct({
   load: Schema.optional(InferenceServerLoad),
   maxConcurrentRequests: Schema.optional(NonNegativeInt),
   apiProtocols: Schema.optional(Schema.Array(InferenceApiProtocol)),
+  gatewayQueue: Schema.optional(InferenceGatewayQueue),
+  promptCache: Schema.optional(InferenceServerPromptCache),
+  recentFailure: Schema.optional(InferenceServerRecentFailure),
 });
 export type InferenceServerSnapshot = typeof InferenceServerSnapshot.Type;
 
@@ -122,6 +274,8 @@ export const InferenceServerSaveInput = Schema.Struct({
   apiKey: Schema.optional(SecretLiteral),
   enabled: Schema.optional(Schema.Boolean),
   maxConcurrentRequests: Schema.optional(PositiveInt),
+  fallbackServerId: Schema.optional(InferenceServerId),
+  watchdog: Schema.optional(Schema.Struct({ enabled: Schema.optional(Schema.Boolean) })),
 });
 export type InferenceServerSaveInput = typeof InferenceServerSaveInput.Type;
 
@@ -134,6 +288,21 @@ export const InferenceServerRefreshInput = Schema.Struct({
   id: Schema.optional(InferenceServerId),
 });
 export type InferenceServerRefreshInput = typeof InferenceServerRefreshInput.Type;
+
+export const InferenceUsageInput = Schema.Struct({
+  window: InferenceUsageWindow,
+});
+export type InferenceUsageInput = typeof InferenceUsageInput.Type;
+
+export const InferenceThreadRequestInput = Schema.Struct({
+  threadId: ThreadId,
+});
+export type InferenceThreadRequestInput = typeof InferenceThreadRequestInput.Type;
+
+export const InferenceThreadStopInput = Schema.Struct({
+  threadId: ThreadId,
+});
+export type InferenceThreadStopInput = typeof InferenceThreadStopInput.Type;
 
 export const HoustonInferenceErrorKind = Schema.Literals([
   "invalid",

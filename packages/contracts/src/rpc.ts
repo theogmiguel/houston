@@ -289,6 +289,12 @@ import {
   InferenceServerRemoveInput,
   InferenceServerSaveInput,
   InferenceServersResult,
+  InferenceThreadLastRequest,
+  InferenceThreadRequestInput,
+  InferenceThreadStop,
+  InferenceThreadStopInput,
+  InferenceUsageInput,
+  InferenceUsageSummary,
 } from "./houston/inference.ts";
 import {
   HoustonLayoutFocusInput,
@@ -725,6 +731,9 @@ export const WS_METHODS = {
   houstonInferenceSave: "houston.inference.save",
   houstonInferenceRemove: "houston.inference.remove",
   houstonInferenceDiscover: "houston.inference.discover",
+  houstonInferenceUsage: "houston.inference.usage",
+  houstonInferenceThreadRequest: "houston.inference.threadRequest",
+  houstonInferenceThreadStop: "houston.inference.threadStop",
 
   terminalOpen: "terminal.open",
   terminalAttach: "terminal.attach",
@@ -2489,6 +2498,24 @@ const WsHoustonInferenceDiscoverRpc = Rpc.make(WS_METHODS.houstonInferenceDiscov
   error: EnvironmentAuthorizationError,
 });
 
+const WsHoustonInferenceUsageRpc = Rpc.make(WS_METHODS.houstonInferenceUsage, {
+  payload: InferenceUsageInput,
+  success: InferenceUsageSummary,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsHoustonInferenceThreadRequestRpc = Rpc.make(WS_METHODS.houstonInferenceThreadRequest, {
+  payload: InferenceThreadRequestInput,
+  success: Schema.Struct({ last: Schema.NullOr(InferenceThreadLastRequest) }),
+  error: EnvironmentAuthorizationError,
+});
+
+const WsHoustonInferenceThreadStopRpc = Rpc.make(WS_METHODS.houstonInferenceThreadStop, {
+  payload: InferenceThreadStopInput,
+  success: Schema.Struct({ stop: Schema.NullOr(InferenceThreadStop) }),
+  error: EnvironmentAuthorizationError,
+});
+
 const WsTerminalOpenRpc = Rpc.make(WS_METHODS.terminalOpen, {
   payload: TerminalOpenInput,
   success: TerminalSessionSnapshot,
@@ -3205,6 +3232,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonInferenceSaveRpc,
   WsHoustonInferenceRemoveRpc,
   WsHoustonInferenceDiscoverRpc,
+  WsHoustonInferenceUsageRpc,
+  WsHoustonInferenceThreadRequestRpc,
+  WsHoustonInferenceThreadStopRpc,
   WsTerminalOpenRpc,
   WsTerminalAttachRpc,
   WsTerminalObserveRpc,
