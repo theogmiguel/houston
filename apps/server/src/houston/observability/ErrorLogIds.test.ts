@@ -48,6 +48,7 @@ describe("generated ids", () => {
       "an effect's command",
       `effect:${delegateCommand(OTHER)}:provider-turn.start:${RUN}:unresponsive`,
     ],
+    ["a deleted thread's history purge", `effect:${delegateCommand(OTHER)}:thread.history-purge`],
     ["a launch step", `${UUID}:progress:worktree`],
     ["a task review thread", `task-review-${UUID}`],
     ["a task run thread", `task-${UUID}`],

@@ -51,7 +51,7 @@ const WORDS: ReadonlySet<string> = new Set(
     // ThreadDeletion, CheckpointCaptureService, ProviderRuntimeRecoveryService, EffectWorker.
     "attachment.cleanup preview.cleanup scheduled-tasks.cleanup checkpoint.capture restart-prepare",
     "background-work-settled delivery-failed mailbox-accepted rollback-failed steer-follow-up",
-    "unresponsive",
+    "thread.history-purge unresponsive",
     // Reactors and services that dispatch as the server.
     "server auto-settle delegated-task-question-cancel idle-compact pr-created-link pr-stack-link",
     "pr-sync pr-watch provider-continuation settle-after-run thread-issue-link thread-issue-unlink",
