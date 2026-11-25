@@ -2,6 +2,7 @@
 // The failures that outlive trace rotation: a small file per UTC day, beside the trace files.
 // Entries append synchronously so that the last one before a crash is on disk.
 import * as NodeFS from "node:fs";
+import * as NodeModule from "node:module";
 import * as NodePath from "node:path";
 import * as Cause from "effect/Cause";
 import type * as Clock from "effect/Clock";
@@ -37,13 +38,21 @@ const ERROR_NAME = /^[A-Za-z][A-Za-z0-9.]{0,63}$/;
 const TRACE_ID = /^[0-9a-f]{1,32}$/;
 // Ids and enums. A path, a URL or a sentence holds a separator or a space.
 const ATTRIBUTE_VALUE = /^[A-Za-z0-9][\w.:-]{0,127}$/;
-// Longer lines are message text, which the pattern below must not scan.
-const FRAME_LINE_MAX_CHARS = 1024;
+// The frames end a stack; what precedes them is message text of any length.
+const STACK_MAX_CHARS = 64 * 1024;
 const FRAME_LINE = /^\s+at /;
-const FRAME =
-  /^\s+at (?:async )?(?:new )?(?:(.*) \()?(node:)?(?:.*[\\/])?([\w.@-]{1,80}):(\d+):(\d+)\)?$/;
+// Function, file, line and column. The lazy function part leaves `Program Files (x86)` to the file.
+const FRAME = /^\s+at (?:async )?(?:new )?(?:(.*?) \()?(.+):(\d+):(\d+)\)?$/;
+const NODE_INTERNAL = "node:internal/";
+const INDIRECT_PATH = /[?#]|(?:^|\/)\.\.(?:\/|$)/;
+const DRIVE = /^\/?([A-Za-z]):\//;
+const FILE_NAME = /^[\w.@-]{1,80}$/;
 const FUNCTION_NAME = /^[A-Za-z_$][\w$.<>]{0,79}$/;
 const SCRIPT_NAME = /\.[cm]?[jt]sx?$/;
+
+// A logged error is an argument, or a field an object or two below one.
+const SEARCH_MAX_DEPTH = 4;
+const SEARCH_MAX_FIELDS = 64;
 
 export interface ErrorLogFiles {
   readonly prepare: (directory: string) => void;
@@ -61,6 +70,14 @@ const nodeFiles: ErrorLogFiles = {
   remove: (filePath) => NodeFS.rmSync(filePath, { force: true }),
 };
 
+/** Where the running program's code is. */
+export interface ErrorLogProgram {
+  /** Scripts below it are the program's own; undefined when the program is one executable. */
+  readonly root: string | undefined;
+  /** The file this module runs from, as the runtime names it in a stack. */
+  readonly file: string;
+}
+
 export interface ErrorLogOptions {
   readonly directory: string;
   /** Each process writes its own files. */
@@ -69,6 +86,7 @@ export interface ErrorLogOptions {
   /** The allowlist: the recorded attributes this process may write. */
   readonly attributes: (recorded: Readonly<Record<string, unknown>>) => Record<string, unknown>;
   readonly files?: ErrorLogFiles;
+  readonly program?: ErrorLogProgram;
 }
 
 export interface ErrorLog {
@@ -89,68 +107,171 @@ const dayOf = (millis: number) => DateTime.formatIso(DateTime.makeUnsafe(millis)
 export const errorLogFileName = (process: ErrorLogOptions["process"], day: string) =>
   `${process}.errors-${day}.ndjson`;
 
-const framesOf = (error: unknown): ReadonlyArray<string> => {
-  if (!(error instanceof Error) || typeof error.stack !== "string") return [];
-  const lines = error.stack.split("\n");
-  // A message that quotes a stack cannot be told from the error's own frames.
-  if (error.message.split("\n").some((line) => FRAME_LINE.test(line))) return [];
-  const frames: Array<string> = [];
-  for (const line of lines) {
-    const match = line.length > FRAME_LINE_MAX_CHARS ? null : FRAME.exec(line);
-    if (match === null) continue;
-    const [, fn, node = "", file = "", row = "", column = ""] = match;
-    if (node === "" && !SCRIPT_NAME.test(file)) continue;
-    const location = `${node}${file}:${row}:${column}`;
-    frames.push(fn !== undefined && FUNCTION_NAME.test(fn) ? `${fn} (${location})` : location);
-    if (frames.length === MAX_FRAMES) break;
+const safely = <A>(read: () => A, fallback: A): A => {
+  try {
+    return read();
+  } catch {
+    return fallback;
   }
-  return frames;
 };
 
-/** The error's name and code locations; never its message, fields or nested causes. */
-const describeError = (error: unknown): Entry => {
-  const tag = errorTag(error);
-  const frames = framesOf(error);
-  return {
-    error: ERROR_NAME.test(tag) ? tag : "Error",
-    ...(frames.length === 0 ? {} : { frames }),
+const UNREADABLE: Entry = { error: "UnknownError" };
+
+/** A stack's file URL or path in one form: forward slashes, decoded, a lower-case drive. */
+const normalPath = (file: string) => {
+  const path = file.startsWith("file://") ? decodeURIComponent(file.slice(7)) : file;
+  return path
+    .replaceAll("\\", "/")
+    .replace(DRIVE, (_match, drive: string) => `${drive.toLowerCase()}:/`);
+};
+
+const directoryOf = (path: string) => path.slice(0, path.lastIndexOf("/"));
+
+/**
+ * The program as this module's own stack names it: a bundle's directory, the repository when run
+ * from source, or a single executable. It decides which frames are kept and is never written.
+ */
+const runningProgram = (): ErrorLogProgram => {
+  for (const line of (new Error().stack ?? "").split("\n")) {
+    const file = FRAME.exec(line)?.[2];
+    if (file === undefined) continue;
+    const path = normalPath(file);
+    const directory = directoryOf(path);
+    if (!SCRIPT_NAME.test(path)) return { root: undefined, file: path };
+    const root = path.endsWith(".ts")
+      ? directoryOf(directoryOf(directoryOf(directory)))
+      : directory;
+    // A root at the top of the file system would own every script.
+    return { root: root === "" ? undefined : root, file: path };
+  }
+  return { root: undefined, file: "" };
+};
+
+const defaultProgram = runningProgram();
+
+type OwnLocation = (file: string) => string | undefined;
+
+/** A frame's printable file when it is the program's own or a Node built-in. */
+const ownLocation = (program: ErrorLogProgram): OwnLocation => {
+  const self = normalPath(program.file);
+  const below = program.root === undefined ? undefined : `${normalPath(program.root)}/`;
+  return (file) => {
+    if (file.startsWith("node:")) return NodeModule.isBuiltin(file) ? file : undefined;
+    const path = normalPath(file);
+    const name = path.slice(path.lastIndexOf("/") + 1);
+    if (INDIRECT_PATH.test(path) || !FILE_NAME.test(name)) return undefined;
+    if (self !== "" && path === self) return name;
+    return below !== undefined && path.startsWith(below) && SCRIPT_NAME.test(name)
+      ? name
+      : undefined;
   };
 };
 
-const describeCause = (cause: Cause.Cause<unknown>): Entry => {
+const framesOf = (error: unknown, own: OwnLocation): Entry => {
+  if (!(error instanceof Error)) return {};
+  const { stack, message } = error;
+  if (typeof stack !== "string") return {};
+  // A message that quotes a stack cannot be told from the error's own frames.
+  if (
+    typeof message === "string" &&
+    message
+      .slice(-STACK_MAX_CHARS)
+      .split("\n")
+      .some((line) => FRAME_LINE.test(line))
+  ) {
+    return {};
+  }
+  const frames: Array<string> = [];
+  let dropped = 0;
+  for (const line of stack.slice(-STACK_MAX_CHARS).split("\n")) {
+    if (!FRAME_LINE.test(line)) continue;
+    const [, fn, file = "", row, column] = FRAME.exec(line) ?? [];
+    const internal = file.startsWith(NODE_INTERNAL);
+    const name = internal ? "node:internal" : safely(() => own(file), undefined);
+    if (name === undefined) {
+      dropped += 1;
+      continue;
+    }
+    if (frames.length === MAX_FRAMES) continue;
+    const location = internal ? name : `${name}:${row}:${column}`;
+    frames.push(fn !== undefined && FUNCTION_NAME.test(fn) ? `${fn} (${location})` : location);
+  }
+  return {
+    ...(frames.length === 0 ? {} : { frames }),
+    ...(dropped === 0 ? {} : { droppedFrames: dropped }),
+  };
+};
+
+/** The error's name and code locations; never its message, fields or nested causes. */
+const describeError = (error: unknown, own: OwnLocation): Entry => {
+  const tag = errorTag(error);
+  return { error: ERROR_NAME.test(tag) ? tag : "Error", ...framesOf(error, own) };
+};
+
+const describeCause = (cause: Cause.Cause<unknown>, own: OwnLocation): Entry => {
   for (const reason of cause.reasons) {
-    if (reason._tag === "Fail") return describeError(reason.error);
-    if (reason._tag === "Die") return describeError(reason.defect);
+    if (reason._tag === "Fail") return describeError(reason.error, own);
+    if (reason._tag === "Die") return describeError(reason.defect, own);
   }
   return {};
 };
 
-const describeValue = (value: unknown): Entry | undefined =>
-  Cause.isCause(value)
-    ? describeCause(value)
-    : value instanceof Error
-      ? describeError(value)
-      : undefined;
+/** The type of a value the search below does not look into. */
+const typeNameOf = (value: object): Entry => {
+  const prototype: unknown = Object.getPrototypeOf(value);
+  const constructor: unknown = Predicate.isObject(prototype)
+    ? Object.getOwnPropertyDescriptor(prototype, "constructor")?.value
+    : undefined;
+  return typeof constructor === "function" && ERROR_NAME.test(constructor.name)
+    ? { value: constructor.name }
+    : {};
+};
+
+const isPlain = (value: object) => {
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null || Array.isArray(value);
+};
+
+/** The first own values, read without getters; a large array's keys are never listed. */
+const firstFields = (value: object): ReadonlyArray<unknown> => {
+  if (Array.isArray(value)) return value.slice(0, SEARCH_MAX_FIELDS);
+  const fields: Array<unknown> = [];
+  for (const key in value) {
+    if (fields.length === SEARCH_MAX_FIELDS) break;
+    fields.push(Object.getOwnPropertyDescriptor(value, key)?.value);
+  }
+  return fields;
+};
+
+const describeLoggedValue = (value: unknown, own: OwnLocation, depth: number): Entry => {
+  if (Cause.isCause(value)) return describeCause(value, own);
+  if (value instanceof Error) return describeError(value, own);
+  if (typeof value !== "object" || value === null) return {};
+  if (!isPlain(value)) return typeNameOf(value);
+  if (depth === SEARCH_MAX_DEPTH) return {};
+  let described: Entry = {};
+  for (const field of firstFields(value)) {
+    const found = safely(() => describeLoggedValue(field, own, depth + 1), UNREADABLE);
+    if ("error" in found) return found;
+    if ("value" in found) described = found;
+  }
+  return described;
+};
 
 /**
  * A log call's error. Message text is never written: it is often a template around a path, a title
  * or agent output, and nothing marks which part is constant. Only an error among it is described.
  */
-const describeLogged = (options: Logger.Options<unknown>): Entry => {
-  if (options.cause.reasons.length > 0) return describeCause(options.cause);
-  const parts: ReadonlyArray<unknown> = Array.isArray(options.message)
-    ? options.message
-    : [options.message];
-  for (const part of [...parts, options.fiber.getRef(References.CurrentLogAnnotations)]) {
-    const described = describeValue(part);
-    if (described !== undefined) return described;
-    if (!Predicate.isObject(part)) continue;
-    for (const { value } of Object.values(Object.getOwnPropertyDescriptors(part))) {
-      const field = describeValue(value);
-      if (field !== undefined) return field;
-    }
-  }
-  return {};
+const describeLogged = (options: Logger.Options<unknown>, own: OwnLocation): Entry => {
+  if (options.cause.reasons.length > 0) return describeCause(options.cause, own);
+  const message = describeLoggedValue(
+    Array.isArray(options.message) ? options.message : [options.message],
+    own,
+    0,
+  );
+  if ("error" in message) return message;
+  const annotations = options.fiber.getRef(References.CurrentLogAnnotations);
+  return { ...message, ...describeLoggedValue(annotations, own, 0) };
 };
 
 const writableAttributes = (attributes: Readonly<Record<string, unknown>>): Entry => {
@@ -171,6 +292,7 @@ const describeSpan = (span: Tracer.AnySpan): Entry => ({
 
 export const makeErrorLog = (options: ErrorLogOptions): ErrorLog => {
   const files = options.files ?? nodeFiles;
+  const own = ownLocation(options.program ?? defaultProgram);
   const pathOf = (name: string) => NodePath.join(options.directory, name);
   const ownFile = new RegExp(`^${options.process}\\.errors-(\\d{4}-\\d{2}-\\d{2})\\.ndjson$`);
 
@@ -251,7 +373,7 @@ export const makeErrorLog = (options: ErrorLogOptions): ErrorLog => {
     guarded(now, () => {
       if (dayOf(now) !== day) openDay(now);
       if (full) return;
-      const described = describe();
+      const described = safely(describe, UNREADABLE);
       const { name, error } = described;
       const key = `${kind} ${String(name)} ${String(error)}`;
       const count = (countByKey.get(key) ?? 0) + 1;
@@ -285,17 +407,24 @@ export const makeErrorLog = (options: ErrorLogOptions): ErrorLog => {
         ...(span.status._tag === "Ended"
           ? { durationMs: Number(span.status.endTime - span.status.startTime) / 1_000_000 }
           : {}),
-        ...describeCause(cause),
-        ...writableAttributes(options.attributes(Object.fromEntries(span.attributes))),
+        ...safely(() => describeCause(cause, own), UNREADABLE),
+        ...safely(
+          () => writableAttributes(options.attributes(Object.fromEntries(span.attributes))),
+          {},
+        ),
       })),
     recordLog: (logged) => {
       if (logged.logLevel !== "Error" && logged.logLevel !== "Fatal") return;
       record("log", () => ({
         level: logged.logLevel,
         ...(logged.fiber.cache.span === undefined ? {} : describeSpan(logged.fiber.cache.span)),
-        ...describeLogged(logged),
-        ...writableAttributes(
-          options.attributes(logged.fiber.getRef(References.CurrentLogAnnotations)),
+        ...safely(() => describeLogged(logged, own), UNREADABLE),
+        ...safely(
+          () =>
+            writableAttributes(
+              options.attributes(logged.fiber.getRef(References.CurrentLogAnnotations)),
+            ),
+          {},
         ),
       }));
     },

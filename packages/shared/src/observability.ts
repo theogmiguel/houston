@@ -664,13 +664,14 @@ class LocalFileSpan implements Tracer.Span {
       endTime,
       exit: traceExit,
     };
+    // First: printing a cause that cannot be read throws below.
+    if (this.sampled && ExitRuntime.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) {
+      this.onFailure?.(this, exit.cause);
+    }
     this.delegate.end(endTime, redactExitCredentials(traceExit));
 
     if (this.sampled) {
       this.push(spanToTraceRecord(this));
-      if (ExitRuntime.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) {
-        this.onFailure?.(this, exit.cause);
-      }
     }
   }
 

@@ -8,11 +8,13 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
+import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
+import * as Option from "effect/Option";
 import * as References from "effect/References";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
@@ -69,6 +71,7 @@ class BoomError extends Schema.TaggedError<BoomError>()("BoomError", {
 }
 
 const Entry = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown));
+const decodeDefect = Schema.decodeUnknownSync(Schema.Defect({ includeStack: true }));
 const decodeEntry = Schema.decodeUnknownSync(Entry);
 const parse = (text: string) =>
   text
@@ -146,7 +149,7 @@ const makeHarness = Effect.fnUntraced(function* (
         ),
       ),
     );
-  return { run };
+  return { errorLog, run };
 });
 
 type Failure = Error | { readonly _tag: string };
@@ -329,52 +332,152 @@ test("error log", (it) => {
       }),
     );
 
-    it.effect("frames keep a script's basename, and text posing as a frame is dropped", () =>
+    const withStack = (message: string, lines: ReadonlyArray<string>) => {
+      const error = new Error(message);
+      error.stack = [`Error: ${message}`, ...lines.map((line) => `    at ${line}`)].join("\n");
+      return error;
+    };
+
+    it.effect("frames keep only the application's own code, by basename, and Node built-ins", () =>
       Effect.gen(function* () {
         yield* at(START);
         const memory = makeFiles();
-        const { run } = yield* makeHarness({ files: memory.files });
-        const withStack = (message: string, lines: ReadonlyArray<string>) => {
-          const error = new Error(message);
-          error.stack = [`Error: ${message}`, ...lines.map((line) => `    at ${line}`)].join("\n");
-          return error;
-        };
+        const { run } = yield* makeHarness({
+          files: memory.files,
+          program: { root: "/opt/My App (x86)/dist", file: "/opt/My App (x86)/dist/bin.mjs" },
+        });
 
         yield* run(
           fail(
             "job.frames",
             withStack("boom", [
-              "settle (file:///home/alice/houston/dist/bin.mjs:10:2)",
-              "async Worker.run (C:\\Users\\alice\\houston\\dist\\chunk-1.js:11:3)",
-              "/home/alice/houston/dist/main.cjs:12:4",
-              `Object.${AGENT_MESSAGE} (/home/alice/bin.mjs:13:5)`,
-              "read (/home/alice/secret-plan.txt:14:6)",
+              "settle (file:///opt/My%20App%20(x86)/dist/bin.mjs:10:2)",
+              "async Worker.run (/opt/My App (x86)/dist/chunks/chunk-1.js:11:3)",
+              `Object.${AGENT_MESSAGE} (/opt/My App (x86)/dist/bin.mjs:13:5)`,
               "nextTick (node:internal/process/task_queues:15:7)",
-              "native (<anonymous>)",
+              "readFile (node:fs:16:8)",
             ]),
           ),
         );
         yield* run(
           fail(
-            "job.forged",
-            withStack(`child failed\n    at customers (/home/alice/secret-plan.js:1:1)`, [
-              "real (/app/bin.mjs:1:1)",
+            "job.foreign",
+            withStack("boom", [
+              "customers (/home/alice/secret-plan.js:1:1)",
+              "customers (secret-plan.ts:1:2)",
+              "customers (/opt/My App (x86)/dist-secret-plan/a.js:1:2)",
+              "customers (/opt/My App (x86)/dist/../../secret-plan.ts:1:2)",
+              "customers (/opt/My App (x86)/dist/bin.mjs?/secret-plan.ts:1:2)",
+              "customers (/opt/My App (x86)/dist/secret-plan.txt:1:2)",
+              "customers (node:secret-plan:1:2)",
+              "customers (eval at run (/opt/My App (x86)/dist/secret-plan.js:1:2), <anonymous>:1:1)",
+              "customers (<anonymous>)",
+              "own (/opt/My App (x86)/dist/bin.mjs:2:3)",
             ]),
           ),
         );
 
-        const [frames, forged] = memory.entries();
-        assert.deepStrictEqual(frames?.frames, [
+        const [own, foreign] = memory.entries();
+        assert.deepStrictEqual(own?.frames, [
           "settle (bin.mjs:10:2)",
           "Worker.run (chunk-1.js:11:3)",
-          "main.cjs:12:4",
           "bin.mjs:13:5",
-          "nextTick (node:task_queues:15:7)",
+          "nextTick (node:internal)",
+          "readFile (node:fs:16:8)",
         ]);
-        assert.strictEqual(forged?.error, "Error");
-        assert.notProperty(forged, "frames");
+        assert.notProperty(own, "droppedFrames");
+        assert.deepStrictEqual(foreign?.frames, ["own (bin.mjs:2:3)"]);
+        assert.strictEqual(foreign?.droppedFrames, 9);
         assertNothingSensitive(memory.contents.get(TODAY) ?? "");
       }),
+    );
+
+    it.effect("frames of a Windows path match its file URL and either slash", () =>
+      Effect.gen(function* () {
+        yield* at(START);
+        const memory = makeFiles();
+        const { run } = yield* makeHarness({
+          files: memory.files,
+          program: {
+            root: "C:\\Program Files\\Houston\\dist",
+            file: "C:\\Program Files\\Houston\\dist\\main.cjs",
+          },
+        });
+
+        yield* run(
+          fail(
+            "job.windows",
+            withStack("boom", [
+              "open (C:\\Program Files\\Houston\\dist\\main.cjs:1:2)",
+              "read (file:///c:/Program%20Files/Houston/dist/bin.mjs:3:4)",
+              "customers (C:\\Users\\alice\\secret-plan.js:5:6)",
+            ]),
+          ),
+        );
+
+        const [entry] = memory.entries();
+        assert.deepStrictEqual(entry?.frames, ["open (main.cjs:1:2)", "read (bin.mjs:3:4)"]);
+        assert.strictEqual(entry?.droppedFrames, 1);
+      }),
+    );
+
+    it.effect("a program that is one executable keeps its own frames and no neighbour's", () =>
+      Effect.gen(function* () {
+        yield* at(START);
+        const memory = makeFiles();
+        const { run } = yield* makeHarness({
+          files: memory.files,
+          program: { root: undefined, file: "/home/alice/bin/houston" },
+        });
+
+        yield* run(
+          fail(
+            "job.executable",
+            withStack("boom", [
+              "settle (file:///home/alice/bin/houston:7:8)",
+              "customers (/home/alice/bin/secret-plan.js:1:1)",
+            ]),
+          ),
+        );
+
+        const [entry] = memory.entries();
+        assert.deepStrictEqual(entry?.frames, ["settle (houston:7:8)"]);
+        assert.strictEqual(entry?.droppedFrames, 1);
+      }),
+    );
+
+    it.effect(
+      "a stack decoded from another process, and one whose message was replaced, add nothing",
+      () =>
+        Effect.gen(function* () {
+          yield* at(START);
+          const memory = makeFiles();
+          const { run } = yield* makeHarness({ files: memory.files });
+          const decoded = decodeDefect({
+            name: "Error",
+            message: "remote",
+            stack: "Error: remote\n    at customers (secret-plan.ts:1:2)",
+          }) as Error;
+          const replaced = new Error("first\n    at customers (secret-plan.ts:1:2)");
+          assert.include(replaced.stack, "secret-plan");
+          replaced.message = "second";
+          assert.include(decoded.stack, "secret-plan");
+
+          yield* run(fail("job.decoded", decoded));
+          yield* run(fail("job.replaced", replaced));
+          yield* run(
+            fail(
+              "job.quoted",
+              withStack("child failed\n    at customers (/home/alice/secret-plan.js:1:1)", []),
+            ),
+          );
+
+          assert.deepStrictEqual(
+            memory.entries().map((entry) => entry.name),
+            ["job.decoded", "job.replaced", "job.quoted"],
+          );
+          assertNothingSensitive(memory.contents.get(TODAY) ?? "");
+        }),
     );
 
     it.effect("a span or error name that is not a code name is replaced", () =>
@@ -397,6 +500,153 @@ test("error log", (it) => {
             ["[unnamed]", "TaggedError"],
             ["http.client GET", "BoomError"],
             ["ssh/tunnel.start", "BoomError"],
+          ],
+        );
+      }),
+    );
+  });
+
+  describe("values that cannot be read", () => {
+    const revoked = () => {
+      const { proxy, revoke } = Proxy.revocable({}, {});
+      revoke();
+      return proxy;
+    };
+    const unreadable: ReadonlyArray<readonly [string, () => unknown, string]> = [
+      [
+        "a non-string message",
+        () => Object.assign(new RangeError("x"), { message: { text: AGENT_MESSAGE } }),
+        "RangeError",
+      ],
+      [
+        "a throwing stack getter",
+        () =>
+          Object.defineProperty(new RangeError("x"), "stack", {
+            get: () => {
+              throw new Error(AGENT_MESSAGE);
+            },
+          }),
+        "UnknownError",
+      ],
+      ["a revoked proxy", revoked, "UnknownError"],
+    ];
+
+    it.effect.each(unreadable)("%s is recorded and pauses nothing", ([, make, error]) =>
+      Effect.gen(function* () {
+        yield* at(START);
+        const memory = makeFiles();
+        const { run } = yield* makeHarness({ files: memory.files });
+
+        yield* run(Effect.die(make()).pipe(Effect.withSpan("job.unreadable")));
+        yield* run(Effect.logError("odd", { error: make() }));
+        yield* run(fail("job.next"));
+
+        assert.deepStrictEqual(
+          memory.entries().map((entry) => [entry.kind, entry.name, entry.error]),
+          [
+            ["span", "job.unreadable", error],
+            ["log", undefined, error],
+            ["span", "job.next", "BoomError"],
+          ],
+        );
+        assertNothingSensitive(memory.contents.get(TODAY) ?? "");
+      }),
+    );
+
+    it.effect("descends into plain objects and arrays only, and not far", () =>
+      Effect.gen(function* () {
+        yield* at(START);
+        const memory = makeFiles();
+        const { run } = yield* makeHarness({ files: memory.files });
+        class Holder {
+          readonly inner = new RangeError("x");
+        }
+        const wide = Object.fromEntries(
+          Array.from({ length: 5_000 }, (_, index) => [`k${index}`, index]),
+        );
+        const deep = { a: { b: { c: { d: { e: new RangeError("x") } } } } };
+
+        yield* run(Effect.logError({ nested: [{ error: new RangeError("x") }] }));
+        yield* run(Effect.logError(new Holder()));
+        yield* run(Effect.logError(new Map([["error", new RangeError("x")]])));
+        yield* run(Effect.logError(new Set([new RangeError("x")])));
+        yield* run(Effect.logError({ ...wide, last: new RangeError("x") }));
+        yield* run(Effect.logError(deep));
+        yield* run(Effect.logError({ file: Buffer.from(AGENT_MESSAGE) }));
+
+        assert.deepStrictEqual(
+          memory.entries().map((entry) => [entry.error, entry.value]),
+          [
+            ["RangeError", undefined],
+            [undefined, "Holder"],
+            [undefined, "Map"],
+            [undefined, "Set"],
+            [undefined, undefined],
+            [undefined, undefined],
+            [undefined, "Buffer"],
+          ],
+        );
+        assertNothingSensitive(memory.contents.get(TODAY) ?? "");
+      }),
+    );
+
+    it.effect("a large typed array is named and never read", () =>
+      Effect.gen(function* () {
+        yield* at(START);
+        const memory = makeFiles();
+        const { run } = yield* makeHarness({ files: memory.files });
+        const bytes = new Uint8Array(5 * 1024 * 1024);
+        const reads: Array<string> = [];
+        const watched = new Proxy(new Uint8Array(8), {
+          ownKeys: (target) => {
+            reads.push("ownKeys");
+            return Reflect.ownKeys(target);
+          },
+          getOwnPropertyDescriptor: (target, key) => {
+            reads.push(String(key));
+            return Reflect.getOwnPropertyDescriptor(target, key);
+          },
+        });
+
+        yield* run(Effect.logError(bytes));
+        yield* run(Effect.logError({ bytes }));
+        yield* run(Effect.logError(watched));
+
+        assert.deepStrictEqual(reads, []);
+        assert.deepStrictEqual(
+          memory.entries().map((entry) => entry.value),
+          ["Uint8Array", "Uint8Array", "Uint8Array"],
+        );
+      }),
+    );
+
+    it.effect("a span that cannot be read is recorded and pauses nothing", () =>
+      Effect.gen(function* () {
+        yield* at(START);
+        const memory = makeFiles();
+        const { errorLog, run } = yield* makeHarness({ files: memory.files });
+        const { proxy, revoke } = Proxy.revocable(
+          new Tracer.NativeSpan({
+            name: "gone",
+            parent: Option.none(),
+            annotations: Context.empty(),
+            links: [],
+            startTime: 0n,
+            kind: "internal",
+            sampled: true,
+          }),
+          {},
+        );
+        revoke();
+
+        errorLog.recordSpan(proxy, Cause.fail(new BoomError({ detail: "work" })));
+        yield* run(fail("job.next"));
+
+        assert.deepStrictEqual(
+          memory.entries().map((entry) => [entry.name, entry.error]),
+          [
+            [undefined, "UnknownError"],
+            ["job.next", "BoomError"],
           ],
         );
       }),
