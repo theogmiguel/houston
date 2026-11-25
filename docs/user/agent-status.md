@@ -32,6 +32,12 @@ After **Stop**, **Resume** in the composer asks the agent to continue with "Cont
 you left off." When the provider had not yet received the stopped message, Resume sends
 that message again, with its context and attachments.
 
+A message you sent that the provider had not confirmed receiving when Houston restarted waits
+in the queue instead of being cancelled. The agent may already have acted on it, so check
+before you release it. **Resume** releases it; another message you send runs first, then this
+one is sent automatically. Discard it first if you are retyping it. A `/compact` that was
+already running is cancelled; send it again to compact.
+
 **Settings ▸ Threads** sets whether a hold and a resume follow usage limits: **Hold until
 limits reset** parks a limited thread, and **Resume after usage limits** continues it when
 the limit clears.
