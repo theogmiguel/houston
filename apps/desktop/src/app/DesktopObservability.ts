@@ -1,4 +1,5 @@
 import { PRIMARY_LOCAL_ENVIRONMENT_ID } from "@houston-app/contracts";
+import { errorLogger, makeErrorLog } from "@houston-app/shared/errorLog";
 import {
   makeLocalFileTracer,
   makeTraceSink,
@@ -9,6 +10,7 @@ import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as SharedObservability from "@houston-app/shared/observability";
 import * as OtelEnvironment from "@houston-app/shared/otelEnvironment";
 import { releaseChannelOf, releaseResourceAttributes } from "@houston-app/shared/releaseResource";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -542,10 +544,32 @@ const layerBackendOutputLogFactory = Layer.effect(
   }),
 );
 
+// What the error log keeps of a span's attributes or a record's annotations, each in the form the
+// host's code gives it.
+const ERROR_LOG_ATTRIBUTES: ReadonlyMap<string, RegExp> = new Map([
+  ["component", /^desktop-[a-z0-9-]+$/],
+  ["channel", /^desktop:[a-z0-9:-]+$/],
+  ["runId", /^[0-9a-f]{12}$/],
+]);
+
+const errorLogAttributes = (recorded: Readonly<Record<string, unknown>>): Record<string, unknown> =>
+  Object.fromEntries(
+    Object.entries(recorded).filter(
+      ([key, value]) =>
+        typeof value === "string" && ERROR_LOG_ATTRIBUTES.get(key)?.test(value) === true,
+    ),
+  );
+
 const layerTelemetry = Layer.unwrap(
   Effect.gen(function* () {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const endpoints = yield* resolveOtlpEndpoints;
+    const errorLog = makeErrorLog({
+      directory: environment.logDir,
+      process: "desktop",
+      clock: yield* Clock.Clock,
+      attributes: errorLogAttributes,
+    });
     // Unpackaged runs launch a script, so Electron reports its own version.
     const serviceVersion = environment.isPackaged
       ? environment.appVersion
@@ -570,7 +594,7 @@ const layerTelemetry = Layer.unwrap(
     // Logger.layer replaces the logger set. tracerLogger would duplicate OTLP in-span messages.
     const layerLogger = Logger.layer(
       endpoints.logs === undefined
-        ? [Logger.consolePretty(), Logger.tracerLogger]
+        ? [Logger.consolePretty(), Logger.tracerLogger, errorLogger(errorLog)]
         : [
             Logger.consolePretty(),
             OtlpLogger.make({
@@ -579,6 +603,7 @@ const layerTelemetry = Layer.unwrap(
               headers: endpoints.logs.export.headers,
               resource,
             }),
+            errorLogger(errorLog),
           ],
       { mergeWithExisting: false },
     ).pipe(
@@ -618,6 +643,7 @@ const layerTelemetry = Layer.unwrap(
           maxFiles: DESKTOP_LOG_FILE_MAX_FILES,
           batchWindowMs: DESKTOP_TRACE_BATCH_WINDOW_MS,
           sink,
+          onFailure: errorLog.recordSpan,
           ...(delegate ? { delegate } : {}),
         });
 
