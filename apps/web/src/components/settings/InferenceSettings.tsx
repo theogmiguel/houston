@@ -10,7 +10,7 @@ import { CpuIcon, PlusIcon, SearchIcon } from "lucide-react";
 import { useState } from "react";
 
 import { useEnvironmentSettings } from "../../hooks/useSettings";
-import { useNowMinute } from "../../hooks/useNowMinute";
+import { useNowMinuteMs } from "../../hooks/useNowMinute";
 import { useEnvironments, type EnvironmentPresentation } from "../../state/environments";
 import { useEnvironmentScope } from "../../state/session";
 import {
@@ -393,7 +393,7 @@ function InferenceModelImages({
   const canRun = useAtomValue(checkInferenceModelImages.permissionAtom(environmentId));
   const [checking, setChecking] = useState(false);
   const [note, setNote] = useState<string | null>(null);
-  const now = Date.parse(useNowMinute());
+  const now = useNowMinuteMs();
   const image = model.capabilities?.image;
   const stale =
     image?.checkedAt !== undefined && now - Date.parse(image.checkedAt) > IMAGE_CHECK_STALE_MS;
@@ -458,7 +458,7 @@ export function InferenceSettingsPanel({
   const [refreshing, setRefreshing] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
-  const now = Date.parse(useNowMinute());
+  const now = useNowMinuteMs();
   const servers = query.data?.servers ?? [];
   const existingIds = new Set<string>(servers.map((server) => server.id));
   const { environments } = useEnvironments();
