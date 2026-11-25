@@ -91,6 +91,7 @@ it.effect.each([
   const executor = EffectWorker.layerExecutor.pipe(
     Layer.provide(
       Layer.mergeAll(
+        SqlitePersistence.layerMemory,
         finalization,
         Layer.mock(ProviderSessions.ProviderSessionManagerV2)({}),
         Layer.mock(ProviderTurnControl.ProviderTurnControlServiceV2)({}),

@@ -72,6 +72,19 @@ describe("live provider-turn usage (#8144)", () => {
     expect(
       formatContextWindowCompactionMessage("Claude Sonnet 4.6", snapshot?.autoCompactThreshold),
     ).toBe("Compacts automatically at about 150,000 tokens.");
+    expect(snapshot?.compactsAutomatically).toBe(true);
+  });
+
+  it("drops the compaction note when the provider reports auto-compaction off", () => {
+    const usage = decodeTokenUsage({
+      usedTokens: 42_000,
+      maxTokens: 1_000_000,
+      compactsAutomatically: false,
+      updatedAt: "2026-08-27T00:00:00.000Z",
+    });
+    const snapshot = deriveLatestContextWindowSnapshot([], usage);
+    expect(snapshot?.compactsAutomatically).toBe(false);
+    expect(snapshot?.autoCompactThreshold).toBeNull();
   });
 });
 
