@@ -43,6 +43,8 @@ import * as ProviderHost from "@houston-app/provider-core/server/ProviderHost";
 import { providerMessageTextWithAttachmentPaths } from "@houston-app/provider-core/server/attachmentPrompt";
 import { mcpToolPresentation } from "@houston-app/provider-core/server/mcpToolPresentation";
 import * as McpProviderSessions from "@houston-app/provider-core/server/McpProviderSessions";
+import { makePiGatewaySource, type PiGatewaySource, unmanagedPiGatewaySource } from "./gateway.ts";
+import { resolvePiToolProfile } from "./mcpInjection.ts";
 import { parsePiCompactCommand, type PiCompactCommand } from "./commands.ts";
 import { mergeProviderInstanceEnvironment } from "@houston-app/provider-core/server/instanceEnvironment";
 import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
@@ -195,6 +197,8 @@ export interface PiAdapterV2Options {
   readonly instanceId: ProviderInstanceId;
   readonly settings: PiSettings;
   readonly environment: NodeJS.ProcessEnv;
+  /** Routes a linked inference server through Houston's gateway; absent means unmanaged. */
+  readonly gateway?: PiGatewaySource;
   readonly continuationRequests?: {
     readonly offer: (
       request: ProviderContinuationRequests.ProviderContinuationRequest,
@@ -482,11 +486,23 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
       if (!resolvedLaunchArgs.ok) {
         return yield* protocolError(resolvedLaunchArgs.message);
       }
+      const gatewaySource = options.gateway ?? unmanagedPiGatewaySource;
+      const resolution = yield* gatewaySource.resolution;
+      // A linked server that is down makes the instance wait; it never falls back to the cloud.
+      if (resolution !== undefined && !resolution.managed && resolution.local === true) {
+        return yield* protocolError(resolution.reason);
+      }
+      const gateway = yield* gatewaySource.forSession(mcpSession);
       const launch = buildPiRpcLaunch({
         launchArgs: resolvedLaunchArgs.args,
         environment: options.environment,
         mcpSession,
         extensionPath,
+        gateway,
+        toolProfile: resolvePiToolProfile(
+          options.settings.toolProfile,
+          resolution?.managed === true,
+        ),
         runtimeMode: input.runtimePolicy.runtimeMode,
       });
       const scopedLaunch = yield* agentScope.wrap({
@@ -3642,8 +3658,10 @@ export const PiAdapterV2Driver: ProviderAdapterDriver<PiSettings, PiAdapterV2Dri
     function* (input: ProviderAdapterDriverCreateInput<PiSettings>) {
       const hostEnvironment = yield* HostProcess.Environment;
       const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
+      const host = yield* ProviderHost.ProviderHost;
       return yield* makePiAdapterV2({
         instanceId: input.instanceId,
+        gateway: yield* makePiGatewaySource(input.instanceId, host.paths.providerStatusCacheDir),
         settings: { ...input.config, enabled: input.enabled },
         environment: yield* mergeProviderInstanceEnvironment(input.environment, hostEnvironment),
         continuationRequests,

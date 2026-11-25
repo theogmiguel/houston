@@ -145,6 +145,17 @@ import * as HoustonSlackStore from "./houston/slack/Store.ts";
 import * as HoustonNativeSessionHistory from "./houston/nativeSessionHistory.ts";
 import * as SlackWebApi from "./houston/slack/WebApi.ts";
 import { layerMergeQueue } from "./houston/mergeQueue/layer.ts";
+import * as InferenceDiscovery from "./houston/inference/InferenceDiscovery.ts";
+import * as InferenceServerRegistry from "./houston/inference/InferenceServerRegistry.ts";
+import * as InferenceAdmission from "./houston/inference/InferenceAdmission.ts";
+import * as InferenceImageChecks from "./houston/inference/InferenceImageChecks.ts";
+import * as InferenceImageVerdicts from "./houston/inference/InferenceImageVerdicts.ts";
+import * as InferenceGateway from "./houston/inference/InferenceGateway.ts";
+import * as InferenceGatewayCredentials from "./houston/inference/InferenceGatewayCredentials.ts";
+import * as InferenceGatewayAccess from "./houston/inference/InferenceGatewayAccess.ts";
+import * as InferenceRequests from "./houston/inference/InferenceRequests.ts";
+import * as InferenceRouting from "./houston/inference/InferenceRouting.ts";
+import * as InferenceStops from "./houston/inference/InferenceStops.ts";
 import * as HoustonMergeQueueStore from "./houston/mergeQueue/Store.ts";
 import * as HoustonMergeQueueThreads from "./houston/mergeQueue/Threads.ts";
 import * as GitHubRest from "@houston-app/source-control-github/server/GitHubRest";
@@ -162,6 +173,8 @@ import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as AuthHttp from "./auth/http.ts";
 import * as ReplayMarkers from "./auth/replayMarkers.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
+import * as ServerE2eeIdentity from "./auth/ServerE2eeIdentity.ts";
+import * as SecureRandomLayer from "effect/crypto/SecureRandom";
 import * as CodexManagedTokenBroker from "./provider/CodexManagedTokenBroker.ts";
 import * as WebhookRoute from "./scheduledTasks/webhookRoute.ts";
 import * as McpOAuth from "./auth/McpOAuth.ts";
@@ -604,6 +617,25 @@ const layerHoustonSecrets = HoustonSecrets.layer.pipe(
   ),
 );
 
+// Model servers: verdicts back the probes, and the image check shares the registry and the
+// admission queue with the gateway that carries threads.
+const layerInferenceVerdicts = InferenceImageVerdicts.layer;
+const layerInferenceServers = Layer.mergeAll(
+  InferenceServerRegistry.layer.pipe(Layer.provideMerge(layerInferenceVerdicts)),
+  InferenceDiscovery.layer,
+);
+const layerInferenceAdmission = InferenceAdmission.layer.pipe(
+  Layer.provideMerge(layerInferenceServers),
+);
+const layerInferenceServices = InferenceGatewayAccess.layer.pipe(
+  Layer.provideMerge(
+    Layer.mergeAll(
+      InferenceImageChecks.layer.pipe(Layer.provideMerge(layerInferenceAdmission)),
+      layerInferenceAdmission,
+    ),
+  ),
+);
+
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   layerThreadSettlementWorker,
   StorageCleanup.layer.pipe(Layer.provide(ProjectionStoreV2.layer)),
@@ -644,6 +676,10 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(HoustonSlackStore.sweep),
   Layer.effectDiscard(HoustonNativeSessionHistory.startNativeSessionBackfill),
   HoustonLayoutWorkspaces.layer,
+  // Model servers registered in Settings: periodic probes, discovery and the image check.
+  layerInferenceServices,
+  // The gateway's own accounting and stops; the queue layers sit with the route below.
+  Layer.mergeAll(InferenceRequests.layer, InferenceStops.layer),
   Layer.effectDiscard(
     Effect.gen(function* () {
       const service = yield* HoustonThreadMembership.HoustonThreadMembership;
@@ -754,6 +790,10 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   Layer.provideMerge(layerServerEnvironment),
   Layer.provideMerge(layerAuth),
   Layer.provideMerge(AssetSigner.layer),
+  // The E2EE identity key lives in the secret store and is read by the WS layer.
+  Layer.provideMerge(
+    ServerE2eeIdentity.layer.pipe(Layer.provide(SecureRandomLayer.layerWebCrypto)),
+  ),
   Layer.provideMerge(ServerSecretStore.layer),
 );
 
@@ -804,6 +844,11 @@ const layerMakeRoutes = Layer.mergeAll(
   McpHttpServer.layer.pipe(
     Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
     Layer.provide(McpOAuth.layerMcpClientAuthenticator),
+  ),
+  // The gateway authenticates its own bearer credential; environment auth does not apply.
+  InferenceGateway.routeLayer.pipe(
+    Layer.provide(InferenceGateway.layer),
+    Layer.provide(Layer.mergeAll(InferenceAdmission.layer, InferenceRouting.layer)),
   ),
   // Follows delegated tasks running in linked environments, including after a restart.
   Layer.effectDiscard(
@@ -1018,6 +1063,7 @@ const layerMakeServer = Layer.unwrap(
           Layer.provide(ServerEnvironment.layer.pipe(Layer.provide(ServerSecretStore.layer))),
         ),
       ),
+      Layer.provideMerge(InferenceGatewayCredentials.layer),
       Layer.provide(layerActivation),
       Layer.provideMerge(layerHttpServer),
       Layer.provide(layerApplicationObservability),

@@ -17,6 +17,10 @@ import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
 import { Fragment, useState, type ReactElement, type ReactNode } from "react";
 import { useClientSettings } from "../../hooks/useSettings";
+import { useEnvironmentQuery } from "../../state/query";
+import { INFERENCE_SERVERS_EMPTY_INPUT, inferenceServers } from "../../state/inference";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import type { InferenceServerId } from "@houston-app/contracts/houston/inference";
 import {
   isProviderDriverKind,
   resolveProviderInstanceEnabled,
@@ -641,6 +645,74 @@ function ProjectOverrideInheritance({
   );
 }
 
+/** Links a Pi, OpenCode, Codex or Claude instance to one of the environment's model servers. */
+function ModelServerRow({
+  instance,
+  environmentId,
+  readOnly,
+  onUpdate,
+}: {
+  readonly instance: ProviderInstanceConfig;
+  readonly environmentId: EnvironmentId | undefined;
+  readonly readOnly: boolean;
+  readonly onUpdate: (next: ProviderInstanceConfig) => void;
+}) {
+  const query = useEnvironmentQuery(
+    environmentId === undefined
+      ? null
+      : inferenceServers({ environmentId, input: INFERENCE_SERVERS_EMPTY_INPUT }),
+  );
+  const servers = query.data?.servers ?? [];
+  const selectable = servers.filter((server) => server.enabled);
+  const selected = instance.inferenceServerId ?? NO_INFERENCE_SERVER;
+  const current = servers.find((server) => server.id === instance.inferenceServerId);
+  const missing = instance.inferenceServerId !== undefined && current === undefined;
+  const setLink = (value: string) => {
+    const { inferenceServerId: _omit, ...rest } = instance;
+    onUpdate(
+      value === NO_INFERENCE_SERVER
+        ? rest
+        : { ...rest, inferenceServerId: value as InferenceServerId },
+    );
+  };
+  return (
+    <SettingsRow
+      title="Model server"
+      description={
+        missing
+          ? "The linked server is no longer registered, so this instance waits until you pick another."
+          : "Route this instance's models through a registered model server and Houston's gateway."
+      }
+      control={
+        <Select
+          value={selected}
+          onValueChange={(value) => setLink(String(value))}
+          disabled={readOnly}
+        >
+          <SelectTrigger aria-label="Model server">
+            <SelectValue>
+              {current?.displayName ?? instance.inferenceServerId ?? "No model server"}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectPopup>
+            <SelectItem value={NO_INFERENCE_SERVER}>No model server</SelectItem>
+            {selectable.map((server) => (
+              <SelectItem key={server.id} value={server.id}>
+                {server.displayName}
+              </SelectItem>
+            ))}
+            {missing && instance.inferenceServerId !== undefined ? (
+              <SelectItem value={instance.inferenceServerId}>
+                {instance.inferenceServerId} (not registered)
+              </SelectItem>
+            ) : null}
+          </SelectPopup>
+        </Select>
+      }
+    />
+  );
+}
+
 interface ProjectOverrideControl {
   readonly value: boolean | undefined;
   readonly effectiveEnabled: boolean;
@@ -690,6 +762,13 @@ interface ProviderInstanceCardProps {
 }
 
 const EMPTY_ACP_PROJECTS: NonNullable<ProviderInstanceCardProps["acpProjects"]> = [];
+const NO_INFERENCE_SERVER = "none";
+const INFERENCE_CAPABLE_DRIVERS: ReadonlySet<string> = new Set([
+  "pi",
+  "opencode",
+  "codex",
+  "claudeAgent",
+]);
 const NO_SECRET_SOURCES: ReadonlyArray<SecretSource> = [];
 const NO_CUSTOM_MODELS: ReadonlyArray<CustomModelDefinition> = [];
 
@@ -821,6 +900,11 @@ export function ProviderInstanceCard({
         ? ({ ...rest, accentColor: normalized } as ProviderInstanceConfig)
         : (rest as ProviderInstanceConfig),
     );
+  };
+
+  const updateInference = (local: boolean) => {
+    const { inference: _omit, ...rest } = instance;
+    onUpdate(local ? { ...rest, inference: "local" } : rest);
   };
 
   const updateConfig = (nextConfig: Record<string, unknown> | undefined) => {
@@ -1267,6 +1351,26 @@ export function ProviderInstanceCard({
             </div>
           }
         />
+        <SettingsRow
+          title="Runs local models"
+          description="Every model this instance can select runs on hardware you control. Local instances come first and handle background writing such as titles and commit messages."
+          control={
+            <Switch
+              checked={instance.inference === "local"}
+              disabled={readOnly}
+              onCheckedChange={(checked) => updateInference(Boolean(checked))}
+              aria-label="Runs local models"
+            />
+          }
+        />
+        {INFERENCE_CAPABLE_DRIVERS.has(String(instance.driver)) ? (
+          <ModelServerRow
+            instance={instance}
+            environmentId={environmentId}
+            readOnly={readOnly}
+            onUpdate={onUpdate}
+          />
+        ) : null}
       </SettingsSection>
 
       {setup || environmentFields.length > 0 ? (

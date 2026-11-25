@@ -125,10 +125,31 @@ const settings = {
   enabled: true,
   binaryPath: "pi",
   launchArgs: "",
+  toolProfile: "auto",
   customModels: [],
 } as const;
 
 describe("PiProvider", () => {
+  it.effect(
+    "waits for a linked server that is not ready instead of listing Pi's cloud models",
+    () =>
+      Effect.gen(function* () {
+        const snapshot = yield* checkPiProviderStatus(settings, {}, undefined, {
+          resolution: Effect.succeed({
+            managed: false as const,
+            reason: "Inference server rtx is not ready.",
+            local: true as const,
+          }),
+          forSession: () => Effect.undefined,
+          forBackground: Effect.undefined,
+        }).pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, piProbeSpawner("0.84.3")),
+        );
+        assert.deepEqual(snapshot.models, []);
+        assert.equal(snapshot.message, "Inference server rtx is not ready.");
+      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
   it.effect("requires the first published Pi version with entries and settlement hooks", () =>
     Effect.gen(function* () {
       const snapshot = yield* checkPiProviderStatus(settings).pipe(

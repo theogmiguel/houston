@@ -34,6 +34,7 @@ import {
   makeClaudeEnvironment,
   mergeClaudeProcessEnvironment,
 } from "../provider/Drivers/ClaudeHome.ts";
+import type { ClaudeGatewaySource } from "../houston/inference/claudeGateway.ts";
 
 const CLAUDE_TIMEOUT_MS = 180_000;
 /** `--tools` takes bare names; patterns go in the allow list. */
@@ -103,6 +104,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     catalog: ClaudeModelCatalog,
     cwd: string,
   ) => Effect.Effect<ClaudeModelCatalog> = Effect.succeed,
+  gateway?: Pick<ClaudeGatewaySource, "forBackground" | "withoutGateway">,
 ) {
   const commandSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -219,6 +221,14 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     const runClaudeCommand = Effect.fn("runClaudeJson.runClaudeCommand")(function* (
       noSessionPersistence: boolean,
     ) {
+      const managed =
+        gateway === undefined ? undefined : yield* gateway.forBackground(claudeEnvironment);
+      const refusal =
+        gateway !== undefined && managed === undefined ? yield* gateway.withoutGateway : undefined;
+      if (refusal !== undefined) {
+        return yield* new TextGenerationError({ operation, detail: refusal });
+      }
+      const commandEnvironment = managed?.environment ?? claudeEnvironment;
       const managedMcpConfig = yield* hasClaudeManagedMcpConfig();
       const spawnCommand = yield* resolveSpawnCommand(
         claudeSettings.binaryPath || "claude",
@@ -250,10 +260,10 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
           "--permission-mode",
           "dontAsk",
         ],
-        { env: claudeEnvironment },
+        { env: commandEnvironment },
       );
       const command = ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-        env: claudeEnvironment,
+        env: commandEnvironment,
         cwd: workingDirectory,
         shell: spawnCommand.shell,
         stdin: {

@@ -134,6 +134,7 @@ type PairingLinkListRowProps = {
   endpointUrl: string | null | undefined;
   endpoints: ReadonlyArray<AdvertisedEndpoint>;
   defaultEndpointKey: string | null;
+  serverIdentityKey?: string | null | undefined;
   revokingPairingLinkId: string | null;
   onRevoke: (id: string) => void;
   canRevoke: boolean;
@@ -145,6 +146,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
   endpointUrl,
   endpoints,
   defaultEndpointKey,
+  serverIdentityKey,
   revokingPairingLinkId,
   onRevoke,
   canRevoke,
@@ -156,7 +158,9 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
   const [qrEndpointId, setQrEndpointId] = useState<string | null>(null);
   const qrPanelId = useId();
 
-  const currentOriginPairingUrl = credential ? resolveCurrentOriginPairingUrl(credential) : null;
+  const currentOriginPairingUrl = credential
+    ? resolveCurrentOriginPairingUrl(credential, serverIdentityKey)
+    : null;
   const hostedPairingUrl =
     credential && endpointUrl != null && endpointUrl !== ""
       ? resolveHostedPairingUrl(endpointUrl, credential)
@@ -164,7 +168,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
   const endpointPairingUrl = (() => {
     const endpoint = selectPairingEndpoint(endpoints, defaultEndpointKey);
     return endpoint && credential
-      ? resolveAdvertisedEndpointPairingUrl(endpoint, credential)
+      ? resolveAdvertisedEndpointPairingUrl(endpoint, credential, serverIdentityKey)
       : null;
   })();
   const endpointCopyOptions = (() => {
@@ -181,7 +185,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
       if (endpoint.status === "unavailable") {
         continue;
       }
-      const url = resolveAdvertisedEndpointPairingUrl(endpoint, credential);
+      const url = resolveAdvertisedEndpointPairingUrl(endpoint, credential, serverIdentityKey);
       options.push({
         id: endpoint.id,
         preferenceKey: endpointDefaultPreferenceKey(endpoint),
@@ -196,7 +200,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
   const shareablePairingUrl =
     endpointPairingUrl ??
     (credential && endpointUrl != null && endpointUrl !== ""
-      ? (hostedPairingUrl ?? resolveDesktopPairingUrl(endpointUrl, credential))
+      ? (hostedPairingUrl ?? resolveDesktopPairingUrl(endpointUrl, credential, serverIdentityKey))
       : isLoopbackHostname(window.location.hostname)
         ? null
         : currentOriginPairingUrl);
@@ -922,6 +926,7 @@ type PairingClientsListProps = {
   endpointUrl: string | null | undefined;
   endpoints: ReadonlyArray<AdvertisedEndpoint>;
   defaultEndpointKey: string | null;
+  serverIdentityKey?: string | null | undefined;
   isLoading: boolean;
   pairingLinks: ReadonlyArray<ServerPairingLinkRecord>;
   createdPairingCredentials: ReadonlyMap<string, string>;
@@ -939,6 +944,7 @@ export const PairingClientsList = memo(function PairingClientsList({
   endpointUrl,
   endpoints,
   defaultEndpointKey,
+  serverIdentityKey,
   isLoading,
   pairingLinks,
   createdPairingCredentials,
@@ -962,6 +968,7 @@ export const PairingClientsList = memo(function PairingClientsList({
             endpointUrl={endpointUrl}
             endpoints={endpoints}
             defaultEndpointKey={defaultEndpointKey}
+            serverIdentityKey={serverIdentityKey}
             revokingPairingLinkId={revokingPairingLinkId}
             onRevoke={onRevokePairingLink}
             canRevoke={canRevoke}
@@ -998,6 +1005,7 @@ type PairDeviceSectionProps = {
   endpointUrl: string | null | undefined;
   endpoints: ReadonlyArray<AdvertisedEndpoint>;
   defaultEndpointKey: string | null;
+  serverIdentityKey?: string | null | undefined;
 };
 
 /** The board's Pair a device card: live QR and link for the newest created credential. */
@@ -1007,15 +1015,17 @@ export const PairDeviceSection = memo(function PairDeviceSection({
   endpointUrl,
   endpoints,
   defaultEndpointKey,
+  serverIdentityKey,
 }: PairDeviceSectionProps) {
   const nowMs = useNowSecond();
   const endpoint = selectPairingEndpoint(endpoints, defaultEndpointKey);
   const pairingUrl = (() => {
     if (!credential) return null;
-    if (endpoint) return resolveAdvertisedEndpointPairingUrl(endpoint, credential);
+    if (endpoint)
+      return resolveAdvertisedEndpointPairingUrl(endpoint, credential, serverIdentityKey);
     if (endpointUrl != null && endpointUrl !== "")
-      return resolveDesktopPairingUrl(endpointUrl, credential);
-    return resolveCurrentOriginPairingUrl(credential);
+      return resolveDesktopPairingUrl(endpointUrl, credential, serverIdentityKey);
+    return resolveCurrentOriginPairingUrl(credential, serverIdentityKey);
   })();
   const canRenderQr =
     endpoint !== null

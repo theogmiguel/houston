@@ -29,6 +29,12 @@ export const HOUSTON_ORCHESTRATION_INSTRUCTIONS = `
 ${HOUSTON_ORCHESTRATION_SECTIONS.join("\n\n")}
 `;
 
+/** The lean tool profile has no HTML render or preview tools, so it skips the visuals section. */
+export const HOUSTON_LEAN_ORCHESTRATION_INSTRUCTIONS = `
+
+${HOUSTON_ORCHESTRATION_SECTIONS.filter((section) => !section.startsWith("### Visuals")).join("\n\n")}
+`;
+
 export const HOUSTON_BROWSER_TOOL_INSTRUCTIONS = `
 
 ## Houston browser

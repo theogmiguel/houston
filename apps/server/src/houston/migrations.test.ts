@@ -44,6 +44,8 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [27, "NotionPagesAsTaskIssues"],
   [28, "PendingDeviceApprovals"],
   [29, "PurgeDeletedThreadHistories"],
+  [30, "InferenceRequests"],
+  [31, "InferenceImageVerdicts"],
   [32, "ProviderNativeSessions"],
 ];
 const TASK_TABLES = [
@@ -1091,6 +1093,8 @@ describe("the grids removal migration", () => {
               [27, "NotionPagesAsTaskIssues"],
               [28, "PendingDeviceApprovals"],
               [29, "PurgeDeletedThreadHistories"],
+              [30, "InferenceRequests"],
+              [31, "InferenceImageVerdicts"],
               [32, "ProviderNativeSessions"],
             ],
           );

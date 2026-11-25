@@ -131,6 +131,7 @@ import type { ThreadSyncPhase } from "../../threadSync";
 import { ComposerBanner } from "./ComposerBanner";
 import { ComposerSurface } from "./ComposerSurface";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./ComposerBannerStack";
+import { useInferenceOutageBannerItem } from "./useInferenceOutageBannerItem";
 import {
   attachmentsToReleaseOnUploadCapabilityLoss,
   composerOtherFilesForPresentation,
@@ -1453,11 +1454,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setComposerDraftPrompt(composerDraftTarget, nextPrompt);
   };
 
-  const addComposerImage = (image: ComposerImageAttachment) =>
-    addComposerDraftImages(attachmentDraftTarget, [image]);
+  const addComposerImage = (image: ComposerImageAttachment) => {
+    const accepted = addComposerDraftImages(attachmentDraftTarget, [image]);
+    if (accepted.length > 0) inferenceBanner.onImagesAttached();
+    return accepted;
+  };
 
-  const addComposerImagesToDraft = (images: ComposerImageAttachment[]) =>
-    addComposerDraftImages(attachmentDraftTarget, images);
+  const addComposerImagesToDraft = (images: ComposerImageAttachment[]) => {
+    const accepted = addComposerDraftImages(attachmentDraftTarget, images);
+    if (accepted.length > 0) inferenceBanner.onImagesAttached();
+    return accepted;
+  };
 
   const addComposerFilesToDraft = (files: ComposerFileAttachment[]) =>
     addComposerDraftFiles(attachmentDraftTarget, files, { appendReference: false });
@@ -2820,13 +2827,24 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       getModelDisabledReason={getModelDisabledReason}
     />
   );
+  const inferenceBanner = useInferenceOutageBannerItem(
+    environmentId,
+    selectedProviderStatus,
+    selectedModel,
+    composerImages.length > 0,
+    () => setIsComposerModelPickerOpen(true),
+  );
+  const baseBannerItems =
+    inferenceBanner.item === null
+      ? props.bannerItems
+      : [...props.bannerItems, inferenceBanner.item];
   // An open question owns the space above the composer. Only a machine problem,
   // which is why an answer could not go through, stays beside it.
   const bannerItems: readonly ComposerBannerStackItem[] =
     runtimeModeCeilingDenial === undefined || activePendingProgress
-      ? props.bannerItems
+      ? baseBannerItems
       : [
-          ...props.bannerItems,
+          ...baseBannerItems,
           {
             id: "managed-runtime-mode",
             variant: "warning",

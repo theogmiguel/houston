@@ -123,6 +123,7 @@ describe("resolveProjectSettings", () => {
     const codex = ProviderInstanceId.make("codex");
     const settings = {
       ...DEFAULT_SERVER_SETTINGS,
+      textGenerationFallback: "any" as const,
       textGenerationModelSelection: createModelSelection(codex, "gpt-5"),
       projectSettingsOverrides: {
         [projectId]: { providerInstances: { [codex]: { enabled: false } } },
@@ -141,6 +142,7 @@ describe("resolveProjectSettings", () => {
     const codexWork = ProviderInstanceId.make("codex_work");
     const settings = {
       ...DEFAULT_SERVER_SETTINGS,
+      textGenerationFallback: "any" as const,
       textGenerationModelSelection: createModelSelection(codex, "gpt-5"),
       providerInstances: { [codexWork]: { driver: ProviderDriverKind.make("codex"), config: {} } },
       projectSettingsOverrides: {

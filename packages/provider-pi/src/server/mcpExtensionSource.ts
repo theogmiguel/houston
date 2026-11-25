@@ -1,5 +1,11 @@
 // No Houston imports inside the string; resolve Pi and typebox from the user's Pi install.
-import { HOUSTON_ORCHESTRATION_INSTRUCTIONS } from "@houston-app/provider-core/server/orchestrationInstructions";
+import { LEAN_MCP_TOOL_NAMES } from "@houston-app/provider-core/server/mcpToolProfile";
+import {
+  HOUSTON_LEAN_ORCHESTRATION_INSTRUCTIONS,
+  HOUSTON_ORCHESTRATION_INSTRUCTIONS,
+} from "@houston-app/provider-core/server/orchestrationInstructions";
+import { PI_HOUSTON_CACHE_COMPACTION_SNIPPET } from "./cacheCompactionExtensionSource.ts";
+import { PI_HOUSTON_GATEWAY_PROVIDER_SNIPPET } from "./gatewayExtensionSource.ts";
 
 export const PI_HOUSTON_MCP_EXTENSION_FILENAME = "pi-houston-mcp-extension.ts";
 
@@ -7,6 +13,7 @@ export const HOUSTON_MCP_URL_ENV = "HOUSTON_MCP_URL";
 export const HOUSTON_MCP_BEARER_ENV = "HOUSTON_MCP_BEARER_TOKEN";
 export const HOUSTON_PI_RUNTIME_MODE_ENV = "HOUSTON_PI_RUNTIME_MODE";
 export const HOUSTON_PI_MCP_EXTENSION_PATH_ENV = "HOUSTON_PI_MCP_EXTENSION_PATH";
+export const HOUSTON_PI_TOOL_PROFILE_ENV = "HOUSTON_PI_TOOL_PROFILE";
 
 // These tools trigger file-change approvals, bypassed by Auto-accept edits.
 export const PI_FILE_CHANGE_TOOLS = ["edit", "write"] as const;
@@ -21,7 +28,10 @@ const URL_ENV = ${JSON.stringify(HOUSTON_MCP_URL_ENV)};
 const TOKEN_ENV = ${JSON.stringify(HOUSTON_MCP_BEARER_ENV)};
 const RUNTIME_MODE_ENV = ${JSON.stringify(HOUSTON_PI_RUNTIME_MODE_ENV)};
 const EXTENSION_PATH_ENV = ${JSON.stringify(HOUSTON_PI_MCP_EXTENSION_PATH_ENV)};
+const TOOL_PROFILE_ENV = ${JSON.stringify(HOUSTON_PI_TOOL_PROFILE_ENV)};
+const LEAN_TOOLS = new Set(${JSON.stringify(LEAN_MCP_TOOL_NAMES)});
 const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(HOUSTON_ORCHESTRATION_INSTRUCTIONS.trim())};
+const LEAN_ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(HOUSTON_LEAN_ORCHESTRATION_INSTRUCTIONS.trim())};
 const PROTOCOL = "2025-06-18";
 const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
 const FILE_CHANGE_TOOLS = new Set(${JSON.stringify(PI_FILE_CHANGE_TOOLS)});
@@ -240,7 +250,15 @@ function createMcpClient(endpoint: string, token: string) {
   };
 }
 
+// ---- Houston gateway provider registration (see gatewayExtensionSource.ts) ----
+${PI_HOUSTON_GATEWAY_PROVIDER_SNIPPET}
+// ---- end Houston gateway provider registration ----
+
+${PI_HOUSTON_CACHE_COMPACTION_SNIPPET}
+
 export default async function houstonMcpExtension(pi: ExtensionAPI) {
+  registerHoustonGatewayProvider(pi);
+  registerHoustonCacheCompaction(pi);
   // RPC has no trust prompt, so Pi skips an untrusted folder's protected resources. Session
   // replacement reruns this factory without project_trust, and Houston drops notices outside a turn,
   // so check each session's first turn. An explicit --no-approve is deliberate and stays quiet.
@@ -414,7 +432,9 @@ export default async function houstonMcpExtension(pi: ExtensionAPI) {
     const attempt = (async () => {
       const signal = AbortSignal.timeout(10_000);
       await client.connect(signal);
-      catalog = await client.listTools(signal);
+      const tools = await client.listTools(signal);
+      // Lean leaves the other tools out entirely, so their schemas never reach the model.
+      catalog = env(TOOL_PROFILE_ENV) === "lean" ? tools.filter((tool) => LEAN_TOOLS.has(tool.name)) : tools;
       registerTools();
     })();
     started = attempt;
@@ -465,13 +485,14 @@ export default async function houstonMcpExtension(pi: ExtensionAPI) {
   // Keep guidance in the system prompt so leading slash commands still expand.
   pi.on("before_agent_start", (event, ctx) => {
     reconcileDiscovery(ctx);
+    const instructions = env(TOOL_PROFILE_ENV) === "lean" ? LEAN_ORCHESTRATION_INSTRUCTIONS : ORCHESTRATION_INSTRUCTIONS;
     const sections = event.systemPromptOptions?.sections;
     if (sections && typeof sections === "object" && event.systemPromptOptions?.forceSystemPrompt === undefined) {
       // A full prompt override bypasses Pi's later section rendering.
-      sections.houston_code_orchestration = ORCHESTRATION_INSTRUCTIONS;
+      sections.houston_code_orchestration = instructions;
       return undefined;
     }
-    return { systemPrompt: event.systemPrompt + "\\n\\n" + ORCHESTRATION_INSTRUCTIONS };
+    return { systemPrompt: event.systemPrompt + "\\n\\n" + instructions };
   });
 }
 `;

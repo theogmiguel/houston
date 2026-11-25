@@ -27,6 +27,7 @@ import { parseOAuthScope } from "@houston-app/shared/oauthScope";
 import { causeErrorTag } from "@houston-app/shared/observability";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Layer from "effect/Layer";
 import * as Cookies from "effect/http/Cookies";
@@ -36,6 +37,8 @@ import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
 import * as SessionStore from "./SessionStore.ts";
+import { classifyRequestTransport, transportAllowedByPolicy } from "./transportSecurity.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import { deriveAuthClientMetadata } from "./utils.ts";
 import { verifyRequestDpopProof } from "./dpop.ts";
 import { requestUrl } from "../requestUrl.ts";
@@ -254,9 +257,32 @@ export const layerAuthenticatedAuth = Layer.effect(
   EnvironmentAuthenticatedAuth,
   Effect.gen(function* () {
     const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+    // Optional so narrow test runtimes without settings skip the check; the
+    // real server always provides it.
+    const settingsService = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
     return (httpEffect) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
+        // The transport policy guards every authenticated environment request,
+        // not just the WebSocket upgrade.
+        if (Option.isSome(settingsService)) {
+          const settings = yield* settingsService.value.getSettings.pipe(Effect.orDie);
+          if (
+            !transportAllowedByPolicy(
+              classifyRequestTransport(request),
+              settings.remoteTransportPolicy,
+            )
+          ) {
+            return HttpServerResponse.jsonUnsafe(
+              {
+                code: "REMOTE_TRANSPORT_NOT_ALLOWED",
+                message:
+                  "This host only accepts remote connections over private end-to-end-encrypted transports (Tailscale or SSH). Connect over one of those, or change the policy on the host.",
+              },
+              { status: 403 },
+            );
+          }
+        }
         const session = yield* serverAuth.authenticateHttpRequest(request).pipe(
           Effect.catchIf(EnvironmentAuth.isServerAuthCredentialError, (error) =>
             failEnvironmentAuthInvalid(

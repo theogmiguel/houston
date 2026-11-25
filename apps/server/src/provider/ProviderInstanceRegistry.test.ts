@@ -18,7 +18,9 @@ import {
   SecretProviderId,
   SettingsSecretValue,
   type SecretReference,
+  type ServerProvider,
 } from "@houston-app/contracts";
+import { InferenceServerId } from "@houston-app/contracts/houston/inference";
 import * as ProviderLatestVersions from "@houston-app/provider-core/server/ProviderLatestVersions";
 import * as McpProviderSessions from "@houston-app/provider-core/server/McpProviderSessions";
 import * as HostProcess from "@houston-app/shared/HostProcess";
@@ -33,6 +35,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientResponse } from "effect/http";
 
@@ -378,6 +381,32 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
       expect(unavailable?.instanceId).toBe(instanceId);
       expect(unavailable?.availability).toBe("unavailable");
       expect(unavailable?.unavailableReason).toBe(reason);
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.live("refuses a link to an inference server for a driver that cannot use a gateway", () =>
+    Effect.gen(function* () {
+      const instanceId = ProviderInstanceId.make("cursor_linked");
+      const driver: AnyProviderDriver = {
+        driverKind: ProviderDriverKind.make("cursor"),
+        metadata: { displayName: "Cursor" },
+        configSchema: Schema.Unknown,
+        defaultConfig: () => ({}),
+        create: () => Effect.die("a refused driver must not be created"),
+      };
+      const { registry } = yield* makeProviderInstanceRegistry({
+        drivers: [driver],
+        configMap: {
+          [instanceId]: {
+            driver: ProviderDriverKind.make("cursor"),
+            inferenceServerId: InferenceServerId.make("rtx"),
+          },
+        },
+      });
+
+      expect(yield* registry.getInstance(instanceId)).toBeUndefined();
+      const [unavailable] = yield* registry.listUnavailable;
+      expect(unavailable?.unavailableReason).toBe("Cursor cannot use an inference server yet.");
     }).pipe(Effect.provide(layerTest)),
   );
 
@@ -1092,4 +1121,44 @@ describe("ProviderInstanceRegistry secret environment", () => {
       expect(yield* registry.listUnavailable).toEqual([]);
     }).pipe(Effect.scoped);
   });
+});
+
+describe("ProviderInstanceRegistry inference mark", () => {
+  const driverKind = ProviderDriverKind.make("fake");
+  const instanceId = ProviderInstanceId.make("fake_local");
+  const driverSnapshot = { instanceId, driver: driverKind } as ServerProvider;
+  const driver: AnyProviderDriver = {
+    driverKind,
+    metadata: { displayName: "Fake" },
+    configSchema: Schema.Unknown,
+    defaultConfig: () => ({}),
+    create: (input) =>
+      Effect.succeed({
+        instanceId: input.instanceId,
+        enabled: input.enabled,
+        snapshot: {
+          getSnapshot: Effect.succeed(driverSnapshot),
+          refresh: Effect.succeed(driverSnapshot),
+          streamChanges: Stream.make(driverSnapshot),
+        },
+      } as ProviderInstance),
+  };
+
+  it.effect("stamps the declared inference onto every snapshot and drops it when unmarked", () =>
+    Effect.gen(function* () {
+      const { registry, mutator } = yield* makeProviderInstanceRegistry({
+        drivers: [driver],
+        configMap: { [instanceId]: { driver: driverKind, inference: "local" } },
+      });
+      const local = yield* registry.getInstance(instanceId);
+      expect((yield* local!.snapshot.getSnapshot).inference).toBe("local");
+      expect((yield* local!.snapshot.refresh).inference).toBe("local");
+      const streamed = yield* Stream.runCollect(local!.snapshot.streamChanges);
+      expect(Array.from(streamed).map((snapshot) => snapshot.inference)).toEqual(["local"]);
+
+      yield* mutator.reconcile({ [instanceId]: { driver: driverKind } });
+      const unmarked = yield* (yield* registry.getInstance(instanceId))!.snapshot.getSnapshot;
+      expect("inference" in unmarked).toBe(false);
+    }).pipe(Effect.scoped, Effect.provide(Layer.mock(SecretResolver.SecretResolver)({}))),
+  );
 });

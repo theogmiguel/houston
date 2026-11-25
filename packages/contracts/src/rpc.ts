@@ -282,6 +282,23 @@ import {
   HoustonMergeQueueSummaryInput,
 } from "./houston/mergeQueue.ts";
 import {
+  HoustonInferenceError,
+  InferenceDiscoveryInput,
+  InferenceDiscoveryResult,
+  InferenceImageCheckInput,
+  InferenceImageCheckResult,
+  InferenceServerRefreshInput,
+  InferenceServerRemoveInput,
+  InferenceServerSaveInput,
+  InferenceServersResult,
+  InferenceThreadLastRequest,
+  InferenceThreadRequestInput,
+  InferenceThreadStop,
+  InferenceThreadStopInput,
+  InferenceUsageInput,
+  InferenceUsageSummary,
+} from "./houston/inference.ts";
+import {
   HoustonLayoutFocusInput,
   HoustonLayoutThreadAssignInput,
   HoustonLayoutThreadMembership,
@@ -711,6 +728,15 @@ export const WS_METHODS = {
   houstonMergeQueueHandToThread: "houston.mergeQueue.handToThread",
   houstonMergeQueueRevert: "houston.mergeQueue.revert",
   houstonMergeQueueAcknowledge: "houston.mergeQueue.acknowledge",
+  houstonInferenceSubscribe: "houston.inference.subscribe",
+  houstonInferenceRefresh: "houston.inference.refresh",
+  houstonInferenceSave: "houston.inference.save",
+  houstonInferenceRemove: "houston.inference.remove",
+  houstonInferenceDiscover: "houston.inference.discover",
+  houstonInferenceUsage: "houston.inference.usage",
+  houstonInferenceThreadRequest: "houston.inference.threadRequest",
+  houstonInferenceThreadStop: "houston.inference.threadStop",
+  houstonInferenceCheckImages: "houston.inference.checkImages",
 
   terminalOpen: "terminal.open",
   terminalAttach: "terminal.attach",
@@ -2439,6 +2465,66 @@ const WsHoustonMergeQueueAcknowledgeRpc = Rpc.make(WS_METHODS.houstonMergeQueueA
   error: HoustonMergeQueueRpcError,
 });
 
+const HoustonInferenceRpcError = Schema.Union([
+  HoustonInferenceError,
+  EnvironmentAuthorizationError,
+]);
+
+const WsHoustonInferenceSubscribeRpc = Rpc.make(WS_METHODS.houstonInferenceSubscribe, {
+  payload: Schema.Struct({}),
+  success: InferenceServersResult,
+  error: HoustonInferenceRpcError,
+  stream: true,
+});
+
+const WsHoustonInferenceRefreshRpc = Rpc.make(WS_METHODS.houstonInferenceRefresh, {
+  payload: InferenceServerRefreshInput,
+  success: InferenceServersResult,
+  error: HoustonInferenceRpcError,
+});
+
+const WsHoustonInferenceSaveRpc = Rpc.make(WS_METHODS.houstonInferenceSave, {
+  payload: InferenceServerSaveInput,
+  success: InferenceServersResult,
+  error: HoustonInferenceRpcError,
+});
+
+const WsHoustonInferenceRemoveRpc = Rpc.make(WS_METHODS.houstonInferenceRemove, {
+  payload: InferenceServerRemoveInput,
+  success: InferenceServersResult,
+  error: HoustonInferenceRpcError,
+});
+
+const WsHoustonInferenceDiscoverRpc = Rpc.make(WS_METHODS.houstonInferenceDiscover, {
+  payload: InferenceDiscoveryInput,
+  success: InferenceDiscoveryResult,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsHoustonInferenceUsageRpc = Rpc.make(WS_METHODS.houstonInferenceUsage, {
+  payload: InferenceUsageInput,
+  success: InferenceUsageSummary,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsHoustonInferenceThreadRequestRpc = Rpc.make(WS_METHODS.houstonInferenceThreadRequest, {
+  payload: InferenceThreadRequestInput,
+  success: Schema.Struct({ last: Schema.NullOr(InferenceThreadLastRequest) }),
+  error: EnvironmentAuthorizationError,
+});
+
+const WsHoustonInferenceThreadStopRpc = Rpc.make(WS_METHODS.houstonInferenceThreadStop, {
+  payload: InferenceThreadStopInput,
+  success: Schema.Struct({ stop: Schema.NullOr(InferenceThreadStop) }),
+  error: EnvironmentAuthorizationError,
+});
+
+const WsHoustonInferenceCheckImagesRpc = Rpc.make(WS_METHODS.houstonInferenceCheckImages, {
+  payload: InferenceImageCheckInput,
+  success: InferenceImageCheckResult,
+  error: EnvironmentAuthorizationError,
+});
+
 const WsTerminalOpenRpc = Rpc.make(WS_METHODS.terminalOpen, {
   payload: TerminalOpenInput,
   success: TerminalSessionSnapshot,
@@ -3150,6 +3236,15 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonMergeQueueHandToThreadRpc,
   WsHoustonMergeQueueRevertRpc,
   WsHoustonMergeQueueAcknowledgeRpc,
+  WsHoustonInferenceSubscribeRpc,
+  WsHoustonInferenceRefreshRpc,
+  WsHoustonInferenceSaveRpc,
+  WsHoustonInferenceRemoveRpc,
+  WsHoustonInferenceDiscoverRpc,
+  WsHoustonInferenceUsageRpc,
+  WsHoustonInferenceThreadRequestRpc,
+  WsHoustonInferenceThreadStopRpc,
+  WsHoustonInferenceCheckImagesRpc,
   WsTerminalOpenRpc,
   WsTerminalAttachRpc,
   WsTerminalObserveRpc,

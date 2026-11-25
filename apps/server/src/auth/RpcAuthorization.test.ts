@@ -74,6 +74,32 @@ describe("RPC authorization scopes", () => {
     }
   });
 
+  it("keeps model server discovery, which probes addresses a client names, behind settings write", () => {
+    for (const method of [
+      WS_METHODS.houstonInferenceDiscover,
+      WS_METHODS.houstonInferenceSave,
+      WS_METHODS.houstonInferenceRemove,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthSettingsWriteScope);
+    }
+  });
+
+  it("reads gateway usage and a thread's inference history behind orchestration read", () => {
+    for (const method of [
+      WS_METHODS.houstonInferenceUsage,
+      WS_METHODS.houstonInferenceThreadRequest,
+      WS_METHODS.houstonInferenceThreadStop,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationReadScope);
+    }
+  });
+
+  it("runs an image check, which spends model work and records a verdict, behind operate scope", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.houstonInferenceCheckImages)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+  });
+
   it("rejects unknown RPC method names", () => {
     for (const method of ["server.notRegistered", "toString", "constructor"]) {
       expect(() => requiredScopeForRpcMethod(method)).toThrow(

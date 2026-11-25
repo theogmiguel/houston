@@ -274,6 +274,38 @@ checkouts need this suite and the same generator version; `--a-label` and `--b-l
 - **Isolation.** Each scale runs in its own process with a bounded heap (`--heap-mb`, 6144) and
   writes `scale-<n>x.json`; a rerun reuses finished scales unless `--rerun` is given.
 
+## Local-model evals
+
+`scripts/evals/local-models/mcp-tool-use/run.ts` is a manual tool for comparing how Pi, Codex and
+OpenCode behave on one local model: which Houston tool each harness chooses and whether its
+arguments fit the tool's schema. It is never run by CI or by `pnpm test`; its unit tests
+(`local-harnesses.test.ts`) replay fixtures and make no model calls.
+
+Start a model server that serves an OpenAI-compatible API, then run any harness against it:
+
+```sh
+node scripts/evals/local-models/mcp-tool-use/run.ts \
+  --base-url http://localhost:8888/v1 --model GLM-5.3-Flash \
+  --harness pi,codex,opencode --samples 1 --out /tmp/local-models
+```
+
+`--tool-profile lean` applies Pi's lean tool list. Codex and OpenCode are driven the way a linked
+instance is: Codex's request goes through the gateway's Responses namespace-tool flattening, and
+OpenCode's Code Mode cells run against the captured catalog. Results are written as JSONL beside a
+per-harness summary.
+
+`templates/` holds one recorded capture per harness: the prompt and native tools the real harness
+sends with Houston's gateway loaded. Refresh them with `capture-local.ts`, which starts the
+installed Codex or OpenCode against a scripted model stub and this checkout's MCP stub, so it uses
+no GPU and no cloud model:
+
+```sh
+node scripts/evals/local-models/mcp-tool-use/capture-local.ts codex
+node scripts/evals/local-models/mcp-tool-use/capture-local.ts opencode
+```
+
+Read a refreshed template before committing it; the stub never sees a real prompt or account.
+
 ## Maintaining model data
 
 Houston reads LiteLLM's

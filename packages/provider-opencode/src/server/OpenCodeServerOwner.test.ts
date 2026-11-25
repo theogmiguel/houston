@@ -206,3 +206,28 @@ it.effect("cleans up an interrupted startup and allows a retry", () =>
     ).pipe(Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, runtime));
   }),
 );
+
+it.effect("replaces an idle cached server when its managed route changes", () =>
+  Effect.gen(function* () {
+    const testRuntime = yield* makeRuntime;
+    const route = yield* Ref.make("route-a");
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        const owner = yield* OpenCodeServerOwner.make({
+          binaryPath: "opencode",
+          directory: "/project",
+          environmentKey: Ref.get(route),
+        });
+        expect(yield* owner.withServer((server) => Effect.succeed(server.url))).toBe(
+          "http://127.0.0.1:1",
+        );
+        yield* Ref.set(route, "route-b");
+        expect(yield* owner.withServer((server) => Effect.succeed(server.url))).toBe(
+          "http://127.0.0.1:2",
+        );
+      }),
+    ).pipe(Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, testRuntime.runtime));
+    expect(yield* Ref.get(testRuntime.starts)).toBe(2);
+    expect(yield* Ref.get(testRuntime.closes)).toBe(2);
+  }),
+);

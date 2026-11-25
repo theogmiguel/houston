@@ -19,6 +19,14 @@ state directory on the machine that runs it.
 - **Cloud dictation.** When you choose OpenAI, Grok or OpenRouter under Settings ▸ Voice, the
   environment sends each finished recording to that provider with your API key. Nothing is sent
   while dictation is Off or set to an environment. See [Dictation](dictation.md#network-use).
+- **Inference servers.** Houston checks the model servers you register under **Settings →
+  Inference** by requesting their model list and, when the engine exposes them, its health,
+  metrics and model details. It sends only to the addresses you register and sends a saved API key
+  only to the server that key belongs to. **Find servers** probes loopback and the machine's own
+  listening ports, never sends a saved key, and saves nothing until you add a server. See
+  [Local models](local-models.md). **Check images** sends four generated solid-colour test
+  images and a short question only to the server being checked, and stores the answer it found
+  without keeping the images.
 - **Updates.** Houston checks for new versions of the app and of each agent CLI.
 
 ## Usage and crash data

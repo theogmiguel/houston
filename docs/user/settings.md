@@ -6,7 +6,7 @@ the settings sidebar finds a page, a section or a single setting by name.
 | Group       | Pages                                                                           |
 | ----------- | ------------------------------------------------------------------------------- |
 | —           | General, Appearance, Chat, Voice, Diffs & pull requests, Keybindings, SnapShots |
-| Agents      | Providers, Usage, Threads, Browser, Devices, Scheduled tasks                    |
+| Agents      | Providers, Inference, Usage, Threads, Browser, Devices, Scheduled tasks         |
 | Code        | Projects, Source control, Worktrees                                             |
 | Connections | Environments, Task sources, Sharing & access, Secrets                           |
 | —           | Maintenance, Labs, About, Archive                                               |
@@ -99,12 +99,28 @@ directories, environment variables and models, and set the provider health check
 Each provider shows its readiness and one action to resolve it. See
 [Install](install.md#providers) and [Agent status](agent-status.md).
 
+When Houston starts and finds Pi or OpenCode on the machine's `PATH` without an instance of
+that agent, it does not turn the agent on. **Settings → Providers** shows a suggestion such as
+"Pi was found on this machine. Turn it on?" with **Turn on** and **Dismiss**. Dismissing is
+remembered; an agent that was configured or turned off before is not suggested again.
+
+An instance can be marked **Runs local models** when every model it can select runs on
+hardware you control, such as Ollama, LM Studio, llama.cpp, vLLM or SGLang. Local
+instances lead the provider picker and the model list, and background writing such as
+thread titles and commit messages prefers them.
+
 Claude has two switches, both on by default:
 
 - **Claude in Chrome** lets a thread's Claude use the Claude in Chrome extension to read
   and drive your Chrome tabs. The extension and a Chromium browser are required.
 - **Artifacts** lets Claude publish pages as private Artifacts on claude.ai. The page's
   content is sent to your Claude account, and the account must have Artifacts.
+
+## Inference
+
+Register the OpenAI-compatible model servers on this machine or your network, add their API key,
+and see whether each one is ready, its models and context windows, its load, and when it was last
+checked. **Find servers** searches this machine. See [Local models](local-models.md).
 
 ## Usage
 
@@ -116,7 +132,14 @@ Token totals, API-equivalent costs and provider limits for the threads Houston r
 Default model, fallback model, default permissions, where new threads start (local checkout
 or new worktree), hold presets, resume and hold behavior at usage limits, auto-close on
 merge and after inactivity, the add-project base directory, host-folder clone layout, text
-generation model and instructions, and response streaming.
+generation model and instructions, text generation fallback, and response streaming.
+
+**Text generation fallback** chooses where background writing goes when its model cannot
+run. **Any provider** (the default) tries an instance marked as running local models first,
+then the other providers. **Local models only** never sends it to a cloud instance, even before
+any instance is marked as running local models; it fails instead. **Don't fall back** keeps the
+chosen model and tries nothing else. The current value is shown in the
+picker.
 
 ## Browser
 

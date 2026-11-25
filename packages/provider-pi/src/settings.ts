@@ -29,13 +29,29 @@ export const PiSettings = makeProviderSettingsSchema(
         providerSettingsForm: { clearWhenEmpty: "omit" },
       }),
     ),
+    toolProfile: Schema.Literals(["auto", "full", "lean"]).pipe(
+      Schema.withDecodingDefault(Effect.succeed("auto")),
+      Schema.annotateKey({
+        title: "Houston tools",
+        description:
+          "Lean offers only orchestration, thread, project and worktree tools, which leaves more context for local models.",
+        providerSettingsForm: {
+          control: "select",
+          options: [
+            { value: "auto", label: "Automatic" },
+            { value: "full", label: "Full" },
+            { value: "lean", label: "Lean" },
+          ],
+        },
+      }),
+    ),
     customModels: Schema.Array(CustomModelSetting).pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
   },
   {
-    order: ["binaryPath", "launchArgs"],
+    order: ["binaryPath", "launchArgs", "toolProfile"],
   },
 );
 export type PiSettings = typeof PiSettings.Type;

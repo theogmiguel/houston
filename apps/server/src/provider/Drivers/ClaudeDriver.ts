@@ -12,6 +12,10 @@ import { HttpClient } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
 
 import { makeClaudeTextGeneration } from "../../textGeneration/ClaudeTextGeneration.ts";
+import {
+  makeClaudeGatewaySource,
+  withClaudeGatewayStatus,
+} from "../../houston/inference/claudeGateway.ts";
 import * as ProviderLatestVersions from "@houston-app/provider-core/server/ProviderLatestVersions";
 import * as ProviderHost from "@houston-app/provider-core/server/ProviderHost";
 import * as ServerConfig from "../../config.ts";
@@ -119,6 +123,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       environment,
       yield* HostProcess.Environment,
     );
+    const gateway = yield* makeClaudeGatewaySource(instanceId);
+    const gatewayResolution = yield* gateway.resolution;
     const fallbackContinuationIdentity = defaultProviderContinuationIdentity({
       driverKind: DRIVER_KIND,
       instanceId,
@@ -184,6 +190,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         onUsageLimits: (update) => snapshot.applyUsageLimits(update),
         modelCatalog,
         routeModelCatalog: modelRoutes.route,
+        gateway,
       },
     ).pipe(
       Effect.mapError(
@@ -201,6 +208,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       processEnv,
       modelCatalog,
       modelRoutes.route,
+      gateway,
     );
 
     // Per-instance capabilities cache: keyed on binary + resolved HOME so
@@ -290,7 +298,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
               ? Cache.invalidateAll(capabilitiesProbeCache)
               : Effect.void,
           ),
-          Effect.map(stampIdentity),
+          Effect.map((provider) =>
+            stampIdentity(withClaudeGatewayStatus(provider, gatewayResolution)),
+          ),
         ),
       ),
       // Disabled, failed version checks and interruption never reach the probe.
@@ -309,7 +319,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       initialSnapshot: (settings) =>
         modelCatalog.pipe(
           Effect.flatMap((catalog) => makePendingClaudeProvider(settings.provider, catalog)),
-          Effect.map(stampIdentity),
+          Effect.map((provider) =>
+            stampIdentity(withClaudeGatewayStatus(provider, gatewayResolution)),
+          ),
         ),
       checkProvider,
       invalidateUsageCache: Cache.invalidateAll(capabilitiesProbeCache),

@@ -77,6 +77,7 @@ import {
   ProviderSetupError,
   type ServerConfig as ClientServerConfig,
   type ServerConfigStreamEvent,
+  type TransportSecurity,
   type ServerLifecycleStreamEvent,
   type ServerProvider,
   type FilesystemBrowseFailure,
@@ -226,6 +227,11 @@ import * as HoustonLayoutWorkspaces from "./houston/layoutWorkspaces.ts";
 import * as HoustonSlackService from "./houston/slack/Service.ts";
 import * as HoustonSlackV1Import from "./houston/slack/V1Import.ts";
 import * as HoustonMergeQueueService from "./houston/mergeQueue/Service.ts";
+import * as InferenceDiscovery from "./houston/inference/InferenceDiscovery.ts";
+import * as InferenceImageChecks from "./houston/inference/InferenceImageChecks.ts";
+import * as InferenceServerRegistry from "./houston/inference/InferenceServerRegistry.ts";
+import * as InferenceRequests from "./houston/inference/InferenceRequests.ts";
+import * as InferenceStops from "./houston/inference/InferenceStops.ts";
 import * as HoustonTerminalShells from "./houston/terminalShells.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
@@ -281,6 +287,8 @@ import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
 import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
 import * as SessionStore from "./auth/SessionStore.ts";
+import * as ServerE2eeIdentity from "./auth/ServerE2eeIdentity.ts";
+import { classifyRequestTransport, transportAllowedByPolicy } from "./auth/transportSecurity.ts";
 import { failEnvironmentAuthInvalid, failEnvironmentInternal } from "./auth/http.ts";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import { isNetworkPath } from "@houston-app/shared/path";
@@ -288,6 +296,12 @@ import {
   SOCKET_FRAME_PARTS_QUERY_PARAM,
   splitLargeSocketFrames,
 } from "@houston-app/shared/socketFrameParts";
+import {
+  E2EE_REQUIRED_CODE,
+  SOCKET_E2EE_QUERY_PARAM,
+  layerE2eeCrypto,
+  wrapServerSocketWithE2ee,
+} from "@houston-app/shared/socketE2ee";
 import {
   sameUsageLimitCommandCoverage,
   withUsageLimitsCommands,
@@ -1549,6 +1563,11 @@ export const layerWsRpc = (
       const houstonSlack = yield* HoustonSlackService.HoustonSlackService;
       const houstonSlackImport = yield* HoustonSlackV1Import.HoustonSlackV1Import;
       const houstonMergeQueue = yield* HoustonMergeQueueService.HoustonMergeQueueService;
+      const inferenceRegistry = yield* InferenceServerRegistry.InferenceServerRegistry;
+      const inferenceDiscovery = yield* InferenceDiscovery.InferenceDiscovery;
+      const inferenceImageChecks = yield* InferenceImageChecks.InferenceImageChecks;
+      const inferenceRequests = yield* InferenceRequests.InferenceRequestLog;
+      const inferenceStops = yield* InferenceStops.InferenceStops;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
       const terminalManager = yield* TerminalManager.TerminalManager;
@@ -1571,6 +1590,22 @@ export const layerWsRpc = (
       const storageCleanup = yield* StorageCleanup.StorageCleanup;
       const databaseStorage = yield* DatabaseStorage.DatabaseStorage;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
+      // Resolved once: the identity key only changes through an explicit rotate.
+      const e2eeIdentity = yield* Effect.serviceOption(ServerE2eeIdentity.ServerE2eeIdentity);
+      const e2eeIdentityDescriptor: Effect.Effect<
+        Pick<TransportSecurity, "identityPublicKey" | "identityPublicKeyFingerprint"> | undefined,
+        never,
+        never
+      > = Option.isSome(e2eeIdentity)
+        ? Effect.map(Effect.result(e2eeIdentity.value.getDescriptor), (outcome) =>
+            Result.isSuccess(outcome)
+              ? {
+                  identityPublicKey: outcome.success.publicKeyBase64Url,
+                  identityPublicKeyFingerprint: outcome.success.fingerprint,
+                }
+              : undefined,
+          )
+        : Effect.as(Effect.void, undefined);
       const secretResolver = yield* SecretResolver.SecretResolver;
       const peerLinks = yield* PeerLinks.PeerLinks;
       const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
@@ -1974,6 +2009,15 @@ export const layerWsRpc = (
         const settings = ServerSettings.redactServerSettingsForClient(
           yield* serverSettings.getSettings,
         );
+        const e2eeIdentityKey = yield* e2eeIdentityDescriptor;
+        const transportSecurity: TransportSecurity | undefined =
+          e2eeIdentityKey === undefined
+            ? undefined
+            : {
+                ...e2eeIdentityKey,
+                remoteTransportPolicy: settings.remoteTransportPolicy,
+                e2eeMode: settings.e2eeMode,
+              };
         const environment = yield* serverEnvironment.getDescriptor;
         const auth = yield* serverAuth.getDescriptor();
         const scratchWorkspaceRoot = yield* managedFolders.scratchRoot;
@@ -2030,8 +2074,10 @@ export const layerWsRpc = (
           ...(serverSettings.managedPolicy === undefined
             ? {}
             : { managedPolicy: serverSettings.managedPolicy }),
+          ...(transportSecurity === undefined ? {} : { transportSecurity }),
           shellResumeCompletionMarker: true,
           shellThreadFamilies: true,
+          inferenceServers: true,
           shellOlderSettled: true,
           threadResumeCompletionMarker: true,
           threadSnapshotPagination: true,
@@ -3397,6 +3443,27 @@ export const layerWsRpc = (
           houstonMergeQueue.handToThread(input),
         [WS_METHODS.houstonMergeQueueRevert]: (input) => houstonMergeQueue.revert(input),
         [WS_METHODS.houstonMergeQueueAcknowledge]: (input) => houstonMergeQueue.acknowledge(input),
+        [WS_METHODS.houstonInferenceSubscribe]: () =>
+          inferenceRegistry.streamChanges.pipe(Stream.map((servers) => ({ servers }))),
+        [WS_METHODS.houstonInferenceRefresh]: (input) =>
+          inferenceRegistry.refresh(input.id).pipe(Effect.map((servers) => ({ servers }))),
+        [WS_METHODS.houstonInferenceSave]: (input) =>
+          inferenceRegistry.save(input).pipe(
+            Effect.andThen(inferenceRegistry.current),
+            Effect.map((servers) => ({ servers })),
+          ),
+        [WS_METHODS.houstonInferenceRemove]: ({ id }) =>
+          inferenceRegistry.remove(id).pipe(
+            Effect.andThen(inferenceRegistry.current),
+            Effect.map((servers) => ({ servers })),
+          ),
+        [WS_METHODS.houstonInferenceDiscover]: (input) => inferenceDiscovery.discover(input),
+        [WS_METHODS.houstonInferenceUsage]: (input) => inferenceRequests.summarize(input.window),
+        [WS_METHODS.houstonInferenceThreadRequest]: (input) =>
+          inferenceRequests.latestForThread(input.threadId).pipe(Effect.map((last) => ({ last }))),
+        [WS_METHODS.houstonInferenceThreadStop]: (input) =>
+          inferenceStops.latest(input.threadId).pipe(Effect.map((stop) => ({ stop }))),
+        [WS_METHODS.houstonInferenceCheckImages]: (input) => inferenceImageChecks.check(input),
         [WS_METHODS.terminalOpen]: (input) => terminalManager.open(input),
         [WS_METHODS.terminalAttach]: (input, metadata) =>
           terminalManager.attachOutputStream(input, terminalViewerId(metadata)),
@@ -3746,6 +3813,10 @@ export const layer = Layer.unwrap(
     const peerLinks = yield* PeerLinks.PeerLinks;
     const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
     const sql = yield* SqlClient.SqlClient;
+    const e2eeEnvironmentId = yield* Effect.flatMap(
+      ServerEnvironment.ServerEnvironmentIdentity,
+      (identity) => identity.getEnvironmentId,
+    );
     return HttpRouter.add(
       "GET",
       "/ws",
@@ -3764,6 +3835,46 @@ export const layer = Layer.unwrap(
         }
         const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
         const sessions = yield* SessionStore.SessionStore;
+        // Transport policy runs before authentication: it describes how the
+        // peer reached the server, not who it claims to be.
+        const settingsService = yield* ServerSettings.ServerSettingsService;
+        const currentSettings = yield* settingsService.getSettings.pipe(Effect.orDie);
+        const transport = classifyRequestTransport(request);
+        if (!transportAllowedByPolicy(transport, currentSettings.remoteTransportPolicy)) {
+          return HttpServerResponse.jsonUnsafe(
+            {
+              code: "REMOTE_TRANSPORT_NOT_ALLOWED",
+              message:
+                "This host only accepts remote connections over private end-to-end-encrypted transports (Tailscale or SSH). Connect over one of those, or change the policy on the host.",
+              transport,
+            },
+            { status: 403 },
+          );
+        }
+        const e2eeRequested = url.value.searchParams.get(SOCKET_E2EE_QUERY_PARAM) === "1";
+        const e2eeIdentity = yield* Effect.serviceOption(ServerE2eeIdentity.ServerE2eeIdentity);
+        // A client asking for E2EE the server cannot offer must fail loudly:
+        // silently continuing in plaintext would defeat its pinned key.
+        if (e2eeRequested && (currentSettings.e2eeMode === "off" || Option.isNone(e2eeIdentity))) {
+          return HttpServerResponse.jsonUnsafe(
+            {
+              code: "E2EE_NOT_SUPPORTED",
+              message:
+                "This host does not offer end-to-end encryption. Re-pair the environment from its host if you trust this change.",
+            },
+            { status: 403 },
+          );
+        }
+        if (!e2eeRequested && currentSettings.e2eeMode === "require" && transport !== "loopback") {
+          return HttpServerResponse.jsonUnsafe(
+            {
+              code: E2EE_REQUIRED_CODE,
+              message:
+                "This host requires end-to-end encryption for remote connections. Update Houston on this device to a release with E2EE support, or re-pair from a link made while encryption is on.",
+            },
+            { status: 403 },
+          );
+        }
         const session = yield* serverAuth.authenticateWebSocketUpgrade(request, "rpc").pipe(
           Effect.catchIf(EnvironmentAuth.isServerAuthCredentialError, (error) =>
             failEnvironmentAuthInvalid(
@@ -3832,25 +3943,38 @@ export const layer = Layer.unwrap(
             ),
           ),
         );
-        const framedRpcWebSocketHttpEffect = url.value.searchParams.has(
-          SOCKET_FRAME_PARTS_QUERY_PARAM,
-        )
-          ? rpcWebSocketHttpEffect.pipe(
-              Effect.provideService(
-                HttpServerRequest.HttpServerRequest,
-                // The RPC server upgrades the request itself, so its socket is
-                // wrapped through the request it reads.
-                Object.create(request, {
-                  upgrade: { value: Effect.map(request.upgrade, splitLargeSocketFrames) },
+        // The RPC server upgrades the request itself, so socket wrapping goes
+        // through the request it reads. The frame splitter sits outside E2EE:
+        // it only splits string frames, which E2EE would turn into binary records.
+        const framedRequested = url.value.searchParams.has(SOCKET_FRAME_PARTS_QUERY_PARAM);
+        const e2eeActive =
+          e2eeRequested && currentSettings.e2eeMode !== "off" && Option.isSome(e2eeIdentity);
+        const encryptedUpgrade = e2eeActive
+          ? Effect.flatMap(request.upgrade, (socket) =>
+              Effect.flatMap(Option.getOrThrow(e2eeIdentity).getKeypair, (keypair) =>
+                wrapServerSocketWithE2ee(socket, {
+                  environmentId: e2eeEnvironmentId,
+                  identitySeed: keypair.seed,
                 }),
               ),
             )
-          : rpcWebSocketHttpEffect;
+          : request.upgrade;
+        const upgradeEffect = framedRequested
+          ? Effect.map(encryptedUpgrade, splitLargeSocketFrames)
+          : encryptedUpgrade;
+        const e2eeRpcWebSocketHttpEffect = rpcWebSocketHttpEffect.pipe(
+          Effect.provideService(
+            HttpServerRequest.HttpServerRequest,
+            Object.create(request, {
+              upgrade: { value: upgradeEffect },
+            }),
+          ),
+        );
         return yield* Effect.acquireUseRelease(
           sessions.markConnected(session.sessionId),
           () =>
             Effect.raceFirst(
-              framedRpcWebSocketHttpEffect,
+              e2eeRpcWebSocketHttpEffect,
               sessions.awaitInvalidation(session.sessionId, session.proofKeyThumbprint).pipe(
                 Effect.as(HttpServerResponse.empty()),
                 Effect.catchTags({
@@ -3869,4 +3993,9 @@ export const layer = Layer.unwrap(
       ),
     );
   }),
-).pipe(Layer.provide(NpmRelease.layer));
+).pipe(
+  Layer.provide(NpmRelease.layer),
+  // The E2EE socket wrap runs per upgrade and needs these services; providing
+  // them here keeps them out of every consumer of this layer.
+  Layer.provide(layerE2eeCrypto),
+);
