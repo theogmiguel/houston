@@ -326,6 +326,46 @@ describe("thread execution presentation", () => {
     expect(deriveThreadRuntime(onlyHeld)).toBeNull();
   });
 
+  it("offers Resume for a stopped run unless the run was a compaction", () => {
+    const stopped = { ...run("run-stopped", 1, "interrupted"), completedAt: now };
+    const resumable = (message: { text: string } & Record<string, unknown>) => {
+      const projection = {
+        ...v2Projection,
+        runs: [stopped],
+        messages: [
+          {
+            id: stopped.userMessageId,
+            threadId: stopped.threadId,
+            runId: stopped.id,
+            nodeId: null,
+            role: "user" as const,
+            attachments: [],
+            streaming: false,
+            createdBy: "user" as const,
+            creationSource: "web" as const,
+            createdAt: now,
+            updatedAt: now,
+            ...message,
+          },
+        ],
+        updatedAt: now,
+      };
+      return deriveResumableRunId(projection, deriveThreadRuntime(projection));
+    };
+
+    expect(resumable({ text: "Fix the failing tests" })).toBe(stopped.id);
+    expect(resumable({ text: "/compact" })).toBeNull();
+    expect(resumable({ text: "/compact keep the open risks" })).toBeNull();
+    expect(
+      resumable({
+        text: "/compact",
+        createdBy: "agent",
+        creationSource: "server",
+        idleCompaction: "beforeCacheExpires",
+      }),
+    ).toBeNull();
+  });
+
   it("does not expose a queued-only run as interruptible", () => {
     const queuedRun = run("run-queued", 1, "queued");
     const projection = { ...v2Projection, runs: [queuedRun], updatedAt: now };
