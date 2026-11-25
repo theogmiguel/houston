@@ -14,6 +14,7 @@ import {
   createTimelineReadIndexes,
   createTurnStartReadModels,
 } from "./projectionReadModels.ts";
+import { purgeDeletedThreadHistories } from "./threadHistoryPurge.ts";
 
 // Upstream's migrator skips every id up to the highest it recorded, so Houston's schema keeps its
 // own history table and ids; upstream's table and ids stay untouched.
@@ -1380,6 +1381,10 @@ const PendingDeviceApprovals = Effect.gen(function* () {
   `;
 });
 
+// Deleting a thread used to leave its conversation in the database; remove it for every thread
+// already soft-deleted. The effect outbox handles new deletions.
+const PurgeDeletedThreadHistories = purgeDeletedThreadHistories();
+
 // One row per request the inference gateway served. It never holds request or response text:
 // server, model, purpose, thread and run ids, status, bounded failure cause, HTTP status, token
 // counts, timings and the static-prefix fingerprint only. The log sweeps rows past its retention.
@@ -1457,6 +1462,7 @@ const houstonMigrationEntries = [
   [26, "IssueTrackerBindingProperties", IssueTrackerBindingProperties],
   [27, "NotionPagesAsTaskIssues", NotionPagesAsTaskIssues],
   [28, "PendingDeviceApprovals", PendingDeviceApprovals],
+  [29, "PurgeDeletedThreadHistories", PurgeDeletedThreadHistories],
   [30, "InferenceRequests", InferenceRequests],
   [31, "InferenceImageVerdicts", InferenceImageVerdicts],
 ] as const;

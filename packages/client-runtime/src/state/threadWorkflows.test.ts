@@ -5,6 +5,7 @@ import {
   canForkProjectedAssistantItem,
   deriveThreadQueueWorkflowState,
   resolveLatestMergeBackRun,
+  threadSteersDuringCompaction,
   threadSupportsActiveSteering,
   threadSupportsProviderHandoff,
 } from "./threadWorkflows.ts";
@@ -13,6 +14,7 @@ const capabilities = (input?: {
   readonly queued?: boolean;
   readonly steer?: boolean;
   readonly restartSteer?: boolean;
+  readonly steerDuringCompaction?: boolean;
   readonly nativeFork?: boolean;
   readonly portableFork?: boolean;
 }) =>
@@ -21,6 +23,9 @@ const capabilities = (input?: {
       supportsQueuedMessages: input?.queued ?? false,
       supportsActiveSteering: input?.steer ?? false,
       supportsSteeringByInterruptRestart: input?.restartSteer ?? false,
+      ...(input?.steerDuringCompaction === undefined
+        ? {}
+        : { activeSteeringDuringCompaction: input.steerDuringCompaction }),
     },
     threads: {
       canForkThread: input?.nativeFork ?? false,
@@ -103,6 +108,23 @@ describe("thread workflows", () => {
       }),
     ).toBe(true);
     expect(threadSupportsActiveSteering(null)).toBe(false);
+
+    const withTurns = (turns: Parameters<typeof capabilities>[0]) =>
+      ({
+        ...projection,
+        providerSessions: [
+          { ...projection.providerSessions[0]!, capabilities: capabilities(turns) },
+        ],
+      }) as OrchestrationV2ThreadProjection;
+    // Steering into a provider's own compaction is opt-in, never implied by native steering.
+    expect(threadSteersDuringCompaction(withTurns({ steer: true }))).toBe(false);
+    expect(
+      threadSteersDuringCompaction(withTurns({ steer: true, steerDuringCompaction: false })),
+    ).toBe(false);
+    expect(
+      threadSteersDuringCompaction(withTurns({ steer: true, steerDuringCompaction: true })),
+    ).toBe(true);
+    expect(threadSteersDuringCompaction(null)).toBe(false);
   });
 
   it("sorts queued messages and gates promotion from capabilities", () => {

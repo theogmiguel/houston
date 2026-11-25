@@ -22,6 +22,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as CheckpointRollbackService from "./CheckpointRollbackService.ts";
 import * as CheckpointService from "./CheckpointService.ts";
@@ -35,6 +36,7 @@ import * as RuntimeRequestService from "./RuntimeRequestService.ts";
 import * as ThreadTitleRegenerationService from "./ThreadTitleRegenerationService.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 
 const threadId = ThreadId.make("thread:effect-worker-restart");
 const oldSessionId = ProviderSessionId.make("provider-session:effect-worker-restart:old");
@@ -159,8 +161,9 @@ function layerExecutorFor(input: {
     ),
   );
   return EffectWorker.layerExecutor.pipe(
-    Layer.provide(
+    Layer.provideMerge(
       Layer.mergeAll(
+        SqlitePersistence.layerMemory,
         layerDependencies,
         Layer.mock(ThreadManagementService.ThreadManagementService)(input.threads ?? {}),
         ServerSettings.layerTest(
@@ -636,4 +639,46 @@ it.effect.each(["confirmed", "unconfirmed", "failed"] as const)(
         outcome === "confirmed" ? ["stop-child", "settle-child"] : ["stop-child"],
       );
     }),
+);
+
+it.effect("purges a deleted thread's history", () =>
+  Effect.gen(function* () {
+    const now = yield* DateTime.now;
+    const events = yield* Ref.make<ReadonlyArray<string>>([]);
+    const thread = ThreadId.make("thread:effect-worker-history-purge");
+    const layer = layerExecutorFor({ events });
+    yield* Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const at = DateTime.formatIso(now);
+      yield* sql`
+        INSERT INTO orchestration_v2_projection_threads (
+          thread_id, project_id, title, default_provider, provider_instance_id, runtime_mode,
+          interaction_mode, active_provider_thread_id, created_at, updated_at, archived_at,
+          deleted_at, payload_json
+        )
+        VALUES (
+          ${thread}, 'project:purge', 'Deleted', 'codex', 'codex', 'full-access', 'default',
+          NULL, ${at}, ${at}, NULL, ${at}, '{}'
+        )
+      `;
+      yield* sql`
+        INSERT INTO orchestration_v2_projection_messages (
+          message_id, thread_id, run_id, node_id, role, streaming, created_at, updated_at,
+          payload_json
+        )
+        VALUES ('message:purge', ${thread}, NULL, NULL, 'assistant', 0, ${at}, ${at}, '{}')
+      `;
+      const executor = yield* EffectWorker.OrchestrationEffectExecutorV2;
+      yield* executor.execute({
+        ...restartEffect(now, { type: "detach" }),
+        threadId: thread,
+        request: { type: "thread.history-purge" },
+      });
+      const rows = yield* sql<{ readonly count: number }>`
+        SELECT COUNT(*) AS count FROM orchestration_v2_projection_messages
+        WHERE thread_id = ${thread}
+      `;
+      assert.equal(rows[0]!.count, 0);
+    }).pipe(Effect.provide(layer));
+  }),
 );

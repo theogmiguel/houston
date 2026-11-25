@@ -567,6 +567,21 @@ const claudeUsageLimit = (message: string | undefined) =>
     ? { resetAt: RESET_AT_PATTERN.exec(message)?.[1] ?? null }
     : undefined;
 
+// OpenCode types an empty balance as provider.quota too, but it answers
+// that with HTTP 402 and it never resets. Usage windows and budgets are 429.
+const openCodeUsageLimit = (error: {
+  readonly type: string;
+  readonly message?: string | undefined;
+  readonly status?: number | undefined;
+}) => {
+  const claudeLimit = claudeUsageLimit(error.message);
+  return (error.type === "provider.quota" && error.status !== 402) ||
+    error.type === "provider.rate-limit" ||
+    claudeLimit !== undefined
+    ? { resetAt: claudeLimit?.resetAt ?? null }
+    : undefined;
+};
+
 const INTERRUPT_TIMEOUT = "10 seconds";
 const INSTRUCTIONS_KEY = "houston";
 const RECONNECT_ATTEMPTS = 5;
@@ -1122,6 +1137,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       { attempt, error }: Pick<EventOf<"session.retry.scheduled">["data"], "attempt" | "error">,
       delayMs: number,
     ) {
+      const usageLimit = openCodeUsageLimit(error);
       turn.retry = {
         retry: {
           // OpenCode counts the first request as attempt 1, so its first retry is attempt 2.
@@ -1132,8 +1148,9 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         failure: makeProviderFailure({
           message: readableProviderErrorMessage(error.message, error.status, error.response?.body),
           code: error.type,
-          class: "provider_error",
+          class: usageLimit === undefined ? "provider_error" : "usage_limit",
           retryable: true,
+          resetAt: usageLimit?.resetAt ?? null,
         }),
         startedAt: turn.retry?.startedAt ?? (yield* DateTime.now),
       };
@@ -2183,20 +2200,14 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           return yield* endExecution(state, turn, { status: "interrupted" });
         case "session.execution.failed": {
           const { type, message, status, response } = event.data.error;
-          // OpenCode types an empty balance as provider.quota too, but it answers
-          // that with HTTP 402 and it never resets. Usage windows and budgets are 429.
-          const claudeLimit = claudeUsageLimit(message);
-          const usageLimit =
-            (type === "provider.quota" && status !== 402) ||
-            type === "provider.rate-limit" ||
-            claudeLimit !== undefined;
+          const usageLimit = openCodeUsageLimit(event.data.error);
           return yield* endExecution(state, turn, {
             status: "failed",
             failure: makeProviderFailure({
               message: readableProviderErrorMessage(message, status, response?.body),
               code: type,
-              class: usageLimit ? "usage_limit" : "provider_error",
-              resetAt: claudeLimit?.resetAt ?? null,
+              class: usageLimit === undefined ? "provider_error" : "usage_limit",
+              resetAt: usageLimit?.resetAt ?? null,
             }),
           });
         }

@@ -43,6 +43,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [26, "IssueTrackerBindingProperties"],
   [27, "NotionPagesAsTaskIssues"],
   [28, "PendingDeviceApprovals"],
+  [29, "PurgeDeletedThreadHistories"],
   [30, "InferenceRequests"],
   [31, "InferenceImageVerdicts"],
 ];
@@ -1090,6 +1091,7 @@ describe("the grids removal migration", () => {
               [26, "IssueTrackerBindingProperties"],
               [27, "NotionPagesAsTaskIssues"],
               [28, "PendingDeviceApprovals"],
+              [29, "PurgeDeletedThreadHistories"],
               [30, "InferenceRequests"],
               [31, "InferenceImageVerdicts"],
             ],
@@ -1841,6 +1843,112 @@ describe("the Notion task source migration makes issue links", () => {
             SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'houston_issue_import'
           `)[0],
       );
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+});
+
+describe("the deleted-thread purge migration", () => {
+  const at = "2026-09-01T00:00:00.000Z";
+  const insertThread = (sql: SqlClient.SqlClient, threadId: string, deletedAt: string | null) =>
+    sql`
+      INSERT INTO orchestration_v2_projection_threads (
+        thread_id, project_id, title, default_provider, provider_instance_id, runtime_mode,
+        interaction_mode, active_provider_thread_id, created_at, updated_at, archived_at,
+        deleted_at, payload_json
+      )
+      VALUES (
+        ${threadId}, 'project:purge', ${threadId}, 'codex', 'codex', 'full-access', 'default',
+        NULL, ${at}, ${at}, NULL, ${deletedAt}, '{}'
+      )
+    `;
+  const insertMessage = (sql: SqlClient.SqlClient, messageId: string, threadId: string) =>
+    sql`
+      INSERT INTO orchestration_v2_projection_messages (
+        message_id, thread_id, run_id, node_id, role, streaming, created_at, updated_at,
+        payload_json
+      )
+      VALUES (${messageId}, ${threadId}, NULL, NULL, 'assistant', 0, ${at}, ${at},
+        '{"text":"migration needle"}')
+    `;
+  const insertEvent = (
+    sql: SqlClient.SqlClient,
+    eventId: string,
+    threadId: string,
+    eventType: string,
+  ) =>
+    sql`
+      INSERT INTO orchestration_events (
+        event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at,
+        actor_kind, payload_json, metadata_json, application_event_version
+      )
+      VALUES (${eventId}, 'thread', ${threadId},
+        COALESCE(
+          (SELECT MAX(stream_version) + 1 FROM orchestration_events WHERE stream_id = ${threadId}),
+          0
+        ),
+        ${eventType}, ${at}, 'server', '{}', '{}', 2)
+    `;
+  const threadIdsWithMessages = Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    return (yield* sql<{ readonly thread_id: string }>`
+      SELECT DISTINCT thread_id FROM orchestration_v2_projection_messages ORDER BY thread_id
+    `).map((row) => row.thread_id);
+  });
+
+  it.effect("purges threads a previous build soft-deleted and leaves live threads alone", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      // Composed fixture: a database that ran through migration 28, then soft-deleted a thread.
+      yield* insertThread(sql, "thread:purge:migration:deleted", at);
+      yield* insertThread(sql, "thread:purge:migration:live", null);
+      yield* insertMessage(
+        sql,
+        "message:purge:migration:deleted",
+        "thread:purge:migration:deleted",
+      );
+      yield* insertMessage(sql, "message:purge:migration:live", "thread:purge:migration:live");
+      yield* insertEvent(
+        sql,
+        "event:purge:migration:deleted:created",
+        "thread:purge:migration:deleted",
+        "thread.created",
+      );
+      yield* insertEvent(
+        sql,
+        "event:purge:migration:deleted:deleted",
+        "thread:purge:migration:deleted",
+        "thread.deleted",
+      );
+      yield* insertEvent(
+        sql,
+        "event:purge:migration:live:created",
+        "thread:purge:migration:live",
+        "thread.created",
+      );
+      yield* sql`DELETE FROM houston_sql_migrations WHERE migration_id = 29`;
+
+      assert.deepEqual(yield* runHoustonMigrations(), [[29, "PurgeDeletedThreadHistories"]]);
+
+      assert.deepEqual(yield* threadIdsWithMessages, ["thread:purge:migration:live"]);
+      const deletedEvents = yield* sql<{ readonly event_id: string }>`
+        SELECT event_id FROM orchestration_events
+        WHERE stream_id = 'thread:purge:migration:deleted' ORDER BY sequence
+      `;
+      assert.deepEqual(deletedEvents, [
+        { event_id: "event:purge:migration:deleted:created" },
+        { event_id: "event:purge:migration:deleted:deleted" },
+      ]);
+      const liveEvents = yield* sql<{ readonly event_id: string }>`
+        SELECT event_id FROM orchestration_events
+        WHERE stream_id = 'thread:purge:migration:live' ORDER BY sequence
+      `;
+      assert.deepEqual(liveEvents, [{ event_id: "event:purge:migration:live:created" }]);
+      const tombstone = yield* sql<{ readonly deleted_at: string | null }>`
+        SELECT deleted_at FROM orchestration_v2_projection_threads
+        WHERE thread_id = 'thread:purge:migration:deleted'
+      `;
+      assert.deepEqual(tombstone, [{ deleted_at: at }]);
+      assert.deepEqual(yield* runHoustonMigrations(), []);
     }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
   );
 });

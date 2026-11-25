@@ -18,6 +18,21 @@ catalog's input context size. A session-specific override that the provider does
 cannot be detected. A model with an unknown limit shows its token count without a
 percentage.
 
+## Automatic compaction
+
+For Claude threads, the meter's details say where the thread compacts automatically.
+**Settings ▸ Providers ▸ Claude ▸ Auto-compact after**, when set, decides it: Houston passes it
+to Claude as `CLAUDE_CODE_AUTO_COMPACT_WINDOW` and as `autoCompactWindow`. When it is empty,
+Houston reads the window from Claude's own configuration: the variable from a `--settings`
+launch argument, then from Claude's settings files, then from the environment; then the
+`autoCompactWindow` settings. With auto-compaction off (`DISABLE_COMPACT`,
+`DISABLE_AUTO_COMPACT` or `autoCompactEnabled: false` in those places) the details show no
+compaction point.
+
+Houston does not read Claude's managed policy settings or the `autoCompactEnabled` switch in
+Claude's global configuration file, so a window or an off switch set there is not shown.
+Other providers choose their own compaction point and Houston does not show it.
+
 ## Coverage
 
 The card appears for providers that report token usage. A provider that reports no context

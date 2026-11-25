@@ -287,8 +287,8 @@ async function exitCode(server: Server): Promise<number | null> {
   ]);
 }
 
-// SIGTERM runs upstream's shutdown, including the analytics flush. Windows has no SIGTERM
-// delivery to a console-less child, so there the process is terminated.
+// SIGTERM runs upstream's shutdown. Windows has no SIGTERM delivery to a console-less child,
+// so there the process is terminated.
 async function shutdown(server: Server): Promise<void> {
   if (IS_WINDOWS) {
     killTree(server.child.pid);
@@ -428,32 +428,6 @@ describe("houston server entrypoint", () => {
           expect(NodeFS.readdirSync(channel)).toEqual([file]);
         }),
       );
-    },
-    TEST_TIMEOUT_MS,
-  );
-
-  it(
-    "no analytics request reaches the sink",
-    async () => {
-      const root = makeSandbox();
-      const base = NodePath.join(root, ".houston-dev", "v2");
-      const sink = await startSink();
-      const port = await freePort();
-      const server = spawnServer({
-        env: sandboxEnv(root, {
-          HOUSTON_TELEMETRY_ENABLED: "true",
-          HOUSTON_POSTHOG_HOST: sink.url,
-          HOUSTON_POSTHOG_KEY: "phc_houston_test",
-        }),
-        envelope: envelope(port, base),
-      });
-      await waitReady(server, port);
-      // Past upstream's 10-second background flush, then its shutdown flush.
-      await sleep(12_000);
-      await shutdown(server);
-      await sleep(500);
-
-      expect(sink.requests).toEqual([]);
     },
     TEST_TIMEOUT_MS,
   );

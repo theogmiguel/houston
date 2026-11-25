@@ -9,6 +9,7 @@ import * as Layer from "effect/Layer";
 import * as Metric from "effect/Metric";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import {
   increment,
@@ -30,6 +31,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import { continueRestartedRun } from "./RestartContinuation.ts";
 import { userFacingDispatchErrorMessage } from "./UserFacingErrors.ts";
 import { MessageDeliveryWriter, steerFollowUpCommand } from "../houston/messageDelivery.ts";
+import * as ThreadHistoryPurge from "../houston/threadHistoryPurge.ts";
 import * as TraceContext from "../houston/observability/TraceContext.ts";
 import * as WideEvents from "../houston/observability/WideEvents.ts";
 
@@ -90,9 +92,11 @@ export const layerExecutor: Layer.Layer<
   | ThreadTitleRegenerationService.ThreadTitleRegenerationService
   | ThreadManagementService.ThreadManagementService
   | ServerSettings.ServerSettingsService
+  | SqlClient.SqlClient
 > = Layer.effect(
   OrchestrationEffectExecutorV2,
   Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
     const runFinalization = yield* RunFinalizationService.RunFinalizationService;
     const resourceCleanup = yield* ResourceCleanupService.ResourceCleanupService;
     const checkpointRollback = yield* CheckpointRollbackService.CheckpointRollbackServiceV2;
@@ -615,6 +619,18 @@ export const layerExecutor: Layer.Layer<
             );
           case "attachment.cleanup":
             return resourceCleanup.cleanupAttachments(effect.request.attachmentIds).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationEffectExecutionError({
+                    effectId: effect.id,
+                    effectType: effect.request.type,
+                    cause,
+                  }),
+              ),
+            );
+          case "thread.history-purge":
+            return ThreadHistoryPurge.purgeThreadHistory(effect.threadId).pipe(
+              Effect.provideService(SqlClient.SqlClient, sql),
               Effect.mapError(
                 (cause) =>
                   new OrchestrationEffectExecutionError({

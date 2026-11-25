@@ -111,12 +111,13 @@ function view() {
 }
 
 describe("BranchToolbarBranchSelector", () => {
-  it("disables the branch control with a visible reason while a turn runs", async () => {
+  it("disables the branch control and explains why in its tooltip while a turn runs", async () => {
     mocks.runtimeStatus = "running";
     await using _screen = await render(view());
     const trigger = page.getByRole("combobox");
     await expect.element(trigger).toBeDisabled();
-    await expect.element(page.getByText("Turn running", { exact: true })).toBeVisible();
+    // The thread already shows that a turn runs; the branch control adds no second status.
+    await expect.element(page.getByText("Turn running", { exact: true })).not.toBeInTheDocument();
     // A disabled control ignores the pointer, so the hover lands on the tooltip's own wrapper.
     await userEvent.hover(trigger.element().parentElement!);
     await expect

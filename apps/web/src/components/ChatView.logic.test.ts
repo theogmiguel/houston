@@ -41,6 +41,7 @@ import { environmentThreadDetails } from "../state/threads";
 import type { Thread } from "../types";
 import { makeThreadFixture, makeThreadProjectionFixture } from "../test-fixtures";
 import {
+  compactionBlocksSteering,
   getAntigravitySendBlockReason,
   resolveComposerProviderSelection,
   resolveWorktreeSetupProgress,
@@ -1372,5 +1373,108 @@ describe("interrupt request pending state", () => {
         runtimeActive: false,
       }),
     ).toBe(true);
+  });
+});
+
+describe("compactionBlocksSteering", () => {
+  const activeRunId = RunId.make("run-active");
+  const state = (prompt: string, attachments: ReadonlyArray<unknown> = []) => ({
+    activeRunId,
+    runs: [{ id: activeRunId, userMessageId: MessageId.make("message-active") }],
+    messages: [
+      { id: MessageId.make("message-active"), role: "user" as const, text: prompt, attachments },
+    ],
+    sending: null,
+  });
+  // The provider's capability: a steer leaves its compaction inside the turn running.
+  const verified = { steersDuringCompaction: true };
+  // Claude stays off until a fixture proves that a "next" steer leaves a running compaction alone;
+  // other providers have not declared the capability.
+  const unverified = { steersDuringCompaction: false };
+
+  it("steers into a provider's compaction inside an ordinary run only where it is declared safe", () => {
+    const inTurn = { ...state("Refactor the parser"), compactionRunning: true };
+    expect(compactionBlocksSteering({ ...inTurn, ...verified })).toBe(false);
+    expect(compactionBlocksSteering({ ...inTurn, ...unverified })).toBe(true);
+    // A prompt that only mentions compaction is still ordinary work.
+    for (const prompt of ["please /compact", "/compactify"]) {
+      const run = { ...state(prompt), compactionRunning: true, ...verified };
+      expect(compactionBlocksSteering(run)).toBe(false);
+    }
+    expect(
+      compactionBlocksSteering({
+        ...state("/compact", [{}]),
+        compactionRunning: true,
+        ...verified,
+      }),
+    ).toBe(false);
+  });
+
+  it("leaves steering alone while nothing compacts", () => {
+    const idle = { ...state("Refactor the parser"), compactionRunning: false };
+    expect(compactionBlocksSteering({ ...idle, ...verified })).toBe(false);
+    expect(compactionBlocksSteering({ ...idle, ...unverified })).toBe(false);
+  });
+
+  it("queues behind every run that is itself a compaction, for every provider", () => {
+    // The user's /compact, the Compact control with instructions, compact before send and the
+    // idle compaction all run a compaction command as their own prompt.
+    for (const prompt of ["/compact", "  /COMPACT ", "/compact keep the failing test names"]) {
+      for (const provider of [verified, unverified]) {
+        for (const compactionRunning of [true, false]) {
+          expect(
+            compactionBlocksSteering({ ...state(prompt), compactionRunning, ...provider }),
+          ).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("queues behind compact before send once its /compact run is active", () => {
+    // Compact before send sends no optimistic /compact; the server's run for it is what blocks.
+    const compactRun = RunId.make("run-compact");
+    for (const provider of [verified, unverified]) {
+      expect(
+        compactionBlocksSteering({
+          activeRunId: compactRun,
+          runs: [{ id: compactRun, userMessageId: MessageId.make("message-compact") }],
+          messages: [
+            {
+              id: MessageId.make("message-compact"),
+              role: "user",
+              text: "/compact",
+              attachments: [],
+              idleCompaction: "onReturn",
+            },
+          ],
+          sending: { role: "user", text: "Pick up where we left off", attachments: [] },
+          compactionRunning: false,
+          ...provider,
+        }),
+      ).toBe(true);
+    }
+  });
+
+  it("queues while a compaction command is being sent and has no run yet", () => {
+    for (const provider of [verified, unverified]) {
+      expect(
+        compactionBlocksSteering({
+          activeRunId: null,
+          runs: [],
+          messages: [],
+          sending: { role: "user", text: "/compact keep the plan", attachments: [] },
+          compactionRunning: false,
+          ...provider,
+        }),
+      ).toBe(true);
+    }
+    expect(
+      compactionBlocksSteering({
+        ...state("Refactor the parser"),
+        sending: { role: "user", text: "Also update the docs", attachments: [] },
+        compactionRunning: true,
+        ...verified,
+      }),
+    ).toBe(false);
   });
 });

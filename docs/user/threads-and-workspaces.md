@@ -249,7 +249,9 @@ Closing a thread leaves its history intact, moves it to **Closed** and closes it
 whether you closed it or its pull request merged. A thread opened from **Closed** keeps its tab
 until it is closed again. **Archive** removes
 it from the rail into **Settings ▸ Archive**, and is refused while a run is active.
-**Delete** removes the thread and its history after confirmation. Confirmation prompts are
+**Delete** removes the thread and its conversation from Houston's database after confirmation.
+The agent CLI keeps its own session files (for example Claude Code's or Codex's transcripts in
+their own folders), and deleting a thread does not remove them. Confirmation prompts are
 configurable in **Settings ▸ General ▸ Confirmations**.
 
 **Settings ▸ Threads ▸ Auto-close** is off by default, so a merged pull request leaves its
@@ -280,15 +282,18 @@ the text `model:<provider>/<model>`. The `@` list and the chips are in the web a
 
 While a turn is running, the send button reads **Steer** or **Queue** and its chevron opens
 the send menu, which offers **Queue message**, **Steer message** and
-**Interrupt and send**. Steering is disabled for providers that cannot accept it. Queued
-and steered messages show their delivery state, and a dropped message names the reason.
+**Interrupt and send**. Steering is disabled for providers that cannot accept it, and while a
+turn that only compacts the context runs, such as `/compact`; a follow-up then queues behind
+it. When the provider compacts by itself inside a turn, a follow-up sent from the composer
+still steers Codex; for Claude and every other provider it queues and is sent when the turn
+ends. Queued and steered messages show their delivery state, and a dropped message names the
+reason.
 Claude reads a steer once the tool calls it is running finish, and the turn stays open until
 it does. If Claude drops a steer without reading it, the message is sent as the next turn, in
 the place it was sent among queued messages. If Claude neither reads nor drops it, the turn
 keeps showing as working until you press Stop. If Claude's process exits first, the turn fails
 and the steer shows as unconfirmed; it is not sent again, so send it again if needed.
-**Follow-up behavior** in **Settings ▸ Chat** sets what a plain send does while a turn
-runs.
+**Follow-up behavior** in **Settings ▸ Chat** sets what a plain send does while a turn runs.
 
 Hovering a finished assistant response shows **Reply to this response**. It adds a quote chip
 with the opening of that response (up to 300 characters) to the composer, which the chip's

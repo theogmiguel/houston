@@ -235,5 +235,12 @@ export const planThreadDeletion = Effect.fn("ThreadDeletion.planThreadDeletion")
       request: { type: "attachment.cleanup", attachmentIds },
     });
   }
+  // Last, after the tombstone is projected, so nothing queues behind a long delete.
+  effects.push({
+    id: `effect:${command.commandId}:thread.history-purge`,
+    commandId: command.commandId,
+    threadId: command.threadId,
+    request: { type: "thread.history-purge" },
+  });
   return { events, effects };
 });
