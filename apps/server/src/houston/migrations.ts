@@ -1436,6 +1436,70 @@ const InferenceImageVerdicts = Effect.gen(function* () {
   `;
 });
 
+// No CHECK constraints on literals: a later literal would need a table rebuild. Two triggers keep a
+// revision as it was accepted for as long as its bot exists.
+const Bots = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_bots (
+      id TEXT PRIMARY KEY,
+      slug TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      mark TEXT NOT NULL,
+      job TEXT NOT NULL,
+      default_project_id TEXT NOT NULL,
+      other_project_ids_json TEXT NOT NULL,
+      model_selection_json TEXT NOT NULL,
+      asked_mode TEXT NOT NULL,
+      unattended_full_access INTEGER NOT NULL DEFAULT 0,
+      max_at_once INTEGER NOT NULL DEFAULT 1,
+      max_starts_per_day INTEGER NOT NULL DEFAULT 6,
+      max_minutes INTEGER NOT NULL DEFAULT 20,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      ready_made TEXT,
+      row_revision INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_bot_revisions (
+      bot_id TEXT NOT NULL,
+      n INTEGER NOT NULL,
+      text TEXT NOT NULL,
+      sha256 TEXT NOT NULL,
+      accepted_at TEXT NOT NULL,
+      accepted_by_session TEXT NOT NULL,
+      accepted_by_label TEXT NOT NULL,
+      restored_from INTEGER,
+      PRIMARY KEY (bot_id, n)
+    )
+  `;
+  yield* sql`
+    CREATE TRIGGER IF NOT EXISTS houston_bot_revisions_no_update
+    BEFORE UPDATE ON houston_bot_revisions
+    BEGIN SELECT RAISE(ABORT, 'a bot revision cannot be changed'); END
+  `;
+  yield* sql`
+    CREATE TRIGGER IF NOT EXISTS houston_bot_revisions_no_delete
+    BEFORE DELETE ON houston_bot_revisions
+    WHEN EXISTS (SELECT 1 FROM houston_bots WHERE id = OLD.bot_id AND deleted_at IS NULL)
+    BEGIN SELECT RAISE(ABORT, 'a bot revision cannot be deleted while its bot exists'); END
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_bot_changes (
+      id INTEGER PRIMARY KEY,
+      bot_id TEXT NOT NULL,
+      field TEXT NOT NULL,
+      at TEXT NOT NULL,
+      by_session TEXT NOT NULL,
+      by_label TEXT NOT NULL
+    )
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_bot_changes_bot ON houston_bot_changes(bot_id, at)`;
+});
+
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
@@ -1467,6 +1531,7 @@ const houstonMigrationEntries = [
   [30, "InferenceRequests", InferenceRequests],
   [31, "InferenceImageVerdicts", InferenceImageVerdicts],
   [32, "ProviderNativeSessions", createNativeSessionHistory],
+  [35, "Bots", Bots],
 ] as const;
 
 /** Every Houston migration id this build knows, for callers that must not run beside an older schema. */

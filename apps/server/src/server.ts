@@ -137,6 +137,7 @@ import * as LegacyKeychain from "./houston/secrets/LegacyKeychain.ts";
 import * as SecretStoreImport from "./houston/secrets/SecretStoreImport.ts";
 import * as HoustonTaskIssueWriteback from "./houston/tasks/TaskIssueWriteback.ts";
 import * as SlackConnection from "./houston/slack/Connection.ts";
+import { layerBots } from "./houston/bots/layer.ts";
 import * as HoustonLayoutWorkspaces from "./houston/layoutWorkspaces.ts";
 import * as HoustonThreadMembership from "./houston/threadMembership.ts";
 import { layerSlack } from "./houston/slack/layer.ts";
@@ -676,6 +677,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(HoustonSlackStore.sweep),
   Layer.effectDiscard(HoustonNativeSessionHistory.startNativeSessionBackfill),
   HoustonLayoutWorkspaces.layer,
+  layerBots,
   // Model servers registered in Settings: periodic probes, discovery and the image check.
   layerInferenceServices,
   // The gateway's own accounting and stops; the queue layers sit with the route below.
