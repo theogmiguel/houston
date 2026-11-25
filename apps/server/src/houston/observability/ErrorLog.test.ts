@@ -174,6 +174,7 @@ describe("server error log", () => {
               // An allowlisted prefix does not make a value safe.
               "houston.job.id": value,
               "rpc.aggregate": value,
+              "orchestration_v2.driver": "customers",
             };
             return Effect.logError(`failed for ${value}`, { value, error: new Error(value) }).pipe(
               Effect.annotateLogs(fields),

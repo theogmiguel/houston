@@ -14,10 +14,12 @@ export const ErrorLog = Context.Reference<SharedErrorLog.ErrorLog>("houston/Erro
   defaultValue: () => SharedErrorLog.noopErrorLog,
 });
 
-// Exported, yet unneeded to name a failure: statement text and a request's host.
+// Exported, yet unneeded to name a failure: statement text, a request's host and the name a user
+// gave a provider instance.
 const UNWRITTEN_KEYS: ReadonlySet<string> = new Set([
   "db.query.text",
   "http.route",
+  "orchestration_v2.driver",
   "server.address",
   "server.port",
   "url.scheme",
