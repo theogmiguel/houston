@@ -38,7 +38,6 @@ import { RpcMessage, RpcServer } from "effect/rpc";
 import * as RpcAuthorization from "../../auth/RpcAuthorization.ts";
 import * as AgentSessionImporter from "../../project/AgentSessionImporter.ts";
 import * as AgentSessionScanner from "../../project/AgentSessionScanner.ts";
-import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import * as AntigravityInstallation from "../../provider/AntigravityInstallation.ts";
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import * as CheckpointDiffQuery from "../../checkpointing/CheckpointDiffQuery.ts";
@@ -146,7 +145,6 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(AcpRegistrySupport.AcpRegistryCatalog)({}),
   Layer.mock(AgentSessionImporter.AgentSessionImporter)({}),
   Layer.mock(AgentSessionScanner.AgentSessionScanner)({}),
-  Layer.mock(AnalyticsService.AnalyticsService)({}),
   Layer.mock(AntigravityInstallation.AntigravityInstallation)({ managedDirectory: "/unused" }),
   Layer.mock(BackgroundPolicy.BackgroundPolicy)({}),
   Layer.mock(CheckpointDiffQuery.CheckpointDiffQuery)({}),
@@ -296,7 +294,6 @@ const makeWsClient = Effect.fn("makeWsClient")(function* (
             method: "browser-session-cookie",
             scopes: [...scopes],
           },
-          {},
           browser,
           () => Effect.void,
         ),

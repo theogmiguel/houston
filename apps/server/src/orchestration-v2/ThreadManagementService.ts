@@ -26,6 +26,7 @@ import {
   type OrchestrationV2ConversationMessage,
   type OrchestrationV2CreationSource,
   type OrchestrationV2Run,
+  OrchestrationV2RunStatus,
   type OrchestrationV2ThreadShellSnapshot,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2ThreadTranscript,
@@ -260,10 +261,19 @@ export class ThreadManagementNoSteerableRunError extends Schema.TaggedError<Thre
   {
     threadId: ThreadId,
     mode: Schema.Literals(["steer", "restart"]),
+    /** The run a new turn would wait behind, when one is active. */
+    activeRunStatus: Schema.NullOr(OrchestrationV2RunStatus),
+    latestRunStatus: Schema.NullOr(OrchestrationV2RunStatus),
   },
 ) {
   override get message(): string {
-    return `Thread ${this.threadId} has no running turn that can be ${this.mode === "steer" ? "steered" : "restarted"}.`;
+    const refused = `Thread ${this.threadId} has no running turn for mode "${this.mode}"`;
+    if (this.activeRunStatus !== null) {
+      return `${refused}: its run is ${this.activeRunStatus} with no turn that can be ${this.mode === "steer" ? "steered" : "restarted"}. Use mode "auto" or mode "queue" to deliver the message as a turn after that run.`;
+    }
+    const state =
+      this.latestRunStatus === null ? "no runs yet" : `latest run: ${this.latestRunStatus}`;
+    return `${refused} (${state}). Use mode "auto" to deliver now (it starts the idle thread), or mode "queue" for a new turn.`;
   }
 }
 
@@ -848,6 +858,8 @@ const make = Effect.gen(function* () {
         return yield* new ThreadManagementNoSteerableRunError({
           threadId: input.threadId,
           mode,
+          activeRunStatus: target.runs.find(isActiveRun)?.status ?? null,
+          latestRunStatus: latestRun(target)?.status ?? null,
         });
       }
       dispatchMode = {

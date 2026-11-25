@@ -16,6 +16,7 @@ import type {
   ServiceState,
   ServiceUpdateRecord,
 } from "./cloud/serviceProtocol.ts";
+import { appendOutput, appendTargets } from "./houston/serviceOutput.ts";
 import {
   compareExactServiceVersions,
   decodeServiceLauncherChildMessage,
@@ -449,6 +450,7 @@ export class Launcher {
   readonly #completion = Promise.withResolvers<void>();
   readonly #backupSpaceProbe: Partial<BackupSpaceProbe> | undefined;
   readonly #environment: Readonly<NodeJS.ProcessEnv>;
+  readonly #appendOutputTo: { readonly stdout?: number; readonly stderr?: number };
 
   constructor(
     baseDir: string,
@@ -456,11 +458,14 @@ export class Launcher {
     options: {
       readonly backupSpaceProbe?: Partial<BackupSpaceProbe>;
       readonly environment?: Readonly<NodeJS.ProcessEnv>;
+      /** File descriptors the child's stdout and stderr are appended to without blocking it. */
+      readonly appendOutputTo?: { readonly stdout?: number; readonly stderr?: number };
     } = {},
   ) {
     this.#baseDir = baseDir;
     this.#backupSpaceProbe = options.backupSpaceProbe;
     this.#environment = { ...(options.environment ?? process.env) };
+    this.#appendOutputTo = options.appendOutputTo ?? {};
     this.#statePath = NodePath.join(baseDir, "runtime", SERVICE_STATE_FILE);
     this.#state = state;
   }
@@ -580,10 +585,22 @@ export class Launcher {
       ...(update === undefined ? {} : { update }),
     };
     const spawnArguments = runtimeSpawnArguments(paths);
+    const { stdout, stderr } = this.#appendOutputTo;
     const child = NodeChildProcess.spawn(spawnArguments.command, spawnArguments.args, {
       env: { ...this.#environment, [SERVICE_LAUNCHER_CONTEXT_ENV]: JSON.stringify(context) },
-      stdio: ["inherit", "inherit", "inherit", "ipc"],
+      stdio: [
+        "inherit",
+        stdout === undefined ? "inherit" : "pipe",
+        stderr === undefined ? "inherit" : "pipe",
+        "ipc",
+      ],
     });
+    if (stdout !== undefined && child.stdout !== null) {
+      appendOutput(child.stdout, stdout, { name: "stdout" });
+    }
+    if (stderr !== undefined && child.stderr !== null) {
+      appendOutput(child.stderr, stderr, { name: "stderr" });
+    }
     await new Promise<void>((resolve, reject) => {
       const onError = (error: Error) => reject(error);
       child.once("error", onError);
@@ -827,5 +844,8 @@ export async function main(): Promise<void> {
   const environment = await readServiceEnvironment(baseDir);
   const statePath = NodePath.join(baseDir, "runtime", SERVICE_STATE_FILE);
   const state = await readServiceState(statePath);
-  await new Launcher(baseDir, state, { environment }).run();
+  // Node writes a regular file synchronously, so a server whose output is the service log gets a
+  // pipe instead. The launcher's own rare failure messages still write to the file directly, and
+  // one during a stall can fill that pipe and block the server again.
+  await new Launcher(baseDir, state, { environment, appendOutputTo: appendTargets() }).run();
 }

@@ -12,6 +12,7 @@ import * as Schema from "effect/Schema";
 import * as Stdio from "effect/Stdio";
 import * as Stream from "effect/Stream";
 
+import * as CodexRpc from "./_generated/meta.gen.ts";
 import * as CodexError from "./errors.ts";
 import { JsonRpcId, JsonRpcResponseEnvelope } from "./_internal/shared.ts";
 const isJsonRpcId = Schema.is(JsonRpcId);
@@ -175,6 +176,78 @@ const toProtocolMessage = (
 });
 
 const TRAILING_CARRIAGE_RETURN = /\r$/;
+
+// Adapter handlers end in Effect.orDie, so a defect is how they usually crash. Its text can
+// carry anything the handler held, so only a method from the generated schema is named.
+const knownMethod = (method: string, methods: object) => (method in methods ? method : "unknown");
+
+const notificationHandlerDefect = (method: string) =>
+  new Error(
+    `Codex notification handler for '${method}' died; expected it to succeed or fail with a CodexAppServerError.`,
+  );
+
+// A crash is logged by its kind and stack frames only, never by its message, `name`, cause or
+// properties. The annotations are not on the export allowlist, so they stay in the local log.
+// Enough frames to reach a handler below Effect's own; one frame is a function and a location.
+const CRASH_MAX_FRAMES = 16;
+const CRASH_MAX_FRAME_CHARS = 256;
+const CRASH_MAX_KIND_CHARS = 64;
+const STACK_FRAME = /^\s+at /;
+
+// A thrown value sets its own `_tag` and class name, so only an identifier is taken as a kind.
+const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+
+const crashKind = (defect: unknown): string => {
+  if (defect === null) return "null";
+  if (typeof defect !== "object" && typeof defect !== "function") return typeof defect;
+  const tag: unknown = (defect as { readonly _tag?: unknown })._tag;
+  if (typeof tag === "string") return IDENTIFIER.test(tag) ? tag : typeof defect;
+  const constructorName: unknown = Object.getPrototypeOf(defect)?.constructor?.name;
+  return typeof constructorName === "string" && IDENTIFIER.test(constructorName)
+    ? constructorName
+    : typeof defect;
+};
+
+// V8 prints `name: message` before the frames, and a message may span lines, so only frame
+// lines are kept and any line the message or name could have produced is dropped.
+const crashFrames = (defect: unknown): ReadonlyArray<string> => {
+  if (!(defect instanceof Error) || typeof defect.stack !== "string") return [];
+  const header = `${String(defect.name)}\n${String(defect.message)}`;
+  return defect.stack
+    .split("\n")
+    .filter((line) => STACK_FRAME.test(line) && !header.includes(line.trim()))
+    .slice(0, CRASH_MAX_FRAMES)
+    .map((line) => line.trim().slice(0, CRASH_MAX_FRAME_CHARS));
+};
+
+const logCrash = (event: string, defect: unknown, annotations: Record<string, string>) =>
+  Effect.suspend(() => {
+    let detail: { readonly crashKind: string; readonly crashFrames: ReadonlyArray<string> };
+    try {
+      detail = {
+        crashKind: crashKind(defect).slice(0, CRASH_MAX_KIND_CHARS),
+        crashFrames: crashFrames(defect),
+      };
+    } catch {
+      detail = { crashKind: "unknown", crashFrames: [] };
+    }
+    return Effect.logError(event).pipe(Effect.annotateLogs({ ...annotations, ...detail }));
+  });
+
+const transportDefect = (
+  operation: CodexError.CodexAppServerTransportOperation,
+  defect: unknown,
+): Effect.Effect<CodexError.CodexAppServerTransportError> =>
+  logCrash("Codex App Server transport worker died", defect, { operation }).pipe(
+    Effect.as(
+      new CodexError.CodexAppServerTransportError({
+        operation,
+        cause: new Error(
+          `Codex App Server '${operation}' died; expected it to end or fail with a CodexAppServerError.`,
+        ),
+      }),
+    ),
+  );
 
 export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPatchedProtocol")(
   function* (
@@ -345,7 +418,17 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
                 );
               }
 
-              return handler(request).pipe(
+              return Effect.suspend(() => handler(request)).pipe(
+                // Codex waits for an answer, so a crashed handler still replies.
+                Effect.catchDefect((defect) =>
+                  logCrash("Codex request handler died", defect, {
+                    method: knownMethod(request.method, CodexRpc.SERVER_REQUEST_PARAMS),
+                  }).pipe(
+                    Effect.andThen(
+                      Effect.fail(CodexError.CodexAppServerRequestError.internalError()),
+                    ),
+                  ),
+                ),
                 Effect.matchEffect({
                   onFailure: (error) =>
                     respondError(
@@ -386,7 +469,21 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
     const handleNotification = (notification: CodexAppServerIncomingNotification) =>
       releaseResolvedRequest(notification).pipe(
         Effect.andThen(Queue.offer(incomingNotifications, notification)),
-        Effect.andThen(options.onNotification ? options.onNotification(notification) : Effect.void),
+        Effect.andThen(Effect.suspend(() => options.onNotification?.(notification) ?? Effect.void)),
+        // Reading on could drop the turn/completed that ends a turn, so the session ends.
+        Effect.catchDefect((defect) => {
+          const method = knownMethod(notification.method, CodexRpc.SERVER_NOTIFICATION_PARAMS);
+          return logCrash("Codex notification handler died", defect, { method }).pipe(
+            Effect.andThen(
+              Effect.fail(
+                new CodexError.CodexAppServerTransportError({
+                  operation: "read-input-stream",
+                  cause: notificationHandlerDefect(method),
+                }),
+              ),
+            ),
+          );
+        }),
         Effect.asVoid,
       );
 
@@ -490,11 +587,18 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
                           duration: EXIT_STATUS_GRACE,
                           orElse: () => Effect.succeed(ended),
                         }),
+                        // Termination is already marked handled, so a defect must still classify.
+                        Effect.catchDefect((defect) =>
+                          transportDefect("read-process-exit-status", defect),
+                        ),
                       );
                 }),
             }),
           ),
       }),
+      Effect.catchDefect((defect) =>
+        handleTermination(() => transportDefect("read-input-stream", defect)),
+      ),
       Effect.forkScoped,
     );
 
@@ -509,6 +613,9 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
             }),
           ),
         ),
+      ),
+      Effect.catchDefect((defect) =>
+        handleTermination(() => transportDefect("write-output-stream", defect)),
       ),
       Effect.forkScoped,
     );

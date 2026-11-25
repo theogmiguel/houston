@@ -22,6 +22,7 @@ import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as HostPowerMonitor from "./background/HostPowerMonitor.ts";
 import * as KeepAwake from "./background/KeepAwake.ts";
+import * as NonBlockingSpawner from "./houston/nonBlockingSpawner.ts";
 import * as ServerConfig from "./config.ts";
 import { withUntracedRequests } from "./http.ts";
 import * as ServerHttp from "./http.ts";
@@ -51,8 +52,6 @@ import * as PullRequestFilesViewed from "./persistence/PullRequestFilesViewed.ts
 import * as PullRequestReviewGuides from "./persistence/PullRequestReviewGuides.ts";
 import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewGuideService.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
-import * as HoustonAnalytics from "./houston/analytics.ts";
-import * as ProviderEventIngestor from "./orchestration-v2/ProviderEventIngestor.ts";
 import * as ModelManifest from "./provider/ModelManifest.ts";
 import * as ResetCreditCoordinator from "./provider/resetCreditCoordinator.ts";
 import * as EventNdjsonLogger from "./provider/EventNdjsonLogger.ts";
@@ -355,9 +354,14 @@ const layerHttpServer = Layer.unwrap(
       },
     );
   }),
-).pipe(Layer.provide(ManagedPolicy.layer));
+).pipe(
+  Layer.provide(ManagedPolicy.layer),
+  // NodeHttpServer.layer also outputs NodeServices, whose spawner would shadow the wrapped one.
+  (layer) => NonBlockingSpawner.layer.pipe(Layer.provideMerge(layer)),
+);
 
-const layerPlatformServices = DocumentText.layer.pipe(
+export const layerPlatformServices = DocumentText.layer.pipe(
+  Layer.provideMerge(NonBlockingSpawner.layer),
   Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
@@ -526,7 +530,6 @@ const layerAuth = EnvironmentAuth.layer.pipe(
 
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
   Layer.provide(RuntimeLayer.layerProjectService),
-  Layer.provide(ProviderEventIngestor.layerAnalytics),
   Layer.provide(layerCheckpointStore),
   Layer.provide(layerGitWorkflow),
   Layer.provide(
@@ -766,7 +769,6 @@ const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
   Layer.provideMerge(layerResourceDiagnostics),
   Layer.provideMerge(TraceDiagnostics.layer),
   Layer.provideMerge(TriageService.layer.pipe(Layer.provide(GitVcsDriver.layer))),
-  Layer.provideMerge(HoustonAnalytics.layer),
   Layer.provideMerge(ExternalLauncher.layer),
   Layer.provideMerge(RemoteOpenTargets.layer),
   Layer.provideMerge(DirectEndpoints.layer),
@@ -1033,4 +1035,7 @@ const layerMakeServer = Layer.unwrap(
   }),
 ).pipe(Layer.provide(ProcessRunner.layer));
 
-export const runServer = Layer.launch(layerMakeServer);
+export const runServer = Layer.launch(
+  // For the layers above whose spawner requirement is met by the caller's runtime.
+  layerMakeServer.pipe(Layer.provide(NonBlockingSpawner.layer)),
+);

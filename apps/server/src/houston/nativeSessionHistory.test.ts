@@ -288,7 +288,7 @@ describe("the session history backfills what the database still names", () => {
     yield* decoy("turn-item.updated");
     yield* sql`DROP TABLE houston_provider_native_sessions`;
     yield* sql`DROP TABLE houston_native_session_history`;
-    yield* sql`DELETE FROM houston_sql_migrations WHERE migration_id = 29`;
+    yield* sql`DELETE FROM houston_sql_migrations WHERE migration_id = 32`;
     return {
       last,
       earliest: DateTime.formatIso(earliest),
@@ -312,7 +312,7 @@ describe("the session history backfills what the database still names", () => {
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       const { last, earliest, replaced } = yield* earlierBuild;
-      assert.deepEqual(yield* runHoustonMigrations(), [[29, "ProviderNativeSessions"]]);
+      assert.deepEqual(yield* runHoustonMigrations(), [[32, "ProviderNativeSessions"]]);
       // The migration itself reads no events.
       assert.deepEqual(yield* sessionRows, [
         [last.payload.id, "session:current", "backfill_current"],
@@ -340,8 +340,8 @@ describe("the session history backfills what the database still names", () => {
       // Neither the migration nor the backfill changes anything when run again.
       const snapshot =
         yield* sql`SELECT * FROM houston_provider_native_sessions ORDER BY native_id`;
-      yield* sql`DELETE FROM houston_sql_migrations WHERE migration_id = 29`;
-      assert.deepEqual(yield* runHoustonMigrations(), [[29, "ProviderNativeSessions"]]);
+      yield* sql`DELETE FROM houston_sql_migrations WHERE migration_id = 32`;
+      assert.deepEqual(yield* runHoustonMigrations(), [[32, "ProviderNativeSessions"]]);
       yield* sql`UPDATE houston_native_session_history SET backfill_cursor = 0, backfilled_at = NULL`;
       yield* backfillNativeSessionsFromEvents();
       assert.deepEqual(
@@ -416,12 +416,12 @@ describe("the session history backfills what the database still names", () => {
       const sql = yield* SqlClient.SqlClient;
       yield* earlierBuild;
       // Composed fixture: a later id merged and ran before this one did.
-      yield* sql`INSERT INTO houston_sql_migrations (migration_id, name) VALUES (30, 'LaterMigration')`;
+      yield* sql`INSERT INTO houston_sql_migrations (migration_id, name) VALUES (33, 'LaterMigration')`;
       yield* sql`DELETE FROM houston_sql_migrations WHERE migration_id = 28`;
       yield* sql`DROP TABLE houston_pending_device_approvals`;
       assert.deepEqual(yield* runHoustonMigrations(), [
         [28, "PendingDeviceApprovals"],
-        [29, "ProviderNativeSessions"],
+        [32, "ProviderNativeSessions"],
       ]);
       yield* backfillNativeSessionsFromEvents();
       assert.lengthOf(yield* sessionRows, 2);

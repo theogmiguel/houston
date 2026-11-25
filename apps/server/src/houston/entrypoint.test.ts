@@ -287,8 +287,8 @@ async function exitCode(server: Server): Promise<number | null> {
   ]);
 }
 
-// SIGTERM runs upstream's shutdown, including the analytics flush. Windows has no SIGTERM
-// delivery to a console-less child, so there the process is terminated.
+// SIGTERM runs upstream's shutdown. Windows has no SIGTERM delivery to a console-less child,
+// so there the process is terminated.
 async function shutdown(server: Server): Promise<void> {
   if (IS_WINDOWS) {
     killTree(server.child.pid);
@@ -428,32 +428,6 @@ describe("houston server entrypoint", () => {
           expect(NodeFS.readdirSync(channel)).toEqual([file]);
         }),
       );
-    },
-    TEST_TIMEOUT_MS,
-  );
-
-  it(
-    "no analytics request reaches the sink",
-    async () => {
-      const root = makeSandbox();
-      const base = NodePath.join(root, ".houston-dev", "v2");
-      const sink = await startSink();
-      const port = await freePort();
-      const server = spawnServer({
-        env: sandboxEnv(root, {
-          HOUSTON_TELEMETRY_ENABLED: "true",
-          HOUSTON_POSTHOG_HOST: sink.url,
-          HOUSTON_POSTHOG_KEY: "phc_houston_test",
-        }),
-        envelope: envelope(port, base),
-      });
-      await waitReady(server, port);
-      // Past upstream's 10-second background flush, then its shutdown flush.
-      await sleep(12_000);
-      await shutdown(server);
-      await sleep(500);
-
-      expect(sink.requests).toEqual([]);
     },
     TEST_TIMEOUT_MS,
   );
@@ -741,6 +715,86 @@ describe("houston server entrypoint", () => {
           throw new Error(`${error.message}\n${log()}`);
         },
       );
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
+
+// A closed output pipe (the reader went away) and a full disk (`/dev/full` fails every write
+// with ENOSPC without storing anything) must leave the server serving.
+describe("houston server output failures", () => {
+  function spawnWithOutput(options: {
+    readonly args: ReadonlyArray<string>;
+    readonly env: NodeJS.ProcessEnv;
+    readonly stdout: "pipe" | number;
+    readonly envelope?: Record<string, unknown>;
+  }) {
+    const child = NodeChildProcess.spawn(process.execPath, [BIN, ...options.args], {
+      cwd: SERVER_DIR,
+      env: options.env,
+      stdio: ["pipe", options.stdout, "pipe"],
+      detached: !IS_WINDOWS,
+      windowsHide: true,
+    });
+    const output: Array<string> = [];
+    child.stderr!.on("data", (chunk: Buffer) => output.push(chunk.toString()));
+    const exit = new Promise<number | null>((resolve) => child.on("exit", (code) => resolve(code)));
+    if (options.envelope !== undefined) child.stdin!.write(`${JSON.stringify(options.envelope)}\n`);
+    child.stdin!.end();
+    const server = { child, output, exit };
+    servers.push(server);
+    return server;
+  }
+
+  async function keepsServing(server: Server, port: number): Promise<void> {
+    await waitReady(server, port);
+    // Startup logs have been written by now; later lines go to the same failed stream.
+    await sleep(3_000);
+    expect(server.child.exitCode, server.output.join("")).toBe(null);
+    expect(await environmentStatus(port)).toBe(200);
+    const reports = lines(server).filter((line) => line.startsWith("houston: a write to"));
+    expect(reports, server.output.join("")).toHaveLength(1);
+    expect(reports[0]).toMatch(/^houston: a write to stdout failed \((EPIPE|ENOSPC)\)/);
+  }
+
+  it(
+    "a terminal server keeps serving after its output pipe closes",
+    async () => {
+      const root = makeSandbox();
+      const base = NodePath.join(root, ".houston-dev", "v2");
+      const port = await freePort();
+      const server = spawnWithOutput({
+        args: ["serve", "--base-dir", base, "--port", String(port), "--host", "127.0.0.1"],
+        env: sandboxEnv(root),
+        stdout: "pipe",
+      });
+      // The reader goes away before the first log line, so every stdout write fails.
+      server.child.stdout!.destroy();
+      await keepsServing(server, port);
+      await shutdown(server);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it.skipIf(IS_WINDOWS)(
+    "a desktop server keeps serving when its output is on a full disk",
+    async () => {
+      const root = makeSandbox();
+      const base = NodePath.join(root, ".houston-dev", "v2");
+      const port = await freePort();
+      const full = NodeFS.openSync("/dev/full", "w");
+      try {
+        const server = spawnWithOutput({
+          args: ["--bootstrap-fd", "0"],
+          env: sandboxEnv(root),
+          stdout: full,
+          envelope: envelope(port, base),
+        });
+        await keepsServing(server, port);
+        await shutdown(server);
+      } finally {
+        NodeFS.closeSync(full);
+      }
     },
     TEST_TIMEOUT_MS,
   );

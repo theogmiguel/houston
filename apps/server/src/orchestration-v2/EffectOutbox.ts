@@ -4,6 +4,7 @@ import {
   CommandId,
   MessageId,
   NodeId,
+  NonNegativeInt,
   ProviderSessionId,
   RunAttemptId,
   ProviderApprovalDecision,
@@ -57,6 +58,8 @@ export const OrchestrationEffectRequestV2 = Schema.Union([
     providerThreadId: ProviderThreadId,
     providerTurnId: ProviderTurnId,
     messageId: MessageId,
+    // The latest run ordinal when the steer was sent: a requeue keeps its place behind those runs.
+    steerFollowUpAfterRunOrdinal: Schema.optional(NonNegativeInt),
   }),
   Schema.Struct({
     type: Schema.Literal("provider-turn.restart"),
@@ -109,6 +112,9 @@ export const OrchestrationEffectRequestV2 = Schema.Union([
     attachmentIds: Schema.Array(Schema.String),
   }),
   Schema.Struct({
+    type: Schema.Literal("thread.history-purge"),
+  }),
+  Schema.Struct({
     type: Schema.Literal("thread-title.generate"),
     kind: Schema.Union([
       Schema.Struct({ type: Schema.Literal("initial"), messageId: MessageId }),
@@ -131,6 +137,7 @@ export const REPLAY_SAFE_EFFECT_TYPES_AFTER_PROCESS_LOSS = [
   "terminal.cleanup",
   "preview.cleanup",
   "attachment.cleanup",
+  "thread.history-purge",
   "thread-title.generate",
   "delegated-tasks.stop",
 ] as const satisfies ReadonlyArray<OrchestrationEffectRequestV2["type"]>;
@@ -207,6 +214,11 @@ export interface EffectOutboxV2Shape {
   readonly listByCommandId: (
     commandId: CommandId,
   ) => Effect.Effect<ReadonlyArray<OrchestrationEffectV2>, EffectOutboxError>;
+  /** A message's first steer effect, which records the runs queued before the message. */
+  readonly firstSteer: (
+    threadId: ThreadId,
+    messageId: MessageId,
+  ) => Effect.Effect<Option.Option<OrchestrationEffectV2>, EffectOutboxError>;
   readonly cancelUnsettled: (input: {
     readonly threadId: ThreadId;
     readonly effectTypes: ReadonlyArray<OrchestrationEffectRequestV2["type"]>;
@@ -434,6 +446,25 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
             isEffectOutboxError(cause)
               ? cause
               : new EffectOutboxError({ operation: "list", cause }),
+          ),
+        ),
+      firstSteer: (threadId, messageId) =>
+        sql<EffectRow>`
+          SELECT *
+          FROM orchestration_v2_effect_outbox
+          WHERE thread_id = ${threadId}
+            AND effect_type = 'provider-turn.steer'
+            AND json_extract(payload_json, '$.messageId') = ${messageId}
+          ORDER BY rowid ASC
+          LIMIT 1
+        `.pipe(
+          NodeSqliteClient.readOnly,
+          Effect.flatMap((rows) => decodeRows("first-steer", rows)),
+          Effect.map((effects) => Option.fromNullishOr(effects[0])),
+          Effect.mapError((cause) =>
+            isEffectOutboxError(cause)
+              ? cause
+              : new EffectOutboxError({ operation: "first-steer", cause }),
           ),
         ),
       cancelUnsettled: Effect.fn("EffectOutbox.cancelUnsettled")(

@@ -15,6 +15,7 @@ import {
   createTurnStartReadModels,
 } from "./projectionReadModels.ts";
 import { createNativeSessionHistory } from "./nativeSessionHistory.ts";
+import { purgeDeletedThreadHistories } from "./threadHistoryPurge.ts";
 
 // Upstream's migrator skips every id up to the highest it recorded, so Houston's schema keeps its
 // own history table and ids; upstream's table and ids stay untouched.
@@ -1381,6 +1382,10 @@ const PendingDeviceApprovals = Effect.gen(function* () {
   `;
 });
 
+// Deleting a thread used to leave its conversation in the database; remove it for every thread
+// already soft-deleted. The effect outbox handles new deletions.
+const PurgeDeletedThreadHistories = purgeDeletedThreadHistories();
+
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
@@ -1408,7 +1413,8 @@ const houstonMigrationEntries = [
   [26, "IssueTrackerBindingProperties", IssueTrackerBindingProperties],
   [27, "NotionPagesAsTaskIssues", NotionPagesAsTaskIssues],
   [28, "PendingDeviceApprovals", PendingDeviceApprovals],
-  [29, "ProviderNativeSessions", createNativeSessionHistory],
+  [29, "PurgeDeletedThreadHistories", PurgeDeletedThreadHistories],
+  [32, "ProviderNativeSessions", createNativeSessionHistory],
 ] as const;
 
 /** Every Houston migration id this build knows, for callers that must not run beside an older schema. */

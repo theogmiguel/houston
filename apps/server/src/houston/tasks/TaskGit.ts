@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { gitSpawnEnv } from "../../vcs/VcsProcess.ts";
+import { inChildDirectory } from "../nonBlockingSpawner.ts";
 
 export class HoustonTaskGitError extends Schema.TaggedError<HoustonTaskGitError>()(
   "HoustonTaskGitError",
@@ -19,32 +20,34 @@ export class HoustonTaskGitError extends Schema.TaggedError<HoustonTaskGitError>
 
 /** `git <args>` in `cwd`, its stdout trimmed. */
 export const git = (cwd: string, args: ReadonlyArray<string>) =>
-  Effect.callback<string, HoustonTaskGitError>((resume) => {
-    execFile(
-      "git",
-      ["-c", "core.autocrlf=false", ...args],
-      {
-        cwd,
-        maxBuffer: 16 * 1024 * 1024,
-        windowsHide: true,
-        // oxlint-disable-next-line houston/no-global-process-runtime -- TaskGit runs outside the Effect runtime.
-        env: gitSpawnEnv(process.env, process.platform),
-      },
-      (error, stdout, stderr) => {
-        resume(
-          error === null
-            ? Effect.succeed(stdout.trim())
-            : Effect.fail(
-                new HoustonTaskGitError({
-                  cwd,
-                  args: [...args],
-                  detail: (stderr.trim() || error.message).slice(0, 2_000),
-                }),
-              ),
-        );
-      },
-    );
-  });
+  Effect.flatMap(inChildDirectory("git", ["-c", "core.autocrlf=false", ...args], cwd), (launch) =>
+    Effect.callback<string, HoustonTaskGitError>((resume) => {
+      execFile(
+        launch.command,
+        launch.args,
+        {
+          ...(launch.cwd === undefined ? {} : { cwd: launch.cwd }),
+          maxBuffer: 16 * 1024 * 1024,
+          windowsHide: true,
+          // oxlint-disable-next-line houston/no-global-process-runtime -- TaskGit runs outside the Effect runtime.
+          env: gitSpawnEnv(process.env, process.platform),
+        },
+        (error, stdout, stderr) => {
+          resume(
+            error === null
+              ? Effect.succeed(stdout.trim())
+              : Effect.fail(
+                  new HoustonTaskGitError({
+                    cwd,
+                    args: [...args],
+                    detail: (stderr.trim() || error.message).slice(0, 2_000),
+                  }),
+                ),
+          );
+        },
+      );
+    }),
+  );
 
 /** The commit `ref` names, or null when it names none. */
 export const resolveCommit = (cwd: string, ref: string) =>
