@@ -3,6 +3,11 @@ import { compactDynamicToolOutput } from "@houston-app/shared/toolOutput";
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
 import { claudeTaskOutputRoot, tailClaudeTaskOutput } from "./ClaudeTaskOutputTail.ts";
 import {
+  type ClaudeAutoCompactWindow,
+  type ClaudeCompactSettingsLayer,
+  resolveClaudeAutoCompactWindow,
+} from "../../houston/claudeAutoCompactWindow.ts";
+import {
   dynamicToolTitle,
   formatReadToolLabel,
   formatSearchToolLabel,
@@ -269,9 +274,13 @@ function claudePromptCacheTtlMs(
 // getContextUsage reports a 150,000 window as a 117,000 threshold, for every catalog model.
 const CLAUDE_AUTO_COMPACT_RESERVE_TOKENS = 33_000;
 
-function claudeAutoCompactThreshold(autoCompactWindow: string, maxTokens: number | null) {
-  const windowTokens = Number(autoCompactWindow);
-  return windowTokens > 0 && (maxTokens === null || windowTokens < maxTokens)
+function claudeAutoCompactThreshold(
+  autoCompact: ClaudeAutoCompactWindow | undefined,
+  maxTokens: number | null,
+) {
+  if (autoCompact?.source === "off") return { compactsAutomatically: false };
+  const windowTokens = autoCompact?.window ?? null;
+  return windowTokens !== null && (maxTokens === null || windowTokens < maxTokens)
     ? { autoCompactThreshold: windowTokens - CLAUDE_AUTO_COMPACT_RESERVE_TOKENS }
     : {};
 }
@@ -298,7 +307,7 @@ export function claudeProviderTurnTokenUsage(
   },
   maxTokens: number | null,
   updatedAt: string,
-  autoCompactWindow = "",
+  autoCompactWindow?: ClaudeAutoCompactWindow,
   requestedAt?: DateTime.Utc,
 ) {
   const inputTokens = claudeMessageInputTokens(usage);
@@ -471,6 +480,8 @@ export const ClaudeProviderCapabilitiesV2 = {
     // Steers no longer cancel tools; kept true so automatic notices still queue instead of
     // steering, since a dropped notice has no delivery record to requeue it from.
     activeSteeringInterruptsTools: true,
+    // Off until a fixture proves that a "next" steer leaves a running compaction alone.
+    activeSteeringDuringCompaction: false,
     supportsSteeringByInterruptRestart: false,
     supportsQueuedMessages: true,
     terminalStatusQuality: "strong",
@@ -1867,12 +1878,16 @@ export function makeClaudeQueryOptions(input: {
       : typeof input.sdkSettings === "object" && input.sdkSettings !== null
         ? ({ ...input.sdkSettings, ...selectionSettings } as ClaudeSdkSettings)
         : selectionSettings;
-  const compactQuerySettings =
+  const autoCompactWindow =
     input.settings?.autoCompactWindow === undefined || input.settings.autoCompactWindow.length === 0
+      ? undefined
+      : input.settings.autoCompactWindow;
+  const compactQuerySettings =
+    autoCompactWindow === undefined
       ? querySettings
       : ({
           ...(typeof querySettings === "object" && querySettings !== null ? querySettings : {}),
-          autoCompactWindow: Number(input.settings.autoCompactWindow),
+          autoCompactWindow: Number(autoCompactWindow),
         } as ClaudeSdkSettings);
   // Claude Code expands a bare alias to its own model, so a custom model with an alias's name
   // pins the alias to itself.
@@ -1885,7 +1900,9 @@ export function makeClaudeQueryOptions(input: {
         };
   // A settings file path cannot take extra keys, so it goes through unchanged.
   const effectiveQuerySettings =
-    (input.toolSearchOverride === undefined && aliasOverrideEnv === undefined) ||
+    (input.toolSearchOverride === undefined &&
+      aliasOverrideEnv === undefined &&
+      autoCompactWindow === undefined) ||
     typeof compactQuerySettings === "string"
       ? compactQuerySettings
       : ({
@@ -1893,6 +1910,10 @@ export function makeClaudeQueryOptions(input: {
           env: {
             ...compactQuerySettings?.env,
             ...aliasOverrideEnv,
+            // Claude Code ranks the variable above every autoCompactWindow key.
+            ...(autoCompactWindow === undefined
+              ? {}
+              : { CLAUDE_CODE_AUTO_COMPACT_WINDOW: autoCompactWindow }),
             ...(input.toolSearchOverride === undefined
               ? {}
               : { ENABLE_TOOL_SEARCH: input.toolSearchOverride }),
@@ -3062,12 +3083,12 @@ const decodeClaudeSubagentCacheSettings = Schema.decodeUnknownEffect(
 const decodeClaudeCompactSettings = Schema.decodeUnknownEffect(
   Schema.fromJsonString(
     Schema.Struct({
+      autoCompactEnabled: Schema.optionalKey(Schema.Unknown),
       autoCompactWindow: Schema.optionalKey(Schema.Unknown),
       modelSettings: Schema.optionalKey(Schema.Unknown),
     }),
   ),
 );
-const decodeClaudeCompactWindow = Schema.decodeUnknownOption(Schema.Int);
 const decodeClaudeEnvSettings = Schema.decodeUnknownEffect(
   fromLenientJson(
     Schema.StructWithRest(
@@ -4463,7 +4484,7 @@ function formatClaudeUsageLimitWait(waitMs: number): string {
 interface ActiveClaudeTurnContext {
   readonly queryPolicy: ClaudeRuntimeQueryPolicy;
   readonly input: ProviderAdapter.ProviderAdapterV2TurnInput;
-  readonly autoCompactWindow: string;
+  readonly autoCompactWindow: ClaudeAutoCompactWindow;
   readonly nativeThreadId: string;
   readonly nativeTurnId: string;
   nativeMessageCursor: string | null;
@@ -5177,39 +5198,27 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
     modelSelection: ModelSelection,
     launchArgSettings: ClaudeSdkSettings | undefined,
   ) {
-    if (adapterOptions.settings.autoCompactWindow !== "")
-      return adapterOptions.settings.autoCompactWindow;
-    const model = compileClaudeModelSelection(modelSelection).apiModelId.replace(MODEL_PATTERN, "");
-    const windowFrom = (settings: unknown) => {
-      if (typeof settings !== "object" || settings === null) return undefined;
-      const models = Reflect.get(settings, "modelSettings");
-      const modelSetting =
-        typeof models === "object" && models !== null ? Reflect.get(models, model) : undefined;
-      const modelWindow =
-        typeof modelSetting === "object" && modelSetting !== null
-          ? Reflect.get(modelSetting, "autoCompactWindow")
-          : undefined;
-      const validWindow = (value: unknown) => {
-        const selected = Option.getOrUndefined(decodeClaudeCompactWindow(value));
-        return typeof selected === "number" && selected >= 100_000 && selected <= 1_000_000
-          ? String(selected)
-          : undefined;
-      };
-      return modelWindow === "auto"
-        ? ""
-        : (validWindow(modelWindow) ?? validWindow(Reflect.get(settings, "autoCompactWindow")));
-    };
-    const launchWindow = windowFrom(launchArgSettings);
-    if (launchWindow !== undefined) return launchWindow;
+    const fileLayers: Array<ClaudeCompactSettingsLayer> = [];
     for (const settingsFile of yield* settingsFilesByPrecedence(cwd)) {
-      const settings = yield* fileSystem.readFileString(settingsFile).pipe(
-        Effect.flatMap(decodeClaudeCompactSettings),
+      const text = yield* fileSystem
+        .readFileString(settingsFile)
+        .pipe(Effect.orElseSucceed(() => undefined));
+      if (text === undefined) continue;
+      const env = yield* decodeClaudeEnvSettings(text).pipe(
+        Effect.map((settings) => settings.env),
         Effect.orElseSucceed(() => undefined),
       );
-      const value = windowFrom(settings);
-      if (value !== undefined) return value;
+      const compact = yield* decodeClaudeCompactSettings(text).pipe(
+        Effect.orElseSucceed(() => undefined),
+      );
+      fileLayers.push({ ...compact, env });
     }
-    return "";
+    return resolveClaudeAutoCompactWindow({
+      model: compileClaudeModelSelection(modelSelection).apiModelId.replace(MODEL_PATTERN, ""),
+      layers: [launchArgSettings, ...fileLayers],
+      environment: adapterOptions.environment,
+      houstonWindow: adapterOptions.settings.autoCompactWindow,
+    });
   });
 
   const userInvocableSkills = (cwd: string | null) =>

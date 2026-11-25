@@ -403,6 +403,10 @@
       "types": "./src/orchestrationV2DedupedBodies.ts",
       "import": "./src/orchestrationV2DedupedBodies.ts"
     },
+    "./orchestrationV2ManualContinuation": {
+      "types": "./src/orchestrationV2ManualContinuation.ts",
+      "import": "./src/orchestrationV2ManualContinuation.ts"
+    },
     "./orchestrationV2Timeline": {
       "types": "./src/orchestrationV2Timeline.ts",
       "import": "./src/orchestrationV2Timeline.ts"
