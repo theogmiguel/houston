@@ -66,3 +66,19 @@ For each signal, the first of these that is set decides where it goes:
 
 An environment URL wins over a Datadog choice even when it points at a Datadog site, and it is
 sent with only the headers its own variables give: Houston never adds the stored key to it.
+
+## The error log on this machine
+
+The server and the desktop app each keep a small error log, so that a failure can still be
+diagnosed after the trace file has rotated. It is always on and never leaves the machine. An entry
+holds the time, the name of the operation that failed, the kind of error, where in Houston's code
+it happened (function, file name and line), Houston's own ids and the operation's duration. It
+holds no log or error messages, paths, URLs, prompts, agent responses, file contents, SQL
+statements or credentials.
+
+The files are `server.errors-<date>.ndjson` and `desktop.errors-<date>.ndjson` in the `userdata/logs`
+folder of the server's state directory (`~/.houston/v2/userdata/logs` for the installed release; a
+WSL server keeps its own inside the distribution). Houston keeps today's file and the seven before
+it, in UTC days, and writes at most 2 MiB per file. Older files are removed when Houston starts and
+when a later day's first failure is recorded; the **rotated logs** storage setting does not change
+this. To delete the log, delete those files; Houston needs none of them.
