@@ -44,3 +44,7 @@ export function claudeResumeCompactionAge(questionAnswer: {
  * idleCompaction default of 200K.
  */
 export const COMPACTION_SUGGESTION_MIN_TOKENS = 200_000;
+
+/** The prompt cache lifetimes Claude reports: the default and the extended one. */
+export const CLAUDE_PROMPT_CACHE_TTL_5M_MS = 5 * 60_000;
+export const CLAUDE_PROMPT_CACHE_TTL_1H_MS = 60 * 60_000;

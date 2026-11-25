@@ -211,6 +211,7 @@ it.effect(
           apply: () => Effect.void,
           getLimitRecoveryCandidates: () => Effect.die("unused getLimitRecoveryCandidates"),
           getLimitRecoveryWakeAt: () => Effect.die("unused getLimitRecoveryWakeAt"),
+          getIdleCompactionCandidates: () => Effect.die("unused getIdleCompactionCandidates"),
           getOpenRemoteDelegatedTasks: Effect.die("unused getOpenRemoteDelegatedTasks"),
           listProviderThreadRefs: () => Effect.die("unused listProviderThreadRefs"),
           getShellSnapshot: () => Effect.die("unused getShellSnapshot"),
