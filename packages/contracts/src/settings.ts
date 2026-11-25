@@ -1,5 +1,7 @@
 import { EasDeviceHostConfigs, SimlockDeviceHostConfigs, SshDeviceHostConfigs } from "./device.ts";
 import { HoustonObservabilityPreset, LenientObservabilityPreset } from "./houston/observability.ts";
+import { InferenceServerConfig, InferenceServerId } from "./houston/inference.ts";
+import { LocalAgentSuggestion, LocalAgentSuggestions } from "./houston/providerSuggestions.ts";
 import {
   AuthOrchestrationOperateScope,
   AuthSettingsWriteScope,
@@ -1035,6 +1037,10 @@ const SourceControlWritingStyleSetting = Schema.Union([
   LegacySourceControlWritingStyle,
 ]);
 
+/** Where background writing may go when its model cannot run: local-marked instances, anything, or nowhere. */
+export const TextGenerationFallback = Schema.Literals(["local", "any", "none"]);
+export type TextGenerationFallback = typeof TextGenerationFallback.Type;
+
 export const BranchNamingMode = Schema.Literals(["static", "semantic", "custom"]);
 export type BranchNamingMode = typeof BranchNamingMode.Type;
 
@@ -1087,6 +1093,20 @@ export type BackgroundActivitySettings = typeof BackgroundActivitySettings.Type;
 
 export const ResponseStreamingMode = Schema.Literals(["turn", "paragraph"]);
 export type ResponseStreamingMode = typeof ResponseStreamingMode.Type;
+
+/**
+ * Which transports may reach this server from another machine. `any` keeps
+ * every route; `private-e2ee-only` refuses tunnel, proxy, and plain-LAN peers
+ * and answers only loopback, Tailscale/WireGuard, and SSH-forwarded ones.
+ */
+export const RemoteTransportPolicy = Schema.Literals(["any", "private-e2ee-only"]);
+export type RemoteTransportPolicy = typeof RemoteTransportPolicy.Type;
+export const DEFAULT_REMOTE_TRANSPORT_POLICY: RemoteTransportPolicy = "any";
+
+/** Application-layer E2EE on the WebSocket RPC channel. */
+export const E2eeMode = Schema.Literals(["off", "prefer", "require"]);
+export type E2eeMode = typeof E2eeMode.Type;
+export const DEFAULT_E2EE_MODE: E2eeMode = "off";
 
 const StorageRetentionDays = Schema.NullOr(
   Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3650 })),
@@ -1365,6 +1385,13 @@ export const ServerSettings = Schema.Struct({
   /** Empty starts new terminals with the login shell; otherwise an executable shell command. */
   terminalShell: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
 
+  /** Restricts remote access to loopback, Tailscale, and SSH transports. */
+  remoteTransportPolicy: RemoteTransportPolicy.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_REMOTE_TRANSPORT_POLICY)),
+  ),
+  /** Application-layer E2EE for remote WebSocket clients. */
+  e2eeMode: E2eeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_E2EE_MODE))),
+
   enableAgentBrowserAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   cloudSpeechCredentials: CloudSpeechCredentials.pipe(
     Schema.withDecodingDefault(Effect.succeed({ openai: "", xai: "", openrouter: "" })),
@@ -1519,6 +1546,13 @@ export const ServerSettings = Schema.Struct({
       }),
     ),
   ),
+  /** Set when a client picks a text generation model; until then a ready local instance is preferred. */
+  textGenerationModelSelectionExplicit: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+  textGenerationFallback: TextGenerationFallback.pipe(
+    Schema.withDecodingDefault(Effect.succeed("any" as const)),
+  ),
   threadTitleInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   branchNamingMode: BranchNamingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("static" as const)),
@@ -1546,6 +1580,13 @@ export const ServerSettings = Schema.Struct({
   providerInstances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  // Houston: OpenAI-compatible model servers listed under Settings → Inference. API keys live in
+  // the server's secret store, keyed by server id, and never in this record.
+  inferenceServers: Schema.Record(InferenceServerId, InferenceServerConfig).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+  // Houston: agents found on this machine that the user may turn on, and remembered answers.
+  localAgentSuggestions: LocalAgentSuggestions,
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   sourceControlHosts: Schema.Record(Schema.String, SourceControlHostSettings).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
@@ -1814,6 +1855,8 @@ export const ServerSettingsPatch = Schema.Struct({
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
   keepAwakeWhileAgentsWork: Schema.optionalKey(Schema.Boolean),
   terminalShell: Schema.optionalKey(TrimmedString),
+  remoteTransportPolicy: Schema.optionalKey(RemoteTransportPolicy),
+  e2eeMode: Schema.optionalKey(E2eeMode),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
   cloudSpeechCredentials: Schema.optionalKey(
     Schema.Struct({
@@ -1897,6 +1940,9 @@ export const ServerSettingsPatch = Schema.Struct({
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
   hostFolderCloneLayout: Schema.optionalKey(Schema.Boolean),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
+  textGenerationFallback: Schema.optionalKey(TextGenerationFallback),
+  /** Omitted with a selection means the user picked it; resets send false to restore automatic. */
+  textGenerationModelSelectionExplicit: Schema.optionalKey(Schema.Boolean),
   threadTitleInstructions: Schema.optionalKey(TrimmedString),
   branchNamingMode: Schema.optionalKey(BranchNamingMode),
   branchNamePrefix: Schema.optionalKey(TrimmedString),
@@ -1927,6 +1973,14 @@ export const ServerSettingsPatch = Schema.Struct({
   sourceControlHosts: Schema.optionalKey(Schema.Record(Schema.String, SourceControlHostSettings)),
   // Replace whole maps to avoid half-merged driver configs.
   providerInstances: Schema.optionalKey(Schema.Record(ProviderInstanceId, ProviderInstanceConfig)),
+  // Merge per server so another client's edit is not lost; null removes an entry.
+  inferenceServers: Schema.optionalKey(
+    Schema.Record(InferenceServerId, Schema.NullOr(InferenceServerConfig)),
+  ),
+  // Merge per agent; null removes an entry.
+  localAgentSuggestions: Schema.optionalKey(
+    Schema.Record(ProviderDriverKind, Schema.NullOr(LocalAgentSuggestion)),
+  ),
   // Merge per source to avoid racing other edits; null removes an entry.
   usageLimitSources: Schema.optionalKey(
     Schema.Record(UsageLimitSourceId, Schema.NullOr(UsageLimitSourceConfig)),

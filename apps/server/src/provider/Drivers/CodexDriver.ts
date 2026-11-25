@@ -29,6 +29,10 @@ import {
   withCodexAppServerClient,
 } from "../CodexProvider.ts";
 import { resolveCodexLaunchArgs } from "../codexLaunchArgs.ts";
+import {
+  makeCodexGatewaySource,
+  withCodexGatewayStatus,
+} from "../../houston/inference/codexGateway.ts";
 import { makeManagedServerProvider } from "@houston-app/provider-core/server/managedProvider";
 import * as ModelCatalog from "@houston-app/provider-core/server/ModelCatalog";
 import { applyCodexModelCatalog } from "../codexModelCatalog.ts";
@@ -191,6 +195,15 @@ export const CodexDriver: ProviderDriver<
       binaryPath: expandHomePath(config.binaryPath, yield* HostProcess.HomeDirectory),
       homePath: homeLayout.effectiveHomePath ?? "",
     } satisfies CodexSettings;
+    const serverConfig = yield* ServerConfig.ServerConfig;
+    const gateway = yield* makeCodexGatewaySource(instanceId, {
+      directory: pathService.join(serverConfig.providerStatusCacheDir, "codex-model-catalogs"),
+      codexVersion: installation.resolve().pipe(
+        Effect.map((executable) => executable.version),
+        Effect.orElseSucceed(() => undefined),
+      ),
+    });
+    const gatewayResolution = yield* gateway.resolution;
     const resolveMaintenance = yield* makeCachedProviderMaintenanceResolution(
       resolveProviderMaintenanceCapabilitiesEffect(
         makeCodexMaintenanceResolver(homeLayout.sharedHomePath),
@@ -217,6 +230,8 @@ export const CodexDriver: ProviderDriver<
       {
         onUsageLimits: (update) => snapshot.applyUsageLimits(update),
         compatibility: installation.compatibility,
+        gateway,
+        linkedToInferenceServer: gatewayResolution !== undefined,
       },
     ).pipe(
       Effect.mapError(
@@ -235,7 +250,9 @@ export const CodexDriver: ProviderDriver<
     const checkProvider = modelCatalog.refreshInBackground.pipe(
       Effect.andThen(
         Effect.zipWith(
-          checkCodexProviderStatus(effectiveConfig, undefined, processEnv),
+          checkCodexProviderStatus(effectiveConfig, undefined, processEnv).pipe(
+            Effect.map((draft) => withCodexGatewayStatus(draft, gatewayResolution)),
+          ),
           currentCatalog,
           (draft, catalog) => stampIdentity(applyCodexModelCatalog(draft, catalog)),
           { concurrent: true },
@@ -253,7 +270,9 @@ export const CodexDriver: ProviderDriver<
       haveSettingsChanged: haveProviderSnapshotSettingsChanged,
       initialSnapshot: (settings) =>
         Effect.zipWith(
-          makePendingCodexProvider(settings.provider),
+          makePendingCodexProvider(settings.provider).pipe(
+            Effect.map((draft) => withCodexGatewayStatus(draft, gatewayResolution)),
+          ),
           currentCatalog,
           (draft, catalog) => stampIdentity(applyCodexModelCatalog(draft, catalog)),
         ),
@@ -284,6 +303,8 @@ export const CodexDriver: ProviderDriver<
       effectiveConfig,
       processEnv,
       snapshot.getSnapshot.pipe(Effect.map((value) => value.models)),
+      undefined,
+      gateway,
     );
     const snapshotForCwd = (cwd: string) =>
       !effectiveConfig.enabled

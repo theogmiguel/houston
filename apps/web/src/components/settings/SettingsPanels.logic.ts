@@ -226,7 +226,10 @@ export function backgroundActivitySharedPolicySettings(
 }
 
 export function buildProviderInstanceUpdatePatch(input: {
-  readonly settings: Pick<ServerSettings, "providerInstances">;
+  readonly settings: Pick<
+    ServerSettings,
+    "providerInstances" | "textGenerationModelSelectionExplicit"
+  >;
   readonly instanceId: ProviderInstanceId;
   readonly instance: ProviderInstanceConfig;
   readonly textGenerationModelSelection?:
@@ -238,8 +241,12 @@ export function buildProviderInstanceUpdatePatch(input: {
       ...input.settings.providerInstances,
       [input.instanceId]: input.instance,
     },
+    // A repair after an instance change is not the user choosing a model.
     ...(input.textGenerationModelSelection !== undefined
-      ? { textGenerationModelSelection: input.textGenerationModelSelection }
+      ? {
+          textGenerationModelSelection: input.textGenerationModelSelection,
+          textGenerationModelSelectionExplicit: input.settings.textGenerationModelSelectionExplicit,
+        }
       : {}),
   };
 }

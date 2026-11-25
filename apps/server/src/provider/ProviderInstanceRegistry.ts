@@ -69,6 +69,29 @@ interface RegistryState {
 const entryEqual = (a: ProviderInstanceConfig, b: ProviderInstanceConfig): boolean =>
   Equal.equals(a, b);
 
+// The envelope owns this mark, so it is stamped here once instead of in every driver.
+const withDeclaredInference = (
+  instance: ProviderInstance,
+  { inference, inferenceServerId }: Pick<ProviderInstanceConfig, "inference" | "inferenceServerId">,
+): ProviderInstance => {
+  if (inference === undefined && inferenceServerId === undefined) return instance;
+  const stamp = (snapshot: ServerProvider): ServerProvider => ({
+    ...snapshot,
+    ...(inference === undefined ? {} : { inference }),
+    ...(inferenceServerId === undefined ? {} : { inferenceServerId }),
+  });
+  const { snapshot } = instance;
+  return {
+    ...instance,
+    snapshot: {
+      ...snapshot,
+      getSnapshot: Effect.map(snapshot.getSnapshot, stamp),
+      refresh: Effect.map(snapshot.refresh, stamp),
+      streamChanges: Stream.map(snapshot.streamChanges, stamp),
+    },
+  };
+};
+
 const secretReferencesIn = (environment: ProviderInstanceEnvironment): Array<SecretReference> =>
   environment.flatMap((variable) => (typeof variable.value === "string" ? [] : [variable.value]));
 
@@ -194,6 +217,26 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
     };
   }
 
+  // Only harnesses Houston can point at a gateway route accept a linked server.
+  if (
+    entry.inferenceServerId !== undefined &&
+    entry.driver !== "pi" &&
+    entry.driver !== "opencode" &&
+    entry.driver !== "codex" &&
+    entry.driver !== "claudeAgent"
+  ) {
+    return {
+      kind: "unavailable" as const,
+      snapshot: yield* buildUnavailableProviderSnapshot({
+        driverKind: entry.driver,
+        instanceId,
+        displayName: entry.displayName,
+        accentColor: entry.accentColor,
+        reason: `${driver.metadata.displayName} cannot use an inference server yet.`,
+      }),
+    };
+  }
+
   const decoder = Schema.decodeUnknownEffect(driver.configSchema);
   const decodeResult = yield* decoder(entry.config ?? driver.defaultConfig()).pipe(Effect.result);
   if (decodeResult._tag === "Failure") {
@@ -289,7 +332,7 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
   return {
     kind: "live" as const,
     live: {
-      instance: createResult.success,
+      instance: withDeclaredInference(createResult.success, entry),
       scope: childScope,
       entry,
       secrets,

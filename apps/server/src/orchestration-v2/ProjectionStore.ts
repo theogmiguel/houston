@@ -94,6 +94,10 @@ import { MCP_APP_OUTPUT_KEY } from "@houston-app/shared/mcpApp";
 import { threadHtmlRenderAttachmentIds } from "../attachmentStore.ts";
 import { pendingBackgroundTasksSql } from "../houston/projectionReadModels.ts";
 import {
+  forgetThreadNativeSessions,
+  recordNativeSession,
+} from "../houston/nativeSessionHistory.ts";
+import {
   isThreadHistoryUserTurn,
   isConversationHistoryItem,
   THREAD_HISTORY_MAX_RAW_TURNS,
@@ -2092,6 +2096,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 deleted_at = excluded.deleted_at,
                 payload_json = excluded.payload_json
             `;
+              if (event.type === "thread.deleted")
+                yield* forgetThreadNativeSessions(sql, event.threadId);
               break;
             }
             case "run.created":
@@ -2424,6 +2430,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 updated_at = excluded.updated_at,
                 payload_json = excluded.payload_json
             `;
+              yield* recordNativeSession(sql, event.payload, stringField(payload, "updatedAt"));
               if (
                 event.payload.appThreadId !== null &&
                 !isQueuedProviderThreadPlaceholder(event.payload)

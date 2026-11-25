@@ -38,6 +38,9 @@ const BUILT_IN_DRIVER_ORDER: ReadonlyArray<string> = [
   "kiro",
 ];
 
+// The user's local mark outranks the built-in driver order.
+const localRank = (provider: ServerProvider): number => (provider.inference === "local" ? 0 : 1);
+
 const driverRank = (driver: string): number => {
   const index = BUILT_IN_DRIVER_ORDER.indexOf(driver);
   return index === -1 ? BUILT_IN_DRIVER_ORDER.length : index;
@@ -48,6 +51,7 @@ export const orderProviderSnapshots = (
 ): ReadonlyArray<ServerProvider> =>
   [...providers].toSorted(
     (left, right) =>
+      localRank(left) - localRank(right) ||
       driverRank(left.driver) - driverRank(right.driver) ||
       left.driver.localeCompare(right.driver) ||
       (left.displayName ?? "").localeCompare(right.displayName ?? "") ||

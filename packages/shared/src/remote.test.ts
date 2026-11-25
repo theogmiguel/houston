@@ -2,11 +2,13 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   buildPairingAppLink,
+  getPairingServerKeyFromUrl,
   readPairingAppLink,
   RemoteBackendUrlMissingError,
   RemotePairingTokenMissingError,
   RemotePairingUrlInvalidError,
   resolveRemotePairingTarget,
+  setPairingServerKeyOnUrl,
 } from "./remote.ts";
 
 describe("remote", () => {
@@ -142,6 +144,27 @@ describe("remote", () => {
         host: "remote.example.com",
       }),
     );
+  });
+
+  it("carries the pinned server key from the pairing url", () => {
+    const key = "AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHHIIIIJJJJKKK";
+    const url = setPairingServerKeyOnUrl(
+      new URL("https://remote.example.com/pair#token=pairing-token"),
+      key,
+    );
+    expect(getPairingServerKeyFromUrl(url)).toBe(key);
+    expect(resolveRemotePairingTarget({ pairingUrl: url.toString() })).toEqual({
+      credential: "pairing-token",
+      httpBaseUrl: "https://remote.example.com/",
+      wsBaseUrl: "wss://remote.example.com/",
+      serverIdentityKey: key,
+    });
+    expect(
+      resolveRemotePairingTarget({
+        pairingUrl: "https://remote.example.com/pair#token=pairing-token",
+      }),
+    ).not.toHaveProperty("serverIdentityKey");
+    expect(getPairingServerKeyFromUrl(new URL("https://remote.example.com/pair"))).toBeNull();
   });
 
   it("round-trips pairing urls through app links on every channel scheme", () => {

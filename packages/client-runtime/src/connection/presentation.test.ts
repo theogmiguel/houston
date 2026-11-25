@@ -10,9 +10,15 @@ import {
 import {
   BearerConnectionTarget,
   ConnectionTransientError,
+  SshConnectionTarget,
   type SupervisorConnectionState,
 } from "./model.ts";
-import { environmentMcpUrl, presentConnectionState } from "./presentation.ts";
+import {
+  connectionSecurityBadge,
+  connectionSecurityBadgeText,
+  environmentMcpUrl,
+  presentConnectionState,
+} from "./presentation.ts";
 
 const TARGET = new BearerConnectionTarget({
   environmentId: EnvironmentId.make("environment-1"),
@@ -139,6 +145,74 @@ describe("connection presentation", () => {
       phase: "available",
       error: null,
       traceId: null,
+    });
+  });
+});
+
+describe("connectionSecurityBadge", () => {
+  const entryFor = (httpBaseUrl: string, serverIdentityKey?: string): ConnectionCatalogEntry => ({
+    ...ENTRY,
+    profile: Option.some(
+      new BearerConnectionProfile({
+        connectionId: TARGET.connectionId,
+        environmentId: TARGET.environmentId,
+        label: TARGET.label,
+        httpBaseUrl,
+        wsBaseUrl: httpBaseUrl.replace(/^http/, "ws"),
+        ...(serverIdentityKey ? { serverIdentityKey } : {}),
+      }),
+    ),
+  });
+
+  it("marks loopback origins as local", () => {
+    for (const url of ["http://127.0.0.1:3773", "http://localhost:3773"]) {
+      expect(connectionSecurityBadge({ entry: entryFor(url), connectedTarget: null })).toEqual({
+        kind: "local",
+      });
+    }
+  });
+
+  it("marks tailnet origins as end-to-end-encrypted transports", () => {
+    for (const url of ["http://100.72.10.4:3773", "https://host.tail-scale.ts.net"]) {
+      expect(connectionSecurityBadge({ entry: entryFor(url), connectedTarget: null })).toEqual({
+        kind: "e2ee-transport",
+      });
+    }
+  });
+
+  it("marks plain LAN origins as unencrypted and https ones as TLS only", () => {
+    expect(
+      connectionSecurityBadge({
+        entry: entryFor("http://192.168.1.20:3773"),
+        connectedTarget: null,
+      }),
+    ).toEqual({ kind: "unencrypted" });
+    expect(
+      connectionSecurityBadge({
+        entry: entryFor("https://192.168.1.20:3773"),
+        connectedTarget: null,
+      }),
+    ).toEqual({ kind: "tls-tunnel" });
+  });
+
+  it("the pinned app layer wins over the transport badge", () => {
+    const badge = connectionSecurityBadge({
+      entry: entryFor("http://192.168.1.20:3773", "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHw"),
+      connectedTarget: null,
+    });
+    expect(badge).toEqual({ kind: "e2ee-app" });
+    expect(connectionSecurityBadgeText(badge!)).toBe("E2EE");
+  });
+
+  it("marks SSH routes as end-to-end-encrypted transports", () => {
+    const target = new SshConnectionTarget({
+      environmentId: TARGET.environmentId,
+      label: TARGET.label,
+      connectionId: "ssh-1",
+    });
+    const entry: ConnectionCatalogEntry = { ...ENTRY, target, profile: Option.none() };
+    expect(connectionSecurityBadge({ entry, connectedTarget: null })).toEqual({
+      kind: "e2ee-transport",
     });
   });
 });

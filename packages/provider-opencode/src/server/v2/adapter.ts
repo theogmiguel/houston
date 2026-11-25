@@ -43,6 +43,7 @@ import * as Deferred from "effect/Deferred";
 import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
+import * as Option from "effect/Option";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Queue from "effect/Queue";
@@ -58,6 +59,7 @@ import * as OpenCode2Server from "./OpenCode2Server.ts";
 import * as OpenCodeRuntime from "../OpenCodeRuntime.ts";
 import { readableProviderErrorMessage } from "../providerErrorMessage.ts";
 import * as McpProviderSessions from "@houston-app/provider-core/server/McpProviderSessions";
+import * as InferenceGateway from "@houston-app/provider-core/server/inferenceGateway";
 import { buildRuntimeInstructions } from "@houston-app/provider-core/server/runtimeInstructions";
 import { houstonOrchestrationSystemPrompt } from "@houston-app/provider-core/server/orchestrationInstructions";
 import { SKILL_MENTION_PATTERN } from "@houston-app/shared/composerInlineTokens";
@@ -707,6 +709,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
   const idAllocator = yield* IdAllocator.IdAllocatorV2;
   const host = yield* ProviderHost.ProviderHost;
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+  const gateway = yield* Effect.serviceOption(InferenceGateway.InferenceGatewayAccess);
   const fileSystem = yield* FileSystem.FileSystem;
   const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
   const crypto = yield* Digest.Digest;
@@ -763,6 +766,15 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     const childOwners = new Map<string, ThreadState>();
     const announced = new Map<string, EventOf<"session.created">["data"]>();
     const strays = new Map<string, ThreadState>();
+    // The shared server's gateway requests name their session; this maps it while Houston tracks it.
+    if (Option.isSome(gateway)) {
+      yield* gateway.value.attributeSessions(
+        instanceId,
+        (sessionId) =>
+          (threads.get(sessionId) ?? childOwners.get(sessionId))?.providerThread.appThreadId ??
+          undefined,
+      );
+    }
     const busy = new Set<string>();
     const pending = new Map<RuntimeRequestId, PendingRequest>();
     const lock = yield* Semaphore.make(1);

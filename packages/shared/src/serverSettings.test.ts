@@ -14,12 +14,15 @@ import {
 import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
+import { InferenceServerId } from "@houston-app/contracts/houston/inference";
 import { resolveServerBackgroundActivitySettings } from "./backgroundActivitySettings.ts";
 import { createModelSelection } from "./model.ts";
 import { resolveProjectScripts } from "./projectScripts.ts";
 import {
   applyServerSettingsPatch,
   fallbackTextGenerationModelSelection,
+  isImplicitTextGenerationSelection,
+  localTextGenerationModelSelection,
   modelPreferencesMigrationPatch,
   resolveModelPreferences,
   isModelSelectionProviderEnabled,
@@ -81,6 +84,156 @@ describe("fallbackTextGenerationModelSelection", () => {
       { includeConfiguredInstances: true },
     );
     expect(fallback?.instanceId).toBe(configured);
+  });
+});
+
+describe("local-first text generation", () => {
+  const pi = ProviderDriverKind.make("pi");
+  const claude = ProviderDriverKind.make("claudeAgent");
+  const localPi = ProviderInstanceId.make("pi_local");
+  const localClaude = ProviderInstanceId.make("claude_local");
+  const providerInstances = {
+    [localPi]: { driver: pi, inference: "local" as const, enabled: true },
+    [localClaude]: { driver: claude, inference: "local" as const, enabled: true },
+    [ProviderInstanceId.make("pi_cloud")]: { driver: pi, enabled: true },
+  };
+  const snapshot = (
+    instanceId: ProviderInstanceId,
+    driver: ProviderDriverKind,
+    models: ServerProvider["models"],
+    overrides: Partial<ServerProvider> = {},
+  ): ServerProvider => ({
+    instanceId,
+    driver,
+    inference: "local",
+    enabled: true,
+    installed: true,
+    version: null,
+    status: "ready",
+    auth: { status: "authenticated" },
+    checkedAt: "2026-11-07T00:00:00.000Z",
+    models,
+    slashCommands: [],
+    skills: [],
+    ...overrides,
+  });
+  const model = (slug: string, extra: Partial<ServerProvider["models"][number]> = {}) => ({
+    slug,
+    name: slug,
+    isCustom: false,
+    capabilities: null,
+    ...extra,
+  });
+
+  it("falls back only to local instances unless told otherwise", () => {
+    const enabled = () => true;
+    expect(
+      fallbackTextGenerationModelSelection(providerInstances, enabled, {
+        includeConfiguredInstances: true,
+        policy: "local",
+      })?.instanceId,
+    ).toBe(localPi);
+    expect(
+      fallbackTextGenerationModelSelection(
+        providerInstances,
+        (instanceId) => instanceId === "codex",
+        { includeConfiguredInstances: true, policy: "local" },
+      ),
+    ).toBeNull();
+    expect(
+      fallbackTextGenerationModelSelection({}, (instanceId) => instanceId === "codex", {
+        policy: "local",
+      }),
+    ).toBeNull();
+    expect(
+      fallbackTextGenerationModelSelection(providerInstances, enabled, {
+        includeConfiguredInstances: true,
+        policy: "none",
+      }),
+    ).toBeNull();
+    // Without a local mark, "any" keeps the built-in driver order.
+    expect(fallbackTextGenerationModelSelection({}, enabled, { policy: "any" })?.instanceId).toBe(
+      "codex",
+    );
+  });
+
+  it("treats a linked instance as local exactly while its server is enabled", () => {
+    const linked = ProviderInstanceId.make("pi_linked");
+    const instances = {
+      [linked]: { driver: pi, inferenceServerId: "rtx" as never, enabled: true },
+    };
+    const enabled = (instanceId: ProviderInstanceId) => instanceId === linked;
+    expect(
+      fallbackTextGenerationModelSelection(instances, enabled, {
+        includeConfiguredInstances: true,
+        policy: "local",
+        inferenceServers: { rtx: { baseUrl: "http://rtx/v1", enabled: true } } as never,
+      })?.instanceId,
+    ).toBe(linked);
+    expect(
+      fallbackTextGenerationModelSelection(instances, enabled, {
+        includeConfiguredInstances: true,
+        policy: "local",
+        inferenceServers: { rtx: { baseUrl: "http://rtx/v1", enabled: false } } as never,
+      }),
+    ).toBeNull();
+  });
+
+  it("picks a ready local instance's concrete default model, never an alias", () => {
+    const { inference: _cloud, ...codex } = snapshot(
+      ProviderInstanceId.make("codex"),
+      ProviderDriverKind.make("codex"),
+      [model("gpt-6-luna")],
+    );
+    const providers = [
+      codex,
+      snapshot(localPi, pi, [
+        model("default"),
+        model("tensorfold/old", { isLegacy: true }),
+        model("tensorfold/GLM-5.3-Flash", { isDefault: true }),
+      ]),
+    ];
+    expect(localTextGenerationModelSelection(providers, () => true)).toEqual({
+      instanceId: localPi,
+      model: "tensorfold/GLM-5.3-Flash",
+    });
+    expect(
+      localTextGenerationModelSelection(
+        [snapshot(localPi, pi, [model("default")]), snapshot(localClaude, claude, [model("glm")])],
+        () => true,
+      ),
+    ).toEqual({ instanceId: localClaude, model: "glm" });
+    expect(
+      localTextGenerationModelSelection(providers, (provider) => provider.driver === claude),
+    ).toBeNull();
+  });
+
+  it("treats the built-in selection as implicit until a client picks one", () => {
+    const builtIn = DEFAULT_SERVER_SETTINGS.textGenerationModelSelection;
+    expect(isImplicitTextGenerationSelection(DEFAULT_SERVER_SETTINGS, builtIn)).toBe(true);
+    expect(
+      isImplicitTextGenerationSelection(DEFAULT_SERVER_SETTINGS, {
+        ...builtIn,
+        model: "gpt-6-astra",
+      }),
+    ).toBe(false);
+
+    const picked = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      textGenerationModelSelection: builtIn,
+    });
+    expect(picked.textGenerationModelSelectionExplicit).toBe(true);
+    expect(isImplicitTextGenerationSelection(picked, builtIn)).toBe(false);
+    const reset = applyServerSettingsPatch(picked, {
+      textGenerationModelSelection: builtIn,
+      textGenerationModelSelectionExplicit: false,
+    });
+    expect(isImplicitTextGenerationSelection(reset, builtIn)).toBe(true);
+    expect(
+      isImplicitTextGenerationSelection(
+        { ...DEFAULT_SERVER_SETTINGS, sourceControlWriterModelSelection: builtIn },
+        builtIn,
+      ),
+    ).toBe(false);
   });
 });
 
@@ -777,6 +930,23 @@ describe("serverSettings helpers", () => {
 
     const removed = applyServerSettingsPatch(added, { usageLimitSources: { [hubA]: null } });
     expect(Object.keys(removed.usageLimitSources)).toEqual([hubB]);
+  });
+
+  it("upserts and removes inferenceServers per entry so concurrent edits cannot clobber", () => {
+    const rtx = InferenceServerId.make("rtx");
+    const spark = InferenceServerId.make("spark");
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      inferenceServers: { [rtx]: { baseUrl: "http://rtx:8888/v1", enabled: true } },
+    };
+
+    const added = applyServerSettingsPatch(current, {
+      inferenceServers: { [spark]: { baseUrl: "http://spark:8888/v1", enabled: true } },
+    });
+    expect(Object.keys(added.inferenceServers)).toEqual([rtx, spark]);
+
+    const removed = applyServerSettingsPatch(added, { inferenceServers: { [rtx]: null } });
+    expect(Object.keys(removed.inferenceServers)).toEqual([spark]);
   });
 
   it("upserts and removes secretProviders per entry so concurrent edits cannot clobber", () => {

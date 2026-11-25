@@ -19,6 +19,14 @@ state directory on the machine that runs it.
 - **Cloud dictation.** When you choose OpenAI, Grok or OpenRouter under Settings ▸ Voice, the
   environment sends each finished recording to that provider with your API key. Nothing is sent
   while dictation is Off or set to an environment. See [Dictation](dictation.md#network-use).
+- **Inference servers.** Houston checks the model servers you register under **Settings →
+  Inference** by requesting their model list and, when the engine exposes them, its health,
+  metrics and model details. It sends only to the addresses you register and sends a saved API key
+  only to the server that key belongs to. **Find servers** probes loopback and the machine's own
+  listening ports, never sends a saved key, and saves nothing until you add a server. See
+  [Local models](local-models.md). **Check images** sends four generated solid-colour test
+  images and a short question only to the server being checked, and stores the answer it found
+  without keeping the images.
 - **Updates.** Houston checks for new versions of the app and of each agent CLI.
 
 ## Usage and crash data
@@ -66,3 +74,27 @@ For each signal, the first of these that is set decides where it goes:
 
 An environment URL wins over a Datadog choice even when it points at a Datadog site, and it is
 sent with only the headers its own variables give: Houston never adds the stored key to it.
+
+## The error log on this machine
+
+The server and the desktop app each keep a small error log, so that a failure can still be
+diagnosed after the trace file has rotated. It is always on. Houston never sends it anywhere; a
+triage agent you start can read the logs folder, under its provider's own terms.
+
+An entry holds the time, the log level, the name of the operation that failed and how long it took,
+its trace ids, the type of the error or of the value logged with it, and the code locations
+(function, file name, line and column) that lie in Houston's own program files or in Node.js; other
+locations are only counted. It also holds fields under fixed names and prefixes: numbers,
+booleans, kinds and outcomes that code or a standard defines, and identifiers whose every part has
+the form of a random id, a digest or a number, or is one of Houston's own fixed words. An identifier
+that contains anything else, such as a key an agent worded or a name you gave a provider instance,
+is left out, and the entry counts it. It holds no log or error messages, paths, URLs, prompts, agent
+responses, file contents, SQL statements or credentials.
+
+The files are `server.errors-<date>.ndjson` and `desktop.errors-<date>.ndjson` in the
+`userdata/logs` folder of the server's state directory (`~/.houston/v2/userdata/logs` for the
+installed release; a WSL server keeps its own inside the distribution). Houston keeps today's file
+and the seven before it, in UTC days, and each process writes at most 2 MiB a day. Older files are
+removed when Houston starts and when a later day's first failure is recorded; the **rotated logs**
+storage setting does not change this. To delete the log, delete those files; Houston needs none of
+them.

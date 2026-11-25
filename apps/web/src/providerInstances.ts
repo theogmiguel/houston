@@ -177,7 +177,7 @@ function applyProviderInstanceBranding(
   };
 }
 
-/** Picker order: each driver's default instance first, then its custom instances. */
+/** Picker order: local instances first, then each driver's default instance before its custom ones. */
 export function providerInstanceEntriesFor(
   providers: ReadonlyArray<ServerProvider>,
   settings: Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides">,
@@ -193,8 +193,10 @@ export function providerInstanceEntriesFor(
 function sortProviderInstanceEntries(
   entries: ReadonlyArray<ProviderInstanceEntry>,
 ): ReadonlyArray<ProviderInstanceEntry> {
+  const local = entries.filter((entry) => entry.snapshot.inference === "local");
   const byKind = new Map<ProviderDriverKind, ProviderInstanceEntry[]>();
   for (const entry of entries) {
+    if (entry.snapshot.inference === "local") continue;
     const bucket = byKind.get(entry.driverKind);
     if (bucket) {
       bucket.push(entry);
@@ -202,7 +204,7 @@ function sortProviderInstanceEntries(
       byKind.set(entry.driverKind, [entry]);
     }
   }
-  const sorted: ProviderInstanceEntry[] = [];
+  const sorted: ProviderInstanceEntry[] = [...local];
   for (const bucket of byKind.values()) {
     const defaults = bucket.filter((entry) => entry.isDefault);
     const customs = bucket.filter((entry) => !entry.isDefault);

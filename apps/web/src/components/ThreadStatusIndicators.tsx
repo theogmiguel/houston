@@ -65,6 +65,7 @@ import {
   type PullRequestGlyphIcon,
 } from "./pullRequest/pullRequestIcons";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
+import { InferenceWaitStatus } from "./chat/InferenceWaitStatus";
 
 export interface PrStatusIndicator {
   label: string;
@@ -766,6 +767,7 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
         />
       ) : null}
       {threadStatus ? <ThreadStatusLabel status={threadStatus} thread={thread} /> : null}
+      <InferenceWaitStatus environmentId={thread.environmentId} threadId={thread.id} />
     </span>
   );
 }

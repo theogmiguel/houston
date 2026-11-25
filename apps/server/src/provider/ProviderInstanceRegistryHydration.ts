@@ -2,6 +2,7 @@ import {
   defaultInstanceIdForDriver,
   ProviderDriverKind,
   ProviderInstanceId,
+  isLocalProviderInstance,
   providerInstanceConfigEnabledFlag,
   resolveProviderInstanceEnabled,
   type ProviderInstanceConfig,
@@ -19,6 +20,7 @@ import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 
 import * as ManagedProviders from "../policy/managedProviders.ts";
+import { seedLocalAgentSuggestions } from "../houston/providerSuggestions.ts";
 import * as Settings from "../serverSettings.ts";
 import * as SecretResolver from "../secrets/SecretResolver.ts";
 import { BUILT_IN_DRIVERS, type BuiltInDriversEnv } from "./builtInDrivers.ts";
@@ -78,6 +80,17 @@ export const deriveProviderInstanceConfigMap = (
           : {}),
       };
     }
+  }
+
+  // The registry stamps the envelope's mark, so a link's locality is resolved into it here.
+  for (const [rawInstanceId, entry] of Object.entries(merged)) {
+    if (entry.inferenceServerId === undefined) continue;
+    const { inference: _mark, ...unmarked } = entry;
+    merged[rawInstanceId] = isLocalProviderInstance(entry, settings.inferenceServers)
+      ? { ...unmarked, inference: "local" }
+      : entry.inference === "local"
+        ? unmarked
+        : entry;
   }
 
   return merged as ProviderInstanceConfigMap;
@@ -175,6 +188,9 @@ export const layer: Layer.Layer<
     const serverSettings = yield* Settings.ServerSettingsService;
     yield* seedDevReplayInstance().pipe(
       Effect.catchCause((cause) => Effect.logWarning("Dev replay agent unavailable", cause)),
+    );
+    yield* seedLocalAgentSuggestions().pipe(
+      Effect.catchCause((cause) => Effect.logWarning("Local agent suggestion failed", cause)),
     );
     // Subscribe before the seed read so saves during registry construction are queued.
     const settingsChanges = yield* serverSettings.subscribeChanges;

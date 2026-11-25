@@ -1,6 +1,11 @@
 import type { ServerConfig } from "@houston-app/contracts";
 import * as Option from "effect/Option";
 
+import {
+  isLocalLoopbackHost,
+  isSharedAddressSpaceHost,
+  isTailnetHost,
+} from "@houston-app/shared/hostClassification";
 import type { ConnectionCatalogEntry } from "./catalog.ts";
 import type { ConnectionTarget, SupervisorConnectionState } from "./model.ts";
 import { connectionRouteId, connectionRoutes, routeHttpBaseUrl } from "./routes.ts";
@@ -26,6 +31,80 @@ export interface EnvironmentConnectionPresentation {
  * across those pushes; provider readers subscribe to the server's providers atom instead.
  */
 export type EnvironmentServerConfig = Omit<ServerConfig, "providers">;
+
+/** How the active connection reaches the server, shown as a security badge. */
+export type ConnectionSecurityBadgeKind =
+  | "local"
+  | "e2ee-transport"
+  | "e2ee-app"
+  | "tls-tunnel"
+  | "unencrypted";
+
+export interface ConnectionSecurityBadge {
+  readonly kind: ConnectionSecurityBadgeKind;
+}
+
+const isTailscaleUrlHost = (url: URL): boolean =>
+  isTailnetHost(url.hostname) || isSharedAddressSpaceHost(url.hostname);
+
+/**
+ * Derives the security badge for an environment's active connection. The app
+ * layer wins over the transport: a verified E2EE session protects the traffic
+ * no matter which transport carries it.
+ */
+export function connectionSecurityBadge(input: {
+  readonly entry: ConnectionCatalogEntry;
+  readonly connectedTarget: ConnectionTarget | null;
+}): ConnectionSecurityBadge | null {
+  const connectedRoute = input.connectedTarget
+    ? connectionRoutes(input.entry).find(
+        (route) => connectionRouteId(route.target) === connectionRouteId(input.connectedTarget!),
+      )
+    : undefined;
+  const profile = Option.getOrUndefined(connectedRoute?.profile ?? input.entry.profile);
+  if (profile?._tag === "BearerConnectionProfile" && profile.serverIdentityKey !== undefined) {
+    return { kind: "e2ee-app" };
+  }
+  const target = input.connectedTarget ?? input.entry.target;
+  switch (target._tag) {
+    case "SshConnectionTarget":
+      return { kind: "e2ee-transport" };
+    case "PrimaryConnectionTarget":
+    case "BearerConnectionTarget": {
+      const httpBaseUrl =
+        target._tag === "PrimaryConnectionTarget"
+          ? target.httpBaseUrl
+          : profile?._tag === "BearerConnectionProfile"
+            ? profile.httpBaseUrl
+            : null;
+      if (httpBaseUrl === null) return null;
+      let url: URL;
+      try {
+        url = new URL(httpBaseUrl);
+      } catch {
+        return null;
+      }
+      if (isLocalLoopbackHost(url.hostname)) return { kind: "local" };
+      if (isTailscaleUrlHost(url)) return { kind: "e2ee-transport" };
+      return url.protocol === "https:" ? { kind: "tls-tunnel" } : { kind: "unencrypted" };
+    }
+  }
+}
+
+export function connectionSecurityBadgeText(badge: ConnectionSecurityBadge): string {
+  switch (badge.kind) {
+    case "local":
+      return "Local";
+    case "e2ee-transport":
+      return "E2EE (Tailscale / SSH)";
+    case "e2ee-app":
+      return "E2EE";
+    case "tls-tunnel":
+      return "TLS only";
+    case "unencrypted":
+      return "Unencrypted";
+  }
+}
 
 export interface EnvironmentPresentation {
   readonly entry: ConnectionCatalogEntry;

@@ -4,6 +4,7 @@ import { describe, expect, it } from "@effect/vitest";
 
 import {
   acceptsPrivateNetworkConnection,
+  buildPairingUrl,
   makePrivateNetworkRejectionLogger,
   PRIVATE_NETWORK_REJECTION_LOG_MAX_ADDRESSES,
   resolveHeadlessConnectionString,
@@ -116,5 +117,16 @@ describe("makePrivateNetworkRejectionLogger", () => {
       log(`192.0.2.${index}`);
     }
     expect(logged).toHaveLength(PRIVATE_NETWORK_REJECTION_LOG_MAX_ADDRESSES + 10);
+  });
+});
+
+describe("buildPairingUrl", () => {
+  it("carries the pinned identity key when one is given", () => {
+    expect(buildPairingUrl("http://192.168.1.5:3773", "CODE")).toBe(
+      "http://192.168.1.5:3773/pair#token=CODE",
+    );
+    expect(buildPairingUrl("http://192.168.1.5:3773", "CODE", { serverIdentityKey: "KEY" })).toBe(
+      "http://192.168.1.5:3773/pair#token=CODE&pk=KEY",
+    );
   });
 });

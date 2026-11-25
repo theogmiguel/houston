@@ -28,6 +28,11 @@ export class BearerConnectionProfile extends Schema.TaggedClass<BearerConnection
      * interface. A bare 100.64.0.0/10 address could belong to any VPN.
      */
     network: Schema.optionalKey(Schema.Literal("tailscale")),
+    /**
+     * The server's E2EE identity key (base64url) pinned from the pairing
+     * link. Set once at pairing; a changed key fails the handshake loudly.
+     */
+    serverIdentityKey: Schema.optionalKey(Schema.String),
   },
 ) {}
 

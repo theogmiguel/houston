@@ -1,3 +1,4 @@
+import * as SharedErrorLog from "@houston-app/shared/errorLog";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as SharedObservability from "@houston-app/shared/observability";
 import * as Cause from "effect/Cause";
@@ -10,6 +11,7 @@ import * as OtlpExporter from "effect/observability/OtlpExporter";
 import * as OtlpLogger from "effect/observability/OtlpLogger";
 
 import * as ServerConfig from "./config.ts";
+import * as ErrorLog from "./houston/observability/ErrorLog.ts";
 import * as ExportLogger from "./houston/observability/ExportLogger.ts";
 import * as ExportRedaction from "./houston/observability/ExportRedaction.ts";
 import * as ObservabilityExport from "./houston/observability/ObservabilityExport.ts";
@@ -72,12 +74,15 @@ export const layer = Effect.gen(function* () {
             : (self) => self,
         );
 
+  // Houston: it records what the tracer logger cannot, an error logged outside any span.
+  const errorLogger = SharedErrorLog.errorLogger(yield* ErrorLog.ErrorLog);
+
   // Logger.layer replaces the whole set; name every logger here.
   // OTLP includes traced messages as log records, so also using tracerLogger would duplicate in-span exports.
   const layerLogger = Logger.layer(
     otlpLogger === undefined
-      ? [consolePretty(), Logger.tracerLogger]
-      : [consolePretty(), otlpLogger],
+      ? [consolePretty(), Logger.tracerLogger, errorLogger]
+      : [consolePretty(), otlpLogger, errorLogger],
     { mergeWithExisting: false },
   ).pipe(
     Layer.provide(OtlpExporter.layerFlusher),

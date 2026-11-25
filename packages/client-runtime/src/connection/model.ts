@@ -120,6 +120,12 @@ export interface PreparedConnection {
   readonly socketUrl: string;
   readonly httpAuthorization: PreparedHttpAuthorization | null;
   readonly target: ConnectionTarget;
+  /**
+   * The server's E2EE identity key (base64url) pinned at pairing. Set means
+   * the socket must complete the E2EE handshake; a server that refuses fails
+   * the connection instead of falling back to plaintext.
+   */
+  readonly e2eeServerIdentityKey?: string;
 }
 
 export type SupervisorConnectionPhase =

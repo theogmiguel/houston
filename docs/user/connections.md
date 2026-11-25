@@ -57,6 +57,10 @@ them all. Linux and Windows support the feature.
 - **Network access** — off means the server listens on `127.0.0.1` only; on lets other
   devices on the network pair with it.
 - **Tailscale HTTPS** — serve over your tailnet with a Tailscale certificate.
+- **Private transports only** — off by default. On, refuse remote connections that do not
+  arrive over this machine, Tailscale or SSH; see [Encrypted remote control](#encrypted-remote-control).
+- **End-to-end encryption** — off by default. On, encrypt the live session and show this host's
+  fingerprint; see [Encrypted remote control](#encrypted-remote-control).
 - **WSL backend** — on Windows, run WSL projects on a Houston server inside the distro, or run
   only that server. Changing the distro or WSL only restarts the affected server. The WSL
   backend is a separate environment: it keeps its own threads, projects and saved credentials,
@@ -71,6 +75,43 @@ them all. Linux and Windows support the feature.
   revoke access.
 
 Changing network access restarts the server. Existing tunnels keep working.
+
+### Encrypted remote control
+
+Controlling this server from another device sends prompts, files and agent output over the
+network. Two optional switches in **Settings ▸ Connections ▸ Sharing & access** protect that
+traffic. Both are off by default.
+
+**Private transports only** refuses remote connections that do not arrive over this machine,
+Tailscale or SSH. A tunnel, a public proxy or a plain LAN address gets a "not allowed" answer
+before authentication. A connection that is already open stays open, and loopback (including an
+SSH port-forward) always works, so you cannot lock yourself out. Turn it off from the same switch,
+from a connected session, or from the server's `settings.json`.
+
+**End-to-end encryption** encrypts the WebSocket session itself, so a tunnel or an untrusted
+network only sees opaque data, and the device verifies this host's identity. The row shows the
+host fingerprint, for example `AB12-CD34-EF56-7890`. To use it:
+
+1. On the host, switch **End-to-end encryption** on.
+2. Create a pairing link or QR code from this same section while it is on. The link carries the
+   host's key, and the device saves it.
+3. Connect as usual. A device that saved the key encrypts the whole session and refuses a host
+   that presents a different key.
+
+Good to know:
+
+- Devices paired before you turned it on, or paired with a pairing code or a `houston pair` link,
+  do not carry the key and therefore stay unencrypted.
+- It cannot fail open. A device with a saved key either encrypts or does not connect. If you see
+  an identity mismatch, the host's key changed; re-pair only if you expected that.
+- Turning it off warns you: devices paired while it was on must pair again. Set `"e2eeMode":
+  "require"` in the host's `settings.json` to also refuse remote devices that do not encrypt;
+  loopback still connects.
+- To replace the host key, stop the host, delete its `e2ee-identity-seed-v1` secret from the
+  channel's secrets directory, start it again and re-pair every device.
+- Only the live session is encrypted. File and image uploads and downloads, server-to-server
+  linked environments, and agents that call the MCP endpoint use the connection itself, so use
+  **Private transports only** with it when those matter.
 
 ### Device approval
 

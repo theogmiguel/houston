@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { AcpRegistryUrlAuthAction } from "./acpRegistry.ts";
+import { InferenceServerId } from "./houston/inference.ts";
 import { ProviderReadiness } from "./houston/providerReadiness.ts";
 import {
   type EnvironmentMachineKind,
@@ -27,7 +28,11 @@ import { EditorId, FileManagerRevealKind, RemoteOpenTarget } from "./editor.ts";
 import { ManagedPolicySummary } from "./managedPolicy.ts";
 import { ModelCapabilities, ProviderOptionDescriptor } from "./model.ts";
 import { RuntimeMode } from "./providerPolicy.ts";
-import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
+import {
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ProviderInstanceInference,
+} from "./providerInstance.ts";
 import { ServerProviderUsageLimits, UsageLimitSourceSnapshots } from "./providerUsageLimits.ts";
 import { ServerSettings } from "./settings.ts";
 import { DesktopUpdateChannelSchema } from "./ipc.ts";
@@ -211,6 +216,9 @@ export const ServerProvider = Schema.Struct({
   driver: ProviderDriverKind,
   displayName: Schema.optional(TrimmedNonEmptyString),
   accentColor: Schema.optional(TrimmedNonEmptyString),
+  inference: Schema.optionalKey(ProviderInstanceInference),
+  /** The registered server this instance's models run on, when it is linked. */
+  inferenceServerId: Schema.optionalKey(InferenceServerId),
   // Validate driver-supplied remote icons against the driver's trusted origin.
   iconUrl: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(2_048))),
   badgeLabel: Schema.optional(TrimmedNonEmptyString),
@@ -619,6 +627,21 @@ export const ServerEventLoopStall = Schema.Struct({
 });
 export type ServerEventLoopStall = typeof ServerEventLoopStall.Type;
 
+/**
+ * The server's remote-access security posture, sent additively so older
+ * clients ignore it. The identity key backs the WebSocket E2EE handshake; the
+ * fingerprint is what a human verifies out of band.
+ */
+export const TransportSecurity = Schema.Struct({
+  remoteTransportPolicy: Schema.Literals(["any", "private-e2ee-only"]),
+  e2eeMode: Schema.Literals(["off", "prefer", "require"]),
+  /** base64url Ed25519 public key of this environment's E2EE identity. */
+  identityPublicKey: Schema.optionalKey(TrimmedNonEmptyString),
+  /** `XXXX-XXXX-XXXX-XXXX` over the identity public key. */
+  identityPublicKeyFingerprint: Schema.optionalKey(TrimmedNonEmptyString),
+});
+export type TransportSecurity = typeof TransportSecurity.Type;
+
 export const ServerConfig = Schema.Struct({
   environment: ExecutionEnvironmentDescriptor,
   auth: ServerAuthDescriptor,
@@ -641,6 +664,8 @@ export const ServerConfig = Schema.Struct({
    * `getThreadFamily` and `getWorktreeThreadIds` serve the rows it leaves out.
    */
   shellThreadFamilies: Schema.optionalKey(Schema.Boolean),
+  /** Houston: Settings → Inference and its discovery RPCs are available on this server. */
+  inferenceServers: Schema.optionalKey(Schema.Boolean),
   /**
    * The shell can leave older settled threads out of snapshots (`omitOlderSettled`), and
    * `getOlderSettledThreads` serves them. Only servers that also advertise `shellThreadFamilies`.
@@ -667,6 +692,8 @@ export const ServerConfig = Schema.Struct({
    * answering. Clients do not cache it, since it describes the host at connect.
    */
   lastEventLoopStall: Schema.optionalKey(ServerEventLoopStall),
+  /** Remote-access transport policy, E2EE mode, and the identity fingerprint. */
+  transportSecurity: Schema.optionalKey(TransportSecurity),
   /**
    * Never sent in a config snapshot: the theme stream emits the current set
    * before any change, so a snapshot carrying it too would hand every

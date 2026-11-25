@@ -31,6 +31,14 @@
       "types": "./src/socketFrameParts.ts",
       "import": "./src/socketFrameParts.ts"
     },
+    "./socketE2ee": {
+      "types": "./src/socketE2ee.ts",
+      "import": "./src/socketE2ee.ts"
+    },
+    "./socketE2eeProtocol": {
+      "types": "./src/socketE2eeProtocol.ts",
+      "import": "./src/socketE2eeProtocol.ts"
+    },
     "./composerPullRequestMatches": {
       "types": "./src/composerPullRequestMatches.ts",
       "import": "./src/composerPullRequestMatches.ts"
@@ -90,6 +98,10 @@
     "./observability": {
       "types": "./src/observability.ts",
       "import": "./src/observability.ts"
+    },
+    "./errorLog": {
+      "types": "./src/errorLog.ts",
+      "import": "./src/errorLog.ts"
     },
     "./otelEnvironment": {
       "types": "./src/otelEnvironment.ts",

@@ -1956,6 +1956,9 @@ importers:
       '@houston-app/contracts':
         specifier: workspace:*
         version: link:../packages/contracts
+      '@houston-app/provider-core':
+        specifier: workspace:*
+        version: link:../packages/provider-core
       '@houston-app/shared':
         specifier: workspace:*
         version: link:../packages/shared

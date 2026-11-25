@@ -414,6 +414,41 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       }),
   );
 
+  it.effect.each([
+    [
+      "a selection saved before the flag existed",
+      `{ "textGenerationModelSelection": { "instanceId": "claudeAgent", "model": "claude-haiku-5-5" } }`,
+      true,
+    ],
+    ["no saved selection", `{ "compactIdleThreads": "off" }`, false],
+  ] as const)("reads text generation intent from %s", ([, file, explicit]) =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fs.writeFileString(config.settingsPath, file);
+
+      assert.strictEqual(
+        (yield* service.getSettings).textGenerationModelSelectionExplicit,
+        explicit,
+      );
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("keeps a deliberately picked built-in text generation model after restart", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      yield* service.updateSettings({
+        textGenerationModelSelection: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
+      });
+
+      const persisted = JSON.parse(yield* fs.readFileString(config.settingsPath));
+      assert.strictEqual(persisted.textGenerationModelSelectionExplicit, true);
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("deep merges nested settings updates without dropping siblings", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
@@ -755,7 +790,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
             },
           };
 
+          // Moving to another provider is the "Any provider" policy.
           yield* serverSettings.updateSettings({
+            textGenerationFallback: "any",
             providerInstances,
             textGenerationModelSelection: selection,
           });
@@ -796,6 +833,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
       const next = yield* serverSettings.updateSettings({
+        textGenerationFallback: "any",
         providerInstances: {
           [ProviderInstanceId.make("codex")]: {
             driver: ProviderDriverKind.make("codex"),
@@ -828,6 +866,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       };
 
       const custom = yield* serverSettings.updateSettings({
+        textGenerationFallback: "any",
         providerInstances,
         defaultModelSelection: {
           instanceId: claude,
@@ -2416,6 +2455,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
               // A default instance id is no proof of its driver.
               codex: { driver: cursor, enabled: true },
             },
+            textGenerationFallback: "any",
             textGenerationModelSelection: { instanceId: cursorId, model: "auto" },
           }),
         );

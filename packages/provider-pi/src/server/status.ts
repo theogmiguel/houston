@@ -20,6 +20,11 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import { buildPiRpcLaunch, resolvePiLaunchArgs } from "./mcpInjection.ts";
 import {
+  type PiBackgroundGateway,
+  type PiGatewaySource,
+  unmanagedPiGatewaySource,
+} from "./gateway.ts";
+import {
   makePiRpcConnection,
   PiRpcError,
   PiRpcTimeoutError,
@@ -143,6 +148,7 @@ const makePiDiscoveryConnection = Effect.fnUntraced(function* (
   environment: NodeJS.ProcessEnv,
   launchArgs: ReadonlyArray<string>,
   cwd?: string,
+  gateway?: PiBackgroundGateway,
 ) {
   const launch = buildPiRpcLaunch({
     launchArgs,
@@ -151,6 +157,8 @@ const makePiDiscoveryConnection = Effect.fnUntraced(function* (
     extensionPath: undefined,
     ephemeral: true,
     shortLived: true,
+    gateway,
+    gatewayExtensionPath: gateway?.extensionPath,
   });
   const connection = yield* makePiRpcConnection({
     command: piSettings.binaryPath || "pi",
@@ -170,9 +178,18 @@ const discoverPiViaRpc = Effect.fn("PiProviderStatus.discoverPiViaRpc")(function
   piSettings: PiSettings,
   environment: NodeJS.ProcessEnv,
   launchArgs: ReadonlyArray<string>,
-  cwd?: string,
+  cwd: string | undefined,
+  gatewaySource: PiGatewaySource,
 ) {
-  const connection = yield* makePiDiscoveryConnection(piSettings, environment, launchArgs, cwd);
+  // Models of a managed server are listed only while Pi holds a credential for its provider.
+  const gateway = yield* gatewaySource.forBackground;
+  const connection = yield* makePiDiscoveryConnection(
+    piSettings,
+    environment,
+    launchArgs,
+    cwd,
+    gateway,
+  );
   const stateData = yield* connection.request({ type: "get_state" });
   const modelsData = yield* connection.request({ type: "get_available_models" });
   const commandsData = yield* connection
@@ -332,6 +349,7 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
   piSettings: PiSettings,
   environment: NodeJS.ProcessEnv = process.env,
   cwd?: string,
+  gatewaySource: PiGatewaySource = unmanagedPiGatewaySource,
 ): Effect.fn.Return<ServerProviderDraft, never, ChildProcessSpawner.ChildProcessSpawner> {
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const fallbackModels = piModelsFromSettings(piSettings.customModels);
@@ -348,6 +366,24 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
         status: "warning",
         auth: { status: "unknown" },
         message: "Pi is disabled in Houston settings.",
+      },
+    });
+  }
+
+  const resolution = yield* gatewaySource.resolution;
+  // A linked server that is down makes the instance wait instead of listing Pi's own models.
+  if (resolution !== undefined && !resolution.managed && resolution.local === true) {
+    return buildServerProvider({
+      presentation: PI_PRESENTATION,
+      enabled: piSettings.enabled,
+      checkedAt,
+      models: [],
+      probe: {
+        installed: true,
+        version: null,
+        status: "warning",
+        auth: { status: "unknown" },
+        message: resolution.reason,
       },
     });
   }
@@ -465,6 +501,7 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
     environment,
     resolvedLaunchArgs.args,
     cwd,
+    gatewaySource,
   ).pipe(Effect.timeoutOption(PI_RPC_DISCOVERY_TIMEOUT_MS), Effect.exit);
   if (Exit.isFailure(discoveryExit)) {
     yield* Effect.logWarning("Pi RPC discovery failed.", {

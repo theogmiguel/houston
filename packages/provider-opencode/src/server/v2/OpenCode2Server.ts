@@ -115,6 +115,8 @@ export const make = Effect.fn("OpenCode2Server.make")(function* (input: {
   readonly serverPassword: string;
   readonly directory: string;
   readonly environment: NodeJS.ProcessEnv;
+  /** When this changes, an idle shared server is replaced so new sessions see the new route. */
+  readonly environmentKey?: Effect.Effect<string>;
 }) {
   const opencode = yield* OpenCode2Client.OpenCode2Client;
   const connectTo = Effect.fn("OpenCode2Server.connectTo")(function* (
@@ -152,6 +154,7 @@ export const make = Effect.fn("OpenCode2Server.make")(function* (input: {
     binaryPath: input.binaryPath,
     directory: input.directory,
     environment: serverEnvironment(input.environment, password),
+    ...(input.environmentKey === undefined ? {} : { environmentKey: input.environmentKey }),
     verify: (url) => connectTo(url, password, false).pipe(Effect.flatMap(remember)),
   });
   return OpenCode2Server.of({

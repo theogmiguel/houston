@@ -339,6 +339,7 @@ import { useProactivePanels } from "../hooks/useProactivePanels";
 import { useIncrementalTimelineEntries } from "../hooks/useIncrementalTimelineEntries";
 import { useRightPanelSurfaceClose } from "../hooks/useRightPanelSurfaceClose";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
+import { useInferenceStopBannerItem } from "./chat/useInferenceStopBannerItem";
 import { ComposerTaskStatus } from "./ui/composer-task-status";
 import { Swap } from "./ui/swap";
 import { modelFallbackBannerItem } from "./chat/ComposerUsageLimits";
@@ -3360,6 +3361,23 @@ export default function ChatView(props: ChatViewProps) {
   };
   const sendPreviewAnnotationStable = useStableCallback(sendPreviewAnnotation);
   const onComposerResumeStable = useStableCallback(onResume);
+  const inferenceStopBanner = useInferenceStopBannerItem(
+    environmentId,
+    activeThreadId ?? undefined,
+    activeLatestRun,
+    () => {
+      if (resumableRunId !== null) onComposerResumeStable();
+    },
+    () => composerRef.current?.openModelPicker(),
+  );
+  const shownComposerBannerItems =
+    inferenceStopBanner === null
+      ? composerBannerItems
+      : [...composerBannerItems, inferenceStopBanner];
+  const shownInlineComposerBanners =
+    inferenceStopBanner === null
+      ? inlineComposerBanners
+      : [...inlineComposerBanners, inferenceStopBanner];
   const onComposerCompactContextStable = useStableCallback(onCompactContext);
   const queuedRunsControl =
     isServerThread && activeThread ? (
@@ -4095,7 +4113,7 @@ export default function ChatView(props: ChatViewProps) {
                                             : projectCloneSendBlockReason
                               }
                               isPreparingWorktree={isPreparingWorktree && !sendQueuesBehindSetup}
-                              bannerItems={isDraftHeroState ? [] : inlineComposerBanners}
+                              bannerItems={isDraftHeroState ? [] : shownInlineComposerBanners}
                               resumeCompactionTokens={resumeCompactionTokens}
                               keepFullHistory={keepFullHistory}
                               onToggleKeepFullHistory={toggleKeepFullHistoryStable}
@@ -4216,12 +4234,12 @@ export default function ChatView(props: ChatViewProps) {
                           )}
                         </div>
                       </ComposerSurface.Host>
-                      {isDraftHeroState && composerBannerItems.length > 0 ? (
+                      {isDraftHeroState && shownComposerBannerItems.length > 0 ? (
                         // Out of flow, like the headline, so a notice never moves the centered composer.
                         // Short windows pin the composer to the bottom, where an out-of-flow notice
                         // would fall off-screen, so there it takes space and lifts the composer.
                         <div className="absolute inset-x-0 top-full flex flex-col gap-1 pt-4 [@media(max-height:34rem)]:static">
-                          <ComposerBannerStack items={composerBannerItems} detached />
+                          <ComposerBannerStack items={shownComposerBannerItems} detached />
                         </div>
                       ) : null}
                     </ComposerSurface.Shell>

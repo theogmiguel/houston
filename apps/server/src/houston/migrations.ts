@@ -14,6 +14,7 @@ import {
   createTimelineReadIndexes,
   createTurnStartReadModels,
 } from "./projectionReadModels.ts";
+import { createNativeSessionHistory } from "./nativeSessionHistory.ts";
 import { purgeDeletedThreadHistories } from "./threadHistoryPurge.ts";
 
 // Upstream's migrator skips every id up to the highest it recorded, so Houston's schema keeps its
@@ -1385,6 +1386,56 @@ const PendingDeviceApprovals = Effect.gen(function* () {
 // already soft-deleted. The effect outbox handles new deletions.
 const PurgeDeletedThreadHistories = purgeDeletedThreadHistories();
 
+// One row per request the inference gateway served. It never holds request or response text:
+// server, model, purpose, thread and run ids, status, bounded failure cause, HTTP status, token
+// counts, timings and the static-prefix fingerprint only. The log sweeps rows past its retention.
+const InferenceRequests = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_inference_requests (
+      request_id TEXT PRIMARY KEY,
+      server_id TEXT NOT NULL,
+      model TEXT NOT NULL,
+      thread_id TEXT,
+      run_id TEXT,
+      parent_run_id TEXT,
+      purpose TEXT NOT NULL,
+      status TEXT NOT NULL,
+      fallback_from TEXT,
+      static_prefix_hash TEXT,
+      received_at INTEGER NOT NULL,
+      queue_wait_ms INTEGER,
+      ttft_ms INTEGER,
+      decode_ms INTEGER,
+      duration_ms INTEGER,
+      prompt_tokens INTEGER,
+      cached_prompt_tokens INTEGER,
+      completion_tokens INTEGER,
+      failure_cause TEXT,
+      upstream_http_status INTEGER,
+      reasoning_tokens INTEGER
+    )
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_inference_requests_received
+    ON houston_inference_requests(received_at)`;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_inference_requests_thread
+    ON houston_inference_requests(thread_id, received_at) WHERE thread_id IS NOT NULL`;
+});
+
+// Which models Houston's image check found able to read images, by server address and model.
+const InferenceImageVerdicts = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_inference_image_verdicts (
+      server_address TEXT NOT NULL,
+      model TEXT NOT NULL,
+      supported INTEGER NOT NULL,
+      checked_at TEXT NOT NULL,
+      PRIMARY KEY (server_address, model)
+    ) WITHOUT ROWID
+  `;
+});
+
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
@@ -1413,6 +1464,9 @@ const houstonMigrationEntries = [
   [27, "NotionPagesAsTaskIssues", NotionPagesAsTaskIssues],
   [28, "PendingDeviceApprovals", PendingDeviceApprovals],
   [29, "PurgeDeletedThreadHistories", PurgeDeletedThreadHistories],
+  [30, "InferenceRequests", InferenceRequests],
+  [31, "InferenceImageVerdicts", InferenceImageVerdicts],
+  [32, "ProviderNativeSessions", createNativeSessionHistory],
 ] as const;
 
 /** Every Houston migration id this build knows, for callers that must not run beside an older schema. */

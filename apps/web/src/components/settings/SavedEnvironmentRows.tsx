@@ -5,6 +5,8 @@ import { useState } from "react";
 import { type EnvironmentId, resolveEnvironmentMachineKind } from "@houston-app/contracts";
 import {
   connectionRoutes,
+  connectionSecurityBadge,
+  connectionSecurityBadgeText,
   hasSavedBearerRoute,
   connectionStatusText,
   environmentMcpUrl,
@@ -158,8 +160,12 @@ export function SavedBackendListRow({
   });
   const machineKind = resolveEnvironmentMachineKind(environment.serverConfig);
   const routeCount = connectionRoutes(environment.entry).length;
+  const securityBadge = isConnected
+    ? connectionSecurityBadge({ entry: environment.entry, connectedTarget })
+    : null;
   const subtitleText = [
     environmentTransportLabel(environment, connectedTarget),
+    securityBadge === null ? null : connectionSecurityBadgeText(securityBadge),
     // The headline below names the failure in full.
     diagnosis ? null : resumingServerUpdate ? "Restarting" : status.text,
     enabled && versionMismatch ? serverVersion : null,

@@ -134,6 +134,71 @@ fail.
 agent finds first; a check that never fires on a broken fixture is silence wearing the shape
 of a passing check.
 
+## Inference gateway
+
+`apps/server/src/houston/inference/InferenceGateway.ts` forwards the OpenAI Chat Completions,
+Completions and Responses APIs and the Anthropic Messages API to one registered server. It is
+outside environment auth: the only credential is a bearer token minted by
+`InferenceGatewayCredentials` per provider session (bound to an instance, thread and server) or per
+background scope. That token is stored as a hash in memory, never in the database, logs, traces,
+errors or RPC replies, and MCP, OAuth and session tokens do not resolve there. The upstream key is
+read from the secret store and sent only to that key's server; cookies, client credentials and
+proxy headers are never forwarded, and `x-proxy-*` headers are recomputed from authenticated thread
+state rather than copied from the caller.
+
+Requests are buffered up to 32 MiB and refused past it. Redirects are refused, not followed, so the
+upstream key cannot reach another origin. The admission queue, fallback, bounded retry, watchdog
+and request log are described for users in `docs/user/local-models.md`; their limits live with the
+code (`MAX_WAITING`, `MAX_WAIT_MS`, `MAX_REQUEST_BYTES`, `FIRST_CONTENT_TIMEOUT_MS`,
+`IDLE_TIMEOUT_MS`). The request log (`houston_inference_requests`, a Houston-track migration) never
+stores request or response text, only a bounded failure cause and a short static-prefix hash, and
+sweeps rows past its one-week retention.
+
+**Why.** A local server may be shared, so its key must not leak into a client, a log or another
+origin; and a runaway local model otherwise consumes a slot until someone notices.
+
+## Encrypted remote control
+
+Two opt-in protections guard remote control of a server, both default off. The
+**remote transport policy** (`remoteTransportPolicy`, default `any`) refuses, before
+authentication, WebSocket upgrades and authenticated HTTP requests that arrive over a
+Cloudflare-style tunnel, a public proxy or plain LAN when set to `private-e2ee-only`. Only
+loopback (which includes an SSH port-forward) and Tailscale addresses
+(`100.64.0.0/10` and `fd7a:115c:a1e0::/48`) pass. Classification lives in
+`apps/server/src/auth/transportSecurity.ts`; the WebSocket gate runs before
+`authenticateWebSocketUpgrade` and the HTTP gate wraps every authenticated environment route in
+`apps/server/src/auth/http.ts`. Loopback always passes and the running socket is not torn down,
+so a host cannot lock itself out; `settings.json` is authoritative on restart.
+
+Application-layer E2EE (`packages/shared/src/socketE2ee.ts`) encrypts the WebSocket RPC channel
+itself. The server keeps a long-lived Ed25519 identity seed in the `ServerSecretStore`
+(`e2ee-identity-seed-v1`, never the database), and `ServerConfig.transportSecurity` publishes
+the policy, mode, public key and a SHA-256 fingerprint. A pairing link made while encryption is
+on carries the base64url public key as `pk`; a client pins it in its saved bearer profile, appends
+`?e2ee=1`, and runs an authenticated ephemeral X25519 handshake. The server signs the transcript
+(environment id, both ephemerals and nonces, its identity key); the client verifies the signature
+against the pinned key, then both derive per-direction keys with HKDF-SHA256, split a large frame
+into parts before encrypting each, and exchange XChaCha20-Poly1305 records with a strict monotonic
+counter. Tampering, replay, reordering, plaintext injection, a wrong pin
+(`E2EE_IDENTITY_MISMATCH`) and cross-environment transcripts close the socket. A pinned client
+asks for E2EE; if the host cannot offer it the upgrade fails with `E2EE_NOT_SUPPORTED` rather
+than falling back to plaintext.
+
+`e2eeMode` (`off` | `prefer` | `require`) decides whether unpinned clients may connect. `require`
+refuses remote unpinned upgrades with `E2EE_REQUIRED`, excepting loopback. Turning encryption off
+is allowed and only affects future connections.
+
+Limitations by design: E2EE covers the live WebSocket session, not attachment, asset or other
+authenticated HTTP endpoints, which ride the transport and its policy. Server-to-server peer links
+and agent MCP clients speak HTTP, not this session, so they are protected only by the transport.
+A pairing code and `houston pair` links do not carry `pk`, so devices paired that way remain
+unencrypted until re-paired from a link made while encryption is on. Rotation is deleting the
+identity secret and restarting; pinned clients then fail until re-paired.
+
+**Why.** A tunnel or an untrusted network can see and rewrite the traffic it carries. The
+transport policy keeps control traffic off such paths, and app-layer E2EE makes the tunnel
+irrelevant to confidentiality and lets the client detect a substituted host.
+
 ## Builds
 
 - **Never two Cargo workloads at once.** `cargo` saturates every core; concurrent builds push
