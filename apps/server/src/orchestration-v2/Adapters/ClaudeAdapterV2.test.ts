@@ -86,6 +86,7 @@ import { SpawnExecutableResolution } from "@houston-app/shared/shell";
 import * as PortScanner from "../../preview/PortScanner.ts";
 import { CHECK_TIMEOUT } from "../../houston/nonBlockingSpawner.ts";
 import * as TraceContext from "../../houston/observability/TraceContext.ts";
+import { CLAUDE_MODEL_USAGE_LIMIT_CODE } from "../../houston/providerReadiness.ts";
 import * as RecordingTracer from "../../observability/testing/RecordingTracer.ts";
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { WorkflowAgentTranscriptReadObserver } from "../workflowAgentTranscript.ts";
@@ -7958,6 +7959,71 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       if (terminal.status !== "failed") return;
       assert.equal(terminal.failure.class, "usage_limit");
       assert.equal(terminal.failure.resetAt, "2026-10-12T12:20:00.000Z");
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
+  it.effect.each([
+    { name: "only a per-model window", events: ["seven_day_overage_included"], scoped: true },
+    { name: "the 7-day Opus window", events: ["seven_day_opus"], scoped: true },
+    {
+      name: "a per-model and an account window",
+      events: ["seven_day_overage_included", "five_hour"],
+      scoped: false,
+    },
+  ])("marks a usage limit model-scoped when it rejects $name", ({ events, scoped }) =>
+    Effect.gen(function* () {
+      const harness = yield* makeWakeHarness;
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("attempt-model-scoped-limit"),
+          text: "Continue.",
+          attachments: [],
+        }),
+      );
+      const resetsAt = 1791807600;
+      yield* Queue.offerAll(harness.sdkMessages, [
+        ...events.map((rateLimitType, index) =>
+          claudeSdkFrame({
+            type: "rate_limit_event",
+            rate_limit_info: { status: "rejected", rateLimitType, resetsAt },
+            uuid: `00000000-0000-4000-8000-00000000069${index}`,
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        ),
+        makeAssistantErrorFrame({
+          uuid: "00000000-0000-4000-8000-000000000697",
+          error: "rate_limit",
+          text: "You've hit your weekly limit for this model. Switch to another model to continue.",
+          apiErrorParams: {
+            rate_limit_info: { status: "rejected", rateLimitType: events[0], resetsAt },
+          },
+        }),
+        makeResultFrame({
+          uuid: "00000000-0000-4000-8000-000000000698",
+          result: "Usage limit reached.",
+          isError: true,
+          apiErrorStatus: 429,
+          terminalReason: "api_error",
+        }),
+      ]);
+      const terminal = yield* Queue.take(harness.terminalReceipts);
+      assert.equal(terminal.status, "failed");
+      if (terminal.status !== "failed") return;
+      assert.equal(terminal.failure.class, "usage_limit");
+      assert.equal(terminal.failure.resetAt, "2026-10-12T12:20:00.000Z");
+      assert.equal(terminal.failure.code, scoped ? CLAUDE_MODEL_USAGE_LIMIT_CODE : "api_error_429");
     }).pipe(
       Effect.provide(
         Layer.mergeAll(
