@@ -578,6 +578,18 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
     );
   });
 
+  it("keeps the approval callback when Auto is chosen directly", () => {
+    const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
+      ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "auto",
+        interactionMode: "default",
+        cwd: "/workspace",
+      }),
+    );
+
+    assert.deepEqual(queryPolicy, { permissionMode: "auto", installPermissionCallback: true });
+  });
+
   it("keeps approval-required mode interactive with danger-full-access sandboxing", () => {
     const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
       ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
@@ -5007,11 +5019,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     const openPlanTurn = Effect.fn("openPlanTurn")(function* (
       runtimeMode: "auto" | "full-access",
       approvalPolicy?: "never",
+      interactionMode: "plan" | "default" = "plan",
     ) {
       const harness = yield* makeWakeHarness;
       const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
         runtimeMode,
-        interactionMode: "plan",
+        interactionMode,
         cwd: "/workspace",
         ...(approvalPolicy === undefined ? {} : { approvalPolicy }),
       });
@@ -5026,9 +5039,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       });
       yield* harness.runtime.startTurn({
         ...input,
-        appThread: { ...input.appThread, runtimeMode, interactionMode: "plan" },
+        appThread: { ...input.appThread, runtimeMode, interactionMode },
       });
-      assert.equal(harness.getOpenedOptions()?.permissionMode, "plan");
+      assert.equal(
+        harness.getOpenedOptions()?.permissionMode,
+        interactionMode === "plan" ? "plan" : "auto",
+      );
       const canUseTool = harness.getOpenedOptions()?.canUseTool;
       assert.isDefined(canUseTool);
       return { ...harness, canUseTool: canUseTool! };
@@ -5096,6 +5112,34 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             assert.deepEqual(result.updatedInput, toolInput);
             assert.equal(result.toolUseID, "tool-plan-write");
           }
+        }).pipe(
+          Effect.scoped,
+          Effect.provide(
+            Layer.mergeAll(
+              IdAllocator.layer,
+              McpProviderSessions.layer,
+              NodeServices.layer,
+              NodeCrypto.layer,
+            ),
+          ),
+        ),
+    );
+
+    it.effect.each(["accept", "decline"] as const)(
+      "asks before a command Claude forwards in Auto, then respects %s",
+      (decision) =>
+        Effect.gen(function* () {
+          const turn = yield* openPlanTurn("auto", undefined, "default");
+          // Auto forwards a call here when its classifier refuses to decide alone.
+          const permission = yield* requestWrite(turn, "Bash", { command: "git push --force" });
+          assert.equal(permission.first.type, "request", "Auto approved without asking");
+          if (permission.first.type !== "request") return;
+          const request = permission.first.event.runtimeRequest;
+          assert.equal(request.status, "pending");
+          assert.equal(request.kind, "command");
+          yield* turn.runtime.respondToRuntimeRequest({ requestId: request.id, decision });
+          const result = yield* Fiber.join(permission.decision);
+          assert.equal(result?.behavior, decision === "accept" ? "allow" : "deny");
         }).pipe(
           Effect.scoped,
           Effect.provide(

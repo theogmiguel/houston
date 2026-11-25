@@ -41,7 +41,6 @@ import * as AcpRegistryRuntimeCoordinator from "@houston-app/provider-acp-regist
 import * as AcpRegistrySupport from "@houston-app/provider-acp-registry/server/AcpRegistrySupport";
 import * as AgentSessionImporter from "./project/AgentSessionImporter.ts";
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
-import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as AntigravityInstallation from "./provider/AntigravityInstallation.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
@@ -678,7 +677,6 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(AcpRegistrySupport.AcpRegistryCatalog)({}),
   Layer.mock(AgentSessionImporter.AgentSessionImporter)({}),
   Layer.mock(AgentSessionScanner.AgentSessionScanner)({}),
-  Layer.mock(AnalyticsService.AnalyticsService)({}),
   Layer.mock(AntigravityInstallation.AntigravityInstallation)({ managedDirectory: "/unused" }),
   Layer.mock(BackgroundPolicy.BackgroundPolicy)({}),
   Layer.mock(CheckpointDiffQuery.CheckpointDiffQuery)({}),
@@ -905,7 +903,6 @@ it.effect.each([
               method: "browser-session-cookie",
               scopes: [],
             },
-            {},
             yield* ServerBrowser.ServerBrowser,
             () => Effect.void,
           ).pipe(Layer.provide(configRpcServices)),
@@ -1145,7 +1142,6 @@ it.effect("on-demand clients get provider config without workspace snapshots", (
             method: "browser-session-cookie",
             scopes: [],
           },
-          {},
           yield* ServerBrowser.ServerBrowser,
           () => Effect.void,
         ).pipe(Layer.provide(configRpcServices)),
