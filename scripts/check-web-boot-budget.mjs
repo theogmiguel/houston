@@ -6,14 +6,8 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeZlib from "node:zlib";
 
-// Measured at 3,981,009 bytes once rarely used dialogs loaded on demand; issue linking added
-// 3,206 bytes of protocol and presentation to the boot closure, which new UI must not join.
-// The 2% headroom absorbs build-environment defines and small additions; beyond it, load the
-// new code with a dynamic import or raise this with the reason in the commit. Local model
-// support added about 10 KB of protocol (the inference RPCs and settings the shell decodes on
-// connect) while its dialogs, settings page and usage section stay out of the closure.
-// Encrypted remote control added about 13 KB of protocol and connection-security presentation;
-// its cipher code loads only for an environment that pinned a key.
+// About 2% over the measured closure. Raising it needs the reason in the commit; local models
+// and encrypted remote control added protocol, while their dialogs and ciphers load on demand.
 export const BOOT_BUDGET_BYTES = 4_100_000;
 
 // What a cold start loads before React mounts: each entry and its static imports, plus the
