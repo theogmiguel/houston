@@ -193,6 +193,7 @@ import {
   nextDelivery,
   steerFollowUpCommand,
 } from "../houston/messageDelivery.ts";
+import { asyncAnswerAuthor } from "../houston/runtimeRequestAuthor.ts";
 import {
   ASIDE_NEEDS_FINISHED_TURN,
   asideForkRefusal,
@@ -10696,8 +10697,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           messageId: MessageId.make(`async-answer:${command.requestId}`),
           text: replies.join("\n\n"),
           attachments: [],
-          createdBy: "user" as const,
-          creationSource: "server" as const,
+          ...asyncAnswerAuthor(command),
           dispatchMode,
         };
         yield* dispatchMessage(answer, events, effects);

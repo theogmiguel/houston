@@ -578,6 +578,18 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
     );
   });
 
+  it("keeps the approval callback when Auto is chosen directly", () => {
+    const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
+      ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "auto",
+        interactionMode: "default",
+        cwd: "/workspace",
+      }),
+    );
+
+    assert.deepEqual(queryPolicy, { permissionMode: "auto", installPermissionCallback: true });
+  });
+
   it("keeps approval-required mode interactive with danger-full-access sandboxing", () => {
     const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
       ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
@@ -846,7 +858,7 @@ describe("ClaudeAdapterV2 context usage", () => {
       },
       null,
       "2026-08-29T00:03:00.000Z",
-      "",
+      undefined,
       DateTime.makeUnsafe("2026-08-29T00:00:00.000Z"),
     );
     assert.strictEqual(usage.promptCacheExpiresAt, "2026-08-29T00:05:00.000Z");
@@ -5007,11 +5019,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     const openPlanTurn = Effect.fn("openPlanTurn")(function* (
       runtimeMode: "auto" | "full-access",
       approvalPolicy?: "never",
+      interactionMode: "plan" | "default" = "plan",
     ) {
       const harness = yield* makeWakeHarness;
       const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
         runtimeMode,
-        interactionMode: "plan",
+        interactionMode,
         cwd: "/workspace",
         ...(approvalPolicy === undefined ? {} : { approvalPolicy }),
       });
@@ -5026,9 +5039,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       });
       yield* harness.runtime.startTurn({
         ...input,
-        appThread: { ...input.appThread, runtimeMode, interactionMode: "plan" },
+        appThread: { ...input.appThread, runtimeMode, interactionMode },
       });
-      assert.equal(harness.getOpenedOptions()?.permissionMode, "plan");
+      assert.equal(
+        harness.getOpenedOptions()?.permissionMode,
+        interactionMode === "plan" ? "plan" : "auto",
+      );
       const canUseTool = harness.getOpenedOptions()?.canUseTool;
       assert.isDefined(canUseTool);
       return { ...harness, canUseTool: canUseTool! };
@@ -5096,6 +5112,34 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             assert.deepEqual(result.updatedInput, toolInput);
             assert.equal(result.toolUseID, "tool-plan-write");
           }
+        }).pipe(
+          Effect.scoped,
+          Effect.provide(
+            Layer.mergeAll(
+              IdAllocator.layer,
+              McpProviderSessions.layer,
+              NodeServices.layer,
+              NodeCrypto.layer,
+            ),
+          ),
+        ),
+    );
+
+    it.effect.each(["accept", "decline"] as const)(
+      "asks before a command Claude forwards in Auto, then respects %s",
+      (decision) =>
+        Effect.gen(function* () {
+          const turn = yield* openPlanTurn("auto", undefined, "default");
+          // Auto forwards a call here when its classifier refuses to decide alone.
+          const permission = yield* requestWrite(turn, "Bash", { command: "git push --force" });
+          assert.equal(permission.first.type, "request", "Auto approved without asking");
+          if (permission.first.type !== "request") return;
+          const request = permission.first.event.runtimeRequest;
+          assert.equal(request.status, "pending");
+          assert.equal(request.kind, "command");
+          yield* turn.runtime.respondToRuntimeRequest({ requestId: request.id, decision });
+          const result = yield* Fiber.join(permission.decision);
+          assert.equal(result?.behavior, decision === "accept" ? "allow" : "deny");
         }).pipe(
           Effect.scoped,
           Effect.provide(
@@ -9474,12 +9518,99 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       model: "claude-opus-5-5",
       userSettings: '{"autoCompactWindow":500000}',
       threshold: 467_000,
+      sent: null,
     },
     {
       autoCompactWindow: "300000",
       model: "claude-opus-5-5",
       userSettings: '{"autoCompactWindow":500000}',
       threshold: 267_000,
+      sent: "300000",
+    },
+    { autoCompactWindow: "400000", model: "claude-opus-5-5", threshold: 367_000, sent: "400000" },
+    {
+      autoCompactWindow: "",
+      model: "claude-opus-5-5",
+      userSettings: '{"env":{"CLAUDE_CODE_AUTO_COMPACT_WINDOW":"300000"}}',
+      threshold: 267_000,
+    },
+    {
+      autoCompactWindow: "",
+      model: "claude-opus-5-5",
+      environment: { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "300000" },
+      threshold: 267_000,
+      sent: null,
+    },
+    {
+      autoCompactWindow: "",
+      model: "claude-opus-5-5",
+      userSettings: '{"env":{"CLAUDE_CODE_AUTO_COMPACT_WINDOW":"300000"}}',
+      launchArgs: `--settings '{"env":{"CLAUDE_CODE_AUTO_COMPACT_WINDOW":"350000"}}'`,
+      threshold: 317_000,
+    },
+    {
+      autoCompactWindow: "",
+      model: "claude-opus-5-5",
+      userSettings: '{"env":{"CLAUDE_CODE_AUTO_COMPACT_WINDOW":"300000"}}',
+      projectSettings: '{"env":{"CLAUDE_CODE_AUTO_COMPACT_WINDOW":"400000"}}',
+      threshold: 367_000,
+    },
+    {
+      autoCompactWindow: "",
+      model: "claude-opus-5-5",
+      userSettings: '{"env":{"CLAUDE_CODE_AUTO_COMPACT_WINDOW":"300000"}}',
+      environment: { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "500000" },
+      threshold: 267_000,
+    },
+    {
+      autoCompactWindow: "",
+      model: "claude-opus-5-5",
+      userSettings: '{"autoCompactWindow":500000}',
+      environment: { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "300k" },
+      threshold: 267_000,
+    },
+    // Houston's setting is sent as the variable, so it beats the variable from every source.
+    {
+      autoCompactWindow: "400000",
+      model: "claude-opus-5-5",
+      environment: { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "300000" },
+      threshold: 367_000,
+      sent: "400000",
+    },
+    {
+      autoCompactWindow: "400000",
+      model: "claude-opus-5-5",
+      userSettings: '{"env":{"CLAUDE_CODE_AUTO_COMPACT_WINDOW":"300000"}}',
+      threshold: 367_000,
+      sent: "400000",
+    },
+    {
+      autoCompactWindow: "400000",
+      model: "claude-opus-5-5",
+      projectSettings: '{"env":{"CLAUDE_CODE_AUTO_COMPACT_WINDOW":"300000"}}',
+      threshold: 367_000,
+      sent: "400000",
+    },
+    {
+      autoCompactWindow: "400000",
+      model: "claude-opus-5-5",
+      launchArgs: `--settings '{"env":{"CLAUDE_CODE_AUTO_COMPACT_WINDOW":"300000"}}'`,
+      threshold: 367_000,
+      sent: "400000",
+    },
+    {
+      autoCompactWindow: "",
+      model: "claude-opus-5-5",
+      userSettings: '{"autoCompactWindow":400000,"autoCompactEnabled":false}',
+      threshold: undefined,
+      compactsAutomatically: false,
+    },
+    {
+      autoCompactWindow: "400000",
+      model: "claude-opus-5-5",
+      environment: { DISABLE_AUTO_COMPACT: "1" },
+      threshold: undefined,
+      compactsAutomatically: false,
     },
     {
       autoCompactWindow: "",
@@ -9538,7 +9669,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       model: "claude-opus-5-5",
       userSettings: '{"autoCompactWindow":500000}',
       projectSettings: '{"autoCompactWindow":"auto"}',
-      threshold: 467_000,
+      threshold: undefined,
     },
     {
       autoCompactWindow: "",
@@ -9556,7 +9687,17 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     },
   ])(
     "ignores stale snapshots after compaction and reports threshold $autoCompactWindow for $model",
-    ({ autoCompactWindow, model, threshold, userSettings, projectSettings, launchArgs }) =>
+    ({
+      autoCompactWindow,
+      model,
+      threshold,
+      userSettings,
+      projectSettings,
+      launchArgs,
+      environment,
+      sent,
+      compactsAutomatically,
+    }) =>
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
@@ -9583,6 +9724,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             homePath: home,
             launchArgs: launchArgs ?? "",
           },
+          ...(environment === undefined ? {} : { environment }),
         });
         yield* harness.runtime.startTurn(
           makeClaudeTestTurnInput({
@@ -9630,6 +9772,23 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           ),
           [threshold, threshold, threshold],
         );
+        assert.deepEqual(
+          harness.events.flatMap((event) =>
+            event.type === "provider_turn.updated" && event.providerTurn.tokenUsage
+              ? [event.providerTurn.tokenUsage.compactsAutomatically]
+              : [],
+          ),
+          [compactsAutomatically, compactsAutomatically, compactsAutomatically],
+        );
+        if (sent !== undefined) {
+          const launchSettings = harness.getOpenedOptions()?.settings;
+          const launchEnv = typeof launchSettings === "object" ? launchSettings.env : undefined;
+          assert.equal(launchEnv?.CLAUDE_CODE_AUTO_COMPACT_WINDOW, sent ?? undefined);
+          assert.equal(
+            typeof launchSettings === "object" ? launchSettings.autoCompactWindow : undefined,
+            sent === null ? undefined : Number(sent),
+          );
+        }
       }).pipe(
         Effect.provide(
           Layer.mergeAll(
