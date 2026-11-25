@@ -861,9 +861,12 @@ test("error log", (it) => {
         const yesterday = NodePath.join(LOG_DIR, "server.errors-2031-03-09.ndjson");
         const memory = makeFiles({ [yesterday]: '{"kind":"span"}\n' });
         const { run } = yield* makeHarness({ files: memory.files });
-        const attributes = { filler: "x".repeat(120) };
+        // Entries of about 3 KiB fill the day in a few hundred failures.
+        const attributes = Object.fromEntries(
+          Array.from({ length: 5 }, (_, index) => [`filler${index}`, "x".repeat(500)]),
+        );
 
-        for (let index = 0; index < 4_500; index++) {
+        for (let index = 0; index < 800; index++) {
           yield* run(fail(`storm.${index}`).pipe(Effect.annotateSpans(attributes)));
         }
 
