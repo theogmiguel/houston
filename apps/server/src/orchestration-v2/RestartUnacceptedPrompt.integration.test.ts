@@ -228,12 +228,16 @@ const driveThread = (name: string, cwd: string) =>
     const projection = orchestrator.getThreadProjection(threadId);
     const until = (predicate: (current: OrchestrationV2ThreadProjection) => boolean) =>
       Effect.gen(function* () {
-        const reached = yield* orchestrator.streamDomainEvents.pipe(
-          Stream.mapEffect(() => projection),
-          Stream.filter(predicate),
-          Stream.runHead,
-          Effect.forkScoped({ startImmediately: true }),
-        );
+        // Read before the projection, so no event between the two is missed.
+        const afterSequence = yield* orchestrator.getThreadEventSequence(threadId);
+        const reached = yield* orchestrator
+          .streamStoredEventsFrom({ threadId, afterSequence })
+          .pipe(
+            Stream.mapEffect(() => projection),
+            Stream.filter(predicate),
+            Stream.runHead,
+            Effect.forkScoped({ startImmediately: true }),
+          );
         const current = yield* projection;
         return predicate(current) ? current : Option.getOrThrow(yield* Fiber.join(reached));
       });
