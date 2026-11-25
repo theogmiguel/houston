@@ -18,8 +18,9 @@ import {
   mergeRestartCancelledBackgroundWork,
 } from "../orchestration-v2/RestartBackgroundNote.ts";
 
-/** Records work an exited provider process took with it, as restart recovery does, and wakes
- * the run that started it if the agent awaited that work. Shared ids wake a run only once. */
+/** Records work an exited provider process took with it on the latest started run, and queues one
+ * wake for that run if the agent awaited the work. Restart recovery moves the record to the run
+ * before it when that run is a prompt recovery holds. */
 export const writeLostBackgroundWork = Effect.fn("houston.writeLostBackgroundWork")(function* (
   deps: {
     readonly readRuns: (

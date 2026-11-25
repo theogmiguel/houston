@@ -813,6 +813,16 @@ export const make = Effect.gen(function* () {
           allocateEventId,
         })),
       );
+      // A provider exit can note lost work on a prompt put back in the queue, which did not start it.
+      for (const run of retryableRuns) {
+        for (const work of run.restartCancelledBackgroundWork ?? []) {
+          if (work.id !== undefined) {
+            if (cancelledBackgroundNativeIds.has(work.id)) continue;
+            cancelledBackgroundNativeIds.add(work.id);
+          }
+          recordCancelledBackgroundWork(run.providerThreadId, work);
+        }
+      }
       for (const providerThread of projection.providerThreads ?? []) {
         const needsIdle = providerThread.status === "active";
         const needsRosterClear = providerThreadHasPendingBackgroundTasks(providerThread);
@@ -902,6 +912,19 @@ export const make = Effect.gen(function* () {
             ),
           },
         });
+        for (const run of retryableRuns) {
+          if (run.providerThreadId !== providerThreadId) continue;
+          if ((run.restartCancelledBackgroundWork?.length ?? 0) === 0) continue;
+          events.push({
+            id: yield* allocateEventId(),
+            type: "run.background-work-cancelled",
+            threadId: projection.thread.id,
+            runId: run.id,
+            providerInstanceId: run.providerInstanceId,
+            occurredAt: now,
+            payload: { runId: run.id, restartCancelledBackgroundWork: [] },
+          });
+        }
       }
       const continuationRun =
         continueAfterRestart && trigger === "startup"

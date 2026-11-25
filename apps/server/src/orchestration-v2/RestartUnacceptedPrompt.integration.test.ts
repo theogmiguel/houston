@@ -612,3 +612,126 @@ it.live("background work cut beside a held prompt is noted on the run that start
     }),
   }),
 );
+
+// Composed fixture: the provider reports its exit while the next prompt's start is unanswered.
+const exitBesideUnconfirmedPrompt = (input: {
+  readonly awaited: boolean;
+  readonly listCleared: boolean;
+}) =>
+  Effect.fnUntraced(function* (thread: Thread, provider: Provider) {
+    yield* thread.send("Start the dev server");
+    const running = yield* thread.startAccepted;
+    const providerThread = running.providerThreads[0]!;
+    const tasks = [
+      {
+        taskId: "task-1",
+        kind: "command" as const,
+        description: "pnpm dev",
+        ...(input.awaited ? { awaited: true as const } : {}),
+      },
+    ];
+    yield* Queue.offer(provider.events, {
+      type: "provider_thread.updated",
+      driver,
+      providerThread: { ...providerThread, pendingBackgroundTasks: tasks },
+    });
+    yield* provider.complete(provider.accepted[0]!);
+    yield* thread.until((current) => current.runs[0]?.status !== "running");
+    yield* thread.worker.drain();
+    yield* thread.send("Now fix the checkout page");
+    yield* thread.startUnanswered(provider);
+    yield* Queue.offer(provider.events, {
+      type: "background_work.lost",
+      driver,
+      threadId: thread.threadId,
+      providerThreadId: providerThread.id,
+      tasks,
+    });
+    const noted = yield* thread.until((current) =>
+      current.runs.some((run) => (run.restartCancelledBackgroundWork?.length ?? 0) > 0),
+    );
+    assert.deepEqual(
+      noted.runs.map((run) => [run.status, run.restartCancelledBackgroundWork?.length ?? 0]),
+      [
+        ["completed", 0],
+        ["running", 1],
+      ],
+    );
+    if (!input.listCleared) return;
+    yield* Queue.offer(provider.events, {
+      type: "provider_thread.updated",
+      driver,
+      providerThread: { ...providerThread, pendingBackgroundTasks: [] },
+    });
+    yield* thread.until(
+      (current) => (current.providerThreads[0]?.pendingBackgroundTasks?.length ?? 0) === 0,
+    );
+  });
+
+it.live.each([
+  ["after", true],
+  ["before", false],
+] as const)(
+  "work lost to a provider exit beside an unconfirmed prompt reaches the agent once, with that prompt, when a restart comes %s the work list clears",
+  ([moment, listCleared]) =>
+    restart({
+      name: `unaccepted-exit-${moment}`,
+      accepts: 1,
+      acceptsAfter: 2,
+      before: exitBesideUnconfirmedPrompt({ awaited: false, listCleared }),
+      after: Effect.fnUntraced(function* (thread, provider) {
+        const held = yield* idle(thread);
+        assert.deepEqual(
+          held.runs.map((run) => [run.status, run.queueHeld ?? false]),
+          [
+            ["completed", false],
+            ["queued", true],
+          ],
+        );
+        assert.lengthOf(provider.accepted, 0);
+        yield* thread.orchestrator.dispatch({
+          type: "queue.resume",
+          commandId: CommandId.make("resume-queue"),
+          threadId: thread.threadId,
+        });
+        yield* thread.until(() => provider.accepted.length === 1);
+        yield* provider.complete(provider.accepted[0]!);
+        yield* thread.until((current) => current.runs[1]?.status === "completed");
+        yield* thread.send("Then the cart page");
+        yield* thread.until(() => provider.accepted.length === 2);
+        assert.deepEqual(
+          provider.accepted.map(({ message }) => message.text.split("pnpm dev").length - 1),
+          [1, 0],
+          "the held prompt carries the note and the next message does not",
+        );
+        assert.include(provider.accepted[0]!.message.text, "your agent process exited");
+        assert.deepEqual(
+          held.runs.map((run) =>
+            (run.restartCancelledBackgroundWork ?? []).map((work) => [work.id, work.cause]),
+          ),
+          [[["task-1", "provider_exit"]], []],
+          "the note is on the run that started the work, once",
+        );
+      }),
+    }),
+);
+
+// Pins a known gap: work the agent awaited, lost in this window, wakes no one.
+it.live("awaited work lost beside an unconfirmed prompt is noted but wakes no one", () =>
+  restart({
+    name: "unaccepted-exit-awaited",
+    accepts: 1,
+    before: exitBesideUnconfirmedPrompt({ awaited: true, listCleared: true }),
+    after: Effect.fnUntraced(function* (thread, provider) {
+      const held = yield* idle(thread);
+      assert.deepEqual(
+        held.runs.map((run) => [run.status, run.queueHeld ?? false]),
+        [
+          ["completed", false],
+          ["queued", true],
+        ],
+      );
+      assert.lengthOf(provider.accepted, 0);
+    }),
+  }),
+);
