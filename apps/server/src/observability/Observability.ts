@@ -16,6 +16,7 @@ import * as CodexProtocol from "effect-codex-app-server/protocol";
 import * as ServerConfig from "../config.ts";
 import * as ResourceAttribution from "../resourceTelemetry/ResourceAttribution.ts";
 import * as ServerLogger from "../serverLogger.ts";
+import * as ErrorLog from "../houston/observability/ErrorLog.ts";
 import * as ExportRedaction from "../houston/observability/ExportRedaction.ts";
 import * as ExportTracer from "../houston/observability/ExportTracer.ts";
 import * as ObservabilityExport from "../houston/observability/ObservabilityExport.ts";
@@ -40,6 +41,8 @@ export const layer = Layer.unwrap(
       ServerConfig.otlpResource(config, yield* HostProcess.Hostname),
     );
     const attribution = yield* ResourceAttribution.ResourceAttribution;
+    // Houston: one writer for failed spans and error log records, kept past trace rotation.
+    const errorLog = yield* ErrorLog.make;
 
     const layerTraceReferences = Layer.mergeAll(
       Layer.succeed(Tracer.MinimumTraceLevel, config.traceMinLevel),
@@ -90,6 +93,7 @@ export const layer = Layer.unwrap(
           batchWindowMs: config.traceBatchWindowMs,
           sink,
           record: QuietSqlSpans.keepServerTraceRecord,
+          onFailure: errorLog.recordSpan,
           ...(delegate ? { delegate } : {}),
         });
 
@@ -127,7 +131,12 @@ export const layer = Layer.unwrap(
 
     return layerOtelWarnings.pipe(
       Layer.provideMerge(
-        Layer.mergeAll(ServerLogger.layer, layerTraceReferences, layerTracer, metricsLayer),
+        Layer.mergeAll(
+          ServerLogger.layer.pipe(Layer.provide(Layer.succeed(ErrorLog.ErrorLog, errorLog))),
+          layerTraceReferences,
+          layerTracer,
+          metricsLayer,
+        ),
       ),
       Layer.provide(
         OtelEnvironment.layerResourceAttributes(
