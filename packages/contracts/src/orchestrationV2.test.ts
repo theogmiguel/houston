@@ -2,13 +2,14 @@ import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
 
-import { NodeId, RunAttemptId, TrimmedNonEmptyString } from "./index.ts";
+import { CommandId, NodeId, RunAttemptId, RunId, TrimmedNonEmptyString } from "./index.ts";
 import {
   compactCommandInstructions,
   isCompactCommandText,
   isCompactionCommandMessage,
   isDelegatedAppThread,
   latestProviderTurnForAttempt,
+  OrchestrationV2DispatchCommandError,
   OrchestrationV2ProviderCapabilities,
   OrchestrationV2ProviderThread,
   OrchestrationV2ProviderThreadJson,
@@ -628,6 +629,53 @@ describe("background work kinds from older or newer servers", () => {
         pendingBackgroundTasks: [{ taskId: "", kind: "command" }],
       }),
     ).toThrow();
+  });
+});
+
+const decodeDispatchCommandError = Schema.decodeUnknownSync(OrchestrationV2DispatchCommandError);
+const encodeDispatchCommandError = Schema.encodeSync(OrchestrationV2DispatchCommandError);
+/** The error as clients declared it before it named queued runs. */
+const decodePreQueuedRunsError = Schema.decodeUnknownSync(
+  Schema.TaggedStruct("OrchestrationV2DispatchCommandError", {
+    commandId: CommandId,
+    commandType: Schema.String,
+    message: Schema.String,
+    reason: Schema.optional(Schema.Literal("thread_not_found")),
+  }),
+);
+
+describe("dispatch errors from older or newer servers", () => {
+  const refusal = {
+    _tag: "OrchestrationV2DispatchCommandError",
+    commandId: "command-1",
+    commandType: "thread.settle",
+    message: "Thread thread-1 has queued run run-1.",
+  };
+
+  it("carries the queued runs that refused a settle", () => {
+    const error = decodeDispatchCommandError({
+      ...refusal,
+      blockingQueuedRunIds: ["run-1", "run-2"],
+    });
+    expect(error.blockingQueuedRunIds).toEqual(["run-1", "run-2"]);
+  });
+
+  it("decodes a refusal from a server that names no queued runs", () => {
+    const error = decodeDispatchCommandError(refusal);
+    expect(error.blockingQueuedRunIds).toBeUndefined();
+  });
+
+  it("sends a refusal that clients from before queued runs were named still decode", () => {
+    const sent = encodeDispatchCommandError(
+      new OrchestrationV2DispatchCommandError({
+        commandId: CommandId.make("command-1"),
+        commandType: "thread.settle",
+        message: refusal.message,
+        blockingQueuedRunIds: [RunId.make("run-1")],
+      }),
+    );
+    expect(sent).toMatchObject({ blockingQueuedRunIds: ["run-1"] });
+    expect(decodePreQueuedRunsError(sent).message).toBe(refusal.message);
   });
 });
 
