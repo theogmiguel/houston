@@ -25,6 +25,7 @@ import {
   isRestartContinuationSource,
   cancelledBeforeStart,
   isRestartNoteSource,
+  lostToProviderExit,
   neverStarted,
   restartCancelledBackgroundWorkNote,
   restartContinuationNote,
@@ -315,9 +316,11 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
         notification: {
           source: { kind: "system" },
           outcome: "updated",
-          summary: note.settled
-            ? "Houston restarted and stopped background work"
-            : "Houston restarted and resumed this turn",
+          summary: lostToProviderExit(note.work)
+            ? "The agent process exited and stopped background work"
+            : note.settled
+              ? "Houston restarted and stopped background work"
+              : "Houston restarted and resumed this turn",
           detail: text,
         },
         attachments: [],

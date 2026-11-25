@@ -127,11 +127,22 @@ export function cancelledRosterTaskWork(task: OrchestrationV2PendingBackgroundTa
 
 const MAX_NOTE_ENTRIES = 10;
 
+/** True when every entry was lost to a provider process exit rather than a server restart. */
+export function lostToProviderExit(work: ReadonlyArray<Work>): boolean {
+  return work.length > 0 && work.every((entry) => entry.cause === "provider_exit");
+}
+
 /** Bounds entries and labels to protect the context budget. */
 export function restartCancelledBackgroundWorkNote(work: ReadonlyArray<Work>): string {
   const omitted = work.length - MAX_NOTE_ENTRIES;
+  const exited = work.some((entry) => entry.cause === "provider_exit");
+  const reason = lostToProviderExit(work)
+    ? "your agent process exited"
+    : exited
+      ? "the Houston server restarted or your agent process exited"
+      : "the Houston server restarted";
   return [
-    "Note: the Houston server restarted, and this background work was cancelled before it finished. It will not report back on its own, so resume or restart what you still need and wait for its result:",
+    `Note: ${reason}, and this background work was cancelled before it finished. It will not report back on its own, so resume or restart what you still need and wait for its result:`,
     ...work.slice(0, MAX_NOTE_ENTRIES).map((entry) => `- ${entry.kind}: ${entry.label}`),
     ...(omitted > 0 ? [`- and ${omitted} more`] : []),
   ].join("\n");
@@ -174,6 +185,24 @@ export function runOutcome(
     (run.restartCancelledBackgroundWork ?? []).some(isAwaitedWork)
     ? "interrupted"
     : run.status;
+}
+
+/** The run whose note carries a provider thread's lost background work. */
+export function latestStartedRun(
+  runs: ReadonlyArray<OrchestrationV2Run>,
+  providerThreadId: OrchestrationV2Run["providerThreadId"],
+): OrchestrationV2Run | undefined {
+  return runs.reduce<OrchestrationV2Run | undefined>(
+    (latest, run) =>
+      run.providerThreadId === providerThreadId &&
+      run.status !== "queued" &&
+      run.status !== "rolled_back" &&
+      !neverStarted(run) &&
+      (latest === undefined || runRanAfter(run, latest))
+        ? run
+        : latest,
+    undefined,
+  );
 }
 
 /** Unstarted runs have no lost work to continue, except prepared continuations carrying a source run. */
