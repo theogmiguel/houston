@@ -41,7 +41,6 @@ import {
   getLocalEnvironmentBearerToken,
   getServerStatus,
   invalidateLocalEnvironmentBearerToken,
-  installRelayTelemetryEnabled,
   getSystemLocale,
   closeWindow,
   getWindowButtonLayout,
@@ -115,7 +114,6 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(completeLegacyLocalStorage);
   yield* ipc.handleSync(getAppBranding);
   yield* ipc.handle(logDebug);
-  yield* installRelayTelemetryEnabled();
   yield* ipc.handleSync(getSystemLocale);
   yield* ipc.handleSync(getWindowFullscreenState);
   yield* ipc.handleSync(getWindowMaximizedState);
