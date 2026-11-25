@@ -3,7 +3,10 @@ import {
   isListedThreadLineage,
   type OrchestrationV2ThreadProjection,
 } from "@houston-app/contracts";
-import { COMPACTION_SUGGESTION_MIN_TOKENS } from "@houston-app/shared/claudeCompaction";
+import {
+  CLAUDE_PROMPT_CACHE_TTL_1H_MS,
+  COMPACTION_SUGGESTION_MIN_TOKENS,
+} from "@houston-app/shared/claudeCompaction";
 import { derivePendingBackgroundWork } from "@houston-app/shared/orchestrationV2PendingBackgroundWork";
 import * as DateTime from "effect/DateTime";
 
@@ -11,9 +14,15 @@ import * as DateTime from "effect/DateTime";
 // that a cold re-read is cheap, so compacting mostly loses context for little
 // saving.
 const MIN_CONTEXT_TOKENS = COMPACTION_SUGGESTION_MIN_TOKENS;
-// Start this long before the cache expires: enough for the session to resume
-// and send the compaction while the cache is still warm.
-const LEAD_MS = 2 * 60_000;
+// Start this long before the cache expires: enough for the session to resume and send the
+// compaction while the cache is still warm. Capped at half the lifetime, because an expiry derived
+// from the response is later than the real one, measured from the request.
+const MAX_LEAD_MS = 5 * 60_000;
+// Resuming the session takes time, so a thread found with less than this share of its lead left
+// before expiry would compact cold; it is skipped instead.
+const MIN_TIME_LEFT_SHARE_OF_LEAD = 0.5;
+// No cache Claude reports outlives this, so a run that completed earlier has an expired cache.
+export const IDLE_COMPACTION_MAX_CACHE_TTL_MS = CLAUDE_PROMPT_CACHE_TTL_1H_MS;
 
 export type IdleCompactionRecords = Pick<
   OrchestrationV2ThreadProjection,
@@ -28,10 +37,9 @@ export type IdleCompactionRecords = Pick<
 >;
 
 /**
- * When an idle Claude thread should compact, or null when it should not. The
- * window ends when the prompt cache of Claude's last request expires (1h on
- * subscriptions, 5m on API keys); compacting after that pays a full uncached
- * read.
+ * When an idle Claude thread should compact, or null. The window ends when its prompt cache
+ * expires; compacting later pays a full uncached read. `latestPromptCacheTtlMs` is the latest
+ * lifetime reported on the thread's provider thread.
  */
 export function idleCompactionWindow(
   {
@@ -45,6 +53,7 @@ export function idleCompactionWindow(
     contextTransfers,
   }: IdleCompactionRecords,
   nowMs: number,
+  latestPromptCacheTtlMs?: number,
 ): {
   readonly runId: (typeof runs)[number]["id"];
   readonly startMs: number;
@@ -97,11 +106,19 @@ export function idleCompactionWindow(
     .filter((turn) => turn.providerThreadId === providerThread.id && turn.tokenUsage !== undefined)
     .map((turn) => turn.tokenUsage!)
     .toSorted((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
-  if ((usages[0]?.usedTokens ?? 0) < MIN_CONTEXT_TOKENS) return null;
-  // A request served fully from cache creates no cache entry and reports no
-  // TTL, but it still refreshes the cache. Treat it as unknown and skip.
-  const expiresAt = usages[0]?.promptCacheExpiresAt;
-  const endMs = expiresAt === undefined ? Number.NaN : Date.parse(expiresAt);
-  if (!Number.isFinite(endMs) || nowMs >= endMs) return null;
-  return { runId: latestRun.id, startMs: endMs - LEAD_MS, endMs };
+  const usage = usages[0];
+  if (usage === undefined || usage.usedTokens < MIN_CONTEXT_TOKENS) return null;
+  const expiresAtMs =
+    usage.promptCacheExpiresAt === undefined ? undefined : Date.parse(usage.promptCacheExpiresAt);
+  // A request served fully from cache reports no TTL but refreshes the cache with the lifetime
+  // the session last reported. With none reported, any guess could be late: skip, never compact cold.
+  const ttlMs =
+    usage.promptCacheTtlMs ??
+    latestPromptCacheTtlMs ??
+    (expiresAtMs === undefined ? undefined : expiresAtMs - Date.parse(usage.updatedAt));
+  if (ttlMs === undefined || !Number.isFinite(ttlMs) || ttlMs <= 0) return null;
+  const endMs = expiresAtMs ?? Date.parse(usage.updatedAt) + ttlMs;
+  const leadMs = Math.min(MAX_LEAD_MS, ttlMs / 2);
+  if (!Number.isFinite(endMs) || endMs - nowMs < leadMs * MIN_TIME_LEFT_SHARE_OF_LEAD) return null;
+  return { runId: latestRun.id, startMs: endMs - leadMs, endMs };
 }

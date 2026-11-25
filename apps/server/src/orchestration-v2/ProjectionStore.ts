@@ -190,6 +190,14 @@ export type ProjectionLimitRecoveryCandidate = Pick<
   | "snoozedUntil"
 >;
 
+/** A listed Claude thread whose latest run completed recently, for the idle compaction sweep. */
+export interface ProjectionIdleCompactionCandidate {
+  readonly threadId: ThreadId;
+  readonly runId: RunId;
+  /** The latest cache lifetime reported on the thread's active Claude provider thread. */
+  readonly promptCacheTtlMs: number | null;
+}
+
 export type ProjectionThreadPullRequests = Pick<
   OrchestrationV2AppThread,
   "id" | "projectId" | "lineage" | "settledOverride" | "settledAt" | "pullRequests"
@@ -547,6 +555,9 @@ export interface ProjectionStoreV2Shape {
   readonly getLimitRecoveryWakeAt: (
     now: DateTime.Utc,
   ) => Effect.Effect<number | null, ProjectionStoreV2Error>;
+  readonly getIdleCompactionCandidates: (options: {
+    readonly completedAfter: DateTime.Utc;
+  }) => Effect.Effect<ReadonlyArray<ProjectionIdleCompactionCandidate>, ProjectionStoreV2Error>;
   readonly getSettlementCandidates: (
     threadId?: ThreadId,
   ) => Effect.Effect<ReadonlyArray<ProjectionSettlementCandidate>, ProjectionStoreV2Error>;
@@ -4140,6 +4151,49 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })),
     );
 
+    const getIdleCompactionCandidates = Effect.fn("ProjectionStore.getIdleCompactionCandidates")(
+      function* (options: Parameters<ProjectionStoreV2Shape["getIdleCompactionCandidates"]>[0]) {
+        const rows = yield* sql<{
+          readonly thread_id: string;
+          readonly run_id: string;
+          readonly prompt_cache_ttl_ms: number | null;
+        }>`
+          SELECT r.thread_id, r.run_id,
+            (
+              SELECT json_extract(turn.payload_json, '$.tokenUsage.promptCacheTtlMs')
+              FROM orchestration_v2_projection_provider_turns turn
+              WHERE turn.provider_thread_id = t.active_provider_thread_id
+                AND json_extract(turn.payload_json, '$.tokenUsage.promptCacheTtlMs') IS NOT NULL
+              ORDER BY turn.ordinal DESC
+              LIMIT 1
+            ) AS prompt_cache_ttl_ms
+          FROM orchestration_v2_projection_runs r
+          CROSS JOIN orchestration_v2_projection_threads t ON t.thread_id = r.thread_id
+          CROSS JOIN orchestration_v2_projection_provider_threads provider
+            ON provider.provider_thread_id = t.active_provider_thread_id
+          WHERE r.status = 'completed'
+            AND julianday(r.completed_at) > julianday(${DateTime.formatIso(options.completedAfter)})
+            -- Only a Claude session compacts; subagents and side chats never do.
+            AND provider.driver = 'claudeAgent'
+            AND json_extract(t.payload_json, '$.lineage.relationshipToParent') IS NOT 'subagent'
+            AND json_extract(t.payload_json, '$.lineage.sideChat') IS NOT 1
+            AND NOT EXISTS (
+              SELECT 1 FROM orchestration_v2_projection_runs later
+              WHERE later.thread_id = r.thread_id AND later.ordinal > r.ordinal
+            )
+            AND t.deleted_at IS NULL
+            AND json_extract(t.payload_json, '$.archivedAt') IS NULL
+          ORDER BY r.completed_at ASC, r.thread_id ASC
+        `;
+        return rows.map((row): ProjectionIdleCompactionCandidate => ({
+          threadId: ThreadId.make(row.thread_id),
+          runId: RunId.make(row.run_id),
+          promptCacheTtlMs: row.prompt_cache_ttl_ms,
+        }));
+      },
+      Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })),
+    );
+
     const getRecoveryThreadIds = Effect.fn("ProjectionStore.getRecoveryThreadIds")(
       function* (
         kind: ProjectionRecoveryKind,
@@ -7535,6 +7589,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       getProviderControlContext: readOnReader(getProviderControlContext),
       getLimitRecoveryCandidates: readOnReader(getLimitRecoveryCandidates),
       getLimitRecoveryWakeAt: readOnReader(getLimitRecoveryWakeAt),
+      getIdleCompactionCandidates: readOnReader(getIdleCompactionCandidates),
       getRecoveryThreadIds: readOnReader(getRecoveryThreadIds),
       getUnreadableThreadIds: readOnReader(getUnreadableThreadIds),
       getThreadSnapshot: readOnReader(getThreadSnapshot),
