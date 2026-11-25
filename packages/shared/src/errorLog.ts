@@ -40,13 +40,13 @@ const TRACE_ID = /^[0-9a-f]{1,32}$/;
 // a space. What an id may carry is the process's own rule.
 const ATTRIBUTE_VALUE = /^[A-Za-z0-9][\w.:%-]{0,511}$/;
 const ATTRIBUTE_KEY = /^[a-z][\w.]{0,127}$/;
-// The frames end a stack; what precedes them is message text of any length.
-const STACK_MAX_CHARS = 64 * 1024;
+// The frames end a stack, ten by default; what precedes them is message text of any length.
+const STACK_MAX_CHARS = 16 * 1024;
 const FRAME_LINE = /^\s+at /;
 // Function, file, line and column. The lazy function part leaves `Program Files (x86)` to the file.
 const FRAME = /^\s+at (?:async )?(?:new )?(?:(.*?) \()?(.+):(\d{1,7}):(\d{1,7})\)?$/;
-// Matching costs the square of a line's length; no frame of a real program is near this.
-const FRAME_LINE_MAX_CHARS = 1024;
+// Matching costs the square of a line's length; a function, a path and a position fit in this.
+const FRAME_LINE_MAX_CHARS = 512;
 const EXECUTABLE_NAME = "houston";
 const NODE_INTERNAL = "node:internal/";
 const INDIRECT_PATH = /[?#]|(?:^|\/)\.\.(?:\/|$)/;

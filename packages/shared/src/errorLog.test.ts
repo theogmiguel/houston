@@ -424,6 +424,39 @@ test("error log", (it) => {
       }),
     );
 
+    it.effect("a hostile stack is examined only to its limits", () =>
+      Effect.gen(function* () {
+        yield* at(START);
+        const memory = makeFiles();
+        const program = { root: "/app/dist", file: "/app/dist/bin.mjs" };
+        const { run } = yield* makeHarness({ files: memory.files, program });
+        const hostile = `${" (".repeat(249)}x`;
+        const valid = (length: number) => {
+          const location = " (/app/dist/bin.mjs:1:2)";
+          const indent = "    at ";
+          return `${"x".repeat(length - indent.length - location.length)}${location}`;
+        };
+
+        yield* run(
+          fail(
+            "job.hostile",
+            withStack(
+              "boom",
+              Array.from({ length: 128 }, () => hostile),
+            ),
+          ),
+        );
+        yield* run(fail("job.lines", withStack("boom", [valid(512), valid(513)])));
+
+        const [long, lines] = memory.entries();
+        // Every examined line is counted, so this is the work done: 16 KiB of 128 such lines.
+        assert.isAtMost(long?.droppedFrames as number, 33);
+        assert.isAbove(long?.droppedFrames as number, 16);
+        assert.deepStrictEqual(lines?.frames, ["bin.mjs:1:2"]);
+        assert.strictEqual(lines?.droppedFrames, 1);
+      }),
+    );
+
     it.effect("an executable whose name is not plain is printed as houston", () =>
       Effect.gen(function* () {
         yield* at(START);
