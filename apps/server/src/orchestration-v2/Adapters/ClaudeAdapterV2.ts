@@ -2989,8 +2989,10 @@ export function claudeRuntimeQueryPolicyForRuntimePolicy(
       ? readOnlyTools
       : undefined;
   // acceptEdits approves edits before the callback; the callback must ask for everything else.
+  // Auto forwards a call only when its classifier will not decide alone, so a person must answer it.
   const installPermissionCallback =
     downgraded ||
+    permissionMode === "auto" ||
     (runtimePolicy.approvalPolicy === undefined
       ? runtimePolicy.runtimeMode === "approval-required" ||
         runtimePolicy.runtimeMode === "auto-accept-edits"

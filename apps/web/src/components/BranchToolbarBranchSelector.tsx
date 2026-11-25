@@ -66,7 +66,6 @@ import {
   useLinkedThreadPullRequest,
 } from "./ThreadStatusIndicators";
 
-import { Badge } from "./ui/badge";
 import { ComboboxItem, ComboboxTrigger } from "./ui/combobox";
 import { ComposerControl } from "./chat/ComposerControl";
 import { MiddleTruncate } from "./ui/middle-truncate";
@@ -691,11 +690,6 @@ export function BranchToolbarBranchSelector({
           />
         </span>
       </ComposerContextLabel>
-      {branchSwitchBlockedReason === null ? null : (
-        <Badge size="sm" variant="outline" data-branch-switch-blocked="true">
-          {t("Turn running")}
-        </Badge>
-      )}
     </ComboboxTrigger>
   );
 
