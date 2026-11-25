@@ -107,7 +107,8 @@ it.effect("a session gets the catalog only from a Codex that reads it, and never
 
     const catalogArg = yield* launchWith("0.167.0");
     const catalogPath = JSON.parse(catalogArg!.slice("model_catalog_json=".length)) as string;
-    expect(path.dirname(catalogPath)).toBe(directory);
+    // The temporary directory comes back with "/" on Windows; the catalog path is joined natively.
+    expect(path.dirname(catalogPath)).toBe(path.normalize(directory));
     expect(JSON.parse(yield* fileSystem.readFileString(catalogPath))).toEqual(
       codexModelCatalog(server),
     );
