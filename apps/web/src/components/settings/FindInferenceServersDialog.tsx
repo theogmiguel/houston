@@ -25,7 +25,10 @@ function baseUrlHost(baseUrl: string): string {
   }
 }
 
-/** Searches this machine once on open; nothing is saved until the user adds a result. */
+/**
+ * Searches this machine once on open; nothing is saved until the user adds a result.
+ * `onPick` replaces this dialog, so picking a result never calls `onClose`.
+ */
 export function FindInferenceServersDialog({
   environmentId,
   environmentLabel,
@@ -109,14 +112,7 @@ export function FindInferenceServersDialog({
                         </Text>
                       ) : null}
                     </div>
-                    <Button
-                      size="compact"
-                      variant="outline"
-                      onClick={() => {
-                        onPick(server);
-                        onClose();
-                      }}
-                    >
+                    <Button size="compact" variant="outline" onClick={() => onPick(server)}>
                       {server.registeredServerId === undefined ? "Add" : "Edit"}
                     </Button>
                   </div>
