@@ -47,6 +47,7 @@ const FRAME_LINE = /^\s+at /;
 const FRAME = /^\s+at (?:async )?(?:new )?(?:(.*?) \()?(.+):(\d{1,7}):(\d{1,7})\)?$/;
 // Matching costs the square of a line's length; no frame of a real program is near this.
 const FRAME_LINE_MAX_CHARS = 1024;
+const EXECUTABLE_NAME = "houston";
 const NODE_INTERNAL = "node:internal/";
 const INDIRECT_PATH = /[?#]|(?:^|\/)\.\.(?:\/|$)/;
 const DRIVE = /^\/?([A-Za-z]):\//;
@@ -187,8 +188,9 @@ const ownLocation = (program: ErrorLogProgram): OwnLocation => {
     if (file.startsWith("node:")) return NodeModule.isBuiltin(file) ? file : undefined;
     const path = normalPath(file);
     const name = path.slice(path.lastIndexOf("/") + 1);
+    // An executable's own name is whatever the user saved it as.
+    if (below === undefined) return self !== "" && path === self ? EXECUTABLE_NAME : undefined;
     if (INDIRECT_PATH.test(path) || !FILE_NAME.test(name)) return undefined;
-    if (self !== "" && path === self) return name;
     return below !== undefined && path.startsWith(below) && SCRIPT_NAME.test(name)
       ? name
       : undefined;

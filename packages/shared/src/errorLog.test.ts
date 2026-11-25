@@ -424,6 +424,23 @@ test("error log", (it) => {
       }),
     );
 
+    it.effect("an executable whose name is not plain is printed as houston", () =>
+      Effect.gen(function* () {
+        yield* at(START);
+        const memory = makeFiles();
+        const { run } = yield* makeHarness({
+          files: memory.files,
+          program: { root: undefined, file: "/opt/acme tools/Acme Houston" },
+        });
+
+        yield* run(
+          fail("job.executable", withStack("boom", ["open (/opt/acme tools/Acme Houston:7:8)"])),
+        );
+
+        assert.deepStrictEqual(memory.entries()[0]?.frames, ["open (houston:7:8)"]);
+      }),
+    );
+
     it.effect("an attribute key that is not a code name is left out", () =>
       Effect.gen(function* () {
         yield* at(START);
