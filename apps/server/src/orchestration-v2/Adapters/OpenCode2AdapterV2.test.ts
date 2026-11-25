@@ -3195,7 +3195,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }).pipe(Effect.scoped),
   );
 
-  // The retry budget skips usage-limit retries, so their class must match the terminal's.
+  // The retry budget keeps a retry's class on the failure, so it must match the terminal's.
   it.effect.each([
     { type: "provider.rate-limit", status: 429, expected: "usage_limit" },
     { type: "provider.quota", status: 429, expected: "usage_limit" },
