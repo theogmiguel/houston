@@ -5,12 +5,14 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { CommandId, RunId, ThreadId } from "@houston-app/contracts";
+import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import type * as Scope from "effect/Scope";
@@ -47,6 +49,8 @@ const withLockableOutbox = <A, E>(
     /** Releases the lock once this many settlement writes have timed out on it. */
     readonly unlockAfter: (timeouts: number) => Effect.Effect<void>;
     readonly timeouts: () => number;
+    /** The wait the server's connection has outside this test. */
+    readonly defaultLockWaitMs: number;
     readonly firstTimeout: Deferred.Deferred<void>;
     readonly row: (id: string) => Effect.Effect<EffectOutbox.OrchestrationEffectV2>;
   }) => Effect.Effect<A, E, Scope.Scope>,
@@ -58,6 +62,7 @@ const withLockableOutbox = <A, E>(
     return yield* Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       const real = yield* EffectOutbox.EffectOutboxV2;
+      const waits = yield* sql<{ readonly timeout: number }>`PRAGMA busy_timeout`;
       yield* sql`PRAGMA busy_timeout = 0`;
       const other = yield* Effect.acquireRelease(
         Effect.sync(() => new NodeSqlite.DatabaseSync(filename)),
@@ -90,6 +95,7 @@ const withLockableOutbox = <A, E>(
             unlockAfter = count;
           }),
         timeouts: () => timeouts,
+        defaultLockWaitMs: waits[0]!.timeout,
         firstTimeout,
         row: (id) =>
           real.get(id).pipe(
@@ -212,7 +218,8 @@ it.effect("a settlement that outlasts its retries is written by a later run, in 
         }),
       );
 
-      yield* joinAdvancing(yield* Effect.forkChild(worker.runOnce));
+      const kept = yield* joinAdvancing(yield* Effect.forkChild(worker.runOnce));
+      assert.isTrue(Exit.isFailure(kept));
       assert.equal(timeouts(), 3);
       assert.equal((yield* row("first")).status, "running");
 
@@ -236,6 +243,67 @@ it.effect("a settlement that outlasts its retries is written by a later run, in 
     }),
   ),
 );
+
+it.effect("the daemon pauses between every try of a kept settlement and logs its limits", () => {
+  const logged: Array<readonly [string, Record<string, unknown>]> = [];
+  const layerLogger = Logger.layer([
+    Logger.make(({ message }) => {
+      const [text, fields] = Array.isArray(message) ? message : [message];
+      if (String(text).includes("kept")) {
+        logged.push([String(text), fields as Record<string, unknown>]);
+      }
+    }),
+  ]);
+  return withLockableOutbox(({ outbox, lock, unlockAfter, defaultLockWaitMs, firstTimeout, row }) =>
+    Effect.gen(function* () {
+      yield* enqueue(outbox, "effect");
+      yield* unlockAfter(5);
+      const tries: Array<number> = [];
+      const worker = yield* makeWorker(
+        {
+          ...outbox,
+          succeed: (input) =>
+            Effect.gen(function* () {
+              tries.push(yield* Clock.currentTimeMillis);
+              return yield* outbox.succeed(input);
+            }),
+        },
+        () => lock,
+      );
+      const daemon = yield* EffectWorker.runDaemonWithOptions({ concurrency: 1 }).pipe(
+        Effect.provideService(EffectWorker.OrchestrationEffectWorkerV2, worker),
+        Effect.forkChild,
+      );
+      yield* Deferred.await(firstTimeout);
+      for (let step = 0; step < 100 && tries.length < 6; step++) {
+        yield* TestClock.adjust("100 millis");
+        for (let turn = 0; turn < 5; turn++) yield* loopTurn;
+      }
+      yield* Fiber.interrupt(daemon);
+
+      const first = tries[0] ?? 0;
+      assert.deepEqual(
+        tries.map((at) => at - first),
+        [0, 500, 1_500, 2_500, 3_500, 4_500],
+      );
+      assert.equal((yield* row("effect")).status, "succeeded");
+      const fields = { effectId: "effect", effectType: "terminal.cleanup" };
+      assert.deepEqual(logged, [
+        [
+          "Effect settlement kept until the database lock is free",
+          {
+            ...fields,
+            operation: "succeed",
+            tries: 3,
+            lockWaitMsPerTry: defaultLockWaitMs,
+            keptSettlements: 1,
+          },
+        ],
+        ["Wrote the kept effect settlement", { ...fields, keptSettlements: 0 }],
+      ]);
+    }),
+  ).pipe(Effect.provide(layerLogger));
+});
 
 it.effect("a kept settlement that then fails for another reason does not block later work", () =>
   withLockableOutbox(({ outbox, lock, unlock, row }) =>

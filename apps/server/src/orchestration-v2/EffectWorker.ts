@@ -721,6 +721,8 @@ const isLockTimeout = (error: EffectOutbox.EffectOutboxError) =>
   SqlError.isSqlError(error.cause) && error.cause.reason._tag === "LockTimeoutError";
 // Each try holds the event loop for busy_timeout (5 s); three match the ingestor's event writes.
 const SETTLEMENT_LOCK_RETRIES = 2;
+// busy_timeout as persistence/Sqlite.ts sets it; named in the warning about a kept settlement.
+const SETTLEMENT_LOCK_WAIT_MS = 5_000;
 // The pause between two such tries lets the server answer clients, which drop it after 15 s.
 const SETTLEMENT_LOCK_BACKOFF = Schedule.exponential("500 millis");
 
@@ -782,7 +784,9 @@ export const layerWithOptions = (
         Effect.sync(() => {
           unwritten.set(settlement.effect.id, settlement);
         });
-      /** False when the worker no longer holds the claim; true also for a settlement kept for later. */
+      const hasLockTimeout = (cause: Cause.Cause<EffectOutbox.EffectOutboxError>) =>
+        Option.exists(Cause.findErrorOption(cause), isLockTimeout);
+      /** False when the worker no longer holds the claim. A kept settlement fails the run, so the daemon cools off. */
       const settle = (settlement: Settlement) =>
         settlement.write.pipe(
           Effect.retry({
@@ -792,20 +796,27 @@ export const layerWithOptions = (
           }),
           // Claim recovery runs uninterruptibly; a shutdown must not wait for a backoff there.
           Effect.interruptible,
-          Effect.catchIf(isLockTimeout, (error) =>
-            keepUnwritten(settlement).pipe(
-              Effect.andThen(
-                Effect.logWarning("Effect settlement waits for the database lock", {
-                  effectId: settlement.effect.id,
-                  effectType: settlement.effect.request.type,
-                  operation: error.operation,
-                  tries: SETTLEMENT_LOCK_RETRIES + 1,
-                }),
-              ),
-              Effect.as(true),
-            ),
+          Effect.onError((cause) =>
+            hasLockTimeout(cause) ? Effect.void : settlement.recover(cause),
           ),
-          Effect.onError((cause) => settlement.recover(cause)),
+          Effect.catchIf(isLockTimeout, (error) =>
+            Effect.gen(function* () {
+              yield* keepUnwritten(settlement);
+              yield* Effect.logWarning("Effect settlement kept until the database lock is free", {
+                effectId: settlement.effect.id,
+                effectType: settlement.effect.request.type,
+                operation: error.operation,
+                tries: SETTLEMENT_LOCK_RETRIES + 1,
+                lockWaitMsPerTry: SETTLEMENT_LOCK_WAIT_MS,
+                keptSettlements: unwritten.size,
+              });
+              return yield* new OrchestrationEffectWorkerError({
+                operation: "settle",
+                effectId: settlement.effect.id,
+                cause: error,
+              });
+            }),
+          ),
         );
       const writeUnwritten = Effect.suspend(() =>
         Effect.forEach(
@@ -815,9 +826,17 @@ export const layerWithOptions = (
               // Another fiber of this worker may have taken it since.
               unwritten.delete(settlement.effect.id)
                 ? settlement.write.pipe(
+                    Effect.tap((written) =>
+                      written
+                        ? Effect.logInfo("Wrote the kept effect settlement", {
+                            effectId: settlement.effect.id,
+                            effectType: settlement.effect.request.type,
+                            keptSettlements: unwritten.size,
+                          })
+                        : Effect.void,
+                    ),
                     Effect.onError((cause) =>
-                      Cause.hasInterruptsOnly(cause) ||
-                      Option.exists(Cause.findErrorOption(cause), isLockTimeout)
+                      Cause.hasInterruptsOnly(cause) || hasLockTimeout(cause)
                         ? keepUnwritten(settlement)
                         : settlement.recover(cause),
                     ),
