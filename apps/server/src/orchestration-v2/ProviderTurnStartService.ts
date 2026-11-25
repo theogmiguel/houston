@@ -9,6 +9,7 @@ import {
   type OrchestrationV2ProviderThread,
   type OrchestrationV2Run,
   type OrchestrationV2RunAttempt,
+  type OrchestrationV2ThreadProjection,
   type OrchestrationV2TurnItem,
   isCompactionCommandMessage,
   isCompactCommandText,
@@ -116,6 +117,42 @@ const PROMPT_REFUSAL_TAGS = [
 const refusedBeforePrompt = (error: unknown): boolean =>
   PROMPT_REFUSAL_TAGS.some((tag) => Predicate.isTagged(error, tag)) ||
   (Predicate.hasProperty(error, "cause") && refusedBeforePrompt(error.cause));
+
+/** Turns stored as running on a provider thread whose run ended without completing. */
+function selectAbandonedTurns(input: {
+  readonly projection: Pick<OrchestrationV2ThreadProjection, "runs" | "attempts" | "providerTurns">;
+  readonly providerThreadId: OrchestrationV2ProviderThread["id"];
+  readonly beforeRunOrdinal: number;
+}) {
+  const { runs, attempts, providerTurns } = input.projection;
+  const endedRuns = new Map(
+    runs
+      .filter(
+        (run) =>
+          run.ordinal < input.beforeRunOrdinal &&
+          (run.status === "failed" ||
+            run.status === "interrupted" ||
+            run.status === "cancelled" ||
+            run.status === "rolled_back"),
+      )
+      .map((run) => [run.id, run] as const),
+  );
+  const startedAttemptIds = new Set(providerTurns.map((turn) => turn.runAttemptId));
+  return providerTurns.flatMap((turn) => {
+    if (turn.providerThreadId !== input.providerThreadId || turn.status !== "running") return [];
+    const attempt = attempts.find((candidate) => candidate.id === turn.runAttemptId);
+    const run = attempt === undefined ? undefined : endedRuns.get(attempt.runId);
+    if (attempt === undefined || run === undefined || turn.nodeId !== attempt.rootNodeId) return [];
+    // A newer attempt starts its turn only after this one ended.
+    const replaced = attempts.some(
+      (candidate) =>
+        candidate.runId === run.id &&
+        candidate.attemptOrdinal > attempt.attemptOrdinal &&
+        startedAttemptIds.has(candidate.id),
+    );
+    return replaced ? [] : [{ turn, run }];
+  });
+}
 
 export interface ProviderTurnStartServiceV2Shape {
   readonly start: (input: {
@@ -727,35 +764,28 @@ export const layer: Layer.Layer<
       const existingSessionProjection = projection.providerSessions.find(
         (candidate) => candidate.id === providerSessionId,
       );
-      const failedRuns = new Map(
-        projection.runs
-          .filter(
-            (previous) =>
-              previous.ordinal < run.ordinal &&
-              previous.providerThreadId === providerThread.id &&
-              previous.status === "failed",
-          )
-          .map((previous) => [previous.activeAttemptId, previous] as const),
-      );
-      const abandonedTurns = projection.providerTurns.flatMap((turn) => {
-        const previous = failedRuns.get(turn.runAttemptId);
-        return turn.providerThreadId === providerThread.id &&
-          turn.status === "running" &&
-          previous !== undefined &&
-          turn.nodeId === previous.rootNodeId
-          ? [{ turn, run: previous }]
-          : [];
+      const abandonedTurns = selectAbandonedTurns({
+        projection,
+        providerThreadId: providerThread.id,
+        beforeRunOrdinal: run.ordinal,
       });
-      const abandonedTurn = abandonedTurns.at(-1)?.turn;
-      if (abandonedTurn !== undefined) {
-        const liveSession = yield* providerSessions.get(providerSessionId);
-        if (Option.isSome(liveSession)) {
-          // Older versions could fail the run without stopping its provider.
+      if (abandonedTurns.length > 0) {
+        const lastOrdinal = Math.max(
+          ...projection.providerTurns
+            .filter((turn) => turn.providerThreadId === providerThread.id)
+            .map((turn) => turn.ordinal),
+        );
+        // Interrupting a stale turn would stop the thread's background work; only its last can be live.
+        const liveTurn = abandonedTurns.find(({ turn }) => turn.ordinal === lastOrdinal)?.turn;
+        const liveSession =
+          liveTurn === undefined ? Option.none() : yield* providerSessions.get(providerSessionId);
+        if (liveTurn !== undefined && Option.isSome(liveSession)) {
+          // The run ended without stopping its provider.
           // Recover that exact turn before reusing its native conversation.
           const recovered = yield* Effect.result(
             liveSession.value.interruptTurn({
               providerThread,
-              providerTurnId: abandonedTurn.id,
+              providerTurnId: liveTurn.id,
               requestRuntimeRestart: true,
             }),
           );
@@ -775,15 +805,15 @@ export const layer: Layer.Layer<
           runId: run.id,
           activeAttemptId: attempt.id,
           expectedStatus: "starting",
-          events: yield* Effect.forEach(abandonedTurns, ({ turn, run: failedRun }) =>
+          events: yield* Effect.forEach(abandonedTurns, ({ turn, run: endedRun }) =>
             Effect.gen(function* () {
               return {
                 id: yield* idAllocator.allocate.event({ threadId: projection.thread.id }),
                 type: "provider-turn.updated" as const,
                 threadId: projection.thread.id,
-                runId: failedRun.id,
+                runId: endedRun.id,
                 nodeId: turn.nodeId,
-                providerInstanceId: failedRun.providerInstanceId,
+                providerInstanceId: endedRun.providerInstanceId,
                 occurredAt: completedAt,
                 payload: { ...turn, status: "interrupted" as const, completedAt },
               };
