@@ -17,7 +17,7 @@ import { errorTag } from "./observability.ts";
 
 /** Today's file and the seven before it, so a failure stays readable for at least a week. */
 export const ERROR_LOG_RETAINED_DAYS = 8;
-/** Per process. A full day ends that day's entries and never evicts an earlier day's. */
+/** Per process, which owns its files alone. A full day ends that day's entries and never evicts an earlier day's. */
 export const ERROR_LOG_MAX_BYTES_PER_DAY = 2 * 1024 * 1024;
 /** Names, ten frames and the allowlisted ids fit in about 2 KiB. */
 export const ERROR_LOG_MAX_BYTES_PER_ENTRY = 4 * 1024;
@@ -58,15 +58,32 @@ export interface ErrorLogFiles {
   readonly prepare: (directory: string) => void;
   readonly append: (filePath: string, text: string) => void;
   readonly list: (directory: string) => ReadonlyArray<string>;
-  readonly size: (filePath: string) => number;
+  /** The file's size, and whether its last line was cut short. A missing file is empty. */
+  readonly measure: (filePath: string) => { readonly bytes: number; readonly torn: boolean };
   readonly remove: (filePath: string) => void;
 }
+
+const NEWLINE = 0x0a;
+
+const lastByteOf = (filePath: string, bytes: number) => {
+  const file = NodeFS.openSync(filePath, "r");
+  try {
+    const last = Buffer.alloc(1);
+    NodeFS.readSync(file, last, 0, 1, bytes - 1);
+    return last[0];
+  } finally {
+    NodeFS.closeSync(file);
+  }
+};
 
 const nodeFiles: ErrorLogFiles = {
   prepare: (directory) => NodeFS.mkdirSync(directory, { recursive: true }),
   append: (filePath, text) => NodeFS.appendFileSync(filePath, text, { mode: 0o600 }),
   list: (directory) => NodeFS.readdirSync(directory),
-  size: (filePath) => NodeFS.statSync(filePath, { throwIfNoEntry: false })?.size ?? 0,
+  measure: (filePath) => {
+    const bytes = NodeFS.statSync(filePath, { throwIfNoEntry: false })?.size ?? 0;
+    return { bytes, torn: bytes > 0 && lastByteOf(filePath, bytes) !== NEWLINE };
+  },
   remove: (filePath) => NodeFS.rmSync(filePath, { force: true }),
 };
 
@@ -300,25 +317,22 @@ export const makeErrorLog = (options: ErrorLogOptions): ErrorLog => {
   let filePath = "";
   // Unknown until the day's file is measured, and again after a failed write.
   let bytes: number | undefined;
+  let torn = false;
   let full = false;
   let pausedUntil = 0;
   let countByKey = new Map<string, number>();
 
   const prune = (now: number) => {
     const oldest = dayOf(now - (ERROR_LOG_RETAINED_DAYS - 1) * DAY_MS);
-    for (const name of files.list(options.directory)) {
+    for (const name of safely(() => files.list(options.directory), [])) {
       const fileDay = ownFile.exec(name)?.[1];
       if (fileDay === undefined || fileDay >= oldest) continue;
-      try {
-        files.remove(pathOf(name));
-      } catch {
-        // Windows refuses while another program holds the file open; the next prune tries again.
-      }
+      // Windows refuses while another program holds the file open; the next prune tries again.
+      safely(() => files.remove(pathOf(name)), undefined);
     }
   };
 
   const openDay = (now: number) => {
-    files.prepare(options.directory);
     prune(now);
     day = dayOf(now);
     filePath = pathOf(errorLogFileName(options.process, day));
@@ -339,25 +353,33 @@ export const makeErrorLog = (options: ErrorLogOptions): ErrorLog => {
         actual: entryBytes,
       })}\n`;
     }
-    const size = (bytes ??= files.size(filePath));
-    const next = size + Buffer.byteLength(text);
+    if (bytes === undefined) {
+      files.prepare(options.directory);
+      ({ bytes, torn } = files.measure(filePath));
+    }
+    if (torn) text = `\n${text}`;
+    const next = bytes + Buffer.byteLength(text);
     if (next + LIMIT_LINE_RESERVE_BYTES <= ERROR_LOG_MAX_BYTES_PER_DAY) {
       files.append(filePath, text);
       bytes = next;
+      torn = false;
       return;
     }
     full = true;
-    const line = `${JSON.stringify({
+    const line = `${torn ? "\n" : ""}${JSON.stringify({
       time: entry.time,
       kind: "limit",
       limit: "ERROR_LOG_MAX_BYTES_PER_DAY",
       maximum: ERROR_LOG_MAX_BYTES_PER_DAY,
-      actual: next + LIMIT_LINE_RESERVE_BYTES,
+      reserved: LIMIT_LINE_RESERVE_BYTES,
+      actual: next,
     })}\n`;
-    if (size + Buffer.byteLength(line) <= ERROR_LOG_MAX_BYTES_PER_DAY) files.append(filePath, line);
+    if (bytes + Buffer.byteLength(line) <= ERROR_LOG_MAX_BYTES_PER_DAY)
+      files.append(filePath, line);
   };
 
-  // Runs inside whatever just failed, so nothing here may throw into it.
+  // Runs inside whatever just failed, so nothing here may throw into it. Only a file that cannot
+  // be written pauses the log; a value that cannot be read is described as such.
   const guarded = (now: number, body: () => void) => {
     if (now < pausedUntil) return;
     try {

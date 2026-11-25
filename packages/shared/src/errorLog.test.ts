@@ -98,9 +98,10 @@ const makeFiles = (initial: Record<string, string> = {}) => {
       call("list");
       return [...contents.keys()].map((filePath) => NodePath.basename(filePath));
     },
-    size: (filePath) => {
-      call("size");
-      return Buffer.byteLength(contents.get(filePath) ?? "");
+    measure: (filePath) => {
+      call("measure");
+      const text = contents.get(filePath) ?? "";
+      return { bytes: Buffer.byteLength(text), torn: text !== "" && !text.endsWith("\n") };
     },
     remove: (filePath) => {
       call("remove");
@@ -736,7 +737,14 @@ test("error log", (it) => {
         assert.strictEqual(last?.kind, "limit");
         assert.strictEqual(last?.limit, "ERROR_LOG_MAX_BYTES_PER_DAY");
         assert.strictEqual(last?.maximum, ERROR_LOG_MAX_BYTES_PER_DAY);
-        assert.isAbove(last?.actual as number, ERROR_LOG_MAX_BYTES_PER_DAY);
+        assert.strictEqual(last?.reserved, 512);
+        const lines = text.trimEnd().split("\n");
+        const before = Buffer.byteLength(text) - Buffer.byteLength(`${lines.at(-1)}\n`);
+        // Every entry of this storm has the same shape, so the refused one is as long as the last,
+        // give or take the digits of its number and of its duration.
+        const refused = (last?.actual as number) - before;
+        assert.isAtMost(Math.abs(refused - Buffer.byteLength(`${lines.at(-2)}\n`)), 24);
+        assert.isAbove(before + refused + 512, ERROR_LOG_MAX_BYTES_PER_DAY);
         assert.strictEqual(memory.contents.get(yesterday), '{"kind":"span"}\n');
         // Past the limit the rest of the day reaches no file.
         const calls = memory.calls.length;
@@ -748,7 +756,7 @@ test("error log", (it) => {
     it.effect("counts what an earlier process wrote today", () =>
       Effect.gen(function* () {
         yield* at(START);
-        const memory = makeFiles({ [TODAY]: "x".repeat(ERROR_LOG_MAX_BYTES_PER_DAY) });
+        const memory = makeFiles({ [TODAY]: `${"x".repeat(ERROR_LOG_MAX_BYTES_PER_DAY - 1)}\n` });
         const { run } = yield* makeHarness({ files: memory.files });
 
         yield* run(fail("late"));
@@ -790,6 +798,11 @@ test("error log", (it) => {
   });
 
   describe("file system", () => {
+    const tempDirectory = Effect.acquireRelease(
+      Effect.sync(() => NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-error-log-"))),
+      (directory) => Effect.sync(() => NodeFS.rmSync(directory, { recursive: true, force: true })),
+    );
+
     it.effect("a failing append never reaches the span, and is not retried in a loop", () =>
       Effect.gen(function* () {
         yield* at(START);
@@ -823,6 +836,78 @@ test("error log", (it) => {
           ["recovered"],
         );
       }),
+    );
+
+    it.effect("a torn line never merges with the next entry", () =>
+      Effect.gen(function* () {
+        yield* at(START);
+        const memory = makeFiles();
+        let short = true;
+        const { run } = yield* makeHarness({
+          files: {
+            ...memory.files,
+            append: (filePath, text) => {
+              if (!short) return memory.files.append(filePath, text);
+              memory.files.append(filePath, text.slice(0, 40));
+              throw new Error("ENOSPC: no space left on device");
+            },
+          },
+        });
+
+        yield* run(fail("lost"));
+        short = false;
+        yield* TestClock.adjust(ERROR_LOG_RETRY_MS);
+        yield* run(fail("after"));
+        yield* run(fail("then"));
+
+        const [torn, ...whole] = (memory.contents.get(TODAY) ?? "").trimEnd().split("\n");
+        assert.lengthOf(torn ?? "", 40);
+        assert.deepStrictEqual(
+          whole.map((line) => decodeEntry(line).name),
+          ["after", "then"],
+        );
+      }),
+    );
+
+    it.effect("a line an earlier process left torn never merges with the next entry", () =>
+      Effect.gen(function* () {
+        yield* at(START);
+        const directory = yield* tempDirectory;
+        const filePath = NodePath.join(directory, "server.errors-2031-03-10.ndjson");
+        NodeFS.writeFileSync(filePath, '{"kind":"sp');
+        const { run } = yield* makeHarness({ directory });
+
+        yield* run(fail("after"));
+
+        const [torn, next, ...rest] = NodeFS.readFileSync(filePath, "utf8").split("\n");
+        assert.strictEqual(torn, '{"kind":"sp');
+        assert.strictEqual(decodeEntry(next).name, "after");
+        assert.deepStrictEqual(rest, [""]);
+      }).pipe(Effect.scoped),
+    );
+
+    it.effect("records again after its directory is removed while the process runs", () =>
+      Effect.gen(function* () {
+        yield* at(START);
+        const directory = NodePath.join(yield* tempDirectory, "logs");
+        const { run } = yield* makeHarness({ directory });
+        yield* run(fail("first"));
+        NodeFS.rmSync(directory, { recursive: true });
+
+        yield* run(fail("into.the.gap"));
+        yield* TestClock.adjust(ERROR_LOG_RETRY_MS);
+        yield* run(fail("after"));
+
+        assert.deepStrictEqual(
+          parse(
+            NodeFS.readFileSync(
+              NodePath.join(directory, "server.errors-2031-03-10.ndjson"),
+              "utf8",
+            ),
+          ).map((entry) => entry.name),
+          ["after"],
+        );
+      }).pipe(Effect.scoped),
     );
 
     it.effect("an expired file that cannot be removed does not stop the log", () =>
@@ -863,11 +948,6 @@ test("error log", (it) => {
         yield* run(fail("sampled.failure"));
         assert.isAbove(memory.calls.length, atStart);
       }),
-    );
-
-    const tempDirectory = Effect.acquireRelease(
-      Effect.sync(() => NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "houston-error-log-"))),
-      (directory) => Effect.sync(() => NodeFS.rmSync(directory, { recursive: true, force: true })),
     );
 
     it.effect("survives rotation of the trace file beside it", () =>
