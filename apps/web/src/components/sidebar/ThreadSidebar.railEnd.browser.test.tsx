@@ -22,7 +22,7 @@ const fixtures = vi.hoisted(() => ({
   groupsReady: true,
   listeners: new Set<() => void>(),
   actions: {
-    settleThread: vi.fn(),
+    closeThread: vi.fn(),
     unsettleThread: vi.fn(),
     snoozeThread: vi.fn(),
     unsnoozeThread: vi.fn(),

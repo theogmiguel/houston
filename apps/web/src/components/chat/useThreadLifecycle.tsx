@@ -179,7 +179,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
   } = input;
   const router = useRouter();
   const openThread = useThreadOpen();
-  const { settleThread, pinThread, confirmAndUnpinThread } = useThreadActions();
+  const { closeThread, pinThread, confirmAndUnpinThread } = useThreadActions();
   const canWriteSourceControl = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
   const switchGitRef = useAtomCommand(vcsEnvironment.switchRef, { reportFailure: false });
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
@@ -664,7 +664,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
         return;
       }
       if (settleAndAdvance(activeThreadRef)) return;
-      void settleThread(activeThreadRef).then(toastThreadActionFailure("Failed to close thread"));
+      void closeThread(activeThreadRef);
     },
     "thread.pin": ({ event }) => {
       // An open project list pins its highlighted project with this key instead.

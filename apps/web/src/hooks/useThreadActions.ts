@@ -48,7 +48,12 @@ import { threadEnvironment } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { refreshArchivedThreadsForEnvironment } from "../lib/archivedThreadsState";
-import { isThreadNotFoundDispatchFailure, unsentDraftIdForThread } from "../threads/threadClose";
+import {
+  blockingQueuedRunIdsOf,
+  isThreadNotFoundDispatchFailure,
+  unsentDraftIdForThread,
+} from "../threads/threadClose";
+import { queuedCloseRefusalToastId, showQueuedCloseRefusal } from "../threads/queuedCloseRefusal";
 import { releaseComposerDraftUploads } from "../lib/composerDraftUploads";
 import { readLocalApi } from "../localApi";
 import {
@@ -303,6 +308,12 @@ export function useThreadActions() {
     reportFailure: false,
   });
   const settleThreadMutation = useOrchestrationCommand(threadEnvironment.settle, {
+    reportFailure: false,
+  });
+  const resumeThreadQueueMutation = useOrchestrationCommand(threadEnvironment.resumeThreadQueue, {
+    reportFailure: false,
+  });
+  const cancelQueuedRunMutation = useOrchestrationCommand(threadEnvironment.cancelQueuedRun, {
     reportFailure: false,
   });
   const unsettleThreadMutation = useOrchestrationCommand(threadEnvironment.unsettle, {
@@ -1083,13 +1094,29 @@ export function useThreadActions() {
     }
   };
 
-  const closeThread = async (target: ScopedThreadRef) => {
+  /** Closes the thread and reports a refusal; queued messages offer their two ways out. */
+  const closeThread = async (target: ScopedThreadRef): Promise<void> => {
     const result = await settleThread(target);
+    const runIds = result._tag === "Failure" ? blockingQueuedRunIdsOf(result) : null;
+    if (runIds !== null) {
+      const { environmentId, threadId } = target;
+      showQueuedCloseRefusal({
+        target,
+        title: resolveThreadTarget(target)?.thread.title ?? t("this thread"),
+        runIds,
+        translate: t,
+        send: (runId) => resumeThreadQueueMutation({ environmentId, input: { threadId, runId } }),
+        remove: (runId) => cancelQueuedRunMutation({ environmentId, input: { threadId, runId } }),
+        close: () => closeThread(target),
+      });
+      return;
+    }
+    toastManager.close(queuedCloseRefusalToastId(target));
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Failed to close thread",
+          title: t("Failed to close thread"),
           description:
             squashAtomCommandFailure(result) instanceof Error
               ? (squashAtomCommandFailure(result) as Error).message

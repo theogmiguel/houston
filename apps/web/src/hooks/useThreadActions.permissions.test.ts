@@ -42,6 +42,7 @@ const state = vi.hoisted(() => ({
   sessionLookupFails: false,
   draftIdByThread: null as string | null,
   failSettleWith: undefined as unknown,
+  lastToast: undefined as unknown,
 }));
 
 vi.mock("react", () => ({
@@ -98,6 +99,8 @@ vi.mock("../state/threads", () => ({
       "snooze",
       "unsnooze",
       "stopSession",
+      "resumeThreadQueue",
+      "cancelQueuedRun",
     ].map((action) => [action, action]),
   ),
 }));
@@ -159,7 +162,9 @@ vi.mock("../components/ui/toast", () => ({
   toastManager: {
     add: (toast: { title?: string }) => {
       if (toast.title) state.toasts.push(toast.title);
+      state.lastToast = toast;
     },
+    close: () => {},
   },
 }));
 vi.mock("./useHandleNewThread", () => ({ useNewThreadHandler: () => async () => {} }));
@@ -297,6 +302,63 @@ describe("closing a thread the server never created", () => {
     await useThreadActions().closeThread(target);
 
     expect(state.toasts).toEqual(["Failed to close thread"]);
+  });
+});
+
+describe("closing a thread with queued messages", () => {
+  interface Refusal {
+    readonly actionProps: { readonly onClick: () => void };
+    readonly data: { readonly secondaryActionProps: { readonly onClick: () => void } };
+  }
+  const requested = () => state.requests.map(({ action, input }) => ({ action, input }));
+  beforeEach(() => {
+    state.scopes.get(secondary)!.add(AuthOrchestrationOperateScope);
+    state.failSettleWith = {
+      _tag: "OrchestrationV2DispatchCommandError",
+      blockingQueuedRunIds: ["run-1", "run-2"],
+      message: `Thread ${target.threadId} has queued run run-1.`,
+    };
+  });
+
+  it("removes the queued messages the server named and closes the thread", async () => {
+    await useThreadActions().closeThread(target);
+    expect(state.toasts).toEqual(["Failed to close thread"]);
+    state.requests = [];
+    state.failSettleWith = undefined;
+    (state.lastToast as Refusal).data.secondaryActionProps.onClick();
+
+    const threadId = target.threadId;
+    await vi.waitFor(() =>
+      expect(requested()).toEqual([
+        { action: "cancelQueuedRun", input: { threadId, runId: "run-1" } },
+        { action: "cancelQueuedRun", input: { threadId, runId: "run-2" } },
+        { action: "settle", input: { threadId } },
+      ]),
+    );
+  });
+
+  it("sends the first queued message and leaves the thread open", async () => {
+    await useThreadActions().closeThread(target);
+    state.requests = [];
+    (state.lastToast as Refusal).actionProps.onClick();
+
+    await vi.waitFor(() =>
+      expect(requested()).toEqual([
+        { action: "resumeThreadQueue", input: { threadId: target.threadId, runId: "run-1" } },
+      ]),
+    );
+  });
+
+  it("removes nothing once the connection may no longer change threads", async () => {
+    await useThreadActions().closeThread(target);
+    state.requests = [];
+    state.scopes.get(secondary)!.clear();
+    (state.lastToast as Refusal).data.secondaryActionProps.onClick();
+
+    await vi.waitFor(() =>
+      expect(state.toasts.at(-1)).toBe("Queued message 1 of 2 was not removed"),
+    );
+    expect(state.requests).toEqual([]);
   });
 });
 
