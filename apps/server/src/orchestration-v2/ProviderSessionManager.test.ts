@@ -10,6 +10,7 @@ import {
   type OrchestrationV2DomainEvent,
   type OrchestrationV2PromptSuggestion,
   type OrchestrationV2ProviderCapabilities,
+  type OrchestrationV2ProviderFailure,
   type OrchestrationV2ProviderSession,
   type OrchestrationV2ProviderThread,
   type Project,
@@ -17,6 +18,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderSessionId,
+  RuntimeRequestId,
   ThreadId,
 } from "@houston-app/contracts";
 import * as Cause from "effect/Cause";
@@ -62,6 +64,10 @@ import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import { layerNoReadOnlyThreads } from "../houston/sideThreads.ts";
 import * as CommandOutputHub from "./CommandOutputHub.ts";
 import * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
+import {
+  makeProviderFailure,
+  makeProviderRetryTurnItem,
+} from "@houston-app/provider-core/server/failure";
 
 const layerTestDatabase = SqlitePersistence.layerMemory;
 const layerTestStores = Layer.merge(EventStore.layer, ProjectionStore.layer).pipe(
@@ -457,6 +463,8 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
     readonly beforeUnload?: Effect.Effect<void>;
     readonly spawnBeforeOpen?: boolean;
     readonly scopeCloseReached?: Deferred.Deferred<void>;
+    readonly eventStreamsStarted?: Queue.Queue<ProviderSessionId>;
+    readonly eventStreamsEnded?: Queue.Queue<ProviderSessionId>;
   } = {},
 ) {
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
@@ -542,6 +550,17 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
                     if (event.type === "provider_session.updated") session = event.providerSession;
                   }),
                 ),
+                Stream.onStart(
+                  options.eventStreamsStarted === undefined
+                    ? Effect.void
+                    : Queue.offer(options.eventStreamsStarted, input.providerSessionId),
+                ),
+                // Like the Codex and Claude adapters, the queue never ends on its own.
+                Stream.ensuring(
+                  options.eventStreamsEnded === undefined
+                    ? Effect.void
+                    : Queue.offer(options.eventStreamsEnded, input.providerSessionId),
+                ),
               ),
           ...(options.backgroundTasksEndWithProcess === false
             ? {}
@@ -619,6 +638,8 @@ function layerTest(input: {
   readonly beforeUnload?: Effect.Effect<void>;
   readonly spawnBeforeOpen?: boolean;
   readonly scopeCloseReached?: Deferred.Deferred<void>;
+  readonly eventStreamsStarted?: Queue.Queue<ProviderSessionId>;
+  readonly eventStreamsEnded?: Queue.Queue<ProviderSessionId>;
   readonly serverSettingsLayer?: ReturnType<typeof ServerSettings.layerTest>;
   readonly projectServiceLayer?: Layer.Layer<ProjectService.ProjectService>;
 }) {
@@ -660,6 +681,12 @@ function layerTest(input: {
       ...(input.scopeCloseReached === undefined
         ? {}
         : { scopeCloseReached: input.scopeCloseReached }),
+      ...(input.eventStreamsStarted === undefined
+        ? {}
+        : { eventStreamsStarted: input.eventStreamsStarted }),
+      ...(input.eventStreamsEnded === undefined
+        ? {}
+        : { eventStreamsEnded: input.eventStreamsEnded }),
     }).pipe(Effect.map(ProviderAdapterRegistry.layerSingle)),
   );
   const layerConfiguredMcpRegistry =
@@ -1102,6 +1129,272 @@ it.effect("ProviderSessionManagerV2 closes every live session for a provider ins
           state,
           idleTimeoutMs: 60_000,
         }),
+      ),
+    );
+  }),
+);
+
+// Each way a session entry leaves the manager; the fake's event queue never ends on its own.
+it.effect.each([
+  "idle timeout",
+  "close",
+  "provider instance logout",
+  "release",
+  "release unless busy",
+  "detach of its last thread",
+  "server shutdown",
+] as const)("ProviderSessionManagerV2 ends a released session's event pump on %s", (path) =>
+  Effect.gen(function* () {
+    const state = yield* Ref.make(emptyState);
+    const eventStreamsStarted = yield* Queue.unbounded<ProviderSessionId>();
+    const eventStreamsEnded = yield* Queue.unbounded<ProviderSessionId>();
+    const threadId = ThreadId.make("thread-provider-session-manager-pump-release");
+    yield* Effect.gen(function* () {
+      const eventSink = yield* EventSink.EventSinkV2;
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+      const providerSessionId = yield* idAllocator.allocate.providerSession({
+        providerInstanceId: modelSelection.instanceId,
+        threadId,
+      });
+      yield* eventSink.write({
+        events: [
+          yield* makeThreadCreatedEvent({ idAllocator, threadId, now: yield* DateTime.now }),
+        ],
+      });
+      yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+      assert.equal(yield* Queue.take(eventStreamsStarted), providerSessionId);
+      switch (path) {
+        case "idle timeout":
+          yield* TestClock.adjust("2 seconds");
+          break;
+        case "close":
+          yield* manager.close(providerSessionId);
+          break;
+        case "provider instance logout":
+          yield* manager.closeInstance(modelSelection.instanceId);
+          break;
+        case "release":
+          yield* manager.release({ providerSessionId, reason: "manual_shutdown" });
+          break;
+        case "release unless busy":
+          assert.isTrue(
+            yield* manager.releaseUnlessBusy({
+              providerSessionId,
+              ownProviderThreadIds: [],
+              reason: "manual_shutdown",
+            }),
+          );
+          break;
+        case "detach of its last thread":
+          yield* manager.detach({ providerSessionId, threadId });
+          break;
+        case "server shutdown":
+          yield* manager.shutdown;
+          break;
+      }
+      assert.isFalse(yield* manager.isLive(providerSessionId));
+      assert.equal((yield* Ref.get(state)).closeCount, 1);
+      // Before the layer closes, which interrupts any pump left running.
+      assert.equal(yield* Queue.take(eventStreamsEnded), providerSessionId);
+    }).pipe(
+      Effect.provide(
+        layerTest({
+          state,
+          idleTimeoutMs: 1_000,
+          capabilities: ExclusiveCapabilities,
+          eventStreamsStarted,
+          eventStreamsEnded,
+        }),
+      ),
+    );
+  }),
+);
+
+it.effect(
+  "ProviderSessionManagerV2 keeps delivering a live session's events while another is released",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const eventStreamsEnded = yield* Queue.unbounded<ProviderSessionId>();
+      yield* Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+        const now = yield* DateTime.now;
+        const liveThreadId = ThreadId.make("thread-provider-session-manager-pump-live");
+        const releasedThreadId = ThreadId.make("thread-provider-session-manager-pump-released");
+        const liveSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId: liveThreadId,
+        });
+        const releasedSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId: releasedThreadId,
+        });
+        yield* eventSink.write({
+          events: [
+            yield* makeThreadCreatedEvent({ idAllocator, threadId: liveThreadId, now }),
+            yield* makeThreadCreatedEvent({ idAllocator, threadId: releasedThreadId, now }),
+          ],
+        });
+        const runtime = yield* manager.open({
+          threadId: liveThreadId,
+          providerSessionId: liveSessionId,
+          modelSelection,
+          runtimePolicy,
+        });
+        const released = yield* manager.open({
+          threadId: releasedThreadId,
+          providerSessionId: releasedSessionId,
+          modelSelection,
+          runtimePolicy,
+        });
+        const observe = Effect.fnUntraced(function* (
+          subscribed: ProviderAdapter.ProviderAdapterV2SessionRuntime,
+        ) {
+          const subscription = yield* subscribed.subscribeEvents!;
+          const observed = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
+          const ended = yield* subscription.events.pipe(
+            Stream.runForEach((event) => Queue.offer(observed, event)),
+            Effect.exit,
+            Effect.forkScoped,
+          );
+          return { observed, ended };
+        });
+        const live = yield* observe(runtime);
+        const releasing = yield* observe(released);
+        const queues = (yield* Ref.get(state)).eventQueues;
+        const liveQueue = queues.get(String(liveSessionId))!;
+        const releasedQueue = queues.get(String(releasedSessionId))!;
+        const providerTurnId = idAllocator.derive.providerTurn({
+          driver: CODEX_DRIVER,
+          nativeTurnId: "pump-release-turn",
+        });
+        const terminal = (nativeThreadId: string) =>
+          ({
+            type: "turn.terminal",
+            driver: CODEX_DRIVER,
+            providerThreadId: idAllocator.derive.providerThread({
+              driver: CODEX_DRIVER,
+              nativeThreadId,
+            }),
+            providerTurnId,
+            runOrdinal: 1,
+            status: "completed",
+            failure: null,
+            threadDisposition: "reusable",
+          }) as const;
+        const statuses = (text: string) => [{ key: "watch", text }];
+
+        // The released session's last events reach its subscriber and the projection.
+        yield* Queue.offer(releasedQueue, {
+          type: "provider_session.updated",
+          driver: CODEX_DRIVER,
+          providerSession: { ...released.providerSession, extensionStatuses: statuses("last") },
+        });
+        yield* Queue.offer(releasedQueue, terminal("released"));
+        assert.equal((yield* Queue.take(releasing.observed)).type, "provider_session.updated");
+        assert.equal((yield* Queue.take(releasing.observed)).type, "turn.terminal");
+        const releasedSession = () =>
+          projectionStore
+            .getThreadProjection(releasedThreadId)
+            .pipe(Effect.map((projection) => projection.providerSessions.at(-1)));
+        assert.deepEqual((yield* releasedSession())?.extensionStatuses, statuses("last"));
+        yield* manager.close(releasedSessionId);
+        assert.equal(yield* Queue.take(eventStreamsEnded), releasedSessionId);
+        assert.isTrue(Exit.isFailure(yield* Fiber.join(releasing.ended)));
+        assert.equal((yield* releasedSession())?.status, "stopped");
+
+        // The live session's pump keeps running and projecting.
+        yield* Queue.offer(liveQueue, {
+          type: "provider_session.updated",
+          driver: CODEX_DRIVER,
+          providerSession: { ...runtime.providerSession, extensionStatuses: statuses("live") },
+        });
+        yield* Queue.offer(liveQueue, terminal("live"));
+        assert.equal((yield* Queue.take(live.observed)).type, "provider_session.updated");
+        assert.equal((yield* Queue.take(live.observed)).type, "turn.terminal");
+        assert.deepEqual(
+          (yield* projectionStore.getThreadProjection(liveThreadId)).providerSessions.at(-1)
+            ?.extensionStatuses,
+          statuses("live"),
+        );
+        assert.isTrue(yield* manager.isLive(liveSessionId));
+        assert.isTrue(Option.isNone(yield* Queue.poll(eventStreamsEnded)));
+      }).pipe(Effect.provide(layerTest({ state, idleTimeoutMs: 60_000, eventStreamsEnded })));
+    }),
+);
+
+it.effect("ProviderSessionManagerV2 sends a reopened session nothing from its released pump", () =>
+  Effect.gen(function* () {
+    const state = yield* Ref.make(emptyState);
+    const eventStreamsStarted = yield* Queue.unbounded<ProviderSessionId>();
+    const eventStreamsEnded = yield* Queue.unbounded<ProviderSessionId>();
+    yield* Effect.gen(function* () {
+      const eventSink = yield* EventSink.EventSinkV2;
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+      const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+      const threadId = ThreadId.make("thread-provider-session-manager-pump-reopen");
+      const providerSessionId = yield* idAllocator.allocate.providerSession({
+        providerInstanceId: modelSelection.instanceId,
+        threadId,
+      });
+      yield* eventSink.write({
+        events: [
+          yield* makeThreadCreatedEvent({ idAllocator, threadId, now: yield* DateTime.now }),
+        ],
+      });
+      const open = manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+      yield* open;
+      assert.equal(yield* Queue.take(eventStreamsStarted), providerSessionId);
+      const oldQueue = (yield* Ref.get(state)).eventQueues.get(String(providerSessionId))!;
+      yield* manager.close(providerSessionId);
+      assert.equal(yield* Queue.take(eventStreamsEnded), providerSessionId);
+
+      const runtime = yield* open;
+      assert.equal(yield* Queue.take(eventStreamsStarted), providerSessionId);
+      const newQueue = (yield* Ref.get(state)).eventQueues.get(String(providerSessionId))!;
+      assert.notStrictEqual(newQueue, oldQueue);
+      const subscription = yield* runtime.subscribeEvents!;
+      const observed = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
+      yield* subscription.events.pipe(
+        Stream.runForEach((event) => Queue.offer(observed, event)),
+        Effect.ignore,
+        Effect.forkScoped,
+      );
+      const update = (text: string) =>
+        ({
+          type: "provider_session.updated",
+          driver: CODEX_DRIVER,
+          providerSession: {
+            ...runtime.providerSession,
+            extensionStatuses: [{ key: "watch", text }],
+          },
+        }) as const;
+
+      // The old runtime emits first; only the new session's own event arrives.
+      yield* Queue.offer(oldQueue, update("old"));
+      yield* Queue.offer(newQueue, update("new"));
+      const received = yield* Queue.take(observed);
+      assert.deepEqual(
+        received.type === "provider_session.updated"
+          ? received.providerSession.extensionStatuses
+          : received.type,
+        [{ key: "watch", text: "new" }],
+      );
+      assert.deepEqual(
+        (yield* projectionStore.getThreadProjection(threadId)).providerSessions.at(-1)
+          ?.extensionStatuses,
+        [{ key: "watch", text: "new" }],
+      );
+      assert.isTrue(Option.isNone(yield* Queue.poll(observed)));
+      assert.isTrue(Option.isNone(yield* Queue.poll(eventStreamsEnded)));
+    }).pipe(
+      Effect.provide(
+        layerTest({ state, idleTimeoutMs: 60_000, eventStreamsStarted, eventStreamsEnded }),
       ),
     );
   }),
@@ -2382,12 +2675,553 @@ it.effect("ProviderSessionManagerV2 drains subscribers when the provider stops",
         events.map((event) => event.type),
         ["turn.terminal", "provider_session.updated"],
       );
+      // The provider's stop is recorded first; the release records its own after closing the scope.
+      yield* eventSink.stream({ threadId, eventType: "provider-session.updated" }).pipe(
+        Stream.filter(
+          (stored) =>
+            stored.event.type === "provider-session.updated" &&
+            stored.event.payload.status === "stopped",
+        ),
+        Stream.take(2),
+        Stream.runDrain,
+      );
       assert.isTrue(Option.isNone(yield* manager.get(providerSessionId)));
       assert.equal((yield* Ref.get(state)).closeCount, 1);
     });
 
     yield* effect.pipe(Effect.provide(layerTest({ state, idleTimeoutMs: 60_000 })));
   }),
+);
+
+// Composed fixture: provider events written by hand in the shape every adapter gives its retry
+// row (one error item per provider turn, running while the provider retries).
+const openRetryBudgetScenario = (state: Ref.Ref<TestProviderRuntimeState>, name: string) =>
+  Effect.gen(function* () {
+    const eventSink = yield* EventSink.EventSinkV2;
+    const idAllocator = yield* IdAllocator.IdAllocatorV2;
+    const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+    const now = yield* DateTime.now;
+    const threadId = ThreadId.make(`thread-provider-session-manager-${name}`);
+    const providerSessionId = yield* idAllocator.allocate.providerSession({
+      providerInstanceId: modelSelection.instanceId,
+      threadId,
+    });
+    const providerThread = makeProviderThread({ idAllocator, threadId, providerSessionId, now });
+    yield* eventSink.write({
+      events: [
+        yield* makeThreadCreatedEvent({ idAllocator, threadId, now }),
+        {
+          id: yield* idAllocator.allocate.event({ threadId }),
+          type: "provider-thread.updated",
+          threadId,
+          occurredAt: now,
+          payload: providerThread,
+        },
+      ],
+    });
+    const runtime = yield* manager.open({
+      threadId,
+      providerSessionId,
+      modelSelection,
+      runtimePolicy,
+    });
+    const subscription = yield* runtime.subscribeEvents!;
+    const published = yield* Queue.unbounded<void>();
+    const collected = yield* subscription.events.pipe(
+      Stream.tap(() => Queue.offer(published, undefined)),
+      Stream.runCollect,
+      Effect.forkScoped,
+    );
+    const adapterQueue = (yield* Ref.get(state)).eventQueues.get(String(providerSessionId))!;
+    const providerTurnId = idAllocator.derive.providerTurn({
+      driver: CODEX_DRIVER,
+      nativeTurnId: `${name}-turn`,
+    });
+    // Waits until the pump has handled the event, so clock moves start after it.
+    const offer = (event: ProviderAdapter.ProviderAdapterV2Event) =>
+      Queue.offer(adapterQueue, event).pipe(Effect.andThen(Queue.take(published)));
+    const retryItem = (input: {
+      readonly status: "running" | "completed" | "interrupted";
+      readonly attempt: number;
+      readonly failure: OrchestrationV2ProviderFailure;
+      readonly updatedAt: DateTime.Utc;
+      readonly retryDelayMs?: number;
+    }) =>
+      makeProviderRetryTurnItem({
+        driver: CODEX_DRIVER,
+        threadId,
+        runId: null,
+        nodeId: null,
+        providerThreadId: providerThread.id,
+        providerTurnId,
+        itemOrdinal: 3,
+        failure: input.failure,
+        retry: {
+          attempt: input.attempt,
+          maxAttempts: 10,
+          retryDelayMs: input.retryDelayMs ?? null,
+        },
+        status: input.status,
+        startedAt: now,
+        updatedAt: input.updatedAt,
+      });
+    const turnItem = (
+      item:
+        | { readonly type: "command_execution"; readonly input: string }
+        | {
+            readonly type: "approval_request";
+            readonly requestId: RuntimeRequestId;
+            readonly requestKind: "command";
+          },
+      updatedAt: DateTime.Utc,
+    ): ProviderAdapter.ProviderAdapterV2Event => ({
+      type: "turn_item.updated",
+      driver: CODEX_DRIVER,
+      turnItem: {
+        id: idAllocator.derive.turnItemFromProviderItem({
+          driver: CODEX_DRIVER,
+          nativeItemId: `${name}-${item.type}`,
+        }),
+        threadId,
+        // A run-scoped request; the pump stores runless ones without publishing them.
+        runId: idAllocator.derive.run({ threadId, ordinal: 1 }),
+        nodeId: null,
+        providerThreadId: providerThread.id,
+        providerTurnId,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: 4,
+        status: item.type === "approval_request" ? "waiting" : "running",
+        title: null,
+        startedAt: updatedAt,
+        completedAt: null,
+        updatedAt,
+        ...item,
+      },
+    });
+    // What an adapter reports once a stop ends its turn.
+    const endInterrupted = (completedAt: DateTime.Utc) =>
+      Effect.forEach(
+        [
+          {
+            type: "provider_turn.updated",
+            driver: CODEX_DRIVER,
+            threadId,
+            providerTurn: {
+              id: providerTurnId,
+              providerThreadId: providerThread.id,
+              nodeId: idAllocator.derive.rootNode({
+                runId: idAllocator.derive.run({ threadId, ordinal: 1 }),
+              }),
+              runAttemptId: null,
+              nativeTurnRef: null,
+              ordinal: 1,
+              status: "interrupted",
+              startedAt: now,
+              completedAt,
+            },
+          },
+          {
+            type: "turn.terminal",
+            driver: CODEX_DRIVER,
+            providerThreadId: providerThread.id,
+            providerTurnId,
+            runOrdinal: 1,
+            status: "interrupted",
+            failure: null,
+            threadDisposition: "reusable",
+          },
+        ] satisfies ReadonlyArray<ProviderAdapter.ProviderAdapterV2Event>,
+        offer,
+        { discard: true },
+      );
+    const finish = Effect.gen(function* () {
+      yield* Queue.offer(adapterQueue, {
+        type: "provider_session.updated",
+        driver: CODEX_DRIVER,
+        providerSession: { ...runtime.providerSession, status: "stopped", updatedAt: now },
+      });
+      yield* Queue.end(adapterQueue);
+      return Array.from(yield* Fiber.join(collected));
+    });
+    const interruptCount = Ref.get(state).pipe(Effect.map((current) => current.interruptCount));
+    return {
+      endInterrupted,
+      finish,
+      interruptCount,
+      now,
+      offer,
+      providerThread,
+      providerTurnId,
+      retryItem,
+      runtime,
+      turnItem,
+    };
+  });
+
+const transportRetryFailure = makeProviderFailure({
+  message: "Connection failed: error sending request",
+  code: "responseStreamConnectionFailed",
+  class: "transport_error",
+  retryable: true,
+});
+
+it.effect("ProviderSessionManagerV2 fails a turn whose provider retries outlast the budget", () =>
+  Effect.gen(function* () {
+    const state = yield* Ref.make(emptyState);
+    const interrupted = yield* Deferred.make<void>();
+    const effect = Effect.gen(function* () {
+      const scenario = yield* openRetryBudgetScenario(state, "retry-budget-exceeded");
+      yield* scenario.offer({
+        type: "turn_item.updated",
+        driver: CODEX_DRIVER,
+        turnItem: scenario.retryItem({
+          status: "running",
+          attempt: 1,
+          failure: transportRetryFailure,
+          updatedAt: scenario.now,
+        }),
+      });
+      yield* TestClock.adjust("5 minutes");
+      // A later attempt that states no delay does not move the deadline.
+      yield* scenario.offer({
+        type: "turn_item.updated",
+        driver: CODEX_DRIVER,
+        turnItem: scenario.retryItem({
+          status: "running",
+          attempt: 2,
+          failure: transportRetryFailure,
+          updatedAt: yield* DateTime.now,
+        }),
+      });
+      yield* TestClock.adjust("4 minutes");
+      assert.equal(yield* scenario.interruptCount, 0);
+      yield* TestClock.adjust("1 minute");
+      yield* TestClock.withLive(Deferred.await(interrupted).pipe(Effect.timeout("5 seconds")));
+      const stoppedAt = yield* DateTime.now;
+      yield* scenario.offer({
+        type: "turn_item.updated",
+        driver: CODEX_DRIVER,
+        turnItem: scenario.retryItem({
+          status: "interrupted",
+          attempt: 2,
+          failure: transportRetryFailure,
+          updatedAt: stoppedAt,
+        }),
+      });
+      yield* scenario.endInterrupted(stoppedAt);
+      const events = yield* scenario.finish;
+
+      const failure = {
+        ...transportRetryFailure,
+        message:
+          "Connection failed: error sending request. The provider retried for 10 minutes without recovering; the retry limit is 10 minutes, so the turn was stopped.",
+        retryable: false,
+      };
+      const retryRow = events.findLast(
+        (event) => event.type === "turn_item.updated" && event.turnItem.type === "error",
+      );
+      assert.deepInclude(retryRow?.type === "turn_item.updated" ? retryRow.turnItem : {}, {
+        status: "failed",
+        title: "Provider error",
+        failure,
+      });
+      const providerTurn = events.find((event) => event.type === "provider_turn.updated");
+      assert.equal(
+        providerTurn?.type === "provider_turn.updated" ? providerTurn.providerTurn.status : null,
+        "failed",
+      );
+      assert.deepEqual(
+        events.find((event) => event.type === "turn.terminal"),
+        {
+          type: "turn.terminal",
+          driver: CODEX_DRIVER,
+          providerThreadId: scenario.providerThread.id,
+          providerTurnId: scenario.providerTurnId,
+          runOrdinal: 1,
+          failureItemOrdinal: 3,
+          status: "failed",
+          failure,
+          retry: { attempt: 2, maxAttempts: 10, retryDelayMs: null },
+          retryStartedAt: scenario.now,
+          threadDisposition: "reusable",
+        },
+      );
+      assert.equal(yield* scenario.interruptCount, 1);
+    });
+
+    yield* effect.pipe(
+      Effect.scoped,
+      Effect.provide(
+        layerTest({
+          state,
+          idleTimeoutMs: 60 * 60_000,
+          interruptTurn: Deferred.succeed(interrupted, undefined).pipe(Effect.asVoid),
+        }),
+      ),
+    );
+  }),
+);
+
+const usageLimitRetryFailure = (resetAt: string | null) =>
+  makeProviderFailure({
+    message: "exceeded retry limit, last status: 429 Too Many Requests",
+    code: "responseStreamDisconnected",
+    class: "usage_limit",
+    retryable: true,
+    resetAt,
+  });
+
+const withSentenceEnd = (message: string) => (message.endsWith(".") ? message : `${message}.`);
+
+// Each notice: minutes after the first one, its attempt and its stated delay in minutes.
+it.effect.each([
+  {
+    name: "a first attempt's stated delay",
+    notices: [{ atMinute: 0, attempt: 1, delayMinutes: 20 }],
+    resetInMinutes: null,
+    stopMinute: 30,
+    waited: "20 minutes",
+  },
+  {
+    name: "a later attempt's stated delay",
+    notices: [
+      { atMinute: 0, attempt: 1, delayMinutes: 5 },
+      { atMinute: 4, attempt: 2, delayMinutes: 5 },
+    ],
+    resetInMinutes: null,
+    stopMinute: 20,
+    waited: "10 minutes",
+  },
+  {
+    name: "one delay, not a repeated notice's copy of it",
+    notices: [
+      { atMinute: 0, attempt: 1, delayMinutes: 5 },
+      { atMinute: 2, attempt: 1, delayMinutes: 5 },
+    ],
+    resetInMinutes: null,
+    stopMinute: 15,
+    waited: "5 minutes",
+  },
+  {
+    name: "a usage-limit retry's reset time",
+    notices: [{ atMinute: 0, attempt: 1, delayMinutes: 0 }],
+    resetInMinutes: 30,
+    stopMinute: 40,
+    waited: "30 minutes",
+  },
+] as const)(
+  "ProviderSessionManagerV2 waits out $name before the retry budget counts",
+  ({ notices, resetInMinutes, stopMinute, waited }) =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const interrupted = yield* Deferred.make<void>();
+      const effect = Effect.gen(function* () {
+        const scenario = yield* openRetryBudgetScenario(
+          state,
+          `retry-budget-wait-${stopMinute}-${notices.length}`,
+        );
+        const failure =
+          resetInMinutes === null
+            ? transportRetryFailure
+            : usageLimitRetryFailure(
+                DateTime.formatIso(DateTime.add(scenario.now, { minutes: resetInMinutes })),
+              );
+        let minute = 0;
+        for (const notice of notices) {
+          yield* TestClock.adjust(`${notice.atMinute - minute} minutes`);
+          minute = notice.atMinute;
+          yield* scenario.offer({
+            type: "turn_item.updated",
+            driver: CODEX_DRIVER,
+            turnItem: scenario.retryItem({
+              status: "running",
+              attempt: notice.attempt,
+              failure,
+              updatedAt: yield* DateTime.now,
+              retryDelayMs: notice.delayMinutes * 60_000,
+            }),
+          });
+        }
+        yield* TestClock.adjust(`${stopMinute - 1 - minute} minutes`);
+        yield* TestClock.withLive(Effect.sleep("20 millis"));
+        assert.equal(yield* scenario.interruptCount, 0);
+        yield* TestClock.adjust("1 minute");
+        yield* TestClock.withLive(Deferred.await(interrupted).pipe(Effect.timeout("5 seconds")));
+        assert.equal(yield* scenario.interruptCount, 1);
+        yield* scenario.endInterrupted(yield* DateTime.now);
+        const terminal = (yield* scenario.finish).find((event) => event.type === "turn.terminal");
+        assert.deepInclude(terminal?.type === "turn.terminal" ? terminal : {}, {
+          status: "failed",
+          failure: {
+            ...failure,
+            message: `${withSentenceEnd(failure.message)} The provider retried for ${stopMinute} minutes without recovering, ${waited} of it waiting as the provider asked; the retry limit is 10 minutes beyond that wait, so the turn was stopped.`,
+            retryable: false,
+          },
+        });
+      });
+
+      yield* effect.pipe(
+        Effect.scoped,
+        Effect.provide(
+          layerTest({
+            state,
+            idleTimeoutMs: 2 * 60 * 60_000,
+            interruptTurn: Deferred.succeed(interrupted, undefined).pipe(Effect.asVoid),
+          }),
+        ),
+      );
+    }),
+);
+
+it.effect.each(["recovers", "starts a tool call", "asks for approval"] as const)(
+  "ProviderSessionManagerV2 leaves a turn whose provider retry %s at minute 9 running",
+  (outcome) =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const effect = Effect.gen(function* () {
+        const scenario = yield* openRetryBudgetScenario(
+          state,
+          `retry-budget-${outcome.replaceAll(" ", "-")}`,
+        );
+        yield* scenario.offer({
+          type: "turn_item.updated",
+          driver: CODEX_DRIVER,
+          turnItem: scenario.retryItem({
+            status: "running",
+            attempt: 1,
+            failure: transportRetryFailure,
+            updatedAt: scenario.now,
+          }),
+        });
+        yield* TestClock.adjust("9 minutes");
+        const at = yield* DateTime.now;
+        yield* scenario.offer(
+          outcome === "recovers"
+            ? {
+                type: "turn_item.updated",
+                driver: CODEX_DRIVER,
+                turnItem: scenario.retryItem({
+                  status: "completed",
+                  attempt: 1,
+                  failure: transportRetryFailure,
+                  updatedAt: at,
+                }),
+              }
+            : outcome === "starts a tool call"
+              ? scenario.turnItem({ type: "command_execution", input: "pnpm test" }, at)
+              : scenario.turnItem(
+                  {
+                    type: "approval_request",
+                    requestId: RuntimeRequestId.make("retry-budget-approval"),
+                    requestKind: "command",
+                  },
+                  at,
+                ),
+        );
+        // A long tool call or a wait for the user is not retrying.
+        yield* TestClock.adjust("1 hour");
+        yield* TestClock.withLive(Effect.sleep("20 millis"));
+        assert.equal(yield* scenario.interruptCount, 0);
+        yield* scenario.endInterrupted(yield* DateTime.now);
+        const terminal = (yield* scenario.finish).find((event) => event.type === "turn.terminal");
+        assert.equal(terminal?.type === "turn.terminal" ? terminal.status : null, "interrupted");
+      });
+
+      yield* effect.pipe(
+        Effect.scoped,
+        Effect.provide(layerTest({ state, idleTimeoutMs: 2 * 60 * 60_000 })),
+      );
+    }),
+);
+
+// The stall that otherwise hangs: a 429 retry notice with no reset time or delay, then silence.
+it.effect(
+  "ProviderSessionManagerV2 fails a usage-limit retry with no reset at the budget as limited",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const interrupted = yield* Deferred.make<void>();
+      const effect = Effect.gen(function* () {
+        const scenario = yield* openRetryBudgetScenario(state, "retry-budget-usage-limit");
+        const failure = usageLimitRetryFailure(null);
+        yield* scenario.offer({
+          type: "turn_item.updated",
+          driver: CODEX_DRIVER,
+          turnItem: scenario.retryItem({
+            status: "running",
+            attempt: 1,
+            failure,
+            updatedAt: scenario.now,
+          }),
+        });
+        yield* TestClock.adjust("9 minutes");
+        yield* TestClock.withLive(Effect.sleep("20 millis"));
+        assert.equal(yield* scenario.interruptCount, 0);
+        yield* TestClock.adjust("1 minute");
+        yield* TestClock.withLive(Deferred.await(interrupted).pipe(Effect.timeout("5 seconds")));
+        yield* scenario.endInterrupted(yield* DateTime.now);
+        const terminal = (yield* scenario.finish).find((event) => event.type === "turn.terminal");
+        assert.deepInclude(terminal?.type === "turn.terminal" ? terminal : {}, {
+          status: "failed",
+          failure: {
+            ...failure,
+            message:
+              "exceeded retry limit, last status: 429 Too Many Requests. The provider retried for 10 minutes without recovering; the retry limit is 10 minutes, so the turn was stopped.",
+            retryable: false,
+          },
+        });
+      });
+
+      yield* effect.pipe(
+        Effect.scoped,
+        Effect.provide(
+          layerTest({
+            state,
+            idleTimeoutMs: 60 * 60_000,
+            interruptTurn: Deferred.succeed(interrupted, undefined).pipe(Effect.asVoid),
+          }),
+        ),
+      );
+    }),
+);
+
+it.effect(
+  "ProviderSessionManagerV2 keeps a user Stop interrupted when the retry budget passes",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const effect = Effect.gen(function* () {
+        const scenario = yield* openRetryBudgetScenario(state, "retry-budget-user-stop");
+        yield* scenario.offer({
+          type: "turn_item.updated",
+          driver: CODEX_DRIVER,
+          turnItem: scenario.retryItem({
+            status: "running",
+            attempt: 1,
+            failure: transportRetryFailure,
+            updatedAt: scenario.now,
+          }),
+        });
+        yield* TestClock.adjust("9 minutes");
+        // The provider has not confirmed the user's Stop when the budget passes.
+        yield* scenario.runtime.interruptTurn({
+          providerThread: scenario.providerThread,
+          providerTurnId: scenario.providerTurnId,
+        });
+        yield* TestClock.adjust("1 minute");
+        yield* TestClock.withLive(Effect.sleep("20 millis"));
+        assert.equal(yield* scenario.interruptCount, 1);
+        yield* scenario.endInterrupted(yield* DateTime.now);
+        const terminal = (yield* scenario.finish).find((event) => event.type === "turn.terminal");
+        assert.equal(terminal?.type === "turn.terminal" ? terminal.status : null, "interrupted");
+      });
+
+      yield* effect.pipe(
+        Effect.scoped,
+        Effect.provide(layerTest({ state, idleTimeoutMs: 60 * 60_000 })),
+      );
+    }),
 );
 
 it.effect(
@@ -3473,7 +4307,15 @@ it.effect("ProviderSessionManagerV2 releases sessions when provider event stream
         runtimePolicy,
       });
       yield* runtime.events.pipe(Stream.runDrain, Effect.ignore, Effect.forkScoped);
-      yield* Effect.yieldNow;
+      // The release records the error only after it has closed the session's scope.
+      yield* eventSink.stream({ threadId, eventType: "provider-session.updated" }).pipe(
+        Stream.filter(
+          (stored) =>
+            stored.event.type === "provider-session.updated" &&
+            stored.event.payload.status === "error",
+        ),
+        Stream.runHead,
+      );
 
       const liveSession = yield* manager.get(providerSessionId);
       const runtimeState = yield* Ref.get(state);

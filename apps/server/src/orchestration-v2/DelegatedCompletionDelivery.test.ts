@@ -2574,167 +2574,186 @@ it.layer(Layer.merge(layerTest, ProviderContinuationRequests.layer))(
       }),
     );
 
-    it.effect("serializes a recovered child answer with its parent and tracks the follow-up", () =>
-      Effect.gen(function* () {
-        const orchestrator = yield* Orchestrator.OrchestratorV2;
-        const eventSink = yield* EventSink.EventSinkV2;
-        const now = yield* DateTime.now;
-        const parentThreadId = ThreadId.make("thread:question-answer-parent");
-        const projectId = ProjectId.make("project:question-answer");
-        const parentRunId = RunId.make("run:question-answer-parent");
-        const rootNodeId = NodeId.make("node:question-answer-parent");
-        yield* seedParentWithTerminalTask({
-          threadId: parentThreadId,
-          projectId,
-          runId: parentRunId,
-          rootNodeId,
-          taskId: NodeId.make("node:question-answer-seed"),
-          deliveryState: "acknowledged",
-          now,
-        });
-        const child = yield* seedRestartCancelledChild({
-          parentThreadId,
-          projectId,
-          parentRunId,
-          rootNodeId,
-          name: "question-answer-child",
-          completionWake: "always",
-          continuationPending: false,
-          now,
-        });
-        // The cancelled result is published before anyone answers the question.
-        yield* orchestrator.recoverDelegatedTasks;
-        assert.isNotNull(
-          (yield* orchestrator.getThreadProjection(parentThreadId)).subagents.find(
-            (task) => task.id === child.taskId,
-          )?.result,
-        );
-        const parentRun = (yield* orchestrator.getThreadProjection(parentThreadId)).runs.find(
-          (run) => run.id === parentRunId,
-        )!;
-        yield* eventSink.write({
-          events: [
-            {
-              id: EventId.make("event:question-answer-parent-completed"),
-              type: "run.updated",
-              threadId: parentThreadId,
-              runId: parentRunId,
-              occurredAt: now,
-              payload: { ...parentRun, status: "completed", completedAt: now },
-            },
-          ],
-        });
-        const requestId = RuntimeRequestId.make("request:question-answer");
-        const nodeId = NodeId.make("node:question-answer-request");
-        yield* eventSink.write({
-          commandId: CommandId.make("command:seed-question-answer"),
-          events: [
-            {
-              id: EventId.make("event:question-answer-request"),
-              type: "runtime-request.updated",
-              threadId: child.childThreadId,
-              nodeId,
-              occurredAt: now,
-              payload: {
-                id: requestId,
-                nodeId,
-                providerTurnId: null,
-                nativeRequestRef: null,
-                kind: "user_input",
-                status: "pending",
-                responseCapability: { type: "message" },
-                createdAt: now,
-                resolvedAt: null,
-              },
-            },
-            {
-              id: EventId.make("event:question-answer-item"),
-              type: "turn-item.updated",
-              threadId: child.childThreadId,
-              nodeId,
-              occurredAt: now,
-              payload: {
-                id: TurnItemId.make("turn-item:question-answer"),
-                type: "user_input_request",
-                threadId: child.childThreadId,
-                runId: child.childRunId,
-                nodeId,
-                providerThreadId: null,
-                providerTurnId: null,
-                nativeItemRef: null,
-                parentItemId: null,
-                ordinal: 0,
-                status: "waiting",
-                title: null,
-                startedAt: now,
-                completedAt: null,
-                updatedAt: now,
-                requestId,
-                questions: [
-                  { id: "color", header: "Color", question: "Which color?", options: [] },
-                ],
-              },
-            },
-          ],
-        });
-
-        const executor = yield* ThreadCommandExecutor.ThreadCommandExecutor;
-        const parentHeld = yield* Deferred.make<void>();
-        const releaseParent = yield* Deferred.make<void>();
-        const answerWaiting = yield* Deferred.make<void>();
-        const withLock = executor.withLock;
-        const parentMutation = yield* withLock(
-          parentThreadId,
-          Deferred.succeed(parentHeld, undefined).pipe(
-            Effect.andThen(Deferred.await(releaseParent)),
-          ),
-        ).pipe(Effect.forkScoped({ startImmediately: true }));
-        yield* Deferred.await(parentHeld);
-        const observeLock: ThreadCommandExecutor.ThreadCommandExecutor["Service"]["withLock"] = (
-          key,
-          effect,
-        ) =>
-          key === parentThreadId
-            ? Deferred.succeed(answerWaiting, undefined).pipe(Effect.andThen(withLock(key, effect)))
-            : withLock(key, effect);
-        const spy = vi.spyOn(executor, "withLock").mockImplementation(observeLock);
-        yield* Effect.gen(function* () {
-          const answer = yield* orchestrator
-            .dispatch({
-              type: "runtime-request.respond",
-              commandId: CommandId.make("command:question-answer"),
-              threadId: child.childThreadId,
-              requestId,
-              answers: { color: "Blue" },
-            })
-            .pipe(Effect.forkScoped({ startImmediately: true }));
-          yield* Effect.raceFirst(Deferred.await(answerWaiting), Fiber.join(answer));
-          const waiting = yield* orchestrator.getThreadProjection(child.childThreadId);
-          assert.equal(
-            waiting.runtimeRequests.find((row) => row.id === requestId)?.status,
-            "pending",
+    it.effect.each([
+      { answeredBy: "user", createdBy: "user", creationSource: "server" },
+      // A coordinator answers through its tool; the answer is its message, not the user's.
+      { answeredBy: "agent", createdBy: "agent", creationSource: "mcp" },
+    ] as const)(
+      "serializes a recovered child answer by the $answeredBy with its parent and tracks the follow-up",
+      ({ answeredBy, createdBy, creationSource }) =>
+        Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          const eventSink = yield* EventSink.EventSinkV2;
+          const now = yield* DateTime.now;
+          const scenario = `question-answer-${answeredBy}`;
+          const parentThreadId = ThreadId.make(`thread:${scenario}-parent`);
+          const projectId = ProjectId.make(`project:${scenario}`);
+          const parentRunId = RunId.make(`run:${scenario}-parent`);
+          const rootNodeId = NodeId.make(`node:${scenario}-parent`);
+          yield* seedParentWithTerminalTask({
+            threadId: parentThreadId,
+            projectId,
+            runId: parentRunId,
+            rootNodeId,
+            taskId: NodeId.make(`node:${scenario}-seed`),
+            deliveryState: "acknowledged",
+            now,
+          });
+          const child = yield* seedRestartCancelledChild({
+            parentThreadId,
+            projectId,
+            parentRunId,
+            rootNodeId,
+            name: `${scenario}-child`,
+            completionWake: "always",
+            continuationPending: false,
+            now,
+          });
+          // The cancelled result is published before anyone answers the question.
+          yield* orchestrator.recoverDelegatedTasks;
+          assert.isNotNull(
+            (yield* orchestrator.getThreadProjection(parentThreadId)).subagents.find(
+              (task) => task.id === child.taskId,
+            )?.result,
           );
-          assert.isFalse((yield* executor.activeKeys).includes(child.childThreadId));
-          yield* Deferred.succeed(releaseParent, undefined);
-          yield* Fiber.join(parentMutation);
-          yield* Fiber.join(answer);
-        }).pipe(Effect.ensuring(Effect.sync(() => spy.mockRestore())));
+          const parentRun = (yield* orchestrator.getThreadProjection(parentThreadId)).runs.find(
+            (run) => run.id === parentRunId,
+          )!;
+          yield* eventSink.write({
+            events: [
+              {
+                id: EventId.make(`event:${scenario}-parent-completed`),
+                type: "run.updated",
+                threadId: parentThreadId,
+                runId: parentRunId,
+                occurredAt: now,
+                payload: { ...parentRun, status: "completed", completedAt: now },
+              },
+            ],
+          });
+          const requestId = RuntimeRequestId.make(`request:${scenario}`);
+          const nodeId = NodeId.make(`node:${scenario}-request`);
+          yield* eventSink.write({
+            commandId: CommandId.make(`command:seed-${scenario}`),
+            events: [
+              {
+                id: EventId.make(`event:${scenario}-request`),
+                type: "runtime-request.updated",
+                threadId: child.childThreadId,
+                nodeId,
+                occurredAt: now,
+                payload: {
+                  id: requestId,
+                  nodeId,
+                  providerTurnId: null,
+                  nativeRequestRef: null,
+                  kind: "user_input",
+                  status: "pending",
+                  responseCapability: { type: "message" },
+                  createdAt: now,
+                  resolvedAt: null,
+                },
+              },
+              {
+                id: EventId.make(`event:${scenario}-item`),
+                type: "turn-item.updated",
+                threadId: child.childThreadId,
+                nodeId,
+                occurredAt: now,
+                payload: {
+                  id: TurnItemId.make(`turn-item:${scenario}`),
+                  type: "user_input_request",
+                  threadId: child.childThreadId,
+                  runId: child.childRunId,
+                  nodeId,
+                  providerThreadId: null,
+                  providerTurnId: null,
+                  nativeItemRef: null,
+                  parentItemId: null,
+                  ordinal: 0,
+                  status: "waiting",
+                  title: null,
+                  startedAt: now,
+                  completedAt: null,
+                  updatedAt: now,
+                  requestId,
+                  questions: [
+                    { id: "color", header: "Color", question: "Which color?", options: [] },
+                  ],
+                },
+              },
+            ],
+          });
 
-        const answerRun = (yield* orchestrator.getThreadProjection(child.childThreadId)).runs.find(
-          (run) => run.userMessageId === MessageId.make(`async-answer:${requestId}`),
-        );
-        assert.isDefined(answerRun?.delegatedTaskId);
-        const followup = (yield* orchestrator.getThreadProjection(parentThreadId)).subagents.find(
-          (task) => task.id === answerRun?.delegatedTaskId,
-        );
-        assert.equal(followup?.childThreadId, child.childThreadId);
-        assert.isNull(followup?.result);
-        assert.isTrue(
-          (yield* orchestrator.getThreadShell(parentThreadId))?.pendingBackgroundTasks?.some(
-            (task) => task.kind === "subagent" && task.childThreadId === child.childThreadId,
-          ),
-        );
-      }),
+          const executor = yield* ThreadCommandExecutor.ThreadCommandExecutor;
+          const parentHeld = yield* Deferred.make<void>();
+          const releaseParent = yield* Deferred.make<void>();
+          const answerWaiting = yield* Deferred.make<void>();
+          const withLock = executor.withLock;
+          const parentMutation = yield* withLock(
+            parentThreadId,
+            Deferred.succeed(parentHeld, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseParent)),
+            ),
+          ).pipe(Effect.forkScoped({ startImmediately: true }));
+          yield* Deferred.await(parentHeld);
+          const observeLock: ThreadCommandExecutor.ThreadCommandExecutor["Service"]["withLock"] = (
+            key,
+            effect,
+          ) =>
+            key === parentThreadId
+              ? Deferred.succeed(answerWaiting, undefined).pipe(
+                  Effect.andThen(withLock(key, effect)),
+                )
+              : withLock(key, effect);
+          const spy = vi.spyOn(executor, "withLock").mockImplementation(observeLock);
+          yield* Effect.gen(function* () {
+            const answer = yield* orchestrator
+              .dispatch({
+                type: "runtime-request.respond",
+                commandId: CommandId.make(`command:${scenario}`),
+                threadId: child.childThreadId,
+                requestId,
+                answers: { color: "Blue" },
+                answeredBy,
+                ...(answeredBy === "agent" ? { senderThreadId: parentThreadId } : {}),
+              })
+              .pipe(Effect.forkScoped({ startImmediately: true }));
+            yield* Effect.raceFirst(Deferred.await(answerWaiting), Fiber.join(answer));
+            const waiting = yield* orchestrator.getThreadProjection(child.childThreadId);
+            assert.equal(
+              waiting.runtimeRequests.find((row) => row.id === requestId)?.status,
+              "pending",
+            );
+            assert.isFalse((yield* executor.activeKeys).includes(child.childThreadId));
+            yield* Deferred.succeed(releaseParent, undefined);
+            yield* Fiber.join(parentMutation);
+            yield* Fiber.join(answer);
+          }).pipe(Effect.ensuring(Effect.sync(() => spy.mockRestore())));
+
+          const answerRun = (yield* orchestrator.getThreadProjection(
+            child.childThreadId,
+          )).runs.find((run) => run.userMessageId === MessageId.make(`async-answer:${requestId}`));
+          assert.isDefined(answerRun?.delegatedTaskId);
+          const answerMessage = (yield* orchestrator.getThreadProjection(
+            child.childThreadId,
+          )).messages.find((message) => message.id === answerRun?.userMessageId);
+          assert.deepInclude(answerMessage, {
+            createdBy,
+            creationSource,
+            ...(answeredBy === "agent" ? { senderThreadId: parentThreadId } : {}),
+          });
+          const followup = (yield* orchestrator.getThreadProjection(parentThreadId)).subagents.find(
+            (task) => task.id === answerRun?.delegatedTaskId,
+          );
+          assert.equal(followup?.childThreadId, child.childThreadId);
+          assert.isNull(followup?.result);
+          assert.isTrue(
+            (yield* orchestrator.getThreadShell(parentThreadId))?.pendingBackgroundTasks?.some(
+              (task) => task.kind === "subagent" && task.childThreadId === child.childThreadId,
+            ),
+          );
+        }),
     );
   },
 );

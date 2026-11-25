@@ -6,6 +6,7 @@ import {
   usageLimitRunPresentedAsLatest,
 } from "@houston-app/shared/orchestrationV2ThreadError";
 import {
+  isCompactionCommandMessage,
   isOrchestrationV2WorkActive,
   isProviderNativeSubagentThread,
   latestProviderTurnForAttempt,
@@ -287,16 +288,26 @@ export function formatProviderSubagentStatus(
 
 /** The run a manual continuation resumes; the server holds the queue until it does. */
 export function deriveResumableRunId(
-  projection: Pick<ThreadStructure, "runs" | "turnItems">,
+  projection: Pick<ThreadStructure, "runs" | "turnItems" | "messages">,
   runtime: Pick<ThreadStructureRuntime, "lastErrorClass"> | null,
 ): RunId | null {
   const run = latestExecutedRun(projection.runs);
+  if (run !== null && isCompactionRun(run, projection.messages)) return null;
   if (run?.status === "interrupted") return run.id;
   return run?.status === "failed" &&
     runtime?.lastErrorClass === "usage_limit" &&
     latestRootProviderFailure(run, projection.turnItems)?.class === "usage_limit"
     ? run.id
     : null;
+}
+
+/** The server refuses to resume a compaction run with the same predicate (`dispatchMessage`). */
+function isCompactionRun(
+  run: Pick<ThreadStructure["runs"][number], "userMessageId">,
+  messages: ThreadStructure["messages"],
+): boolean {
+  const message = messages.find((candidate) => candidate.id === run.userMessageId);
+  return message !== undefined && isCompactionCommandMessage(message);
 }
 
 export function deriveThreadRuntime(

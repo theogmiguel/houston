@@ -9,6 +9,7 @@ import * as Layer from "effect/Layer";
 import * as Metric from "effect/Metric";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import {
   increment,
@@ -29,7 +30,8 @@ import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { continueRestartedRun } from "./RestartContinuation.ts";
 import { userFacingDispatchErrorMessage } from "./UserFacingErrors.ts";
-import { MessageDeliveryWriter } from "../houston/messageDelivery.ts";
+import { MessageDeliveryWriter, steerFollowUpCommand } from "../houston/messageDelivery.ts";
+import * as ThreadHistoryPurge from "../houston/threadHistoryPurge.ts";
 import * as TraceContext from "../houston/observability/TraceContext.ts";
 import * as WideEvents from "../houston/observability/WideEvents.ts";
 
@@ -90,9 +92,11 @@ export const layerExecutor: Layer.Layer<
   | ThreadTitleRegenerationService.ThreadTitleRegenerationService
   | ThreadManagementService.ThreadManagementService
   | ServerSettings.ServerSettingsService
+  | SqlClient.SqlClient
 > = Layer.effect(
   OrchestrationEffectExecutorV2,
   Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
     const runFinalization = yield* RunFinalizationService.RunFinalizationService;
     const resourceCleanup = yield* ResourceCleanupService.ResourceCleanupService;
     const checkpointRollback = yield* CheckpointRollbackService.CheckpointRollbackServiceV2;
@@ -352,41 +356,14 @@ export const layerExecutor: Layer.Layer<
                         ),
                       ),
                     );
-                    // Notifications must be queued messages.
-                    const queued =
-                      message.delegatedCompletion !== undefined ||
-                      message.notification !== undefined;
-                    // Reuse message ids and receipts so retries cannot duplicate messages or follow-ups.
                     yield* threads
-                      .dispatch({
-                        type: "message.dispatch",
-                        commandId: CommandId.make(`command:steer-follow-up:${effect.id}`),
-                        threadId: effect.threadId,
-                        messageId: message.id,
-                        text: message.text,
-                        ...(message.context ? { context: message.context } : {}),
-                        attachments: message.attachments,
-                        ...(message.delegatedCompletion === undefined
-                          ? {}
-                          : { modelSelection: run.modelSelection }),
-                        dispatchMode: {
-                          type: queued ? "queue_after_active" : "start_immediately",
-                        },
-                        createdBy: message.createdBy,
-                        creationSource: message.creationSource,
-                        ...(message.delegatedCompletion === undefined
-                          ? {}
-                          : { delegatedCompletion: message.delegatedCompletion }),
-                        ...(message.notification === undefined
-                          ? {}
-                          : { notification: message.notification }),
-                        ...(message.scheduledTaskId === undefined
-                          ? {}
-                          : { scheduledTaskId: message.scheduledTaskId }),
-                        ...(message.senderThreadId === undefined
-                          ? {}
-                          : { senderThreadId: message.senderThreadId }),
-                      })
+                      .dispatch(
+                        steerFollowUpCommand({
+                          commandId: CommandId.make(`command:steer-follow-up:${effect.id}`),
+                          message,
+                          run,
+                        }),
+                      )
                       .pipe(
                         // A disabled instance cannot retry this completed turn; its result stands.
                         Effect.catchTags({
@@ -642,6 +619,18 @@ export const layerExecutor: Layer.Layer<
             );
           case "attachment.cleanup":
             return resourceCleanup.cleanupAttachments(effect.request.attachmentIds).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationEffectExecutionError({
+                    effectId: effect.id,
+                    effectType: effect.request.type,
+                    cause,
+                  }),
+              ),
+            );
+          case "thread.history-purge":
+            return ThreadHistoryPurge.purgeThreadHistory(effect.threadId).pipe(
+              Effect.provideService(SqlClient.SqlClient, sql),
               Effect.mapError(
                 (cause) =>
                   new OrchestrationEffectExecutionError({

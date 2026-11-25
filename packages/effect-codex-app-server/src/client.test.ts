@@ -1,5 +1,6 @@
 import * as Deferred from "effect/Deferred";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Path from "effect/Path";
@@ -210,6 +211,44 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
           issueKinds: expect.arrayContaining(["MissingKey"]),
         });
         assert.notInclude(JSON.stringify(warnings), secret);
+      }),
+    );
+
+    it.effect("ends the session when a notification handler dies the way adapter handlers do", () =>
+      Effect.gen(function* () {
+        const secret = "codex-notification-handler-secret-sentinel";
+        const { stdio, input, output } = yield* makeInMemoryStdio();
+        const client = yield* CodexClient.make(stdio);
+        yield* client.handleServerNotification("item/agentMessage/delta", () =>
+          Effect.fail(CodexError.CodexAppServerRequestError.internalError(secret)).pipe(
+            Effect.orDie,
+          ),
+        );
+        const termination = yield* client.awaitTermination.pipe(Effect.flip, Effect.forkScoped);
+        const pending = yield* client.raw.request("thread/read", {}).pipe(Effect.forkScoped);
+        yield* Queue.take(output);
+
+        yield* Queue.offer(
+          input,
+          new TextEncoder().encode(
+            `${JSON.stringify({
+              method: "item/agentMessage/delta",
+              params: { delta: "ok", itemId: "item-1", threadId: "thread-1", turnId: "turn-1" },
+            })}\n`,
+          ),
+        );
+
+        const failure = yield* Fiber.join(pending).pipe(
+          Effect.match({
+            onFailure: (error) => error,
+            onSuccess: () => assert.fail("Expected the dead reader to fail the request"),
+          }),
+        );
+        assert.instanceOf(failure, CodexError.CodexAppServerTransportError);
+        assert.equal(failure.operation, "read-input-stream");
+        assert.include(String(failure.cause), "'item/agentMessage/delta'");
+        assert.notInclude(String(failure.cause), secret);
+        assert.strictEqual(yield* Fiber.join(termination), failure);
       }),
     );
   },

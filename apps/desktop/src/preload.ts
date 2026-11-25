@@ -78,8 +78,6 @@ contextBridge.exposeInMainWorld("hostBridge", {
     }
     return result as ReturnType<HostBridge["getAppBranding"]>;
   },
-  getRelayTelemetryEnabled: () =>
-    ipcRenderer.sendSync(IpcChannels.GET_RELAY_TELEMETRY_ENABLED_CHANNEL) === true,
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   startFileDrag: (input) => ipcRenderer.invoke(IpcChannels.START_FILE_DRAG_CHANNEL, input),
   getClientPlatform: () => clientPlatform,
@@ -119,6 +117,12 @@ contextBridge.exposeInMainWorld("hostBridge", {
       return [];
     }
     return result as ReturnType<HostBridge["getLocalEnvironmentBootstraps"]>;
+  },
+  onLocalEnvironmentBootstrapsChanged: (listener) => {
+    const handler = () => listener();
+    ipcRenderer.on(IpcChannels.LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANGED_CHANNEL, handler);
+    return () =>
+      ipcRenderer.removeListener(IpcChannels.LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANGED_CHANNEL, handler);
   },
   getLocalEnvironmentBearerToken: () =>
     ipcRenderer.invoke(IpcChannels.GET_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL),

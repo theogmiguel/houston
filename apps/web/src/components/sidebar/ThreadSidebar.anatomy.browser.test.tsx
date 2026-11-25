@@ -202,27 +202,30 @@ const labelsOf = (row: HTMLElement, hidden: boolean) =>
 /** Item labels in the order the second line draws them, with every item present. */
 const FULL_ORDER = [
   "Branch feature/streaming-import-with-a-long-name",
+  "#perf",
+  "#q3",
   "Unsent draft",
   "Terminal running",
   "Runs on another machine",
   "2 subagents running",
-  "#perf",
-  "#q3",
-  "Renaming title",
 ];
+
+/** The items that sit at the line's right edge, after the branch and tags. */
+const RIGHT_ITEMS = FULL_ORDER.slice(3);
+
+/** The items that leave first when the line overflows. */
+const DROPS_FIRST = ["2 subagents running", "#perf", "#q3"];
 
 /** The locked order of the second line, by the start of each item's label. */
 const ORDER_PREFIXES = [
   "Branch",
   "Worktree",
+  "#",
   "Unsent draft",
-  "Uncommitted changes",
   "Terminal",
   "Runs on another machine",
   "1 subagent",
   "2 subagents",
-  "#",
-  "Renaming",
 ];
 
 describe("thread row anatomy", () => {
@@ -315,7 +318,7 @@ describe("thread row anatomy", () => {
     }
   });
 
-  it("draws the third line in one fixed order, with the provider mark last at the right edge", async () => {
+  it("draws the third line in one fixed order: branch and tags at the left, marks at the right edge", async () => {
     await page.viewport(1440, 900);
     arrangeRich();
     await using screen = await render(
@@ -327,24 +330,41 @@ describe("thread row anatomy", () => {
     const lefts = itemsOf(row).map((item) => item.getBoundingClientRect().left);
     expect(lefts).toEqual([...lefts].sort((a, b) => a - b));
 
-    const mark = row.querySelector<HTMLElement>("[data-thread-provider-mark]")!;
     const items = row.querySelector<HTMLElement>("[data-thread-meta-items]")!;
+    const byLabel = (label: string) =>
+      itemsOf(row)
+        .find((item) => item.dataset.metaLabel === label)!
+        .getBoundingClientRect();
+    // The marks close the line at its right edge, clear of the tags.
+    const lastRight = byLabel(RIGHT_ITEMS.at(-1)!);
+    expect(lastRight.right).toBeCloseTo(items.getBoundingClientRect().right, 0);
+    expect(byLabel(RIGHT_ITEMS[0]!).left - byLabel("#q3").right).toBeGreaterThan(40);
+    // The tags follow the branch at the left.
+    expect(byLabel("#perf").left - byLabel(FULL_ORDER[0]!).right).toBeCloseTo(8, 0);
+
+    const mark = row.querySelector<HTMLElement>("[data-thread-provider-mark]")!;
     const pullRequest = row.querySelector<HTMLElement>("[data-thread-pr-slot]")!;
-    const diff = row.querySelector<HTMLElement>("[data-thread-diff]")!;
-    expect(diff.textContent).toContain("128");
-    expect(pullRequest.nextElementSibling).toBe(diff);
-    expect(diff.nextElementSibling).toBe(mark);
+    expect(pullRequest.nextElementSibling).toBe(mark);
     expect(pullRequest.getBoundingClientRect().left).toBeGreaterThanOrEqual(
       items.getBoundingClientRect().right + 8 - 0.5,
     );
-    expect(diff.getBoundingClientRect().left).toBeGreaterThanOrEqual(
-      pullRequest.getBoundingClientRect().right - 0.5,
-    );
     expect(mark.getBoundingClientRect().left).toBeGreaterThanOrEqual(
-      diff.getBoundingClientRect().right - 0.5,
+      pullRequest.getBoundingClientRect().right - 0.5,
     );
     const time = row.querySelector<HTMLElement>("[data-thread-time]")!;
     expect(mark.getBoundingClientRect().right).toBeCloseTo(time.getBoundingClientRect().right, 0);
+  });
+
+  it("draws neither line totals nor a renaming word on the third line", async () => {
+    await page.viewport(1440, 900);
+    arrangeRich();
+    await using screen = await render(
+      <div style={{ width: 760 }}>{card(richThread(), { subagents: 2 })}</div>,
+    );
+    const row = rowOf(screen.container);
+    expect(row.querySelector("[data-thread-diff]")).toBeNull();
+    expect(row.querySelector("[data-thread-regenerating]")).toBeNull();
+    expect(row.querySelector("[data-thread-meta]")!.textContent).not.toMatch(/Renaming|128/);
   });
 
   it("keeps the same order on rows that carry only some of the items", async () => {
@@ -374,17 +394,15 @@ describe("thread row anatomy", () => {
         subagents: 1,
         labels: ["Branch main", "1 subagent running"],
         pullRequest: false,
-        diff: true,
       },
       {
         value: pullRequestAndDiff,
         subagents: 0,
         labels: ["Branch main"],
         pullRequest: true,
-        diff: true,
       },
     ];
-    for (const { value, subagents, labels, pullRequest, diff } of cases) {
+    for (const { value, subagents, labels, pullRequest } of cases) {
       await using screen = await render(
         <div style={{ width: 760 }}>{card(value, { subagents })}</div>,
       );
@@ -397,8 +415,7 @@ describe("thread row anatomy", () => {
       expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
       for (const label of labels) expect(drawn).toContain(label);
       expect(row.querySelector("[data-thread-pr-slot]") !== null).toBe(pullRequest);
-      // Both rows share the fixture totals, so the counts are drawn on each.
-      expect(row.querySelector("[data-thread-diff]") !== null).toBe(diff);
+      expect(row.querySelector("[data-thread-diff]")).toBeNull();
     }
   });
 
@@ -428,12 +445,14 @@ describe("thread row anatomy", () => {
       const hidden = labelsOf(row, true);
       const shown = labelsOf(row, false);
       expect(hidden.length).toBeGreaterThan(0);
-      // The sub-agent count goes first, then items go from the right: what stays is a prefix of
-      // the fixed order, less the sub-agent count.
-      expect(hidden).toContain("2 subagents running");
-      expect(shown).not.toContain("2 subagents running");
-      const withoutPeople = FULL_ORDER.filter((label) => label !== "2 subagents running");
-      expect(shown).toEqual(withoutPeople.slice(0, shown.length));
+      // The sub-agent count and the tags go first, then items go from the right: what stays is a
+      // prefix of the fixed order, less those.
+      for (const label of DROPS_FIRST) {
+        expect(hidden).toContain(label);
+        expect(shown).not.toContain(label);
+      }
+      const rest = FULL_ORDER.filter((label) => !DROPS_FIRST.includes(label));
+      expect(shown).toEqual(rest.slice(0, shown.length));
       expect(shown[0]).toBe(FULL_ORDER[0]);
 
       const overflow = row.querySelector<HTMLElement>("[data-thread-meta-overflow]")!;
@@ -691,6 +710,11 @@ describe("thread row status glyphs", () => {
     expect(row.querySelector("[data-thread-status-glyph]")).toBeNull();
     expect(row.querySelector("[data-thread-status]")).toBeNull();
     expect(screen.getByText("Closed 2h").element()).toBeVisible();
+    // The closed age sits in the status place on the project line, not on the third line.
+    expect(row.querySelector("[data-thread-project-line] [data-thread-time]")?.textContent).toBe(
+      "Closed 2h",
+    );
+    expect(row.querySelector("[data-thread-meta] [data-thread-time]")).toBeNull();
   });
 });
 

@@ -392,14 +392,33 @@ describe("orchestrator MCP toolkit", () => {
           const followupStartSequence = yield* orchestrator.getThreadEventSequence(
             localChild(delegated.childThreadId),
           );
+          // A steer to a child whose turn has ended is refused, naming the modes that deliver it.
+          const steerCall = yield* invoke("houston_thread_send", {
+            threadId: localChild(delegated.childThreadId),
+            message: cancellationPrompt,
+            mode: "steer",
+            clientRequestId: "delegated-child-replay-steer-1",
+          });
+          expect(steerCall.isError).toBe(true);
+          const steerText = steerCall.content[0]?.type === "text" ? steerCall.content[0].text : "";
+          expect(JSON.parse(steerText)).toEqual({
+            _tag: "OrchestratorMcpFailure",
+            code: "thread_not_sendable",
+            message: `Thread ${delegated.childThreadId} has no running turn for mode "steer" (latest run: completed). Use mode "auto" to deliver now (it starts the idle thread), or mode "queue" for a new turn.`,
+          });
+          expect(
+            yield* orchestrator.getThreadEventSequence(localChild(delegated.childThreadId)),
+          ).toBe(followupStartSequence);
           const runningFollowupCall = yield* invoke("houston_thread_send", {
             threadId: localChild(delegated.childThreadId),
             message: cancellationPrompt,
+            mode: "auto",
             clientRequestId: "delegated-child-replay-running-1",
           });
           const runningFollowup = yield* decodeThreadSendResult(
             runningFollowupCall.structuredContent,
           ).pipe(Effect.orDie);
+          expect(runningFollowup.delivery).toBe("started");
           yield* orchestrator
             .streamStoredEventsFrom({
               threadId: localChild(delegated.childThreadId),

@@ -1,10 +1,15 @@
+import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Request from "effect/Request";
+import * as RequestResolver from "effect/RequestResolver";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import {
@@ -45,6 +50,15 @@ const MAX_REDIRECTS = 3;
 const BITBUCKET_API_REQUEST_TIMEOUT = "30 seconds";
 /** A sweep over many branches would otherwise reach Bitbucket as one burst of lookups. */
 const CONCURRENCY = 4;
+/** Twenty branch names keep the filter, and so the request URL, within a few kilobytes. */
+const BRANCH_LOOKUPS_PER_REQUEST = 20;
+/** A user waiting on a lookup waits at most this long for others to share its request. */
+const BRANCH_LOOKUP_BATCH_WINDOW = "50 millis";
+/** Git reads stagger a sweep's lookups by a few hundred milliseconds; gather them first. */
+const BACKGROUND_BRANCH_LOOKUP_BATCH_WINDOW = "500 millis";
+/** Room for two busy branches in a batch before the rest are each asked about alone. */
+const SHARED_BRANCH_LOOKUP_REQUESTS = 3;
+const MAX_PAGE_SIZE = 50;
 
 const BitbucketApiEnvConfig = Config.all({
   baseUrl: Config.String("HOUSTON_BITBUCKET_API_BASE_URL").pipe(
@@ -77,6 +91,16 @@ const BitbucketApiOperation = Schema.Literals([
   "request",
 ]);
 type BitbucketApiOperation = typeof BitbucketApiOperation.Type;
+
+function isoTime(epochMillis: number): string {
+  return DateTime.formatIso(DateTime.makeUnsafe(epochMillis));
+}
+
+function resumeText(retryAt: number | undefined): string {
+  return retryAt === undefined
+    ? "requests resume after a backoff"
+    : `requests resume at ${isoTime(retryAt)}`;
+}
 
 export class BitbucketRepositoryLocatorError extends Schema.TaggedError<BitbucketRepositoryLocatorError>()(
   "BitbucketRepositoryLocatorError",
@@ -122,6 +146,9 @@ export class BitbucketResponseError extends Schema.TaggedError<BitbucketResponse
     status: Schema.Int,
     responseBodyLength: NonNegativeInt,
     retryAt: Schema.optional(Schema.Number),
+    /** Bitbucket's `X-RateLimit-Limit` and `X-RateLimit-Remaining` on a 429, when it sends them. */
+    rateLimit: Schema.optional(Schema.Int),
+    rateLimitRemaining: Schema.optional(Schema.Int),
     /**
      * The request carried no credential. Bitbucket answers 404 for a private repository it hides
      * from anonymous callers, so such a 404 means "add credentials", not "no such pull request".
@@ -130,7 +157,9 @@ export class BitbucketResponseError extends Schema.TaggedError<BitbucketResponse
   },
 ) {
   get detail(): string {
-    return `Bitbucket returned HTTP ${this.status}.`;
+    return this.status === 429
+      ? `Bitbucket's API rate limit was reached (HTTP 429); ${resumeText(this.retryAt)}.`
+      : `Bitbucket returned HTTP ${this.status}.`;
   }
 
   override get message(): string {
@@ -439,6 +468,16 @@ function bitbucketQueryString(filters: ReadonlyArray<string>): string {
   return filters.join(" AND ");
 }
 
+/** The backslash goes first, or an escaped quote would become a backslash and a live quote. */
+function filterLiteral(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+}
+
+function bitbucketBranchFilter(branches: ReadonlyArray<string>): string {
+  const filters = branches.map((branch) => `source.branch.name = "${filterLiteral(branch)}"`);
+  return filters.length === 1 ? filters[0]! : `(${filters.join(" OR ")})`;
+}
+
 function bitbucketStateFilter(states: ReadonlyArray<string>): string {
   return states.length === 1
     ? `state = "${states[0]}"`
@@ -632,6 +671,16 @@ function originOf(value: string): string | null {
   }
 }
 
+const RATE_LIMIT_HEADER = /^\d{1,9}$/u;
+
+function rateLimitHeader(
+  response: HttpClientResponse.HttpClientResponse,
+  name: string,
+): number | undefined {
+  const value = response.status === 429 ? response.headers[name]?.trim() : undefined;
+  return value !== undefined && RATE_LIMIT_HEADER.test(value) ? Number(value) : undefined;
+}
+
 const responseError = Effect.fn("BitbucketApi.responseError")(function* (
   operation: BitbucketApiOperation,
   response: HttpClientResponse.HttpClientResponse,
@@ -653,14 +702,53 @@ const responseError = Effect.fn("BitbucketApi.responseError")(function* (
         }),
     ),
   );
+  const rateLimit = rateLimitHeader(response, "x-ratelimit-limit");
+  const rateLimitRemaining = rateLimitHeader(response, "x-ratelimit-remaining");
   return yield* new BitbucketResponseError({
     operation,
     status: response.status,
     responseBodyLength: collected.text.length,
     retryAt,
+    ...(rateLimit === undefined ? {} : { rateLimit }),
+    ...(rateLimitRemaining === undefined ? {} : { rateLimitRemaining }),
     ...(anonymous ? { anonymous } : {}),
   });
 });
+
+type PullRequestRow = Schema.Schema.Type<typeof BitbucketPullRequestSchema>;
+
+/** Names the limit, when it was reached, and how many lookups it failed. */
+const logRateLimited = (cause: Cause.Cause<BitbucketApiError>, lookups: number) => {
+  const [error] = cause.reasons.flatMap((reason) => (reason._tag === "Fail" ? [reason.error] : []));
+  return error?._tag === "BitbucketResponseError" && error.status === 429
+    ? Effect.logWarning(
+        `Bitbucket API rate limit reached (HTTP 429) during branch pull-request lookup; ${lookups} lookups paused`,
+        {
+          operation: "listPullRequests",
+          status: error.status,
+          lookups,
+          retryAt: error.retryAt === undefined ? null : isoTime(error.retryAt),
+          rateLimit: error.rateLimit ?? null,
+          rateLimitRemaining: error.rateLimitRemaining ?? null,
+        },
+      )
+    : Effect.void;
+};
+
+/** One branch's share of a batched pull-request lookup. */
+interface BranchPullRequestLookup extends Request.Request<
+  ReadonlyArray<NormalizedBitbucketPullRequestRecord>,
+  BitbucketApiError
+> {
+  readonly _tag: "BranchPullRequestLookup";
+  readonly repository: BitbucketRepositoryLocator;
+  readonly branch: string;
+  readonly states: ReadonlyArray<string>;
+  readonly limit: number;
+  /** Repository, state filter, credential scope and interactivity: what one request can share. */
+  readonly batchKey: string;
+}
+const BranchPullRequestLookup = Request.tagged<BranchPullRequestLookup>("BranchPullRequestLookup");
 
 const TRAILING_SLASHES = /\/+$/u;
 const HTTP_URL_PREFIX = /^https?:\/\//u;
@@ -1014,6 +1102,129 @@ export const make = Effect.gen(function* () {
     );
   };
 
+  // Concurrent lookups in one repository share a request, and rows go back by source branch. Only
+  // first pages are read: offset pages taken at different moments can skip a row. A branch is
+  // answered when its query's first page has no next page or holds its limit of newest rows; the
+  // rest are asked about again together, and then each with the request a lone lookup makes.
+  const lookUpBranchPullRequests = Effect.fn("BitbucketApi.lookUpBranchPullRequests")(function* (
+    entries: ReadonlyArray<Request.Entry<BranchPullRequestLookup>>,
+  ) {
+    const [first] = entries;
+    if (first === undefined) return;
+    const { repository, states } = first.request;
+    const limits = new Map<string, number>();
+    for (const { request } of entries) {
+      limits.set(request.branch, Math.max(limits.get(request.branch) ?? 0, request.limit));
+    }
+    const limitOf = (branch: string) => limits.get(branch) ?? 0;
+    const listRequest = (branches: ReadonlyArray<string>) =>
+      HttpClientRequest.get(
+        apiUrl(
+          `/repositories/${encodeURIComponent(repository.workspace)}/${encodeURIComponent(repository.repoSlug)}/pullrequests`,
+        ),
+        {
+          urlParams: {
+            pagelen: String(
+              Math.min(
+                MAX_PAGE_SIZE,
+                branches.reduce((total, branch) => total + limitOf(branch), 0),
+              ),
+            ),
+            sort: "-updated_on",
+            q: bitbucketQueryString([
+              bitbucketBranchFilter(branches),
+              bitbucketStateFilter(states),
+            ]),
+            state: states,
+          },
+        },
+      );
+    const answers = new Map<string, Exit.Exit<ReadonlyArray<PullRequestRow>, BitbucketApiError>>();
+
+    const shared = yield* Effect.exit(
+      Effect.gen(function* () {
+        let pending = [...limits.keys()];
+        for (let sent = 0; sent < SHARED_BRANCH_LOOKUP_REQUESTS; sent += 1) {
+          const list = yield* executeJson(
+            "listPullRequests",
+            listRequest(pending),
+            BitbucketPullRequestListSchema,
+          );
+          const rowsByBranch = new Map<string, Array<PullRequestRow>>(
+            pending.map((branch) => [branch, []]),
+          );
+          for (const row of list.values) rowsByBranch.get(row.source.branch.name)?.push(row);
+          const unanswered: Array<string> = [];
+          for (const branch of pending) {
+            const rows = rowsByBranch.get(branch) ?? [];
+            // Newest first, so a branch with its limit of rows has its newest ones.
+            if (list.next === undefined || rows.length >= limitOf(branch)) {
+              answers.set(branch, Exit.succeed(rows));
+            } else {
+              unanswered.push(branch);
+            }
+          }
+          // A query that answered nobody would answer nobody again.
+          if (unanswered.length === pending.length) return unanswered;
+          pending = unanswered;
+          if (pending.length === 0) break;
+        }
+        return pending;
+      }),
+    );
+
+    if (Exit.isFailure(shared)) {
+      const unanswered = entries.filter(({ request }) => !answers.has(request.branch));
+      yield* logRateLimited(shared.cause, unanswered.length);
+      for (const { request } of unanswered)
+        answers.set(request.branch, Exit.failCause(shared.cause));
+    } else {
+      // The request a lone lookup has always made, so its answer is as complete as before.
+      yield* Effect.forEach(
+        shared.value,
+        (branch) =>
+          executeJson(
+            "listPullRequests",
+            listRequest([branch]),
+            BitbucketPullRequestListSchema,
+          ).pipe(
+            Effect.map((list): ReadonlyArray<PullRequestRow> => list.values),
+            Effect.exit,
+            Effect.tap((exit) =>
+              Exit.isFailure(exit)
+                ? logRateLimited(
+                    exit.cause,
+                    entries.filter(({ request }) => request.branch === branch).length,
+                  )
+                : Effect.void,
+            ),
+            Effect.map((exit) => answers.set(branch, exit)),
+          ),
+        { concurrency: CONCURRENCY, discard: true },
+      );
+    }
+
+    for (const entry of entries) {
+      const answer = answers.get(entry.request.branch)!;
+      entry.completeUnsafe(
+        Exit.map(answer, (rows) =>
+          rows.slice(0, entry.request.limit).map(normalizeBitbucketPullRequestRecord),
+        ),
+      );
+    }
+  });
+
+  const branchLookups = RequestResolver.makeGrouped<BranchPullRequestLookup, string>({
+    key: ({ request }) => request.batchKey,
+    resolver: lookUpBranchPullRequests,
+  }).pipe(RequestResolver.batchN(BRANCH_LOOKUPS_PER_REQUEST));
+  const branchLookupResolver = branchLookups.pipe(
+    RequestResolver.setDelay(BRANCH_LOOKUP_BATCH_WINDOW),
+  );
+  const backgroundBranchLookupResolver = branchLookups.pipe(
+    RequestResolver.setDelay(BACKGROUND_BRANCH_LOOKUP_BATCH_WINDOW),
+  );
+
   const request: BitbucketApi["Service"]["request"] = (input) =>
     throttled(
       input.method,
@@ -1083,32 +1294,26 @@ export const make = Effect.gen(function* () {
           }),
       }),
     ),
-    listPullRequests: Effect.fn("BitbucketApi.listPullRequests")(function (input) {
-      return resolveRepository(input).pipe(
-        Effect.flatMap((repository) => {
-          const states = toBitbucketStates(input.state);
-          const query: Record<string, string | ReadonlyArray<string>> = {
-            pagelen: String(Math.max(1, Math.min(input.limit ?? 20, 50))),
-            sort: "-updated_on",
-            q: bitbucketQueryString([
-              `source.branch.name = "${SourceControlProvider.sourceBranch(input).replaceAll('"', '\\"')}"`,
-              bitbucketStateFilter(states),
-            ]),
-            state: states,
-          };
-
-          return executeJson(
-            "listPullRequests",
-            HttpClientRequest.get(
-              apiUrl(
-                `/repositories/${encodeURIComponent(repository.workspace)}/${encodeURIComponent(repository.repoSlug)}/pullrequests`,
-              ),
-              { urlParams: query },
-            ),
-            BitbucketPullRequestListSchema,
-          );
+    listPullRequests: Effect.fn("BitbucketApi.listPullRequests")(function* (input) {
+      const repository = yield* resolveRepository(input);
+      const states = toBitbucketStates(input.state);
+      const interactive = yield* SourceControlRateLimit.Interactive;
+      const credentialScope = yield* SourceControlRateLimit.CredentialScope;
+      return yield* Effect.request(
+        BranchPullRequestLookup({
+          repository,
+          branch: SourceControlProvider.sourceBranch(input),
+          states,
+          limit: Math.max(1, Math.min(input.limit ?? 20, MAX_PAGE_SIZE)),
+          batchKey: [
+            repository.workspace,
+            repository.repoSlug,
+            states.join(","),
+            credentialScope,
+            String(interactive),
+          ].join("\u0000"),
         }),
-        Effect.map((list) => list.values.map(normalizeBitbucketPullRequestRecord)),
+        interactive ? branchLookupResolver : backgroundBranchLookupResolver,
       );
     }),
     getPullRequest: Effect.fn("BitbucketApi.getPullRequest")(function (input) {

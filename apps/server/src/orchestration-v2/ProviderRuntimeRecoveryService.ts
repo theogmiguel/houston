@@ -1,3 +1,4 @@
+import { providerAcceptedRun } from "@houston-app/shared/orchestrationV2ManualContinuation";
 import { resolveProjectSettings } from "@houston-app/shared/projectSettings";
 import {
   CommandId,
@@ -7,6 +8,7 @@ import {
   type OrchestrationV2RestartCancelledBackgroundWork,
   type OrchestrationV2Subagent,
   type OrchestrationV2ThreadProjection,
+  isCompactionCommandMessage,
   isOrchestrationV2WorkActive,
   ThreadId,
   TurnItemId,
@@ -323,8 +325,7 @@ export const make = Effect.gen(function* () {
       };
       const unstartedRuns = runs.filter(
         (run) =>
-          run.status === "starting" &&
-          neverStarted(run) &&
+          (run.status === "running" || (run.status === "starting" && neverStarted(run))) &&
           !projection.providerTurns.some((turn) => turn.runAttemptId === run.activeAttemptId) &&
           !projection.runtimeRequests.some(
             (request) =>
@@ -368,9 +369,42 @@ export const make = Effect.gen(function* () {
           )
           .map((message) => message.id),
       );
-      // A saved user message the provider never accepted stays available through the held queue.
-      const retryableRuns = unstartedRuns.filter((run) =>
-        retryableMessageIds.has(run.userMessageId),
+      const compactionMessageIds = new Set(
+        queuedMessages.filter(isCompactionCommandMessage).map((message) => message.id),
+      );
+      // A compaction recorded as running may have been sent, so it is not offered again.
+      const resendableRuns = unstartedRuns.filter(
+        (run) =>
+          retryableMessageIds.has(run.userMessageId) &&
+          !(run.status === "running" && compactionMessageIds.has(run.userMessageId)),
+      );
+      const resendableRunIds = new Set(resendableRuns.map((run) => run.id));
+      // The recovery projection omits settled turns, which confirm receipt too.
+      const acceptedTurns = !resendableRuns.some((run) => run.status === "running")
+        ? []
+        : (yield* projections
+            .getThreadRecords(projection.thread.id, ["providerTurns"], {
+              providerTurnAttemptIds: projection.attempts.flatMap((attempt) =>
+                resendableRunIds.has(attempt.runId) ? [attempt.id] : [],
+              ),
+            })
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new ProviderRuntimeRecoveryError({
+                    operation: "read-projections",
+                    threadId: projection.thread.id,
+                    cause,
+                  }),
+              ),
+            )).providerTurns;
+      // A user message the provider had not confirmed receiving stays available in the held queue.
+      const retryableRuns = resendableRuns.filter(
+        (run) =>
+          !providerAcceptedRun(run, {
+            attempts: projection.attempts,
+            providerTurns: acceptedTurns,
+          }),
       );
       const retryableRunIds = new Set(retryableRuns.map((run) => run.id));
       const retryableItems =
@@ -431,9 +465,39 @@ export const make = Effect.gen(function* () {
             ...run,
             status: "queued",
             queueHeld: true,
+            startedAt: null,
             ...(retryableRuns.length === 0 ? {} : { queuePosition: index + 1 }),
           },
         });
+      }
+      for (const run of retryableRuns) {
+        for (const attempt of projection.attempts) {
+          if (attempt.id !== run.activeAttemptId || attempt.status !== "running") continue;
+          const { nativeThreadId: _nativeThreadId, ...pendingAttempt } = attempt;
+          events.push({
+            id: yield* allocateEventId(),
+            type: "run-attempt.updated",
+            threadId: projection.thread.id,
+            runId: run.id,
+            nodeId: attempt.rootNodeId,
+            providerInstanceId: run.providerInstanceId,
+            occurredAt: now,
+            payload: { ...pendingAttempt, status: "pending", startedAt: null },
+          });
+        }
+        for (const node of projection.nodes) {
+          if (node.id !== run.rootNodeId || node.status !== "running") continue;
+          events.push({
+            id: yield* allocateEventId(),
+            type: "node.updated",
+            threadId: projection.thread.id,
+            runId: run.id,
+            nodeId: node.id,
+            providerInstanceId: run.providerInstanceId,
+            occurredAt: now,
+            payload: { ...node, status: "pending", startedAt: null },
+          });
+        }
       }
       const unsentResumeRunIds = runs.flatMap((run) =>
         run.startedAt === null && run.usageLimitContinuationOfRunId !== undefined ? [run.id] : [],
@@ -804,8 +868,23 @@ export const make = Effect.gen(function* () {
           },
         });
       }
+      // A run put back in the queue started nothing, so the note belongs to the run before it,
+      // which the recovery projection leaves out.
+      const startedRuns =
+        cancelledBackgroundWork.size === 0 || !retryableRuns.some((run) => run.status === "running")
+          ? projection.runs
+          : (yield* projections.getThreadRecords(projection.thread.id, ["runs"]).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new ProviderRuntimeRecoveryError({
+                    operation: "read-projections",
+                    threadId: projection.thread.id,
+                    cause,
+                  }),
+              ),
+            )).runs.filter((run) => !retryableRunIds.has(run.id));
       for (const [providerThreadId, work] of cancelledBackgroundWork) {
-        const noteRun = latestStartedRun(projection.runs, providerThreadId);
+        const noteRun = latestStartedRun(startedRuns, providerThreadId);
         if (noteRun === undefined) continue;
         // Use a separate event; stale run snapshots can overwrite intervening lifecycle changes.
         events.push({
