@@ -36,8 +36,10 @@ const SPAN_NAME = /^(?=.{1,128}$)[A-Za-z][\w.:#$-]*(?:\/[\w.:#$-]+)?(?: [A-Z]+)?
 const UNNAMED = "[unnamed]";
 const ERROR_NAME = /^[A-Za-z][A-Za-z0-9.]{0,63}$/;
 const TRACE_ID = /^[0-9a-f]{1,32}$/;
-// Ids and enums. A path, a URL or a sentence holds a separator or a space.
-const ATTRIBUTE_VALUE = /^[A-Za-z0-9][\w.:-]{0,127}$/;
+// Ids, which nest by percent-encoding, and enums. A path, a URL or a sentence holds a separator or
+// a space. What an id may carry is the process's own rule.
+const ATTRIBUTE_VALUE = /^[A-Za-z0-9][\w.:%-]{0,511}$/;
+const ATTRIBUTE_KEY = /^[a-z][\w.]{0,127}$/;
 // The frames end a stack; what precedes them is message text of any length.
 const STACK_MAX_CHARS = 64 * 1024;
 const FRAME_LINE = /^\s+at /;
@@ -95,13 +97,19 @@ export interface ErrorLogProgram {
   readonly file: string;
 }
 
+export interface ErrorLogAttributes {
+  readonly kept: Readonly<Record<string, unknown>>;
+  /** How many ids were left out because they carry more than generated parts. */
+  readonly omittedIds?: number;
+}
+
 export interface ErrorLogOptions {
   readonly directory: string;
   /** Each process writes its own files. */
   readonly process: "server" | "desktop";
   readonly clock: Clock.Clock;
   /** The allowlist: the recorded attributes this process may write. */
-  readonly attributes: (recorded: Readonly<Record<string, unknown>>) => Record<string, unknown>;
+  readonly attributes: (recorded: Readonly<Record<string, unknown>>) => ErrorLogAttributes;
   readonly files?: ErrorLogFiles;
   readonly program?: ErrorLogProgram;
 }
@@ -291,14 +299,18 @@ const describeLogged = (options: Logger.Options<unknown>, own: OwnLocation): Ent
   return { ...message, ...describeLoggedValue(annotations, own, 0) };
 };
 
-const writableAttributes = (attributes: Readonly<Record<string, unknown>>): Entry => {
-  const kept: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(attributes)) {
-    if (typeof value === "number" || typeof value === "boolean") kept[key] = value;
-    else if (typeof value === "bigint") kept[key] = String(value);
-    else if (typeof value === "string" && ATTRIBUTE_VALUE.test(value)) kept[key] = value;
+const writableAttributes = ({ kept, omittedIds = 0 }: ErrorLogAttributes): Entry => {
+  const written: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(kept)) {
+    if (!ATTRIBUTE_KEY.test(key)) continue;
+    if (typeof value === "number" || typeof value === "boolean") written[key] = value;
+    else if (typeof value === "bigint") written[key] = String(value);
+    else if (typeof value === "string" && ATTRIBUTE_VALUE.test(value)) written[key] = value;
   }
-  return Object.keys(kept).length === 0 ? {} : { attributes: kept };
+  return {
+    ...(Object.keys(written).length === 0 ? {} : { attributes: written }),
+    ...(omittedIds === 0 ? {} : { omittedIds }),
+  };
 };
 
 const describeSpan = (span: Tracer.AnySpan): Entry => ({

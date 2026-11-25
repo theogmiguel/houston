@@ -39,6 +39,8 @@ const SENSITIVE_PARTS = [
   "private_notes",
 ];
 
+const UUID = "0f8fad5b-d9cb-469f-a165-70867728950e";
+const RUN_ID = `run:thread:${UUID}:ordinal:1`;
 const BROKEN_STATEMENT = "SELECT status FROM runs WHERE id = ?";
 
 class SettleError extends Schema.TaggedError<SettleError>()("SettleError", {
@@ -120,7 +122,7 @@ describe("server error log", () => {
           Effect.annotateLogs({ "houston.job.name": "sweep" }),
           Effect.andThen(
             Effect.fail(new SettleError({ detail: "run", cause: "x" })).pipe(
-              Effect.withSpan("run.settle", { attributes: { "houston.run.id": "run-1" } }),
+              Effect.withSpan("run.settle", { attributes: { "houston.run.id": RUN_ID } }),
             ),
           ),
         ),
@@ -150,7 +152,7 @@ describe("server error log", () => {
             level: undefined,
             name: "run.settle",
             error: "SettleError",
-            attributes: { "houston.run.id": "run-1" },
+            attributes: { "houston.run.id": RUN_ID },
           },
         ],
       );
@@ -199,6 +201,37 @@ describe("server error log", () => {
       for (const part of SENSITIVE_PARTS) assert.notInclude(text, part);
       assert.notInclude(text, "db.query.text");
       assert.notInclude(text, "server.address");
+    }),
+  );
+
+  it.effect("leaves out an id that carries an agent's text, and says how many", () =>
+    Effect.gen(function* () {
+      const key = "acme-merger-layoffs-plan-for-alice";
+      const thread = `thread:mcp:${UUID}:${key}:0`;
+      const { entries, text } = yield* errorLogOf(
+        Effect.fail(new SettleError({ detail: "x", cause: "x" })).pipe(
+          Effect.withSpan("run.settle", {
+            attributes: {
+              "orchestration_v2.thread_id": thread,
+              "houston.thread.id": thread,
+              "orchestration_v2.command_id": `command:mcp:${UUID}:delegate-task:${key}`,
+              // A key no list names is held to the same rule.
+              "houston.future.label": "merger",
+              "houston.run.id": RUN_ID,
+              "houston.command.type": "thread.create",
+              "houston.run.queue_wait_ms": 12,
+            },
+          }),
+        ),
+      );
+
+      assert.deepStrictEqual(entries[0]?.attributes, {
+        "houston.run.id": RUN_ID,
+        "houston.command.type": "thread.create",
+        "houston.run.queue_wait_ms": 12,
+      });
+      assert.strictEqual(entries[0]?.omittedIds, 4);
+      assert.notInclude(text, "merger");
     }),
   );
 

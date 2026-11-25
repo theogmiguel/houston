@@ -1,5 +1,5 @@
 import { PRIMARY_LOCAL_ENVIRONMENT_ID } from "@houston-app/contracts";
-import { errorLogger, makeErrorLog } from "@houston-app/shared/errorLog";
+import { type ErrorLogAttributes, errorLogger, makeErrorLog } from "@houston-app/shared/errorLog";
 import {
   makeLocalFileTracer,
   makeTraceSink,
@@ -552,13 +552,14 @@ const ERROR_LOG_ATTRIBUTES: ReadonlyMap<string, RegExp> = new Map([
   ["runId", /^[0-9a-f]{12}$/],
 ]);
 
-const errorLogAttributes = (recorded: Readonly<Record<string, unknown>>): Record<string, unknown> =>
-  Object.fromEntries(
+const errorLogAttributes = (recorded: Readonly<Record<string, unknown>>): ErrorLogAttributes => ({
+  kept: Object.fromEntries(
     Object.entries(recorded).filter(
       ([key, value]) =>
         typeof value === "string" && ERROR_LOG_ATTRIBUTES.get(key)?.test(value) === true,
     ),
-  );
+  ),
+});
 
 const layerTelemetry = Layer.unwrap(
   Effect.gen(function* () {

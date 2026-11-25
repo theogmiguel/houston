@@ -119,7 +119,9 @@ const makeFiles = (initial: Record<string, string> = {}) => {
   };
 };
 
-const recordEverything = (recorded: Readonly<Record<string, unknown>>) => ({ ...recorded });
+const recordEverything = (recorded: Readonly<Record<string, unknown>>) => ({
+  kept: { ...recorded },
+});
 
 /** The tracer and logger as the server and the host compose them. */
 const makeHarness = Effect.fnUntraced(function* (
@@ -316,7 +318,10 @@ test("error log", (it) => {
       Effect.gen(function* () {
         yield* at(START);
         const memory = makeFiles();
-        const { run } = yield* makeHarness({ files: memory.files, attributes: () => ({}) });
+        const { run } = yield* makeHarness({
+          files: memory.files,
+          attributes: () => ({ kept: {} }),
+        });
 
         for (const text of SENSITIVE) {
           yield* run(
@@ -389,6 +394,33 @@ test("error log", (it) => {
         assert.notProperty(own, "droppedFrames");
         assert.deepStrictEqual(foreign?.frames, ["own (bin.mjs:2:3)"]);
         assert.strictEqual(foreign?.droppedFrames, 9);
+        assertNothingSensitive(memory.contents.get(TODAY) ?? "");
+      }),
+    );
+
+    it.effect("an attribute key that is not a code name is left out", () =>
+      Effect.gen(function* () {
+        yield* at(START);
+        const memory = makeFiles();
+        const { run } = yield* makeHarness({ files: memory.files });
+
+        yield* run(
+          fail("job.keys").pipe(
+            Effect.annotateSpans({
+              "houston./home/alice/x": 1,
+              "houston.secret-plan": 2,
+              "Houston.upper": 3,
+              [`houston.${"k".repeat(130)}`]: 4,
+              "houston.run.duration_ms": 5,
+              runId: "a",
+            }),
+          ),
+        );
+
+        assert.deepStrictEqual(memory.entries()[0]?.attributes, {
+          "houston.run.duration_ms": 5,
+          runId: "a",
+        });
         assertNothingSensitive(memory.contents.get(TODAY) ?? "");
       }),
     );
@@ -958,7 +990,7 @@ test("error log", (it) => {
           directory,
           process: "server",
           clock: yield* Clock.Clock,
-          attributes: () => ({}),
+          attributes: () => ({ kept: {} }),
         });
         const filePath = NodePath.join(directory, "server.trace.ndjson");
         const sink = yield* makeTraceSink({

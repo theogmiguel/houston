@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 
 import * as ServerConfig from "../../config.ts";
 import { applyCredentialRules, credentialRules } from "../redact.ts";
+import { isGeneratedId } from "./ErrorLogIds.ts";
 import { exportedRecord } from "./ExportRedaction.ts";
 
 /** Records nothing outside the server's observability layer, so only the server writes the files. */
@@ -24,16 +25,50 @@ const UNWRITTEN_KEYS: ReadonlySet<string> = new Set([
   "server.port",
   "url.scheme",
 ]);
+// Strings Houston's code or a closed schema supplies. Any other string must be a generated id.
+const ENUM_KEYS: ReadonlySet<string> = new Set([
+  "db.operation.name",
+  "db.system.name",
+  "effect.logLevel",
+  "houston.client.kind",
+  "houston.command.type",
+  "houston.effect.type",
+  "houston.error.tag",
+  "houston.job.name",
+  "houston.model",
+  "houston.outcome",
+  "houston.provider",
+  "houston.run.status",
+  "http.request.method",
+  "orchestration_v2.command_type",
+  "orchestration_v2.source_point_type",
+  "rpc.aggregate",
+  "rpc.method",
+  "rpc.system",
+  "rpc.system.name",
+  "rpc.transport",
+]);
 const SECRETS = credentialRules("[redacted]");
 
-const isWritten = (key: string, value: unknown) =>
-  !UNWRITTEN_KEYS.has(key) &&
-  (typeof value !== "string" || applyCredentialRules(value, SECRETS) === value);
-
-const writtenAttributes = (recorded: Readonly<Record<string, unknown>>): Record<string, unknown> =>
-  Object.fromEntries(
-    Object.entries(exportedRecord(recorded)).filter(([key, value]) => isWritten(key, value)),
-  );
+const writtenAttributes = (
+  recorded: Readonly<Record<string, unknown>>,
+): SharedErrorLog.ErrorLogAttributes => {
+  const kept: Record<string, unknown> = {};
+  let omittedIds = 0;
+  for (const [key, value] of Object.entries(exportedRecord(recorded))) {
+    if (UNWRITTEN_KEYS.has(key)) continue;
+    if (typeof value === "string") {
+      if (ENUM_KEYS.has(key)) {
+        if (applyCredentialRules(value, SECRETS) !== value) continue;
+      } else if (!isGeneratedId(value)) {
+        omittedIds += 1;
+        continue;
+      }
+    }
+    kept[key] = value;
+  }
+  return { kept, omittedIds };
+};
 
 export const make = Effect.gen(function* () {
   const { logsDir } = yield* ServerConfig.ServerConfig;
