@@ -73,12 +73,15 @@ The server and the desktop app each keep a small error log, so that a failure ca
 diagnosed after the trace file has rotated. It is always on. Houston never sends it anywhere; a
 triage agent you start can read the logs folder, under its provider's own terms.
 
-An entry holds the time, the name of the operation that failed and how long it took, the type of
-the error, and the code locations (function, file name and line) that lie in Houston's own program
-files or in Node.js; other locations are only counted. It also holds short values from a fixed list
-of fields: ids assigned by Houston or by an agent's provider, kinds and outcomes, HTTP methods and
-status codes, and numbers. It holds no log or error messages, paths, URLs, prompts, agent
-responses, file contents, SQL statements or credentials.
+An entry holds the time, the log level, the name of the operation that failed and how long it took,
+its trace ids, the type of the error or of the value logged with it, and the code locations
+(function, file name, line and column) that lie in Houston's own program files or in Node.js; other
+locations are only counted. It also holds fields under fixed names and prefixes: numbers, booleans, kinds and
+outcomes that code or a standard defines, and identifiers whose every part is a random id, a digest,
+a number or one of Houston's own fixed words. An identifier that contains anything else, such as a
+key an agent chose or a name you gave a provider instance, is left out, and the entry counts it.
+It holds no log or error messages, paths, URLs, prompts, agent responses, file contents, SQL
+statements or credentials.
 
 The files are `server.errors-<date>.ndjson` and `desktop.errors-<date>.ndjson` in the
 `userdata/logs` folder of the server's state directory (`~/.houston/v2/userdata/logs` for the
