@@ -50,6 +50,19 @@ describe("generated ids", () => {
     ],
     ["a launch step", `${UUID}:progress:worktree`],
     ["a task review thread", `task-review-${UUID}`],
+    ["a task run thread", `task-${UUID}`],
+    [
+      "a task run thread's run",
+      derive.run({ threadId: ThreadId.make(`task-${UUID}`), ordinal: 1 }),
+    ],
+    ["a remote delegation's request", `delegate:${UUID}:${OTHER}`],
+    ["a forced stop", `server:force-stop:${RUN}:1731975000000`],
+    ["a sent review's message", `side-${RUN}`],
+    ["a checkpoint scope", `checkpoint-scope:thread:${UUID}:name:root`],
+    [
+      "a context handoff",
+      `context-handoff:thread:${UUID}:from-provider-instance:codex:to-provider-instance:claudeAgent:${OTHER}`,
+    ],
     ["a task run command", "houston-task-run:12:stop"],
     ["a merge queue thread", `merge-queue-${UUID}`],
     ["a scheduled fire", `scheduled-task:${UUID}:1731975000000:manual`],
@@ -89,6 +102,14 @@ describe("generated ids", () => {
       "a list of listed words past the length bound",
       Array.from({ length: 200 }, () => "thread").join(":"),
     ],
+    [
+      "a runtime reconcile, which carries a time",
+      `command:runtime-reconcile:startup:${UUID}:2031-03-10T12:00:00.000Z`,
+    ],
+    [
+      "a handoff to a user-named provider instance",
+      `context-handoff:thread:${UUID}:from-provider-instance:codex:to-provider-instance:acme_work:${OTHER}`,
+    ],
     ["an empty segment", `thread::${UUID}`],
     ["an empty value", ""],
     ["an over-long number", `thread:${"1".repeat(30)}`],
@@ -96,7 +117,7 @@ describe("generated ids", () => {
     assert.isFalse(isGeneratedId(id), id);
   });
 
-  it("every fixed word the id allocator joins is listed", () => {
+  it("the ids derived by the allocator are written", () => {
     // A value stands in for each part a caller passes; what is left is the allocator's own words.
     const run = RunId.make("1");
     const command = CommandId.make("1");

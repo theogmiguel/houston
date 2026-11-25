@@ -76,12 +76,12 @@ triage agent you start can read the logs folder, under its provider's own terms.
 An entry holds the time, the log level, the name of the operation that failed and how long it took,
 its trace ids, the type of the error or of the value logged with it, and the code locations
 (function, file name, line and column) that lie in Houston's own program files or in Node.js; other
-locations are only counted. It also holds fields under fixed names and prefixes: numbers, booleans, kinds and
-outcomes that code or a standard defines, and identifiers whose every part is a random id, a digest,
-a number or one of Houston's own fixed words. An identifier that contains anything else, such as a
-key an agent chose or a name you gave a provider instance, is left out, and the entry counts it.
-It holds no log or error messages, paths, URLs, prompts, agent responses, file contents, SQL
-statements or credentials.
+locations are only counted. It also holds fields under fixed names and prefixes: numbers,
+booleans, kinds and outcomes that code or a standard defines, and identifiers whose every part has
+the form of a random id, a digest or a number, or is one of Houston's own fixed words. An identifier
+that contains anything else, such as a key an agent worded or a name you gave a provider instance,
+is left out, and the entry counts it. It holds no log or error messages, paths, URLs, prompts, agent
+responses, file contents, SQL statements or credentials.
 
 The files are `server.errors-<date>.ndjson` and `desktop.errors-<date>.ndjson` in the
 `userdata/logs` folder of the server's state directory (`~/.houston/v2/userdata/logs` for the
