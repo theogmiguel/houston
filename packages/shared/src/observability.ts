@@ -178,6 +178,8 @@ export interface LocalFileTracerOptions extends TraceSinkOptions {
   readonly sink?: TraceSink;
   /** Whether an ended span is written to the file. The delegate (export) gets every span. */
   readonly record?: (record: EffectTraceRecord) => boolean;
+  /** Called as a sampled span ends with a failure that is not only an interruption. */
+  readonly onFailure?: (span: Tracer.Span, cause: Cause.Cause<unknown>) => void;
 }
 
 type OtlpSpan = OtlpTracer.ScopeSpan["spans"][number];
@@ -626,14 +628,17 @@ class LocalFileSpan implements Tracer.Span {
   events: Array<[name: string, startTime: bigint, attributes: Record<string, unknown>]>;
   private readonly delegate: Tracer.Span;
   private readonly push: (record: EffectTraceRecord) => void;
+  private readonly onFailure: LocalFileTracerOptions["onFailure"];
 
   constructor(
     options: Parameters<Tracer.Tracer["span"]>[0],
     delegate: Tracer.Span,
     push: (record: EffectTraceRecord) => void,
+    onFailure: LocalFileTracerOptions["onFailure"],
   ) {
     this.delegate = delegate;
     this.push = push;
+    this.onFailure = onFailure;
     this.name = delegate.name;
     this.spanId = delegate.spanId;
     this.traceId = delegate.traceId;
@@ -659,6 +664,10 @@ class LocalFileSpan implements Tracer.Span {
       endTime,
       exit: traceExit,
     };
+    // First: printing a cause that cannot be read throws below.
+    if (this.sampled && ExitRuntime.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) {
+      this.onFailure?.(this, exit.cause);
+    }
     this.delegate.end(endTime, redactExitCredentials(traceExit));
 
     if (this.sampled) {
@@ -719,7 +728,7 @@ export const makeLocalFileTracer = Effect.fn("makeLocalFileTracer")(function* (
         };
   return Tracer.make({
     span(spanOptions) {
-      return new LocalFileSpan(spanOptions, delegate.span(spanOptions), push);
+      return new LocalFileSpan(spanOptions, delegate.span(spanOptions), push, options.onFailure);
     },
     ...(delegate.context ? { context: delegate.context } : {}),
   });

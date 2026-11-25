@@ -21,6 +21,7 @@ import {
   type TerminalMetadataStreamEvent,
   type TerminalSummary,
 } from "@houston-app/contracts";
+import { errorLogFileName } from "@houston-app/shared/errorLog";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as ServerConfig from "./config.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
@@ -2635,7 +2636,9 @@ describe("storage cleanup reports and local file policies", () => {
           yield* fs.writeFileString(file, "capture");
           yield* fs.utimes(file, 1, 1);
         }
-        for (const name of ["server.log.1", "server.log.2", "server.log"]) {
+        // Error logs remove themselves; the rotated-logs setting does not shorten their week.
+        const errorLog = errorLogFileName("server", "1970-01-01");
+        for (const name of ["server.log.1", "server.log.2", "server.log", errorLog]) {
           const file = config.logsDir + "/" + name;
           yield* fs.writeFileString(file, "log");
           yield* fs.utimes(file, 1, 1);
@@ -2662,6 +2665,7 @@ describe("storage cleanup reports and local file policies", () => {
         expect(yield* fs.exists(config.logsDir + "/server.log")).toBe(true);
         expect(yield* fs.exists(config.logsDir + "/server.log.1")).toBe(false);
         expect(yield* fs.exists(config.logsDir + "/server.log.2")).toBe(false);
+        expect(yield* fs.exists(`${config.logsDir}/${errorLog}`)).toBe(true);
       }),
     ),
   );
