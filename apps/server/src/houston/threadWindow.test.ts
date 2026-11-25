@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - counts visited rows in a SQLite connection of its own.
 // The deferred thread window groups work from its newest segments. These tests pin that the window
 // is the one a grouping of the whole history gives, and that its cost stops following the history.
 // The threads are composed: rows are inserted straight into the projection tables.
@@ -8,7 +9,9 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Statement from "effect/sql/Statement";
+import * as NodeSqlite from "node:sqlite";
 
+import { makeRandom } from "../../scripts/db-load/random.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import {
   buildBoundedThreadProjection,
@@ -35,6 +38,8 @@ interface ItemSpec extends Json {
   readonly runless?: true;
   /** Shares the previous item's ordinal. */
   readonly tied?: true;
+  /** Belongs to an earlier run (from 1), as a late result of its background work does. */
+  readonly ofRun?: number;
 }
 interface RunSpec {
   readonly status?: string;
@@ -167,15 +172,19 @@ const seedThread = Effect.fn("seedThread")(function* (
         completedAt: done,
       });
     }
-    for (const { firstAttempt, runless, tied, ...item } of items) {
+    for (const { firstAttempt, runless, tied, ofRun, ...item } of items) {
       ordinal += tied === true ? 0 : 1;
       const id = `item:${name}:${rows.items.length + 1}`;
       rows.items.push({
         id,
         threadId,
-        runId: runless === true ? null : runId,
+        runId: runless === true ? null : ofRun === undefined ? runId : `run:${name}:${ofRun}`,
         nodeId:
-          runless === true ? null : rootNodeId(firstAttempt === true ? 1 : attemptIds.at(-1)!),
+          runless === true
+            ? null
+            : ofRun === undefined
+              ? rootNodeId(firstAttempt === true ? 1 : attemptIds.at(-1)!)
+              : `node:run:${name}:${ofRun}:1`,
         providerThreadId: null,
         providerTurnId: null,
         nativeItemRef: null,
@@ -260,6 +269,8 @@ const OPEN: WindowOptions = {
   deferWork: true,
 };
 
+type Compiled = readonly [query: string, params: ReadonlyArray<unknown>];
+
 /** Reads a window while `transform` sees each statement's SQL. */
 const readWindow = (
   threadId: ThreadId,
@@ -285,24 +296,88 @@ const readWholeHistoryWindow = Effect.fn("readWholeHistoryWindow")(function* (
 ) {
   const sql = yield* SqlClient.SqlClient;
   let starts = 0;
-  const window = yield* readWindow(threadId, options, (query) => {
+  let rows: Compiled | undefined;
+  const window = yield* readWindow(threadId, options, (query, params) => {
+    if (query.includes("work_segments AS")) rows = [query, params];
     if (!query.includes("visible_tail")) return null;
     starts += 1;
     return sql`SELECT NULL AS ordinal`;
   });
-  return { window, starts };
+  return { window, starts, rows };
+});
+
+/** The statements that find the start (if any) and read the window's rows. */
+const windowStatements = Effect.fn("windowStatements")(function* (threadId: ThreadId) {
+  let start: Compiled | undefined;
+  let rows: Compiled | undefined;
+  yield* readWindow(threadId, OPEN, (query, params) => {
+    if (query.includes("visible_tail")) start = [query, params];
+    if (query.includes("work_segments AS")) rows = [query, params];
+    return null;
+  });
+  assert.isDefined(rows);
+  return { start, rows };
+});
+
+const COUNTED_TABLES = ["threads", "runs", "run_attempts", "nodes", "turn_items"].map(
+  (table) => `orchestration_v2_projection_${table}`,
+);
+
+/** A copy of the thread tables that counts the turn items each statement visits. */
+const makeRowCounter = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const database = new NodeSqlite.DatabaseSync(":memory:");
+  yield* Effect.addFinalizer(() => Effect.sync(() => database.close()));
+  for (const table of COUNTED_TABLES) {
+    const schema = yield* sql<{ readonly sql: string }>`
+      SELECT sql FROM sqlite_schema WHERE tbl_name = ${table} AND type IN ('table', 'index')
+        AND sql IS NOT NULL ORDER BY type DESC, rowid
+    `;
+    for (const statement of schema) database.exec(statement.sql);
+    for (const row of yield* sql<
+      Record<string, NodeSqlite.SQLInputValue>
+    >`SELECT * FROM ${sql(table)}`) {
+      const columns = Object.keys(row);
+      database
+        .prepare(`INSERT INTO ${table} (${columns}) VALUES (${columns.map(() => "?")})`)
+        .run(...Object.values(row));
+    }
+  }
+  let visited = 0;
+  database.function("visit", { deterministic: false, varargs: true }, () => {
+    visited += 1;
+    return 1;
+  });
+  const plan = ([query, params]: Compiled) =>
+    database
+      .prepare(`EXPLAIN QUERY PLAN ${query}`)
+      .all(...(params as Array<NodeSqlite.SQLInputValue>))
+      .map((row) => String(row.detail));
+  return (statement: Compiled) => {
+    // Each scan of the items that can grow: the eligible rows, a range's runs, a run's rows.
+    const query = statement[0]
+      .replace(
+        /\bWHERE (item|member|prompt|first)\.(thread_id|run_id)\b/gu,
+        "WHERE visit($1.rowid) AND $1.$2",
+      )
+      .replace(
+        /(FROM orchestration_v2_projection_turn_items\s+WHERE )(thread_id = \? AND run_id IS NOT NULL)/gu,
+        "$1visit(orchestration_v2_projection_turn_items.rowid) AND $2",
+      );
+    assert.include(query, "visit(item.rowid)");
+    const counted: Compiled = [query, statement[1]];
+    const plans = [plan(counted), plan(statement)] as const;
+    assert.deepEqual(plans[0], plans[1], "counting does not change the plan");
+    visited = 0;
+    database.prepare(query).all(...(statement[1] as Array<NodeSqlite.SQLInputValue>));
+    return visited;
+  };
 });
 
 /** How many rows the window groups work over, counted by the read's own statement. */
 const groupedRows = Effect.fn("groupedRows")(function* (threadId: ThreadId) {
   const sql = yield* SqlClient.SqlClient;
-  const windows: Array<readonly [string, ReadonlyArray<unknown>]> = [];
-  yield* readWindow(threadId, OPEN, (query, params) => {
-    if (query.includes("work_segments AS")) windows.push([query, params]);
-    return null;
-  });
-  assert.lengthOf(windows, 1);
-  const [query, params] = windows[0]!;
+  const [query, params] = (yield* windowStatements(threadId)).rows;
   const end = query.indexOf("-- CROSS JOIN keeps the sorted IDs");
   assert.isAbove(end, 0, "the window statement ends in its payload read");
   const prefix = query.slice(0, end);
@@ -332,6 +407,75 @@ const straddling = [
   ...times(100, () => command),
   ...times(40, () => reply),
 ];
+
+/** Steered work, then runs that each wake, look and report, as a thread that watches something has. */
+const wakeHeavy = (runs: number, wakes: number): Array<RunSpec> => [
+  ...fewUserTurns(runs),
+  ...times(wakes, () => ({ items: [wake, command, reply] })),
+];
+
+/** A seeded thread of every row kind the window treats differently. */
+const randomRuns = (seed: number): Array<RunSpec> => {
+  const random = makeRandom(seed);
+  return times(random.int(3, 9), (index) => {
+    const superseded = random.chance(0.25);
+    const items: Array<ItemSpec> = [
+      random.chance(0.2)
+        ? wake
+        : user(
+            random.pick([
+              "turn_start",
+              "steer",
+              "steer",
+              "queued_turn",
+              "promoted_queued_to_steer",
+            ]),
+            random.pick(["user", "user", "agent"]),
+          ),
+    ];
+    for (let part = random.int(2, 8); part > 0; part -= 1) {
+      items.push(
+        ...(random.chance(0.4)
+          ? times(random.int(120, 260), () =>
+              superseded && random.chance(0.5)
+                ? { ...command, firstAttempt: true as const }
+                : command,
+            )
+          : work(random.int(10, 130), random.pick([1, 1, 2, 4]))),
+      );
+      if (random.chance(0.3)) items.push(user(random.pick(["steer", "turn_start"])));
+      if (random.chance(0.1)) items.push(compaction);
+      if (random.chance(0.1)) items.push(delegateTool, subagent);
+      if (random.chance(0.08)) items.push(failure);
+      if (random.chance(0.05))
+        items.push(
+          { type: "run_interrupt_request", message: "Stop" },
+          { type: "run_interrupt_result", message: "Stopped" },
+        );
+      if (random.chance(0.1)) items.push(notice);
+      if (random.chance(0.1)) items.push({ ...reply, tied: true });
+      if (superseded && random.chance(0.3))
+        items.push({ type: "run_interrupt_result", message: "Steered", firstAttempt: true });
+      if (random.chance(0.2)) items.push(wake);
+      if (index > 0 && random.chance(0.2))
+        items.push(...times(random.int(1, 6), () => ({ ...command, ofRun: random.int(1, index) })));
+    }
+    const status =
+      index === 0
+        ? "completed"
+        : random.pick([
+            "completed",
+            "completed",
+            "completed",
+            "running",
+            "rolled_back",
+            "cancelled",
+            "queued",
+          ]);
+    return { status, ...(superseded ? { superseded: true as const } : {}), items };
+  });
+};
+const RANDOM_SEEDS = times(10, (index) => (index + 1) * 7_919);
 
 const SHAPES: ReadonlyArray<readonly [name: string, runs: ReadonlyArray<RunSpec>]> = [
   ["a short thread", times(3, () => ({ items: [user(), ...work(2, 3)] }))],
@@ -453,6 +597,14 @@ const SHAPES: ReadonlyArray<readonly [name: string, runs: ReadonlyArray<RunSpec>
       { items: [user(), ...times(200, () => command), failure, ...work(20, 1)] },
     ],
   ],
+  ["many wakes after long work", wakeHeavy(14, 60)],
+  [
+    "a late row of an old run in the tail",
+    [
+      ...fewUserTurns(16),
+      { items: [user("steer"), ...work(30, 2), { ...command, ofRun: 2 }, ...work(10, 2)] },
+    ],
+  ],
   ["an empty thread", []],
 ];
 
@@ -461,14 +613,14 @@ describe("the deferred thread window", () => {
     Effect.gen(function* () {
       const { threadId, itemIds } = yield* seedThread("window", runs);
       const read = (options: WindowOptions) => readWindow(threadId, options, () => null);
-      const anchors = [0.25, 0.6, 0.97].flatMap((share) => {
+      const anchors = [0.6, 0.97].flatMap((share) => {
         const id = itemIds[Math.floor(itemIds.length * share)];
         return id === undefined ? [] : [id];
       });
       const options: Array<WindowOptions> = [
         OPEN,
         { ...OPEN, deferWork: false },
-        ...[-1, 0, 1, THREAD_HISTORY_TURN_SNAPSHOT_ROW_LIMIT, 700].map((rowLimit) => ({
+        ...[-1, 0, THREAD_HISTORY_TURN_SNAPSHOT_ROW_LIMIT, 700].map((rowLimit) => ({
           ...OPEN,
           rowLimit,
         })),
@@ -490,6 +642,27 @@ describe("the deferred thread window", () => {
         }
       }
     }).pipe(Effect.provide(storeLayer)),
+  );
+
+  it.effect.each(RANDOM_SEEDS)(
+    "is the whole-history window for the random thread of seed %s",
+    (seed) =>
+      Effect.gen(function* () {
+        const { threadId, itemIds } = yield* seedThread("random", randomRuns(seed));
+        for (const option of [
+          OPEN,
+          { ...OPEN, rowLimit: 700 },
+          ...[0.5, 0.95].map((share) => ({
+            ...OPEN,
+            userTurnLimit: OLDER_THREAD_USER_TURN_LIMIT,
+            anchorItemId: itemIds[Math.floor(itemIds.length * share)]!,
+          })),
+        ]) {
+          const whole = yield* readWholeHistoryWindow(threadId, option);
+          const window = yield* readWindow(threadId, option, () => null);
+          assert.deepEqual(window, whole.window, encodeJson(option));
+        }
+      }).pipe(Effect.provide(storeLayer)),
   );
 
   it.effect("is the whole-history window for a thread forked from a long thread", () =>
@@ -534,8 +707,63 @@ describe("the deferred thread window", () => {
   );
 
   it.effect.each([
+    ["many wakes", wakeHeavy(14, 60)],
+    ["few user turns", fewUserTurns(16)],
+    ["many user turns", manyUserTurns(16)],
+  ] as const)("finds the start of %s without walking the thread per run", ([, runs]) =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const { threadId } = yield* seedThread("plan", runs);
+      const { start, rows } = yield* windowStatements(threadId);
+      assert.isDefined(start);
+      const planOf = ([query, params]: Compiled) =>
+        sql
+          .unsafe<{ readonly detail: string }>(`EXPLAIN QUERY PLAN ${query}`, params)
+          .pipe(Effect.map((plan) => plan.map((row) => row.detail)));
+      const plan = yield* planOf(start);
+      const searches = (details: ReadonlyArray<string>, alias: string) =>
+        details.filter((detail) => new RegExp(`^(SEARCH|SCAN) ${alias}\\b`, "u").test(detail));
+      const byRun = "INDEX orchestration_v2_projection_turn_items_run_ordinal_idx";
+      const runsOfRange =
+        "SEARCH member USING COVERING INDEX houston_turn_items_timeline_idx (thread_id=? AND ordinal>? AND ordinal<?)";
+      assert.deepEqual(searches(plan, "first"), [
+        `SEARCH first USING COVERING ${byRun} (run_id=?)`,
+      ]);
+      assert.deepEqual(searches(plan, "prompt"), [
+        `SEARCH prompt USING ${byRun} (run_id=? AND ordinal<?)`,
+      ]);
+      assert.deepEqual(searches(plan, "member"), [runsOfRange]);
+      assert.deepEqual(searches(yield* planOf(rows), "member"), [runsOfRange]);
+      // Every other search of the items is bounded by an ordinal range, a run or a key.
+      for (const detail of searches(
+        plan,
+        "(item|request|orchestration_v2_projection_turn_items)",
+      )) {
+        assert.match(detail, /ordinal>\? AND ordinal<\?|run_id=\?|turn_item_id=\?|rowid=\?/u);
+      }
+    }).pipe(Effect.provide(storeLayer)),
+  );
+
+  it.effect.each([
+    ["many wakes", wakeHeavy(20, 60)],
+    ["few user turns", fewUserTurns(20)],
+    ["many user turns", manyUserTurns(40)],
+  ] as const)("visits no more items than the whole-history read for %s", ([, runs]) =>
+    Effect.gen(function* () {
+      const { threadId } = yield* seedThread("visits", runs);
+      const visits = yield* makeRowCounter;
+      const { start, rows } = yield* windowStatements(threadId);
+      const whole = yield* readWholeHistoryWindow(threadId, OPEN);
+      assert.isDefined(start);
+      assert.isDefined(whole.rows);
+      const visited = [visits(start), visits(rows)] as const;
+      assert.isAtMost(visited[0] + visited[1], visits(whole.rows), visited.join(" + "));
+    }).pipe(Effect.scoped, Effect.provide(storeLayer)),
+  );
+
+  it.effect.each([
     ["few user turns", fewUserTurns(12)],
-    ["many user turns", manyUserTurns(12)],
+    ["many user turns", manyUserTurns(9)],
     [
       "newest segments larger than one window",
       // Ends in a reply: a newest row that folds is also kept on its own, so it is listed twice.

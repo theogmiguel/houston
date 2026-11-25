@@ -2895,6 +2895,16 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       threadId: ThreadId,
       window: ProjectionWindow,
     ) {
+      const lastOrdinal = sql`COALESCE(
+                      (
+                        SELECT ordinal
+                        FROM orchestration_v2_projection_turn_items
+                        WHERE thread_id = ${threadId}
+                          AND turn_item_id = ${window.anchorItemId ?? null}
+                        LIMIT 1
+                      ),
+                      9223372036854775807
+                    )`;
       const eligible = sql`
                 WITH eligible AS NOT MATERIALIZED (
                   SELECT item.rowid AS item_rowid, item.payload_json, item.ordinal, item.turn_item_id,
@@ -2912,16 +2922,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                       ORDER BY attempt_ordinal DESC LIMIT 1
                     )
                   WHERE item.thread_id = ${threadId}
-                    AND item.ordinal <= COALESCE(
-                      (
-                        SELECT ordinal
-                        FROM orchestration_v2_projection_turn_items
-                        WHERE thread_id = ${threadId}
-                          AND turn_item_id = ${window.anchorItemId ?? null}
-                        LIMIT 1
-                      ),
-                      9223372036854775807
-                    )
+                    AND item.ordinal <= ${lastOrdinal}
                     AND (
                       ${window.requiredRunId ?? null} IS NOT NULL
                       OR (
@@ -3057,22 +3058,28 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 ), tail AS (
                   SELECT MIN(ordinal) AS ordinal FROM visible_tail HAVING COUNT(*) >= ${tailRows}
                 ), tail_runs AS (
-                  SELECT DISTINCT item.run_id
-                  FROM tail CROSS JOIN eligible AS item
-                  WHERE item.ordinal >= tail.ordinal AND item.run_id IS NOT NULL
+                  -- A run whose rows are all ineligible only lowers the start, so this reads the index alone.
+                  SELECT DISTINCT member.run_id
+                  FROM tail CROSS JOIN orchestration_v2_projection_turn_items AS member
+                  WHERE member.thread_id = ${threadId} AND member.ordinal >= tail.ordinal
+                    AND member.ordinal <= ${lastOrdinal} AND member.run_id IS NOT NULL
                 )
                 -- A run without a segment start there (a wake) is taken from its first row. Rows
-                -- without a run have no start, so no start may lie above the tail.
+                -- without a run have no start, so no start may lie above the tail. Both lookups
+                -- go by run: with a thread term SQLite walks the thread's index once per run.
                 SELECT MIN(MIN(COALESCE(
                   (
                     SELECT start.ordinal FROM eligible AS start
-                    WHERE start.run_id = tail_runs.run_id AND start.type = 'user_message'
-                      AND start.ordinal <= tail.ordinal
-                    ORDER BY start.ordinal DESC LIMIT 1
+                    WHERE start.item_rowid = (
+                      SELECT prompt.rowid FROM orchestration_v2_projection_turn_items AS prompt
+                      WHERE prompt.run_id = tail_runs.run_id AND prompt.type = 'user_message'
+                        AND prompt.ordinal <= tail.ordinal
+                      ORDER BY prompt.ordinal DESC LIMIT 1
+                    )
                   ),
                   (
                     SELECT MIN(first.ordinal) FROM orchestration_v2_projection_turn_items AS first
-                    WHERE first.thread_id = ${threadId} AND first.run_id = tail_runs.run_id
+                    WHERE first.run_id = tail_runs.run_id
                   ),
                   tail.ordinal
                 ), tail.ordinal)) AS ordinal
@@ -3085,9 +3092,12 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   SELECT DISTINCT run_id FROM orchestration_v2_projection_turn_items
                   WHERE thread_id = ${threadId} AND run_id IS NOT NULL
                     AND ${window.deferWork ? 1 : 0} = 1
+                    -- Only the runs of grouped rows are asked about, so more runs than those change
+                    -- nothing, and the index alone names them.
                     AND run_id IN (
-                      SELECT run_id FROM eligible
-                      WHERE ordinal >= ${workStart} AND run_id IS NOT NULL
+                      SELECT member.run_id FROM orchestration_v2_projection_turn_items AS member
+                      WHERE member.thread_id = ${threadId} AND member.ordinal >= ${workStart}
+                        AND member.ordinal <= ${lastOrdinal} AND member.run_id IS NOT NULL
                     )
                     AND (type IN ('run_interrupt_request', 'run_interrupt_result')
                       OR (type = 'error' AND status = 'failed' AND parent_item_id IS NULL))
