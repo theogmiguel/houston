@@ -46,6 +46,7 @@ import {
   MessageDeliveryQueueHoldReason,
 } from "./houston/messageDelivery.ts";
 import { HoustonBlockingBackgroundWork } from "./houston/backgroundWork.ts";
+import { HoustonProviderTurnCompaction } from "./houston/contextWindow.ts";
 import { HoustonSideThread, makeHoustonSideThreadCommands } from "./houston/sideThreads.ts";
 import { HoustonMergeQueueNotifyCommand } from "./houston/mergeQueue.ts";
 import { RuntimeRequestAnsweredBy } from "./houston/runtimeRequestAuthor.ts";
@@ -231,6 +232,7 @@ export const OrchestrationV2ProviderTurnTokenUsage = Schema.Struct({
   reasoningOutputTokens: Schema.optional(NonNegativeInt),
   promptCacheTtlMs: Schema.optional(PositiveInt),
   autoCompactThreshold: Schema.optional(PositiveInt),
+  ...HoustonProviderTurnCompaction.fields,
   promptCacheExpiresAt: Schema.optional(Schema.String),
   updatedAt: Schema.String,
 });
@@ -295,6 +297,9 @@ export const OrchestrationV2TurnCapabilities = Schema.Struct({
   activeSteeringInterruptsTools: Schema.optional(Schema.Boolean),
   // Some take text only, so a steer with attachments restarts the turn instead.
   activeSteeringAcceptsAttachments: Schema.optional(Schema.Boolean),
+  // Only where a steer leaves the provider's compaction inside a turn running; otherwise clients
+  // queue the follow-up until the turn ends.
+  activeSteeringDuringCompaction: Schema.optional(Schema.Boolean),
   supportsSteeringByInterruptRestart: Schema.Boolean,
   supportsQueuedMessages: Schema.Boolean,
   terminalStatusQuality: Schema.Literals(["strong", "weak", "none"]),

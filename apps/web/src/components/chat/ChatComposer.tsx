@@ -460,7 +460,8 @@ export interface ChatComposerProps {
   isRevertingCheckpoint?: boolean;
   sendDisabledReason: string | null;
   isPreparingWorktree: boolean;
-  isCompacting: boolean;
+  /** False while a compaction cannot take a steer, so a follow-up queues behind it. */
+  canSteer: boolean;
   bannerItems: readonly ComposerBannerStackItem[];
   resumeCompactionTokens: number | null;
   keepFullHistory: boolean;
@@ -633,7 +634,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isRevertingCheckpoint = false,
     sendDisabledReason: externalSendDisabledReason,
     isPreparingWorktree,
-    isCompacting,
+    canSteer,
     environmentUnavailable,
     activePendingApproval: incomingPendingApproval,
     pendingApprovals,
@@ -1331,7 +1332,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       running: phase === "running",
       alternateModifier,
       activeTurnDefault: followUpBehavior,
-      canSteer: !isCompacting,
+      canSteer,
       providerSupportsActiveSteering: canSteerActiveRun,
     });
     if (dispatch.queuedBecauseProviderCannotSteer) {
@@ -4219,7 +4220,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     canInterrupt={canInterrupt}
                     interruptPending={interruptPending}
                     followUpBehavior={followUpBehavior}
-                    canSteer={!isCompacting && canSteerActiveRun}
+                    canSteer={canSteer && canSteerActiveRun}
                     alternateShortcutLabel={shortcutLabelForCommand(
                       keybindings,
                       "composer.sendAlternate",

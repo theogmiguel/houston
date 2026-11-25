@@ -31,6 +31,7 @@ import {
   type CommandId,
   type EnvironmentId,
   isCompactCommandText,
+  isCompactionCommandMessage,
   isProviderDriverKind,
   ProjectId,
   type MessageId,
@@ -1268,6 +1269,30 @@ export function formatOutgoingPrompt(params: {
   const caps = getProviderModelCapabilities(params.models, params.model, params.provider);
   const promptEffort = resolvePromptInjectedEffort(caps, params.effort);
   return applyClaudePromptEffortPrefix(params.text, promptEffort);
+}
+
+type CompactionCommandFields = Parameters<typeof isCompactionCommandMessage>[0];
+
+/**
+ * A follow-up always queues behind a run that is itself a compaction, the run the server refuses
+ * to steer. A provider's compaction inside any other run takes a steer only where the provider
+ * declares that the steer leaves the compaction running.
+ */
+export function compactionBlocksSteering(input: {
+  readonly activeRunId: RunId | null;
+  readonly runs: ReadonlyArray<{ readonly id: RunId; readonly userMessageId: MessageId }>;
+  readonly messages: ReadonlyArray<CompactionCommandFields & { readonly id: MessageId }>;
+  /** The message a send in flight carries before the server starts its run. */
+  readonly sending: CompactionCommandFields | null;
+  /** The provider is compacting inside the active run. */
+  readonly compactionRunning: boolean;
+  readonly steersDuringCompaction: boolean;
+}): boolean {
+  if (input.sending !== null && isCompactionCommandMessage(input.sending)) return true;
+  const run = input.runs.find((candidate) => candidate.id === input.activeRunId);
+  const prompt = input.messages.find((message) => message.id === run?.userMessageId);
+  if (prompt !== undefined && isCompactionCommandMessage(prompt)) return true;
+  return input.compactionRunning && !input.steersDuringCompaction;
 }
 
 export function isCompactCommandMessage(message: ChatMessage): boolean {
