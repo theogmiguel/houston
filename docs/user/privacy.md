@@ -70,15 +70,20 @@ sent with only the headers its own variables give: Houston never adds the stored
 ## The error log on this machine
 
 The server and the desktop app each keep a small error log, so that a failure can still be
-diagnosed after the trace file has rotated. It is always on and never leaves the machine. An entry
-holds the time, the name of the operation that failed, the kind of error, where in Houston's code
-it happened (function, file name and line), Houston's own ids and the operation's duration. It
-holds no log or error messages, paths, URLs, prompts, agent responses, file contents, SQL
-statements or credentials.
+diagnosed after the trace file has rotated. It is always on. Houston never sends it anywhere; a
+triage agent you start can read the logs folder, under its provider's own terms.
 
-The files are `server.errors-<date>.ndjson` and `desktop.errors-<date>.ndjson` in the `userdata/logs`
-folder of the server's state directory (`~/.houston/v2/userdata/logs` for the installed release; a
-WSL server keeps its own inside the distribution). Houston keeps today's file and the seven before
-it, in UTC days, and writes at most 2 MiB per file. Older files are removed when Houston starts and
-when a later day's first failure is recorded; the **rotated logs** storage setting does not change
-this. To delete the log, delete those files; Houston needs none of them.
+An entry holds the time, the name of the operation that failed and how long it took, the type of
+the error, and the code locations (function, file name and line) that lie in Houston's own program
+files or in Node.js; other locations are only counted. It also holds short values from a fixed list
+of fields: ids assigned by Houston or by an agent's provider, kinds and outcomes, HTTP methods and
+status codes, and numbers. It holds no log or error messages, paths, URLs, prompts, agent
+responses, file contents, SQL statements or credentials.
+
+The files are `server.errors-<date>.ndjson` and `desktop.errors-<date>.ndjson` in the
+`userdata/logs` folder of the server's state directory (`~/.houston/v2/userdata/logs` for the
+installed release; a WSL server keeps its own inside the distribution). Houston keeps today's file
+and the seven before it, in UTC days, and each process writes at most 2 MiB a day. Older files are
+removed when Houston starts and when a later day's first failure is recorded; the **rotated logs**
+storage setting does not change this. To delete the log, delete those files; Houston needs none of
+them.
