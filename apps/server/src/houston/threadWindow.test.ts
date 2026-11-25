@@ -365,6 +365,9 @@ const makeRowCounter = Effect.gen(function* () {
         "$1visit(orchestration_v2_projection_turn_items.rowid) AND $2",
       );
     assert.include(query, "visit(item.rowid)");
+    for (const alias of ["member", "prompt", "first"])
+      if (new RegExp(`\\b${alias}\\.`, "u").test(statement[0]))
+        assert.include(query, `visit(${alias}.rowid)`);
     const counted: Compiled = [query, statement[1]];
     const plans = [plan(counted), plan(statement)] as const;
     assert.deepEqual(plans[0], plans[1], "counting does not change the plan");
