@@ -137,20 +137,12 @@ function selectAbandonedTurns(input: {
       )
       .map((run) => [run.id, run] as const),
   );
-  const startedAttemptIds = new Set(providerTurns.map((turn) => turn.runAttemptId));
   return providerTurns.flatMap((turn) => {
     if (turn.providerThreadId !== input.providerThreadId || turn.status !== "running") return [];
     const attempt = attempts.find((candidate) => candidate.id === turn.runAttemptId);
     const run = attempt === undefined ? undefined : endedRuns.get(attempt.runId);
     if (attempt === undefined || run === undefined || turn.nodeId !== attempt.rootNodeId) return [];
-    // A newer attempt starts its turn only after this one ended.
-    const replaced = attempts.some(
-      (candidate) =>
-        candidate.runId === run.id &&
-        candidate.attemptOrdinal > attempt.attemptOrdinal &&
-        startedAttemptIds.has(candidate.id),
-    );
-    return replaced ? [] : [{ turn, run }];
+    return [{ turn, run }];
   });
 }
 

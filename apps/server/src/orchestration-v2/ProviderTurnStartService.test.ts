@@ -691,6 +691,8 @@ function makeLocalCommandHarness(input: {
           runId: previousRunId,
           rootNodeId: NodeId.make("previous-root"),
           providerThreadId: previousProviderThreadId,
+          status: input.previousTurn.runStatus,
+          completedAt: now,
         },
         ...projection.attempts,
       ],

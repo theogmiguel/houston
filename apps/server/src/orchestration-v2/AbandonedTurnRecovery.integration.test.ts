@@ -5,6 +5,7 @@ import {
   CommandId,
   EventId,
   MessageId,
+  NodeId,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -378,7 +379,7 @@ it.effect.each(["running", "waiting", "starting", "completed"] as const)(
         yield* thread.send("next");
         yield* thread.composeRunStatus(status);
         yield* thread.settle;
-        const after = yield* thread.untilRun(1, ["running", "failed"]);
+        const after = yield* thread.untilRun(1, ["failed"]);
         assert.deepEqual(provider.interrupted, []);
         assert.isTrue(provider.active.has(thread.threadId));
         assert.equal(turnStatus(after, turn), "running");
@@ -407,6 +408,41 @@ it.effect("another thread's abandoned turn on the shared session is never interr
       assert.equal(turnStatus(yield* other.projection, otherTurn), "running");
     }),
   ),
+);
+
+it.effect.each(["no attempt", "a sub-agent's node"] as const)(
+  "a running turn with %s is never selected through the ended run beside it",
+  (owner) =>
+    scenario("not-a-root-turn", ({ cwd, provider }) =>
+      Effect.gen(function* () {
+        const thread = yield* driveThread("not-a-root-turn", cwd, provider);
+        yield* thread.accept("first");
+        yield* thread.completeTurn;
+        yield* thread.composeRunStatus("interrupted");
+        // Composed: the parent's turn ended, and a later row on its provider thread still runs.
+        const [root] = (yield* thread.projection).providerTurns;
+        const other = ProviderTurnId.make("provider-turn:not-a-root-turn");
+        yield* thread.write({
+          type: "provider-turn.updated",
+          payload: {
+            ...root!,
+            id: other,
+            ...(owner === "no attempt"
+              ? { runAttemptId: null }
+              : { nodeId: NodeId.make("node:sub-agent") }),
+            ordinal: root!.ordinal + 1,
+            status: "running",
+            completedAt: null,
+          },
+        });
+        yield* thread.send("next");
+        yield* thread.settle;
+        const after = yield* thread.untilRun(1, ["running", "failed"]);
+        assert.equal(after.runs[1]?.status, "running");
+        assert.deepEqual(provider.interrupted, []);
+        assert.equal(turnStatus(after, other), "running");
+      }),
+    ),
 );
 
 it.effect("a turn on the thread's other provider thread is never interrupted", () =>
@@ -442,7 +478,7 @@ it.effect("a turn on the thread's other provider thread is never interrupted", (
 );
 
 it.effect.each(["completed", "running"] as const)(
-  "a turn that a newer attempt's %s turn replaced is never interrupted",
+  "a turn that a newer attempt's %s turn replaced is closed without an interrupt",
   (status) =>
     scenario(`replaced-${status}`, ({ cwd, provider }) =>
       Effect.gen(function* () {
@@ -478,7 +514,7 @@ it.effect.each(["completed", "running"] as const)(
         const after = yield* thread.untilRun(1, ["running", "failed"]);
         assert.equal(after.runs[1]?.status, "running");
         assert.deepEqual(provider.interrupted, status === "running" ? [newerTurn] : []);
-        assert.equal(turnStatus(after, replaced), "running");
+        assert.equal(turnStatus(after, replaced), "interrupted");
       }),
     ),
 );
