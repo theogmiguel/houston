@@ -214,6 +214,7 @@ import { linkCreatedPullRequest } from "./git/linkCreatedPullRequest.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as HoustonResumeSessions from "./houston/resumeSessions.ts";
 import * as HoustonReviewState from "./houston/reviewState.ts";
+import * as HoustonRuntimeRequestAuthor from "./houston/runtimeRequestAuthor.ts";
 import * as DatadogKey from "./houston/observability/DatadogKey.ts";
 import * as TraceContext from "./houston/observability/TraceContext.ts";
 import * as WideEvents from "./houston/observability/WideEvents.ts";
@@ -2137,12 +2138,16 @@ export const layerWsRpc = (
                 .enqueueCommand(
                   (command.type === "prepared-run.retry"
                     ? threadLaunch.retryPreparation(command)
-                    : ThreadMessageIntake.dispatchCommand(
-                        ThreadManagementService.withCreationProvenance(command, {
-                          createdBy: "user",
-                          creationSource:
-                            "creationSource" in command ? command.creationSource : "web",
-                        }),
+                    : HoustonRuntimeRequestAuthor.stampClientAnswer(command).pipe(
+                        Effect.flatMap((stamped) =>
+                          ThreadMessageIntake.dispatchCommand(
+                            ThreadManagementService.withCreationProvenance(stamped, {
+                              createdBy: "user",
+                              creationSource:
+                                "creationSource" in command ? command.creationSource : "web",
+                            }),
+                          ),
+                        ),
                       )
                   ).pipe(Effect.provide(intakeContext)),
                 )

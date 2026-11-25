@@ -3092,16 +3092,25 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
    * OpenCode numbers the request it retries with, so its first retry is
    * attempt 2, and stamps `at` from the clock behind the event's `created` (1 here).
    */
-  const retryScheduled = (attempt: number, delayMs: number) =>
+  const retryScheduled = (
+    attempt: number,
+    delayMs: number,
+    error: {
+      readonly type: string;
+      readonly message: string;
+      readonly status: number;
+    } = rateLimited,
+  ) =>
     event("session.retry.scheduled", {
       sessionID: SESSION,
       assistantMessageID: ASSISTANT,
       attempt,
       at: 1 + delayMs,
-      error: rateLimited,
+      error,
     });
+  // A rate-limit retry is a usage limit, as the failure that ends the turn is.
   const retrying = {
-    class: "provider_error",
+    class: "usage_limit",
     message: rateLimited.message,
     code: rateLimited.type,
     retryable: true,
@@ -3183,6 +3192,24 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         ],
       );
       assert.deepInclude(seen.at(-1), { type: "turn.terminal", status: ended, failure: null });
+    }).pipe(Effect.scoped),
+  );
+
+  // The retry budget keeps a retry's class on the failure, so it must match the terminal's.
+  it.effect.each([
+    { type: "provider.rate-limit", status: 429, expected: "usage_limit" },
+    { type: "provider.quota", status: 429, expected: "usage_limit" },
+    { type: "provider.quota", status: 402, expected: "provider_error" },
+    { type: "provider.unknown", status: 500, expected: "provider_error" },
+  ] as const)("classifies a $type $status retry as $expected", ({ type, status, expected }) =>
+    Effect.gen(function* () {
+      const seen = yield* runRetryTurn([
+        retryScheduled(2, 2_000, { type, message: "Provider request failed.", status }),
+        event("session.execution.interrupted", { sessionID: SESSION, reason: "user" }),
+      ]);
+      const rows = errorRows(seen);
+      assert.isAtLeast(rows.length, 1);
+      for (const row of rows) assert.equal(row.failure.class, expected);
     }).pipe(Effect.scoped),
   );
 

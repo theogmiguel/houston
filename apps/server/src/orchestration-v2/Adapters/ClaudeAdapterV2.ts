@@ -81,6 +81,8 @@ import { AgentScope } from "@houston-app/shared/AgentScope";
 import * as HostProcess from "@houston-app/shared/HostProcess";
 import { applyClaudePromptEffortPrefix } from "@houston-app/shared/model";
 import {
+  CLAUDE_PROMPT_CACHE_TTL_1H_MS,
+  CLAUDE_PROMPT_CACHE_TTL_5M_MS,
   CLAUDE_RESUME_COMPACTION_COMPACT_ANSWER,
   CLAUDE_RESUME_COMPACTION_NEVER_ANSWER,
   formatClaudeResumeCompactionQuestion,
@@ -264,8 +266,8 @@ function claudePromptCacheTtlMs(
   cacheCreation: ClaudeCacheCreation | null | undefined,
 ): number | undefined {
   if (!cacheCreation) return undefined;
-  if (cacheCreation.ephemeral_1h_input_tokens > 0) return 60 * 60_000;
-  if (cacheCreation.ephemeral_5m_input_tokens > 0) return 5 * 60_000;
+  if (cacheCreation.ephemeral_1h_input_tokens > 0) return CLAUDE_PROMPT_CACHE_TTL_1H_MS;
+  if (cacheCreation.ephemeral_5m_input_tokens > 0) return CLAUDE_PROMPT_CACHE_TTL_5M_MS;
   return undefined;
 }
 
@@ -10629,6 +10631,16 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           }
           const context = yield* Ref.get(activeTurn);
           const liveQuery = yield* Ref.get(queryContext);
+          // The API answering again is recovery; a long tool input block emits nothing else.
+          // Judged at intake, so held or buffered frames cannot settle a newer retry.
+          if (
+            context !== null &&
+            liveQuery?.query === input.query &&
+            message.type === "stream_event" &&
+            message.event.type === "message_start"
+          ) {
+            yield* completeProviderRetry(context, yield* DateTime.now);
+          }
           if (
             context?.promptUuid === null &&
             liveQuery?.query === input.query &&
