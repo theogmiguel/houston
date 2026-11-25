@@ -249,7 +249,9 @@ Closing a thread leaves its history intact, moves it to **Closed** and closes it
 whether you closed it or its pull request merged. A thread opened from **Closed** keeps its tab
 until it is closed again. **Archive** removes
 it from the rail into **Settings ▸ Archive**, and is refused while a run is active.
-**Delete** removes the thread and its history after confirmation. Confirmation prompts are
+**Delete** removes the thread and its conversation from Houston's database after confirmation.
+The agent CLI keeps its own session files (for example Claude Code's or Codex's transcripts in
+their own folders), and deleting a thread does not remove them. Confirmation prompts are
 configurable in **Settings ▸ General ▸ Confirmations**.
 
 **Settings ▸ Threads ▸ Auto-close** is off by default, so a merged pull request leaves its
