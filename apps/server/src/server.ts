@@ -142,6 +142,7 @@ import * as HoustonThreadMembership from "./houston/threadMembership.ts";
 import { layerSlack } from "./houston/slack/layer.ts";
 import * as SlackRunMessages from "./houston/slack/RunMessages.ts";
 import * as HoustonSlackStore from "./houston/slack/Store.ts";
+import * as HoustonNativeSessionHistory from "./houston/nativeSessionHistory.ts";
 import * as SlackWebApi from "./houston/slack/WebApi.ts";
 import { layerMergeQueue } from "./houston/mergeQueue/layer.ts";
 import * as HoustonMergeQueueStore from "./houston/mergeQueue/Store.ts";
@@ -641,6 +642,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
   Layer.effectDiscard(HoustonTaskProjectSweep.sweep),
   Layer.effectDiscard(HoustonSlackStore.sweep),
+  Layer.effectDiscard(HoustonNativeSessionHistory.startNativeSessionBackfill),
   HoustonLayoutWorkspaces.layer,
   Layer.effectDiscard(
     Effect.gen(function* () {
