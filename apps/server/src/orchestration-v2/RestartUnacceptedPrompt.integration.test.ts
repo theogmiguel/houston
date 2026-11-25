@@ -732,6 +732,10 @@ it.live("awaited work lost beside an unconfirmed prompt is noted but wakes no on
         ],
       );
       assert.lengthOf(provider.accepted, 0);
+      assert.deepEqual(
+        held.runs.map((run) => run.restartCancelledBackgroundWork?.length ?? 0),
+        [1, 0],
+      );
     }),
   }),
 );

@@ -20,7 +20,7 @@ import {
 
 /** Records work an exited provider process took with it on the latest started run, and queues one
  * wake for that run if the agent awaited the work. Restart recovery moves the record to the run
- * before it when that run is a prompt recovery holds. */
+ * before it when that run is a prompt recovery holds; with no earlier run it stays. */
 export const writeLostBackgroundWork = Effect.fn("houston.writeLostBackgroundWork")(function* (
   deps: {
     readonly readRuns: (
