@@ -415,7 +415,10 @@ export function useThreadActions() {
 
   const archiveThread = async (target: ScopedThreadRef, opts: { onArchived?: () => void } = {}) => {
     const resolved = resolveThreadTarget(target);
-    if (!resolved) return AsyncResult.success(undefined);
+    if (!resolved) {
+      toastManager.close(queuedCloseRefusalToastId(target));
+      return AsyncResult.success(undefined);
+    }
     const { thread, threadRef } = resolved;
     if (!threadRuntimeCanArchive(thread.runtime)) {
       return AsyncResult.failure(
@@ -442,6 +445,7 @@ export function useThreadActions() {
       action.finish();
       return archiveResult;
     }
+    toastManager.close(queuedCloseRefusalToastId(threadRef));
     expireThreadUndos(threadRef, LIST_PLACEMENT_UNDO_KINDS);
     const wokeAt = threadWokeAt(thread, { now: new Date().toISOString() });
     if (wokeAt !== null) {
@@ -482,6 +486,7 @@ export function useThreadActions() {
         input: { threadId: target.threadId },
       });
       if (result._tag === "Success") {
+        toastManager.close(queuedCloseRefusalToastId(target));
         expireThreadUndos(target, [...LIST_PLACEMENT_UNDO_KINDS, "archive"]);
         refreshArchivedThreadsForEnvironment(target.environmentId);
         clearDeletedThreadPanelState(target);
@@ -599,6 +604,7 @@ export function useThreadActions() {
     if (deleteResult._tag === "Failure") {
       return deleteResult;
     }
+    toastManager.close(queuedCloseRefusalToastId(threadRef));
     expireThreadUndos(threadRef, [...LIST_PLACEMENT_UNDO_KINDS, "archive"]);
     refreshArchivedThreadsForEnvironment(threadRef.environmentId);
     releaseComposerDraftUploads(threadRef);

@@ -43,6 +43,7 @@ const state = vi.hoisted(() => ({
   draftIdByThread: null as string | null,
   failSettleWith: undefined as unknown,
   lastToast: undefined as unknown,
+  closedToasts: [] as string[],
 }));
 
 vi.mock("react", () => ({
@@ -164,7 +165,7 @@ vi.mock("../components/ui/toast", () => ({
       if (toast.title) state.toasts.push(toast.title);
       state.lastToast = toast;
     },
-    close: () => {},
+    close: (id: string) => state.closedToasts.push(id),
   },
 }));
 vi.mock("./useHandleNewThread", () => ({ useNewThreadHandler: () => async () => {} }));
@@ -177,6 +178,7 @@ vi.mock("./useSettings", () => ({
     }),
 }));
 
+import { queuedCloseRefusalToastId } from "../threads/queuedCloseRefusal";
 import { useThreadActions } from "./useThreadActions";
 
 function seedThreadPanelState(ref: ScopedThreadRef) {
@@ -257,6 +259,7 @@ beforeEach(() => {
   state.localEffects = [];
   state.confirm.mockReset().mockResolvedValue(true);
   state.toasts = [];
+  state.closedToasts = [];
   state.afterRequest = undefined;
   state.sessionLookupFails = false;
   state.draftIdByThread = null;
@@ -310,7 +313,8 @@ describe("closing a thread with queued messages", () => {
     readonly actionProps: { readonly onClick: () => void };
     readonly data: { readonly secondaryActionProps: { readonly onClick: () => void } };
   }
-  const requested = () => state.requests.map(({ action, input }) => ({ action, input }));
+  const environmentId = secondary;
+  const notice = queuedCloseRefusalToastId(target);
   beforeEach(() => {
     state.scopes.get(secondary)!.add(AuthOrchestrationOperateScope);
     state.failSettleWith = {
@@ -329,10 +333,10 @@ describe("closing a thread with queued messages", () => {
 
     const threadId = target.threadId;
     await vi.waitFor(() =>
-      expect(requested()).toEqual([
-        { action: "cancelQueuedRun", input: { threadId, runId: "run-1" } },
-        { action: "cancelQueuedRun", input: { threadId, runId: "run-2" } },
-        { action: "settle", input: { threadId } },
+      expect(state.requests).toEqual([
+        { action: "cancelQueuedRun", environmentId, input: { threadId, runId: "run-1" } },
+        { action: "cancelQueuedRun", environmentId, input: { threadId, runId: "run-2" } },
+        { action: "settle", environmentId, input: { threadId } },
       ]),
     );
   });
@@ -343,8 +347,12 @@ describe("closing a thread with queued messages", () => {
     (state.lastToast as Refusal).actionProps.onClick();
 
     await vi.waitFor(() =>
-      expect(requested()).toEqual([
-        { action: "resumeThreadQueue", input: { threadId: target.threadId, runId: "run-1" } },
+      expect(state.requests).toEqual([
+        {
+          action: "resumeThreadQueue",
+          environmentId,
+          input: { threadId: target.threadId, runId: "run-1" },
+        },
       ]),
     );
   });
@@ -360,6 +368,35 @@ describe("closing a thread with queued messages", () => {
     );
     expect(state.requests).toEqual([]);
   });
+
+  it("keeps the notice while the close is refused and drops it once the thread closes", async () => {
+    await useThreadActions().closeThread(target);
+    expect(state.closedToasts).toEqual([]);
+
+    state.failSettleWith = undefined;
+    await useThreadActions().closeThread(target);
+    expect(state.closedToasts).toEqual([notice]);
+  });
+
+  it.each([
+    { name: "archiving it", loaded: true, run: "archiveThread" },
+    { name: "archiving one that is no longer loaded", loaded: false, run: "archiveThread" },
+    { name: "deleting it", loaded: true, run: "deleteThread" },
+    { name: "deleting one that is no longer loaded", loaded: false, run: "deleteThread" },
+  ] as const)("drops the notice after $name", async ({ loaded, run }) => {
+    if (!loaded) state.threads = [];
+    expect((await useThreadActions()[run](target))._tag).toBe("Success");
+    expect(state.closedToasts).toEqual([notice]);
+  });
+
+  it.each(["archiveThread", "deleteThread"] as const)(
+    "keeps the notice when %s is refused",
+    async (run) => {
+      state.scopes.get(secondary)!.clear();
+      expect((await useThreadActions()[run](target))._tag).toBe("Failure");
+      expect(state.closedToasts).toEqual([]);
+    },
+  );
 });
 
 describe("thread action permissions", () => {

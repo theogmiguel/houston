@@ -1,5 +1,8 @@
 import { scopedThreadKey } from "@houston-app/client-runtime/environment";
-import type { AtomCommandResult } from "@houston-app/client-runtime/state/runtime";
+import {
+  type AtomCommandResult,
+  isAtomCommandInterrupted,
+} from "@houston-app/client-runtime/state/runtime";
 import type { RunId, ScopedThreadRef } from "@houston-app/contracts";
 
 import { reportFailure } from "../components/sidebar/reportFailure";
@@ -29,6 +32,30 @@ async function sendQueued(refusal: QueuedCloseRefusal): Promise<void> {
   reportFailure(refusal.translate("Failed to send queued message"), await refusal.send(next));
 }
 
+/** An interrupted request may still have reached the server, so this claims only what did. */
+function reportInterruptedRemoval(
+  { runIds, translate }: QueuedCloseRefusal,
+  removed: number,
+): void {
+  const count = runIds.length;
+  toastManager.add(
+    stackedThreadToast({
+      type: "error",
+      title:
+        count === 1
+          ? translate("Removing the queued message was interrupted")
+          : translate("Removing queued message {position} of {count} was interrupted", {
+              position: removed + 1,
+              count,
+            }),
+      description: translate("Removed {removed} of {count}. Check the queue for the rest.", {
+        removed,
+        count,
+      }),
+    }),
+  );
+}
+
 /**
  * Discards every message the refusal named, and only those, then closes the thread. The close
  * asks the server again, so a message queued since is refused and kept.
@@ -37,6 +64,7 @@ async function removeQueuedThenClose(refusal: QueuedCloseRefusal): Promise<void>
   const { runIds, translate } = refusal;
   for (const [index, runId] of runIds.entries()) {
     const result = await refusal.remove(runId);
+    if (isAtomCommandInterrupted(result)) return reportInterruptedRemoval(refusal, index);
     if (result._tag === "Failure") {
       reportFailure(
         runIds.length === 1

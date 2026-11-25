@@ -242,6 +242,39 @@ describe("Remove and close", () => {
     expect(lastToast().title).toBe("Queued message was not removed");
   });
 
+  it.each([
+    { count: 1, title: "Removing the queued message was interrupted", removed: 0 },
+    { count: 3, title: "Removing queued message 2 of 3 was interrupted", removed: 1 },
+  ])("says how far an interrupted removal of $count got", async ({ count, title, removed }) => {
+    const ids = runIds("run-1", "run-2", "run-3").slice(0, count);
+    const requests: string[] = [];
+    showQueuedCloseRefusal({
+      target: thread("one"),
+      title: "one",
+      runIds: ids,
+      translate: english,
+      send: succeeds,
+      remove: (runId) => {
+        requests.push(runId);
+        return requests.length > removed
+          ? Promise.resolve(AsyncResult.failure(Cause.interrupt()))
+          : succeeds();
+      },
+      close: async () => {
+        requests.push("close");
+      },
+    });
+    lastToast().data!.secondaryActionProps!.onClick();
+    await flush();
+
+    expect(requests).toEqual(ids.slice(0, removed + 1));
+    expect(lastToast()).toMatchObject({
+      type: "error",
+      title,
+      description: `Removed ${removed} of ${count}. Check the queue for the rest.`,
+    });
+  });
+
   it("runs once when pressed twice, and Send now cannot follow it", async () => {
     const { requests, refuse } = makeThread("one", ["run-1"]);
     refuse();
