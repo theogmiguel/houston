@@ -193,6 +193,7 @@ import {
   nextDelivery,
   steerFollowUpCommand,
 } from "../houston/messageDelivery.ts";
+import { asyncAnswerAuthor } from "../houston/runtimeRequestAuthor.ts";
 import {
   ASIDE_NEEDS_FINISHED_TURN,
   asideForkRefusal,
@@ -6556,6 +6557,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     if (command.manualContinuationOfRunId !== undefined) {
       const source = projection.runs.find((run) => run.id === command.manualContinuationOfRunId);
       const limited = latestRootProviderFailure(source ?? null, projection.turnItems);
+      // Refused before the resend check: an accepted compaction is not sent the continuation text
+      // and a never-accepted one is not resent. The user runs the compaction again.
+      const sourceMessage = projection.messages.find(
+        (message) => message.id === source?.userMessageId,
+      );
+      if (sourceMessage !== undefined && isCompactionCommandMessage(sourceMessage)) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Run ${source?.id} was a context compaction that did not finish, and a compaction cannot be resumed. Run the compaction again.`,
+        });
+      }
       if (
         command.dispatchMode.type !== "start_immediately" ||
         source === undefined ||
@@ -10696,8 +10709,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           messageId: MessageId.make(`async-answer:${command.requestId}`),
           text: replies.join("\n\n"),
           attachments: [],
-          createdBy: "user" as const,
-          creationSource: "server" as const,
+          ...asyncAnswerAuthor(command),
           dispatchMode,
         };
         yield* dispatchMessage(answer, events, effects);
