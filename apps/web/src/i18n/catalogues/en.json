@@ -259,7 +259,7 @@
   "Inactivity does not close threads with a pull request. Merge and close still do.": "Inactivity does not close threads with a pull request. Merge and close still do.",
   "Used for thread titles and other generated text on connected devices with this provider. Source control can override it.": "Used for thread titles and other generated text on connected devices with this provider. Source control can override it.",
   "Check installed provider CLIs for newer available versions and fetch model catalog updates. When off, new models may not appear.": "Check installed provider CLIs for newer available versions and fetch model catalog updates. When off, new models may not appear.",
-  "Automatically resume interrupted threads after an update, crash, or machine restart on the selected environments.": "Automatically resume interrupted threads after an update, crash, or machine restart on the selected environments.",
+  "On the selected environments, automatically resume threads interrupted by an update, crash, or machine restart, or by an agent process exiting during awaited background work.": "On the selected environments, automatically resume threads interrupted by an update, crash, or machine restart, or by an agent process exiting during awaited background work.",
   "Live processes, resource history, failures, slow spans and logs.": "Live processes, resource history, failures, slow spans and logs.",
   "Current version of the application.": "Current version of the application.",
   "Notices for dependencies, assets, and optional tools used by Houston.": "Notices for dependencies, assets, and optional tools used by Houston.",

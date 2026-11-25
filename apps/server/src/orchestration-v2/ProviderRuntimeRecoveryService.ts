@@ -1,5 +1,4 @@
 import { providerAcceptedRun } from "@houston-app/shared/orchestrationV2ManualContinuation";
-import { runRanAfter } from "@houston-app/shared/orchestrationV2ThreadError";
 import { resolveProjectSettings } from "@houston-app/shared/projectSettings";
 import {
   CommandId,
@@ -37,6 +36,7 @@ import {
   awaitingProviderThreadId,
   cancelledRosterTaskWork,
   cancelledTurnItemWork,
+  latestStartedRun,
   mergeRestartCancelledBackgroundWork,
   neverStarted,
 } from "./RestartBackgroundNote.ts";
@@ -175,23 +175,6 @@ function recoveryCancellationNoticeOrdinal(
     if (item.runId === runId && item.ordinal >= ordinal) ordinal = item.ordinal + 1;
   }
   return ordinal;
-}
-
-function latestStartedRun(
-  runs: OrchestrationV2ThreadProjection["runs"],
-  providerThreadId: ProviderThreadId,
-) {
-  return runs.reduce<OrchestrationV2ThreadProjection["runs"][number] | undefined>(
-    (latest, run) =>
-      run.providerThreadId === providerThreadId &&
-      run.status !== "queued" &&
-      run.status !== "rolled_back" &&
-      !neverStarted(run) &&
-      (latest === undefined || runRanAfter(run, latest))
-        ? run
-        : latest,
-    undefined,
-  );
 }
 
 export const make = Effect.gen(function* () {
@@ -830,6 +813,16 @@ export const make = Effect.gen(function* () {
           allocateEventId,
         })),
       );
+      // A provider exit can note lost work on a prompt put back in the queue, which did not start it.
+      for (const run of retryableRuns) {
+        for (const work of run.restartCancelledBackgroundWork ?? []) {
+          if (work.id !== undefined) {
+            if (cancelledBackgroundNativeIds.has(work.id)) continue;
+            cancelledBackgroundNativeIds.add(work.id);
+          }
+          recordCancelledBackgroundWork(run.providerThreadId, work);
+        }
+      }
       for (const providerThread of projection.providerThreads ?? []) {
         const needsIdle = providerThread.status === "active";
         const needsRosterClear = providerThreadHasPendingBackgroundTasks(providerThread);
@@ -919,6 +912,19 @@ export const make = Effect.gen(function* () {
             ),
           },
         });
+        for (const run of retryableRuns) {
+          if (run.providerThreadId !== providerThreadId) continue;
+          if ((run.restartCancelledBackgroundWork?.length ?? 0) === 0) continue;
+          events.push({
+            id: yield* allocateEventId(),
+            type: "run.background-work-cancelled",
+            threadId: projection.thread.id,
+            runId: run.id,
+            providerInstanceId: run.providerInstanceId,
+            occurredAt: now,
+            payload: { runId: run.id, restartCancelledBackgroundWork: [] },
+          });
+        }
       }
       const continuationRun =
         continueAfterRestart && trigger === "startup"
