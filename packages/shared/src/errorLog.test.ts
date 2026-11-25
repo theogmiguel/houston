@@ -398,6 +398,32 @@ test("error log", (it) => {
       }),
     );
 
+    it.effect("a frame line too long to be one is counted and never matched", () =>
+      Effect.gen(function* () {
+        yield* at(START);
+        const memory = makeFiles();
+        const program = { root: "/app/dist", file: "/app/dist/bin.mjs" };
+        const { run } = yield* makeHarness({ files: memory.files, program });
+
+        yield* run(
+          fail(
+            "job.long",
+            withStack("boom", [
+              `${"x".repeat(1_024)} (/app/dist/bin.mjs:1:2)`,
+              `open (/app/dist/bin.mjs:${"1".repeat(900)}:2)`,
+              `open (/app/dist/bin.mjs:1:${"2".repeat(900)})`,
+              "own (/app/dist/bin.mjs:1234567:7654321)",
+              "own (/app/dist/bin.mjs:12345678:1)",
+            ]),
+          ),
+        );
+
+        const [entry] = memory.entries();
+        assert.deepStrictEqual(entry?.frames, ["own (bin.mjs:1234567:7654321)"]);
+        assert.strictEqual(entry?.droppedFrames, 4);
+      }),
+    );
+
     it.effect("an attribute key that is not a code name is left out", () =>
       Effect.gen(function* () {
         yield* at(START);
@@ -650,6 +676,67 @@ test("error log", (it) => {
           memory.entries().map((entry) => entry.value),
           ["Uint8Array", "Uint8Array", "Uint8Array"],
         );
+      }),
+    );
+
+    /** A plain object whose fields count as they are read. */
+    const counted = (fields: Record<string, unknown>, reads: { count: number }) =>
+      new Proxy(fields, {
+        getOwnPropertyDescriptor: (target, key) => {
+          reads.count += 1;
+          return Reflect.getOwnPropertyDescriptor(target, key);
+        },
+      });
+
+    it.effect("a wide and cyclic value is read a bounded number of times", () =>
+      Effect.gen(function* () {
+        yield* at(START);
+        const memory = makeFiles();
+        const { run } = yield* makeHarness({ files: memory.files });
+        const cyclicReads = { count: 0 };
+        const shared: Array<Record<string, unknown>> = Array.from({ length: 20 }, () => ({}));
+        const nodes = shared.map((fields) => counted(fields, cyclicReads));
+        for (const fields of shared) nodes.forEach((node, index) => (fields[`n${index}`] = node));
+        const wideReads = { count: 0 };
+        const wide = (depth: number): Record<string, unknown> =>
+          counted(
+            Object.fromEntries(
+              Array.from({ length: 12 }, (_, index) => [
+                `f${index}`,
+                depth === 0 ? 0 : wide(depth - 1),
+              ]),
+            ),
+            wideReads,
+          );
+
+        yield* run(Effect.logError("cyclic").pipe(Effect.annotateLogs({ node: nodes[0] })));
+        yield* run(Effect.logError(wide(3)));
+
+        assert.lengthOf(memory.entries(), 2);
+        // Listing an object's fields and reading each ask for a descriptor, so twice the 256 visits,
+        // and the fields of the last object listed.
+        assert.isAtMost(cyclicReads.count, 2 * 256 + 2 * 20);
+        assert.isAtMost(wideReads.count, 2 * 256 + 2 * 12);
+        assert.isAbove(wideReads.count, 64);
+      }),
+    );
+
+    it.effect("a cycle is followed once", () =>
+      Effect.gen(function* () {
+        yield* at(START);
+        const memory = makeFiles();
+        const { run } = yield* makeHarness({ files: memory.files });
+        const reads = { count: 0 };
+        const left: Record<string, unknown> = {};
+        const right: Record<string, unknown> = {};
+        left.next = counted(right, reads);
+        right.next = counted(left, reads);
+
+        yield* run(Effect.logError(right.next));
+
+        assert.lengthOf(memory.entries(), 1);
+        // One field in each of the two objects, asked for twice: to list it and to read it.
+        assert.strictEqual(reads.count, 4);
       }),
     );
 

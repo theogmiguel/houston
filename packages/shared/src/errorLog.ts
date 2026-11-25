@@ -44,7 +44,9 @@ const ATTRIBUTE_KEY = /^[a-z][\w.]{0,127}$/;
 const STACK_MAX_CHARS = 64 * 1024;
 const FRAME_LINE = /^\s+at /;
 // Function, file, line and column. The lazy function part leaves `Program Files (x86)` to the file.
-const FRAME = /^\s+at (?:async )?(?:new )?(?:(.*?) \()?(.+):(\d+):(\d+)\)?$/;
+const FRAME = /^\s+at (?:async )?(?:new )?(?:(.*?) \()?(.+):(\d{1,7}):(\d{1,7})\)?$/;
+// Matching costs the square of a line's length; no frame of a real program is near this.
+const FRAME_LINE_MAX_CHARS = 1024;
 const NODE_INTERNAL = "node:internal/";
 const INDIRECT_PATH = /[?#]|(?:^|\/)\.\.(?:\/|$)/;
 const DRIVE = /^\/?([A-Za-z]):\//;
@@ -53,6 +55,7 @@ const FUNCTION_NAME = /^[A-Za-z_$][\w$.<>]{0,79}$/;
 const SCRIPT_NAME = /\.[cm]?[jt]sx?$/;
 
 // A logged error is an argument, or a field an object or two below one.
+const SEARCH_MAX_READS = 256;
 const SEARCH_MAX_DEPTH = 4;
 const SEARCH_MAX_FIELDS = 64;
 
@@ -210,7 +213,8 @@ const framesOf = (error: unknown, own: OwnLocation): Entry => {
   let dropped = 0;
   for (const line of stack.slice(-STACK_MAX_CHARS).split("\n")) {
     if (!FRAME_LINE.test(line)) continue;
-    const [, fn, file = "", row, column] = FRAME.exec(line) ?? [];
+    const match = line.length > FRAME_LINE_MAX_CHARS ? null : FRAME.exec(line);
+    const [, fn, file = "", row, column] = match ?? [];
     const internal = file.startsWith(NODE_INTERNAL);
     const name = internal ? "node:internal" : safely(() => own(file), undefined);
     if (name === undefined) {
@@ -257,26 +261,47 @@ const isPlain = (value: object) => {
   return prototype === Object.prototype || prototype === null || Array.isArray(value);
 };
 
-/** The first own values, read without getters; a large array's keys are never listed. */
-const firstFields = (value: object): ReadonlyArray<unknown> => {
-  if (Array.isArray(value)) return value.slice(0, SEARCH_MAX_FIELDS);
-  const fields: Array<unknown> = [];
-  for (const key in value) {
-    if (fields.length === SEARCH_MAX_FIELDS) break;
-    fields.push(Object.getOwnPropertyDescriptor(value, key)?.value);
-  }
-  return fields;
-};
+interface Search {
+  readonly own: OwnLocation;
+  readonly seen: Set<object>;
+  remainingReads: number;
+}
 
-const describeLoggedValue = (value: unknown, own: OwnLocation, depth: number): Entry => {
-  if (Cause.isCause(value)) return describeCause(value, own);
-  if (value instanceof Error) return describeError(value, own);
+const startSearch = (own: OwnLocation): Search => ({
+  own,
+  seen: new Set(),
+  remainingReads: SEARCH_MAX_READS,
+});
+
+/** The first own values, read without getters; a large array's keys are never listed. */
+function* firstFields(value: object, search: Search): Generator<unknown> {
+  if (Array.isArray(value)) {
+    const length = Math.min(value.length, SEARCH_MAX_FIELDS);
+    for (let index = 0; index < length && search.remainingReads > 0; index += 1) {
+      search.remainingReads -= 1;
+      yield Object.getOwnPropertyDescriptor(value, index)?.value;
+    }
+    return;
+  }
+  let fields = SEARCH_MAX_FIELDS;
+  for (const key in value) {
+    if (fields === 0 || search.remainingReads <= 0) return;
+    fields -= 1;
+    search.remainingReads -= 1;
+    yield Object.getOwnPropertyDescriptor(value, key)?.value;
+  }
+}
+
+const describeLoggedValue = (value: unknown, search: Search, depth: number): Entry => {
+  if (Cause.isCause(value)) return describeCause(value, search.own);
+  if (value instanceof Error) return describeError(value, search.own);
   if (typeof value !== "object" || value === null) return {};
   if (!isPlain(value)) return typeNameOf(value);
-  if (depth === SEARCH_MAX_DEPTH) return {};
+  if (depth === SEARCH_MAX_DEPTH || search.seen.has(value)) return {};
+  search.seen.add(value);
   let described: Entry = {};
-  for (const field of firstFields(value)) {
-    const found = safely(() => describeLoggedValue(field, own, depth + 1), UNREADABLE);
+  for (const field of firstFields(value, search)) {
+    const found = safely(() => describeLoggedValue(field, search, depth + 1), UNREADABLE);
     if ("error" in found) return found;
     if ("value" in found) described = found;
   }
@@ -289,14 +314,15 @@ const describeLoggedValue = (value: unknown, own: OwnLocation, depth: number): E
  */
 const describeLogged = (options: Logger.Options<unknown>, own: OwnLocation): Entry => {
   if (options.cause.reasons.length > 0) return describeCause(options.cause, own);
+  const search = startSearch(own);
   const message = describeLoggedValue(
     Array.isArray(options.message) ? options.message : [options.message],
-    own,
+    search,
     0,
   );
   if ("error" in message) return message;
   const annotations = options.fiber.getRef(References.CurrentLogAnnotations);
-  return { ...message, ...describeLoggedValue(annotations, own, 0) };
+  return { ...message, ...describeLoggedValue(annotations, search, 0) };
 };
 
 const writableAttributes = ({ kept, omittedIds = 0 }: ErrorLogAttributes): Entry => {
