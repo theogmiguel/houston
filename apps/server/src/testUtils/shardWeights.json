@@ -37,6 +37,7 @@
   "src/git/GitManager.test.ts": 13.7,
   "src/git/GitWorkflowService.test.ts": 2.7,
   "src/git/linkCreatedPullRequest.test.ts": 1.2,
+  "src/houston/threadWindow.test.ts": 9,
   "src/http.test.ts": 2,
   "src/mcp/McpDeviceToolkit.test.ts": 1.5,
   "src/mcp/McpHttpServer.test.ts": 1.3,
