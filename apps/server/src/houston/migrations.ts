@@ -14,6 +14,7 @@ import {
   createTimelineReadIndexes,
   createTurnStartReadModels,
 } from "./projectionReadModels.ts";
+import { createNativeSessionHistory } from "./nativeSessionHistory.ts";
 import { purgeDeletedThreadHistories } from "./threadHistoryPurge.ts";
 
 // Upstream's migrator skips every id up to the highest it recorded, so Houston's schema keeps its
@@ -1465,6 +1466,7 @@ const houstonMigrationEntries = [
   [29, "PurgeDeletedThreadHistories", PurgeDeletedThreadHistories],
   [30, "InferenceRequests", InferenceRequests],
   [31, "InferenceImageVerdicts", InferenceImageVerdicts],
+  [32, "ProviderNativeSessions", createNativeSessionHistory],
 ] as const;
 
 /** Every Houston migration id this build knows, for callers that must not run beside an older schema. */

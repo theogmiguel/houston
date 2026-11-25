@@ -6744,14 +6744,34 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         const before = yield* orchestrator.getThreadProjection(threadId);
         const source = before.runs[0]!;
         if (started) {
+          // Composed: a turn the provider confirmed receiving, written without a provider session.
+          const startedAt = yield* DateTime.now;
           yield* (yield* EventSink.EventSinkV2).write({
             events: [
               {
                 id: EventId.make(`${threadId}:started`),
                 type: "run.updated",
                 threadId,
-                occurredAt: yield* DateTime.now,
-                payload: { ...source, status: "running", startedAt: yield* DateTime.now },
+                occurredAt: startedAt,
+                payload: { ...source, status: "running", startedAt },
+              },
+              {
+                id: EventId.make(`${threadId}:accepted`),
+                type: "provider-turn.updated",
+                threadId,
+                runId: source.id,
+                occurredAt: startedAt,
+                payload: {
+                  id: ProviderTurnId.make(`${threadId}:turn`),
+                  providerThreadId: source.providerThreadId!,
+                  nodeId: source.rootNodeId!,
+                  runAttemptId: source.activeAttemptId,
+                  nativeTurnRef: null,
+                  ordinal: 1,
+                  status: "running",
+                  startedAt,
+                  completedAt: null,
+                },
               },
             ],
           });

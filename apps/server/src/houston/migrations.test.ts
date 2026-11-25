@@ -46,6 +46,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [29, "PurgeDeletedThreadHistories"],
   [30, "InferenceRequests"],
   [31, "InferenceImageVerdicts"],
+  [32, "ProviderNativeSessions"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -1072,7 +1073,7 @@ describe("the grids removal migration", () => {
   );
 
   it.effect(
-    "a file database at the main track's head applies 18 to 31 and ends without the table",
+    "a file database at the main track's head applies 18 to 32 and ends without the table",
     () =>
       withDatabaseFile((file) =>
         Effect.gen(function* () {
@@ -1094,6 +1095,7 @@ describe("the grids removal migration", () => {
               [29, "PurgeDeletedThreadHistories"],
               [30, "InferenceRequests"],
               [31, "InferenceImageVerdicts"],
+              [32, "ProviderNativeSessions"],
             ],
           );
           assert.deepEqual(yield* gridObjects, []);
