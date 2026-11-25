@@ -251,6 +251,7 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
           threadId: input.threadId,
           requestId,
         });
+        const caller = (yield* McpInvocationContext.McpInvocationContext).thread;
         const result = yield* threads
           .dispatch({
             type: "runtime-request.respond",
@@ -258,6 +259,8 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
             commandId: yield* newCommandId(),
             requestId,
             answers,
+            answeredBy: "agent",
+            ...(caller === undefined ? {} : { senderThreadId: caller.threadId }),
           })
           .pipe(Effect.mapError(dispatchFailure));
         return { sequence: result.sequence };
