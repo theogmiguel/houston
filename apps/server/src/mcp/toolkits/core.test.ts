@@ -299,6 +299,21 @@ it.effect("an agent's answer to a question is sent as the calling agent's", () =
   );
 });
 
+it("a settle refused by a queued message tells an agent both ways out", () => {
+  const cause =
+    "Thread thread-1 has queued run run-1. Send it now or discard it from the queue before settling.";
+  expect(
+    dispatchFailure(
+      new OrchestratorDispatchError({
+        commandId: CommandId.make("mcp-core-settle"),
+        commandType: "thread.settle",
+        blockingQueuedRunIds: [RunId.make("run-1")],
+        cause,
+      }),
+    ),
+  ).toMatchObject({ code: "orchestration_error", message: cause });
+});
+
 it("bounds public command rejections and redacts internal dispatch causes", () => {
   const command = { commandId: CommandId.make("mcp-core-command"), commandType: "thread.settle" };
   expect(

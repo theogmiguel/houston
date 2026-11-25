@@ -4011,6 +4011,8 @@ export class OrchestrationV2DispatchCommandError extends Schema.TaggedError<Orch
     reason: Schema.optional(Schema.Literal("thread_not_found")),
     /** Set when a provider switch was refused because the session still runs this work. */
     blockingBackgroundWork: Schema.optional(Schema.Array(HoustonBlockingBackgroundWork)),
+    /** Set when a settle was refused because these messages are queued, in delivery order. */
+    blockingQueuedRunIds: Schema.optional(Schema.Array(RunId)),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {}

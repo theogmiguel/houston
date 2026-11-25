@@ -4,8 +4,10 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   AuthSessionId,
+  CommandId,
   EnvironmentId,
   ProjectId,
+  RunId,
   ThreadId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -142,6 +144,7 @@ import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as ProjectEnrichment from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
 import {
+  dispatchCommandError,
   layerWsRpc,
   resolveOpenDiscoveryForConfig,
   subscribeOrchestrationV2Shell,
@@ -1436,6 +1439,36 @@ it.effect("thread resume at its own high-water below the pruned boundary skips t
     assert.isTrue(Exit.isSuccess(exit));
   }).pipe(Effect.scoped, Effect.provide(ReplayTestLayer)),
 );
+
+it("a settle refused by queued messages carries their runs to the client", () => {
+  const command = {
+    type: "thread.settle",
+    commandId: CommandId.make("settle-refused"),
+    threadId: ThreadId.make("thread:queued"),
+  } as const;
+  const refusal = new Orchestrator.OrchestratorDispatchError({
+    commandId: command.commandId,
+    commandType: command.type,
+    cause: "Thread thread:queued has queued run run:1.",
+    blockingQueuedRunIds: [RunId.make("run:1"), RunId.make("run:2")],
+  });
+  const wrapped = new Orchestrator.OrchestratorDispatchError({
+    commandId: command.commandId,
+    commandType: command.type,
+    cause: refusal,
+  });
+  for (const cause of [refusal, wrapped]) {
+    const error = dispatchCommandError(command, cause);
+    assert.deepEqual(error.blockingQueuedRunIds, [RunId.make("run:1"), RunId.make("run:2")]);
+    assert.equal(error.message, "Thread thread:queued has queued run run:1.");
+  }
+  const running = new Orchestrator.OrchestratorDispatchError({
+    commandId: command.commandId,
+    commandType: command.type,
+    cause: "Thread thread:queued is still running.",
+  });
+  assert.isUndefined(dispatchCommandError(command, running).blockingQueuedRunIds);
+});
 
 it.effect.each([
   { name: "an unknown thread id", missing: true, reason: "thread_not_found" },
