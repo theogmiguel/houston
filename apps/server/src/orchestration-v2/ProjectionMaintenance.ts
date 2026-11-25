@@ -52,10 +52,18 @@ const borrowsPrompt = (sql: SqlClient.SqlClient) => sql`
   AND json_type(event.payload_json, '$.promptSequence') = 'integer'
 `;
 
-/** A page of the anchors that rows in `(afterSequence, throughSequence]` borrow from. */
+/**
+ * A page of the anchors that rows in `(afterSequence, throughSequence]` borrow from. A stream
+ * filter lets a caller read the borrows that matter to a thread deletion, not the whole log.
+ */
 export const promptReferencesQuery = (
   sql: SqlClient.SqlClient,
-  input: { readonly afterSequence: number; readonly throughSequence: number },
+  input: {
+    readonly afterSequence: number;
+    readonly throughSequence: number;
+    readonly onlyStreamId?: string;
+    readonly excludingStreamId?: string;
+  },
 ) => sql<{ readonly sequence: number; readonly prompt_sequence: number }>`
   SELECT
     event.sequence,
@@ -64,6 +72,16 @@ export const promptReferencesQuery = (
   WHERE event.sequence > ${input.afterSequence}
     AND event.sequence <= ${input.throughSequence}
     AND ${borrowsPrompt(sql)}
+    AND ${
+      input.onlyStreamId === undefined
+        ? sql`1 = 1`
+        : sql`event.aggregate_kind = 'thread' AND event.stream_id = ${input.onlyStreamId}`
+    }
+    AND ${
+      input.excludingStreamId === undefined
+        ? sql`1 = 1`
+        : sql`event.aggregate_kind = 'thread' AND event.stream_id != ${input.excludingStreamId}`
+    }
   ORDER BY event.sequence ASC
   LIMIT ${REFERENCE_PAGE_SIZE}
 `;

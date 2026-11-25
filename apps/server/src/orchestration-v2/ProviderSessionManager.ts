@@ -7,17 +7,21 @@ import {
   OrchestrationV2DomainEvent,
   OrchestrationV2ProviderSession,
   type OrchestrationV2PromptSuggestion,
+  type OrchestrationV2ProviderFailure,
   type OrchestrationV2ProviderThread,
+  type OrchestrationV2TurnItem,
   OrchestrationV2RuntimeRequest,
   ProviderInstanceId,
   ProviderSessionId,
   ThreadId,
   type ProviderThreadId,
+  type ProviderTurnId,
 } from "@houston-app/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -63,6 +67,11 @@ const DEFAULT_MAX_IDLE_PIN_MS = 4 * 60 * 60 * 1000;
 const RELEASE_SCOPE_CLOSE_TIMEOUT_MS = 30 * 1000;
 /** Past adapters' own 10 s stop fallbacks, so they settle first when the provider answers at all. */
 export const PROVIDER_INTERRUPT_TIMEOUT_MS = 15 * 1000;
+/**
+ * Longest a turn may stay in provider retries, beyond the waits the provider states, before it is
+ * stopped as failed. Some providers wait for the network without limit; recovered retries take minutes.
+ */
+export const PROVIDER_RETRY_BUDGET_MS = 10 * 60 * 1000;
 
 const busyTurnPrefix = (providerThreadId: ProviderThreadId) => `${providerThreadId}#`;
 const busyTurnKey = (providerThreadId: ProviderThreadId, runOrdinal: number) =>
@@ -238,6 +247,8 @@ interface LiveSessionEntry {
   >;
   readonly requestEventPermit: Semaphore.Semaphore;
   readonly scope: Scope.Closeable;
+  /** Done once `scope` has run the adapter's finalizers; ends the event pump. */
+  readonly scopeClosed: Deferred.Deferred<void>;
   readonly idleGeneration: number;
   readonly busyTurns: ReadonlySet<string>;
   readonly idleFiber: Fiber.Fiber<void, never> | null;
@@ -245,6 +256,87 @@ interface LiveSessionEntry {
   readonly idleThreadUnloads: ReadonlyMap<ThreadId, IdleThreadUnload>;
   /** Each attached thread's trace context as of its latest open; shared by every copy of the entry. */
   readonly traceContextByThread: Map<ThreadId, TraceContext.TraceContext>;
+  /** Turns a caller asked to stop; shared by every copy of the entry. */
+  readonly stopRequestedTurns: Set<ProviderTurnId>;
+}
+
+type ProviderRetryItem = Extract<OrchestrationV2TurnItem, { readonly type: "error" }> & {
+  readonly providerThreadId: ProviderThreadId;
+  readonly providerTurnId: ProviderTurnId;
+  readonly retry: NonNullable<
+    Extract<OrchestrationV2TurnItem, { readonly type: "error" }>["retry"]
+  >;
+};
+
+// Only error rows with a retry are budgeted. Muse Code reports retries as notices, and Cursor,
+// Grok, fx, Kiro, Antigravity and ACP agents other than Mistral Vibe report none: never bounded.
+function providerRetryItem(item: OrchestrationV2TurnItem): ProviderRetryItem | undefined {
+  return item.type === "error" &&
+    item.retry !== undefined &&
+    item.providerThreadId !== null &&
+    item.providerTurnId !== null
+    ? {
+        ...item,
+        providerThreadId: item.providerThreadId,
+        providerTurnId: item.providerTurnId,
+        retry: item.retry,
+      }
+    : undefined;
+}
+
+/** Output, a tool call or a request to the user shows the provider answered. */
+function providerOutputThreadId(
+  event: ProviderAdapter.ProviderAdapterV2Event,
+): ThreadId | undefined {
+  switch (event.type) {
+    case "turn_item.updated":
+      return event.turnItem.threadId;
+    case "message.updated":
+      return event.message.threadId;
+    case "plan.updated":
+      return event.plan.threadId;
+    case "runtime_request.updated":
+      return event.threadId;
+    default:
+      return undefined;
+  }
+}
+
+function formatRetryDuration(millis: number): string {
+  // A sub-minute wait such as a 600 ms backoff keeps its tenths rather than rounding to a second.
+  if (millis < 60_000 && millis % 1000 !== 0) {
+    const seconds = Math.round(millis / 100) / 10;
+    return `${seconds} second${seconds === 1 ? "" : "s"}`;
+  }
+  const totalSeconds = Math.round(millis / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  const parts = [
+    ...(minutes > 0 ? [`${minutes} minute${minutes === 1 ? "" : "s"}`] : []),
+    ...(seconds > 0 || minutes === 0 ? [`${seconds} second${seconds === 1 ? "" : "s"}`] : []),
+  ];
+  return parts.join(" ");
+}
+
+const ENDS_SENTENCE = /[.!?]$/;
+
+/** Keeps the class and reset time, so a usage-limit retry still ends the turn as limited. */
+function retryBudgetFailure(
+  failure: OrchestrationV2ProviderFailure,
+  retriedMs: number,
+  waitedMs: number,
+): OrchestrationV2ProviderFailure {
+  const message = ENDS_SENTENCE.test(failure.message) ? failure.message : `${failure.message}.`;
+  const retried = formatRetryDuration(retriedMs);
+  const limit = formatRetryDuration(PROVIDER_RETRY_BUDGET_MS);
+  return {
+    ...failure,
+    message:
+      waitedMs > 0
+        ? `${message} The provider retried for ${retried} without recovering, ${formatRetryDuration(waitedMs)} of it waiting as the provider asked; the retry limit is ${limit} beyond that wait, so the turn was stopped.`
+        : `${message} The provider retried for ${retried} without recovering; the retry limit is ${limit}, so the turn was stopped.`,
+    retryable: false,
+  };
 }
 
 interface IdleThreadUnload {
@@ -1796,6 +1888,7 @@ export const layerWithOptions = (
         eventSubscribers: Ref.Ref<
           ReadonlyMap<number, Queue.Queue<ProviderSessionEventSignal, Cause.Done>>
         >,
+        stopRequestedTurns: Set<ProviderTurnId>,
       ): ProviderAdapter.ProviderAdapterV2SessionRuntime => {
         const providerSessionId = runtime.providerSessionId;
         const subscribeEvents = makeEventSubscription(eventSubscribers);
@@ -1987,7 +2080,8 @@ export const layerWithOptions = (
             ),
           // A provider starved of memory can stop answering, so no caller may wait on it unbounded.
           interruptTurn: (input) =>
-            observeActivity(providerSessionId, touchActivity(providerSessionId)).pipe(
+            Effect.sync(() => stopRequestedTurns.add(input.providerTurnId)).pipe(
+              Effect.andThen(observeActivity(providerSessionId, touchActivity(providerSessionId))),
               Effect.andThen(
                 runtime.interruptTurn(input).pipe(
                   Effect.timeoutOrElse({
@@ -2075,9 +2169,209 @@ export const layerWithOptions = (
           }),
         );
 
+      // Every adapter's events pass through the pump, so this covers each one that reports retries.
+      const makeRetryBudget = (entry: LiveSessionEntry) => {
+        interface RetryWindow {
+          item: ProviderRetryItem;
+          readonly openedAtMs: number;
+          /** The delays the provider announced in this window, waited out before the budget counts. */
+          statedWaitMs: number;
+          timer: Fiber.Fiber<void> | undefined;
+        }
+        // A stated delay or reset time is waited out in full; the budget counts after it.
+        const waitedMs = (window: RetryWindow) => {
+          const resetAt = window.item.failure.resetAt;
+          const resetMs = resetAt == null ? Number.NaN : Date.parse(resetAt);
+          return Math.max(
+            window.statedWaitMs,
+            Number.isFinite(resetMs) ? resetMs - window.openedAtMs : 0,
+          );
+        };
+        const windows = new Map<ProviderTurnId, RetryWindow>();
+        const exceeded = new Map<
+          ProviderTurnId,
+          { readonly item: ProviderRetryItem; readonly failure: OrchestrationV2ProviderFailure }
+        >();
+        const closeWindow = (providerTurnId: ProviderTurnId) => {
+          const timer = windows.get(providerTurnId)?.timer;
+          windows.delete(providerTurnId);
+          return timer === undefined ? Effect.void : Fiber.interrupt(timer);
+        };
+        const stopExceededRetry = Effect.fn("ProviderSessionManager.stopExceededRetry")(
+          function* (window: RetryWindow) {
+            const { providerThreadId, providerTurnId, threadId } = window.item;
+            // A user's Stop already in flight keeps its interrupted outcome.
+            if (
+              windows.get(providerTurnId) !== window ||
+              entry.stopRequestedTurns.has(providerTurnId)
+            )
+              return;
+            const current = (yield* Ref.get(sessions)).get(
+              sessionKey(entry.runtime.providerSessionId),
+            );
+            if (current?.runtime !== entry.runtime) return;
+            const { providerThread } = yield* projectionStore.getProviderControlContext(threadId, {
+              providerThreadId,
+              providerTurnId,
+            });
+            if (providerThread === undefined || windows.get(providerTurnId) !== window) return;
+            const retriedMs = (yield* Clock.currentTimeMillis) - window.openedAtMs;
+            windows.delete(providerTurnId);
+            exceeded.set(providerTurnId, {
+              item: window.item,
+              failure: retryBudgetFailure(window.item.failure, retriedMs, waitedMs(window)),
+            });
+            yield* Effect.logWarning("orchestration-v2.provider-retry-budget-exceeded", {
+              providerSessionId: entry.runtime.providerSessionId,
+              providerTurnId,
+              retriedMs,
+              waitedMs: waitedMs(window),
+              limitMs: PROVIDER_RETRY_BUDGET_MS,
+            });
+            // A stop that ends the turn later still reports the retry failure.
+            yield* entry.runtime.interruptTurn({ providerThread, providerTurnId }).pipe(
+              Effect.timeoutOrElse({
+                duration: PROVIDER_INTERRUPT_TIMEOUT_MS,
+                orElse: () =>
+                  Effect.logWarning("orchestration-v2.provider-retry-budget-stop-timed-out", {
+                    providerSessionId: entry.runtime.providerSessionId,
+                    providerTurnId,
+                    timeoutMs: PROVIDER_INTERRUPT_TIMEOUT_MS,
+                  }),
+              }),
+            );
+          },
+          (effect) =>
+            effect.pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("orchestration-v2.provider-retry-budget-stop-failed", {
+                  providerSessionId: entry.runtime.providerSessionId,
+                  cause,
+                }),
+              ),
+            ),
+        );
+        const armTimer = Effect.fnUntraced(function* (window: RetryWindow, nowMs: number) {
+          if (window.timer !== undefined) yield* Fiber.interrupt(window.timer);
+          const deadlineMs = window.openedAtMs + waitedMs(window) + PROVIDER_RETRY_BUDGET_MS;
+          window.timer = yield* Effect.sleep(Duration.millis(Math.max(0, deadlineMs - nowMs))).pipe(
+            Effect.andThen(stopExceededRetry(window)),
+            Effect.forkIn(entry.scope, { startImmediately: true }),
+          );
+        });
+        const trackRetryRow = Effect.fnUntraced(function* (
+          event: Extract<
+            ProviderAdapter.ProviderAdapterV2Event,
+            { readonly type: "turn_item.updated" }
+          >,
+          retryItem: ProviderRetryItem,
+        ) {
+          const id = retryItem.providerTurnId;
+          const stopped = exceeded.get(id);
+          if (stopped !== undefined) {
+            // A turn already being stopped for its budget opens no new window.
+            if (retryItem.status === "running") return event;
+            const failedRow: ProviderAdapter.ProviderAdapterV2Event = {
+              ...event,
+              turnItem: {
+                ...retryItem,
+                status: "failed",
+                title:
+                  stopped.failure.class === "usage_limit"
+                    ? "Usage limit reached"
+                    : "Provider error",
+                failure: stopped.failure,
+              },
+            };
+            return failedRow;
+          }
+          if (retryItem.status !== "running") {
+            yield* closeWindow(id);
+            return event;
+          }
+          const nowMs = yield* Clock.currentTimeMillis;
+          const open = windows.get(id);
+          if (open === undefined) {
+            const window: RetryWindow = {
+              item: retryItem,
+              openedAtMs: nowMs,
+              statedWaitMs: retryItem.retry.retryDelayMs ?? 0,
+              timer: undefined,
+            };
+            windows.set(id, window);
+            yield* armTimer(window, nowMs);
+            return event;
+          }
+          const before = waitedMs(open);
+          // A new attempt adds its stated delay; a repeated notice of the same attempt adds nothing.
+          if (retryItem.retry.attempt !== open.item.retry.attempt) {
+            open.statedWaitMs += retryItem.retry.retryDelayMs ?? 0;
+          }
+          open.item = retryItem;
+          if (waitedMs(open) !== before) yield* armTimer(open, nowMs);
+          return event;
+        });
+        // Runs for every provider event, so it stays untraced.
+        return Effect.fnUntraced(function* (event: ProviderAdapter.ProviderAdapterV2Event) {
+          const retryItem =
+            event.type === "turn_item.updated" ? providerRetryItem(event.turnItem) : undefined;
+          if (event.type === "turn_item.updated" && retryItem !== undefined) {
+            return yield* trackRetryRow(event, retryItem);
+          }
+          const outputThreadId = providerOutputThreadId(event);
+          if (outputThreadId !== undefined) {
+            for (const [id, window] of windows) {
+              if (window.item.threadId === outputThreadId) yield* closeWindow(id);
+            }
+            return event;
+          }
+          if (event.type === "provider_turn.updated") {
+            if (event.providerTurn.status === "running") return event;
+            yield* closeWindow(event.providerTurn.id);
+            if (
+              exceeded.get(event.providerTurn.id) === undefined ||
+              (event.providerTurn.status !== "interrupted" &&
+                event.providerTurn.status !== "cancelled")
+            )
+              return event;
+            const failedTurn: ProviderAdapter.ProviderAdapterV2Event = {
+              ...event,
+              providerTurn: { ...event.providerTurn, status: "failed" },
+            };
+            return failedTurn;
+          }
+          if (event.type !== "turn.terminal") return event;
+          const id = event.providerTurnId;
+          yield* closeWindow(id);
+          entry.stopRequestedTurns.delete(id);
+          const stopped = exceeded.get(id);
+          exceeded.delete(id);
+          if (
+            stopped === undefined ||
+            (event.status !== "interrupted" && event.status !== "cancelled")
+          )
+            return event;
+          const failedTerminal: ProviderAdapter.ProviderAdapterV2Event = {
+            type: "turn.terminal",
+            driver: event.driver,
+            providerThreadId: event.providerThreadId,
+            providerTurnId: id,
+            runOrdinal: event.runOrdinal,
+            failureItemOrdinal: stopped.item.ordinal,
+            status: "failed",
+            failure: stopped.failure,
+            retry: stopped.item.retry,
+            ...(stopped.item.startedAt === null ? {} : { retryStartedAt: stopped.item.startedAt }),
+            threadDisposition: event.threadDisposition,
+          };
+          return failedTerminal;
+        });
+      };
+
       const startEventPump = (entry: LiveSessionEntry) => {
         let stoppedByProvider = false;
         let lastSessionStatus = entry.runtime.providerSession.status;
+        const applyRetryBudget = makeRetryBudget(entry);
         const pumpEvent = (event: ProviderAdapter.ProviderAdapterV2Event) =>
           Effect.suspend(() => {
             if (shutdownSignal.received) return Effect.void;
@@ -2190,9 +2484,17 @@ export const layerWithOptions = (
             );
           });
         return entry.runtime.events.pipe(
+          // Several adapters never end their event stream, and a parked pump retains the whole session.
+          Stream.interruptWhen(Deferred.await(entry.scopeClosed)),
           // No span per event: the fiber has no parent (withoutTurnContext), so the work an event
           // does starts traces of its own, and an event that only passes through costs none.
-          Stream.runForEach((event) => withEventTraceContext(entry, event, pumpEvent(event))),
+          Stream.runForEach((event) =>
+            withEventTraceContext(
+              entry,
+              event,
+              applyRetryBudget(event).pipe(Effect.flatMap(pumpEvent)),
+            ),
+          ),
           Effect.exit,
           Effect.flatMap((exit) =>
             Effect.gen(function* () {
@@ -2339,6 +2641,10 @@ export const layerWithOptions = (
                 }
               });
               const sessionScope = yield* Scope.fork(sessionScopes);
+              // Added before the adapter's finalizers so it runs after them, but the pump may still
+              // drop events the adapter emits while shutting down; their subscribers are already detached.
+              const scopeClosed = yield* Deferred.make<void>();
+              yield* Scope.addFinalizer(sessionScope, Deferred.done(scopeClosed, Exit.void));
               yield* agentScope.clear(input.threadId);
               const runtime = yield* adapter
                 .openSession({
@@ -2396,7 +2702,8 @@ export const layerWithOptions = (
               const eventSubscribers = yield* Ref.make<
                 ReadonlyMap<number, Queue.Queue<ProviderSessionEventSignal, Cause.Done>>
               >(new Map());
-              const exposedRuntime = decorateRuntime(runtime, eventSubscribers);
+              const stopRequestedTurns = new Set<ProviderTurnId>();
+              const exposedRuntime = decorateRuntime(runtime, eventSubscribers, stopRequestedTurns);
               const entry: LiveSessionEntry = {
                 attachedThreadIds: new Set([input.threadId]),
                 loadedProviderThreadKeyByThread: new Map(),
@@ -2412,6 +2719,7 @@ export const layerWithOptions = (
                 eventSubscribers,
                 requestEventPermit: yield* Semaphore.make(1),
                 scope: sessionScope,
+                scopeClosed,
                 idleGeneration: 0,
                 busyTurns: new Set(),
                 idleFiber: null,
@@ -2420,6 +2728,7 @@ export const layerWithOptions = (
                 traceContextByThread: new Map([
                   [input.threadId, yield* TraceContext.currentThreadContext],
                 ]),
+                stopRequestedTurns,
               };
               yield* Ref.update(sessions, (current) => {
                 const updated = new Map(current);
