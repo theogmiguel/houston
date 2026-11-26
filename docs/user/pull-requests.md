@@ -20,10 +20,13 @@ A row shows the issue's state, key, title, assignees, comment count, author and 
 row to read it beside the list. The panel shows the description and timeline, with comments,
 labels, assignments and state changes. Where the tracker and your account allow it, you can edit
 the title and description, comment, react, and change labels, assignees and state. The state menu
-offers the issue's own workflow: GitHub's Open, Completed, Not planned and Duplicate; GitLab's and
-Forgejo's Open and Closed; an Azure DevOps work item's own type's states; a Linear team's columns.
-Moving an issue names one of those states. An issue outside the projects you have open is
-read-only.
+offers the issue's own workflow: on github.com, the repository's issue statuses (such as
+Backlog, Todo, In progress, In review, Done, Not planned and Duplicate), where each status
+decides whether the issue is open or closed; GitHub's Open, Completed, Not planned and Duplicate
+on a github.com repository without issue statuses and on any GitHub Enterprise Server host, which
+do not show or set statuses; GitLab's and Forgejo's Open and Closed; an Azure DevOps work item's
+own type's states; a Linear team's columns. Moving an issue names one of those states. An issue
+outside the projects you have open is read-only.
 
 Linked pull requests appear in the issue panel and open beside it. Closing the panel or switching
 issues keeps the list where it was.
