@@ -3,7 +3,9 @@ import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
+import * as PeerForwarding from "./peer/PeerForwarding.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
+import * as PeerLinkSearch from "./houston/peerLinkSearch.ts";
 
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -1647,6 +1649,7 @@ export const layerWsRpc = (
         : Effect.as(Effect.void, undefined);
       const secretResolver = yield* SecretResolver.SecretResolver;
       const peerLinks = yield* PeerLinks.PeerLinks;
+      const peerLinkSearch = yield* PeerLinkSearch.PeerLinkSearch;
       const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
@@ -2842,6 +2845,7 @@ export const layerWsRpc = (
         }),
         [WS_METHODS.peerLinksList]: (_input) =>
           peerLinks.list.pipe(Effect.map((links) => ({ links }))),
+        [WS_METHODS.houstonPeerLinksSearch]: (input) => peerLinkSearch.search(input),
         [WS_METHODS.peerLinksLink]: (input) => peerLinks.link(input),
         [WS_METHODS.peerLinksUnlink]: ({ environmentId }) =>
           peerLinks.unlink(environmentId).pipe(Effect.map((removed) => ({ removed }))),
@@ -3838,7 +3842,9 @@ export const layer = Layer.unwrap(
     const issueTrackers = yield* IssueTrackerConnections.IssueTrackerConnections;
     const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
     const peerLinks = yield* PeerLinks.PeerLinks;
+    const peerForwarding = yield* PeerForwarding.PeerForwarding;
     const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
+    const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
     const sql = yield* SqlClient.SqlClient;
     const e2eeEnvironmentId = yield* Effect.flatMap(
       ServerEnvironment.ServerEnvironmentIdentity,
@@ -3953,6 +3959,15 @@ export const layer = Layer.unwrap(
                 ),
               ),
               Layer.provide(Layer.succeed(PeerLinks.PeerLinks, peerLinks)),
+              Layer.provide(
+                PeerLinkSearch.layer.pipe(
+                  Layer.provideMerge(Layer.succeed(PeerLinks.PeerLinks, peerLinks)),
+                  Layer.provideMerge(Layer.succeed(PeerForwarding.PeerForwarding, peerForwarding)),
+                  Layer.provideMerge(
+                    Layer.succeed(ServerEnvironment.ServerEnvironment, serverEnvironment),
+                  ),
+                ),
+              ),
               Layer.provide(Layer.succeed(PeerLinkRequests.PeerLinkRequests, peerLinkRequests)),
               Layer.provide(
                 SourceControlDiscovery.layer.pipe(

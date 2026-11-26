@@ -8,6 +8,8 @@ import {
   OrchestratorMcpThreadReadResult,
   OrchestratorMcpThreadWaitInput,
   OrchestratorMcpThreadWaitResult,
+  OrchestrationSearchThreadsInput,
+  OrchestrationThreadSearchMatch,
 } from "@houston-app/contracts";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
@@ -35,6 +37,21 @@ const DEFAULT_WAIT_TIMEOUT_MS = 10 * 60 * 1_000;
 const MAX_WAIT_TIMEOUT_MS = 60 * 60 * 1_000;
 
 type Scope = McpInvocationContext.McpInvocationScope;
+
+/** `houston_thread_search`'s answer there, as the caller here reads it. */
+export const PeerThreadSearchResult = Schema.Struct({
+  matches: Schema.Array(
+    Schema.Struct({
+      threadId: OrchestrationThreadSearchMatch.fields.threadId,
+      projectId: OrchestrationThreadSearchMatch.fields.projectId,
+      title: Schema.String,
+      source: Schema.Literals(["title", "user", "assistant"]),
+      snippet: Schema.optionalKey(Schema.String),
+      messageCreatedAt: Schema.optionalKey(OrchestrationThreadSearchMatch.fields.messageCreatedAt),
+    }),
+  ),
+});
+export type PeerThreadSearchResult = typeof PeerThreadSearchResult.Type;
 
 /**
  * Runs Houston MCP tools in a linked environment for an agent here. The tool's own
@@ -73,6 +90,12 @@ export class PeerForwarding extends Context.Service<
       environmentId: EnvironmentId,
       input: OrchestratorMcpThreadWaitInput,
     ) => Effect.Effect<OrchestratorMcpThreadWaitResult, OrchestratorMcpFailure>;
+    /** `houston_thread_search` there. */
+    readonly searchThreads: (
+      scope: Scope,
+      environmentId: EnvironmentId,
+      input: OrchestrationSearchThreadsInput,
+    ) => Effect.Effect<PeerThreadSearchResult, OrchestratorMcpFailure>;
     /** The environments this one links to, as an agent sees them. */
     readonly links: (
       scope: Scope,
@@ -179,6 +202,16 @@ const make = Effect.gen(function* () {
       input,
     );
 
+  const searchThreads: PeerForwarding["Service"]["searchThreads"] = (scope, environmentId, input) =>
+    forward<PeerThreadSearchResult>(
+      scope,
+      "houston_thread_search",
+      OrchestrationSearchThreadsInput,
+      PeerThreadSearchResult,
+      environmentId,
+      input,
+    );
+
   const waitForThread: PeerForwarding["Service"]["waitForThread"] = Effect.fn(
     "PeerForwarding.waitForThread",
   )(function* (scope, environmentId, input) {
@@ -268,6 +301,7 @@ const make = Effect.gen(function* () {
     readThread,
     interruptThread,
     waitForThread,
+    searchThreads,
     links: listLinks,
   });
 });

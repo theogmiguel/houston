@@ -188,6 +188,7 @@ import {
   HoustonDatabaseReclaimError,
   HoustonDatabaseReclaimResult,
 } from "./houston/databaseReclaim.ts";
+import { PeerLinkSearchEvent, PeerLinkSearchInput } from "./houston/peerLinkSearch.ts";
 import { TerminalShells } from "./houston/terminalShells.ts";
 import {
   HoustonMcpSignInCompleteInput,
@@ -793,6 +794,7 @@ export const WS_METHODS = {
   peerLinksLink: "peerLinks.link",
   peerLinksUnlink: "peerLinks.unlink",
   peerLinksAnswerRequest: "peerLinks.answerRequest",
+  houstonPeerLinksSearch: "houston.peerLinks.search",
   serverUpdateSettings: "server.updateSettings",
   serverDiscoverSourceControl: "server.discoverSourceControl",
   serverSearchAcpRegistry: "server.searchAcpRegistry",
@@ -1146,6 +1148,13 @@ const WsPeerLinksUnlinkRpc = Rpc.make(WS_METHODS.peerLinksUnlink, {
 const WsPeerLinksAnswerRequestRpc = Rpc.make(WS_METHODS.peerLinksAnswerRequest, {
   payload: PeerLinkRequestAnswerInput,
   error: Schema.Union([PeerLinkRequestError, EnvironmentAuthorizationError]),
+});
+
+const WsHoustonPeerLinksSearchRpc = Rpc.make(WS_METHODS.houstonPeerLinksSearch, {
+  payload: PeerLinkSearchInput,
+  success: PeerLinkSearchEvent,
+  stream: true,
+  error: Schema.Union([PeerLinkError, EnvironmentAuthorizationError]),
 });
 
 const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSettings, {
@@ -3215,6 +3224,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonTerminalShellsRpc,
   WsHoustonMcpSignInStartRpc,
   WsHoustonMcpSignInCompleteRpc,
+  WsHoustonPeerLinksSearchRpc,
   WsHoustonTasksImportV1StatusRpc,
   WsHoustonTasksImportV1RunRpc,
   WsHoustonTasksStartRpc,
