@@ -127,3 +127,13 @@ it("asks for a bare compact when the instructions are empty", async () => {
   await page.getByRole("button", { name: "Compact context" }).click();
   expect(onCompact).toHaveBeenCalledExactlyOnceWith("");
 });
+
+it("opens when the composer controls it open", async () => {
+  await using _screen = await render(
+    <TooltipProvider delay={0}>
+      <ContextWindowMeter usage={snapshot(8)} modelDisplayName="Opus" open onOpenChange={() => {}} />
+    </TooltipProvider>,
+    { router: false },
+  );
+  await expect.element(page.getByText("Context Window")).toBeVisible();
+});

@@ -32,6 +32,9 @@ export function ContextWindowMeter(props: {
   onCompact?: ((instructions: string) => void) | undefined;
   compactDisabled?: boolean | undefined;
   compactDisabledReason?: string | null | undefined;
+  /** Lets the composer open the popover for `/context`; the hover trigger still works alone. */
+  open?: boolean | undefined;
+  onOpenChange?: ((open: boolean) => void) | undefined;
 }) {
   const t = useT();
   const { usage, modelDisplayName, onCompact, compactDisabled, compactDisabledReason } = props;
@@ -52,7 +55,10 @@ export function ContextWindowMeter(props: {
   const isNearFull = isContextWindowNearFull(usage.usedPercentage);
 
   return (
-    <Popover>
+    <Popover
+      {...(props.open === undefined ? {} : { open: props.open })}
+      {...(props.onOpenChange ? { onOpenChange: props.onOpenChange } : {})}
+    >
       <PopoverTrigger
         openOnHover
         delay={150}

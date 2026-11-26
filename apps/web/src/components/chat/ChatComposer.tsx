@@ -244,7 +244,12 @@ import {
 import { AddSheet } from "../../mobile/AddSheet";
 import { ModelSheet } from "../../mobile/ModelSheet";
 import { useIsPhone } from "../../mobile/usePhone";
-import { readPromptUltrathink } from "./TraitsPicker";
+import { getTraitsSectionVisibility, readPromptUltrathink } from "./TraitsPicker";
+import {
+  availableTerminalCommandEntries,
+  resolveTerminalCommand,
+  type TerminalActionId,
+} from "../../composerTerminalCommands";
 import {
   providerSupportsManualCompaction,
   resolveContextWindowModelDisplayName,
@@ -332,6 +337,14 @@ function consumePasteAsTextShortcut(deadline: { current: number }): boolean {
 
 const runtimeModeOptions = runtimeModes.map((mode) => ({ mode, ...runtimeModeConfig[mode] }));
 
+/** Terminal-command actions the chat view runs; the composer runs the rest itself. */
+export type ExternalTerminalCommandActions = Partial<
+  Record<
+    Exclude<TerminalActionId, "context" | "effort" | "permissions">,
+    (argument: string) => void
+  >
+>;
+
 export interface ChatComposerHandle {
   focusAtEnd: () => void;
   focusAt: (cursor: number) => void;
@@ -357,6 +370,10 @@ export interface ChatComposerHandle {
   stepReasoningEffort: (direction: 1 | -1) => void;
   toggleModelPicker: () => void;
   openControl: (command: KeybindingCommand) => void;
+  /** Runs a terminal command's action; false when this thread cannot run it right now. */
+  runTerminalAction: (action: TerminalActionId, argument: string) => boolean;
+  /** The terminal command a whole message names, when this thread and provider leave it to Houston. */
+  resolveTerminalCommand: (text: string) => ReturnType<typeof resolveTerminalCommand>;
   isModelPickerOpen: () => boolean;
   /** An inline composer menu (mentions, commands, stash) owns Escape until it closes. */
   isComposerMenuOpen: () => boolean;
@@ -474,6 +491,11 @@ export interface ChatComposerProps {
   /** What a `!command` needs that this thread lacks; shown when it cannot run. */
   shellCommandUnavailableReason?: string | null;
   onResumeCommand?: (() => void) | undefined;
+  /**
+   * Houston actions a terminal command name opens (`/rewind`, `/diff`, `/rename`, settings pages).
+   * An action absent here is unavailable for this thread, so its names are not offered.
+   */
+  terminalCommandActions?: ExternalTerminalCommandActions | undefined;
   sideChatAvailable?: boolean;
   sideChatDisabledReason?: string | null;
   /** Arms a fresh session for the next message; absent where `/clear` is unavailable. */
@@ -1270,6 +1292,85 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerPreviewAnnotations.length === 0 &&
     composerReviewComments.length === 0;
   const linkedEnvironments = useLinkedEnvironments(environmentId);
+  const [isContextMeterOpen, setIsContextMeterOpen] = useState(false);
+  const terminalTraits = resolveComposerTraitsInput({
+    provider: selectedProvider,
+    instanceId: selectedInstanceId,
+    ...(routeKind === "server" ? { threadRef: routeThreadRef } : {}),
+    ...(routeKind === "draft" && draftId ? { draftId } : {}),
+    model: selectedModel,
+    models: selectedProviderModels,
+    modelOptions: composerModelOptions?.[selectedInstanceId],
+    reportedModelSelection,
+    promptUltrathink: readPromptUltrathink(prompt),
+    // Only the visible controls are read here; nothing edits the prompt.
+    onPromptEdit: () => undefined,
+    planModeEnabled: settings.planModeEnabled,
+  });
+  const terminalTraitsVisibility = terminalTraits
+    ? getTraitsSectionVisibility(terminalTraits)
+    : null;
+  const { terminalCommandActions } = props;
+  const availableTerminalActions = new Set<TerminalActionId>([
+    ...(Object.keys(terminalCommandActions ?? {}) as TerminalActionId[]),
+    ...(settings.contextWindowMeterEnabled && activeContextWindow ? (["context"] as const) : []),
+    ...(terminalTraitsVisibility?.showEffort ? (["effort"] as const) : []),
+    ...(compatibleRuntimeModeOptions.length > 1 ? (["permissions"] as const) : []),
+  ]);
+  const providerCommandNames = selectedProviderSlashCommands.flatMap((command) => [
+    command.name,
+    ...(command.aliases ?? []),
+  ]);
+  const terminalCommandEntries = availableTerminalCommandEntries({
+    availableActions: availableTerminalActions,
+    providerCommandNames,
+  });
+  const openComposerControlStable = useStableCallback((command: KeybindingCommand) => {
+    if (composerBlurFrameRef.current !== null) {
+      window.cancelAnimationFrame(composerBlurFrameRef.current);
+      composerBlurFrameRef.current = null;
+    }
+    flushSync(() => setIsComposerFocused(true));
+    const shell = composerFormRef.current?.closest('[data-slot="composer-shell"]');
+    const trigger = Array.from(
+      shell?.querySelectorAll<HTMLButtonElement>(
+        `button[data-composer-shortcut~="${command}"]:not(:disabled)`,
+      ) ?? [],
+    ).find(
+      (element) =>
+        !element.closest("[inert]") && element.checkVisibility({ visibilityProperty: true }),
+    );
+    if (!trigger) return;
+    trigger.focus({ preventScroll: true });
+    if (command === "composer.mode") markOpenToPermissions(trigger);
+    if (command === "composer.effort") markOpenToEffort(trigger);
+    trigger.click();
+  });
+  const runTerminalActionStable = useStableCallback(
+    (action: TerminalActionId, argument: string): boolean => {
+      if (!availableTerminalActions.has(action)) return false;
+      switch (action) {
+        case "context":
+          setIsContextMeterOpen(true);
+          return true;
+        case "effort":
+          openComposerControlStable("composer.effort");
+          return true;
+        case "permissions":
+          openComposerControlStable("composer.mode");
+          return true;
+        default:
+          terminalCommandActions?.[action]?.(argument);
+          return true;
+      }
+    },
+  );
+  const resolveTerminalCommandStable = useStableCallback((text: string) =>
+    resolveTerminalCommand(text, {
+      availableActions: availableTerminalActions,
+      providerCommandNames,
+    }),
+  );
   const {
     items: composerMenuItems,
     isLoading: isComposerMenuLoading,
@@ -1292,6 +1393,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedProvider,
     selectedProviderSkills,
     selectedProviderSlashCommands,
+    terminalCommandEntries,
     showSkillsInSlashMenu: settings.showSkillsInSlashMenu,
     workspaceSkillsScanning,
     questionAttachmentTarget,
@@ -2227,6 +2329,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       });
       if (applied) {
         setComposerHighlightedItemId(null);
+      }
+      return;
+    }
+    if (item.type === "terminal-command") {
+      const opensWithArgument = item.entry.argumentHint !== undefined;
+      const replacement = opensWithArgument ? `/${item.entry.names[0]} ` : "";
+      const replacementRangeEnd = opensWithArgument
+        ? extendReplacementRangeForTrailingSpace(snapshot.value, trigger.rangeEnd, replacement)
+        : trigger.rangeEnd;
+      const applied = applyPromptReplacement(trigger.rangeStart, replacementRangeEnd, replacement, {
+        expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd),
+        focusEditorAfterReplace: opensWithArgument,
+      });
+      if (applied) {
+        setComposerHighlightedItemId(null);
+        if (!opensWithArgument) runTerminalActionStable(item.entry.action, "");
       }
       return;
     }
@@ -3486,27 +3604,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           openModelPickerStable();
         }
       },
-      openControl: (command) => {
-        if (composerBlurFrameRef.current !== null) {
-          window.cancelAnimationFrame(composerBlurFrameRef.current);
-          composerBlurFrameRef.current = null;
-        }
-        flushSync(() => setIsComposerFocused(true));
-        const shell = composerFormRef.current?.closest('[data-slot="composer-shell"]');
-        const trigger = Array.from(
-          shell?.querySelectorAll<HTMLButtonElement>(
-            `button[data-composer-shortcut~="${command}"]:not(:disabled)`,
-          ) ?? [],
-        ).find(
-          (element) =>
-            !element.closest("[inert]") && element.checkVisibility({ visibilityProperty: true }),
-        );
-        if (!trigger) return;
-        trigger.focus({ preventScroll: true });
-        if (command === "composer.mode") markOpenToPermissions(trigger);
-        if (command === "composer.effort") markOpenToEffort(trigger);
-        trigger.click();
-      },
+      openControl: openComposerControlStable,
+      runTerminalAction: runTerminalActionStable,
+      resolveTerminalCommand: resolveTerminalCommandStable,
       compactContext: compactThreadContextStable,
       isModelPickerOpen: () => isComposerModelPickerOpen,
       isComposerMenuOpen: () => composerMenuOpen || isStashMenuOpen,
@@ -4214,6 +4314,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   </div>
                   {settings.contextWindowMeterEnabled && activeContextWindow ? (
                     <ContextWindowMeter
+                      open={isContextMeterOpen}
+                      onOpenChange={setIsContextMeterOpen}
                       usage={activeContextWindow}
                       modelDisplayName={activeThreadModelDisplayName}
                       onCompact={

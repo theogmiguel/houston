@@ -33,6 +33,7 @@ import {
 import { memo, useLayoutEffect, useRef, useState } from "react";
 
 import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
+import type { TerminalCommandEntry } from "../../composerTerminalCommands";
 import { cn } from "~/lib/utils";
 import type { Translate } from "~/i18n/useT";
 import { observeResize } from "~/lib/observeResize";
@@ -67,6 +68,13 @@ export type ComposerCommandItem =
       id: string;
       type: "slash-command";
       command: ComposerSlashCommand;
+      label: string;
+      description: string;
+    }
+  | {
+      id: string;
+      type: "terminal-command";
+      entry: TerminalCommandEntry;
       label: string;
       description: string;
     }
@@ -394,6 +402,8 @@ function ComposerCommandItemGlyph({ item }: { item: ComposerCommandItem }) {
       ) : (
         <BotIcon aria-hidden="true" className={MENU_ICON_CLASS} />
       );
+    case "terminal-command":
+      return <TerminalIcon aria-hidden="true" className={MENU_ICON_CLASS} />;
     case "provider-slash-command":
       return providerSlashCommandGlyph(item.command.name);
     case "skill":

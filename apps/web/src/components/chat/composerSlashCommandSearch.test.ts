@@ -2,10 +2,13 @@ import { describe, expect, it } from "vite-plus/test";
 import { ProviderDriverKind, type ServerProviderSkill } from "@houston-app/contracts";
 
 import type { ComposerCommandItem } from "./ComposerCommandMenu";
+import { TERMINAL_COMMAND_ENTRIES } from "../../composerTerminalCommands";
 import {
   builtInSlashCommandItems,
   searchSlashCommandItems,
+  slashCommandItemsForPromptPosition,
   slashCommandSections,
+  terminalCommandSlashItems,
 } from "./composerSlashCommandSearch";
 
 type SlashItem = Extract<
@@ -193,5 +196,29 @@ describe("searchSlashCommandItems aliases", () => {
 
   it("still matches commands that carry no aliases", () => {
     expect(searchSlashCommandItems([review, usage], "review")).toEqual([review]);
+  });
+});
+
+describe("terminal command items", () => {
+  const rewind = TERMINAL_COMMAND_ENTRIES.find((entry) => entry.action === "rewind")!;
+  const items = terminalCommandSlashItems([rewind]);
+
+  it("is found by its name and by each alias", () => {
+    for (const query of ["/rewind", "undo", "/checkpoint"]) {
+      expect(searchSlashCommandItems(items, query).map((item) => item.id)).toEqual([
+        "terminal-command:rewind",
+      ]);
+    }
+  });
+
+  it("shows under the Houston section labelled with its primary name", () => {
+    expect(slashCommandSections(items)).toEqual([
+      { id: "houston", title: "Houston", items: [expect.objectContaining({ label: "/rewind" })] },
+    ]);
+  });
+
+  it("is offered only at the start of a message", () => {
+    expect(slashCommandItemsForPromptPosition(items, true)).toEqual(items);
+    expect(slashCommandItemsForPromptPosition(items, false)).toEqual([]);
   });
 });

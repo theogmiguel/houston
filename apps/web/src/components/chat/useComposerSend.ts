@@ -541,6 +541,38 @@ export function useComposerSend(input: ComposerSendInput) {
       onResumeCommand();
       return;
     }
+    // A terminal command name Houston has an action for opens that action instead of sending.
+    const terminalCommand =
+      !answeringQuestion &&
+      !directAnnotation &&
+      !queuedRunEdit.isEditing &&
+      !draftHasNonPromptContent(composerDraftTarget)
+        ? composerRef.current?.resolveTerminalCommand(promptAtSend)
+        : null;
+    if (terminalCommand) {
+      if (terminalCommand.entry.argumentHint !== undefined && terminalCommand.argument === "") {
+        const usage = `/${terminalCommand.entry.names[0]} ${terminalCommand.entry.argumentHint}`;
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: `${usage} needs a value`,
+            description: `Received "${promptAtSend.trim()}" with nothing after the name. Type ${usage}.`,
+          }),
+        );
+        return;
+      }
+      if (
+        composerRef.current?.runTerminalAction(
+          terminalCommand.entry.action,
+          terminalCommand.argument,
+        )
+      ) {
+        promptRef.current = "";
+        setComposerDraftPrompt(composerDraftTarget, "");
+        composerRef.current?.resetCursorState();
+        return;
+      }
+    }
     // Where side chats are unavailable, `/side` text can still be a literal answer.
     if (sideChatDisabledReason !== null && sideChatCommand && !answeringQuestion) {
       toastManager.add(
@@ -641,7 +673,7 @@ export function useComposerSend(input: ComposerSendInput) {
       selectedProviderModels: ctxSelectedProviderModels,
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
-      interactionMode: sendInteractionMode,
+      interactionMode: composerInteractionMode,
       interactionModeEnabled: sendInteractionModeEnabled,
     } = sendCtx;
     const { images: composerImages, previewAnnotations: composerPreviewAnnotations } =
@@ -653,7 +685,7 @@ export function useComposerSend(input: ComposerSendInput) {
       });
     // A direct "send annotation" writes the draft and sends in the same tick; the reference
     // must be in the text now, not after the next render.
-    const promptForSend = directAnnotation
+    let promptForSend = directAnnotation
       ? ensureInlineContextReferences(promptRef.current, [
           previewAnnotationContextReference(directAnnotation.annotation),
         ])
@@ -866,17 +898,26 @@ export function useComposerSend(input: ComposerSendInput) {
       }
       return;
     }
+    let interactionModeOverride: "plan" | "default" | null = null;
     const standaloneSlashCommand =
       sendInteractionModeEnabled && composerHoldsOnlyText
         ? parseStandaloneComposerSlashCommand(trimmed)
         : null;
     if (standaloneSlashCommand && multipleModelSelections === null) {
-      handleInteractionModeChange(standaloneSlashCommand);
-      promptRef.current = "";
-      clearComposerDraftContent(composerDraftTarget);
-      composerRef.current?.resetCursorState();
-      return;
+      handleInteractionModeChange(standaloneSlashCommand.mode);
+      if (standaloneSlashCommand.prompt.length === 0) {
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+        return;
+      }
+      // The text after `/plan` is the message; the mode change applies to this same send.
+      interactionModeOverride = standaloneSlashCommand.mode;
+      promptForSend = standaloneSlashCommand.prompt;
+      promptRef.current = standaloneSlashCommand.prompt;
+      setComposerDraftPrompt(composerDraftTarget, standaloneSlashCommand.prompt);
     }
+    const sendInteractionMode = interactionModeOverride ?? composerInteractionMode;
     if (!hasSendableContent) {
       if (expiredTerminalContextCount > 0) {
         const toastCopy = buildExpiredTerminalContextToastCopy(

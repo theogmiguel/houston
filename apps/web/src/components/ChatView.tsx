@@ -281,7 +281,12 @@ import {
   useThreadRunStop,
 } from "../state/entities";
 import { useEnvironmentShellHasSnapshot } from "../state/shell";
-import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import {
+  ChatComposer,
+  type ChatComposerHandle,
+  type ExternalTerminalCommandActions,
+} from "./chat/ChatComposer";
+import { useThreadActions } from "../hooks/useThreadActions";
 import { resolveThreadStatusPill } from "./Sidebar.logic";
 import { DraftHeroHeadline, DraftHeroProjectContext } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialogHost, openExpandedImagePreview } from "./chat/ExpandedImageDialog";
@@ -3122,6 +3127,24 @@ export default function ChatView(props: ChatViewProps) {
       : (timelineMessages.findLast(
           (message) => message.role === "user" && message.runId === latestTurnDiff.runId,
         ) ?? null);
+  const latestForkRunId =
+    timelineMessages.findLast(
+      (message) =>
+        message.role === "assistant" &&
+        message.runId !== null &&
+        message.runId !== activeRunningTurnId,
+    )?.runId ?? null;
+  const forkCapabilities =
+    serverProjection?.providerSessions.findLast(
+      (session) => session.providerInstanceId === activeProviderInstanceId,
+    )?.capabilities ?? null;
+  const canForkFromLatestRun =
+    forkCapabilities === null ||
+    (forkCapabilities.threads.canForkThread &&
+      forkCapabilities.threads.canForkFromTurn &&
+      forkCapabilities.identity.nativeThreadIds === "strong") ||
+    forkCapabilities.context.supportsFullThreadHandoff;
+  const { renameThread } = useThreadActions();
   const changedFilesBar =
     latestTurnDiff === null ||
     latestTurnDiff.status !== "ready" ||
@@ -3142,6 +3165,57 @@ export default function ChatView(props: ChatViewProps) {
           onKeep: () => setDismissedChangeRuns((runs) => new Set(runs).add(latestTurnDiff.runId)),
           disabled: isRevertingCheckpoint || phase === "running",
         };
+  const terminalCommandActions: ExternalTerminalCommandActions = {
+    ...(supportsConversationRollback &&
+    canOperateThread &&
+    !activeEnvironmentUnavailable &&
+    phase !== "running" &&
+    !isSendBusy &&
+    !isRevertingCheckpoint &&
+    latestTurnDiff !== null &&
+    latestTurnUserMessage !== null &&
+    availableRevertTurnCounts.has(latestTurnDiff.checkpointTurnCount)
+      ? {
+          rewind: () =>
+            onRevertTimelineTurnStable(
+              latestTurnDiff.checkpointTurnCount,
+              latestTurnUserMessage.id,
+            ),
+        }
+      : {}),
+    ...(isServerThread && isGitRepo ? { diff: () => openChangesFromThreadPanelStable() } : {}),
+    ...(isServerThread &&
+    !embedded &&
+    canOperateThread &&
+    !activeEnvironmentUnavailable &&
+    canForkFromLatestRun &&
+    latestForkRunId !== null
+      ? {
+          fork: () => {
+            void onForkFromRunStable({ sourceThreadId: threadId, runId: latestForkRunId });
+          },
+        }
+      : {}),
+    ...(isServerThread && !embedded && canOperateThread && activeThreadRef
+      ? {
+          rename: (title: string) => {
+            void renameThread(activeThreadRef, title);
+          },
+        }
+      : {}),
+    "settings-appearance": () => void navigate({ to: "/settings/appearance" }),
+    "settings-keybindings": () => void navigate({ to: "/settings/keybindings" }),
+    "settings-general": () => void navigate({ to: "/settings/general" }),
+    "settings-voice": () => void navigate({ to: "/settings/voice" }),
+    "settings-providers": () =>
+      void navigate({
+        to: "/settings/providers",
+        search: {
+          environmentId,
+          ...(activeProviderInstanceId === null ? {} : { instanceId: activeProviderInstanceId }),
+        },
+      }),
+  };
   // The run the composer's pending-changes row already summarises; its turn card folds to a header.
   const changeBannerRunId = changedFilesBar === null ? null : (latestTurnDiff?.runId ?? null);
   const timelinePendingApprovals =
@@ -4143,6 +4217,7 @@ export default function ChatView(props: ChatViewProps) {
                               onResumeCommand={
                                 activeProject !== null ? handleOpenResumeSessionStable : undefined
                               }
+                              terminalCommandActions={terminalCommandActions}
                               environmentUnavailable={activeEnvironmentUnavailableState}
                               activePendingApproval={activePendingApproval}
                               pendingApprovals={pendingApprovals}

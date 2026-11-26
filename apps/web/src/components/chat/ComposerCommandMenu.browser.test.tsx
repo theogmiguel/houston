@@ -6,8 +6,17 @@ import { ProviderDriverKind, type ServerProviderSkill } from "@houston-app/contr
 import "~/index.css";
 import { act, render } from "../../../test/render";
 import { TooltipProvider } from "../ui/tooltip";
+import {
+  availableTerminalCommandEntries,
+  resolveTerminalCommand,
+  TERMINAL_COMMAND_ENTRIES,
+  type TerminalActionId,
+} from "../../composerTerminalCommands";
 import { ComposerCommandMenu, type ComposerCommandItem } from "./ComposerCommandMenu";
-import { searchSlashCommandItems } from "./composerSlashCommandSearch";
+import {
+  searchSlashCommandItems,
+  terminalCommandSlashItems,
+} from "./composerSlashCommandSearch";
 
 type SlashItem = Extract<
   ComposerCommandItem,
@@ -241,4 +250,101 @@ it("grows the drawer from the composer edge on the overlay role", async () => {
   expect(style.transitionProperty).toBe("opacity, scale");
   expect(style.transitionDuration).toBe("0.15s");
   expect(style.transitionTimingFunction).toBe("cubic-bezier(0.2, 0, 0, 1)");
+});
+
+const TERMINAL_ACTIONS: ReadonlySet<TerminalActionId> = new Set(
+  TERMINAL_COMMAND_ENTRIES.map((entry) => entry.action),
+);
+
+const TERMINAL_ITEMS = terminalCommandSlashItems(
+  availableTerminalCommandEntries({ availableActions: TERMINAL_ACTIONS, providerCommandNames: [] }),
+);
+
+function TerminalCommandHarness(props: {
+  readonly onAction: (action: TerminalActionId) => void;
+  readonly onSend: (text: string) => void;
+}) {
+  const [prompt, setPrompt] = useState("");
+  const visible = searchSlashCommandItems(
+    TERMINAL_ITEMS,
+    prompt.startsWith("/") ? prompt.slice(1) : "",
+  );
+
+  const run = (action: TerminalActionId) => {
+    props.onAction(action);
+    setPrompt("");
+  };
+  const submit = () => {
+    const command = resolveTerminalCommand(prompt, {
+      availableActions: TERMINAL_ACTIONS,
+      providerCommandNames: [],
+    });
+    if (command) {
+      run(command.entry.action);
+      return;
+    }
+    props.onSend(prompt);
+  };
+
+  return (
+    <>
+      <input
+        aria-label="Message"
+        value={prompt}
+        onChange={(event) => setPrompt(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter") return;
+          event.preventDefault();
+          submit();
+        }}
+      />
+      {visible.length === 0 ? null : (
+        <ComposerCommandMenu
+          listId="terminal-commands"
+          items={visible}
+          resolvedTheme="light"
+          isLoading={false}
+          triggerKind="slash-command"
+          activeItemId={null}
+          onHighlightedItemChange={() => {}}
+          onSelect={(item) => {
+            if (item.type === "terminal-command") run(item.entry.action);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+it("picking /rewind from the menu opens rewind", async () => {
+  const actions: TerminalActionId[] = [];
+  await using _screen = await render(
+    <TerminalCommandHarness onAction={(action) => actions.push(action)} onSend={() => {}} />,
+  );
+
+  const input = page.getByRole("textbox", { name: "Message" });
+  await act(async () => input.element().focus());
+  await userEvent.type(input, "/rew");
+  await userEvent.click(page.getByText("/rewind"));
+
+  expect(actions).toEqual(["rewind"]);
+});
+
+it("typing /rewind and pressing Enter opens rewind instead of sending", async () => {
+  const actions: TerminalActionId[] = [];
+  const sends: string[] = [];
+  await using _screen = await render(
+    <TerminalCommandHarness
+      onAction={(action) => actions.push(action)}
+      onSend={(text) => sends.push(text)}
+    />,
+  );
+
+  const input = page.getByRole("textbox", { name: "Message" });
+  await act(async () => input.element().focus());
+  await userEvent.type(input, "/rewind");
+  await userEvent.keyboard("{Enter}");
+
+  expect(actions).toEqual(["rewind"]);
+  expect(sends).toEqual([]);
 });
