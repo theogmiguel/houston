@@ -1436,6 +1436,29 @@ const InferenceImageVerdicts = Effect.gen(function* () {
   `;
 });
 
+// Folders a project tracks from outside its own folder, and the repository ignore patterns it
+// stores beside houston.json's. Both are keyed by upstream ProjectId without a foreign key; a
+// deleted project's rows go with its deletion hook.
+const ProjectRepositories = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_project_repositories (
+      project_id TEXT NOT NULL,
+      folder_path TEXT NOT NULL,
+      added_at TEXT NOT NULL,
+      PRIMARY KEY (project_id, folder_path)
+    ) WITHOUT ROWID
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_project_repository_ignores (
+      project_id TEXT NOT NULL,
+      pattern TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (project_id, pattern)
+    ) WITHOUT ROWID
+  `;
+});
+
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
@@ -1467,6 +1490,7 @@ const houstonMigrationEntries = [
   [30, "InferenceRequests", InferenceRequests],
   [31, "InferenceImageVerdicts", InferenceImageVerdicts],
   [32, "ProviderNativeSessions", createNativeSessionHistory],
+  [33, "ProjectRepositories", ProjectRepositories],
 ] as const;
 
 /** Every Houston migration id this build knows, for callers that must not run beside an older schema. */

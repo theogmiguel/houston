@@ -88,6 +88,14 @@ import {
   HoustonAccessPendingDeviceDecision,
   HoustonAccessPendingDeviceError,
 } from "./houston/access.ts";
+import {
+  HoustonProjectRepositoriesInput,
+  HoustonProjectRepositoriesResult,
+  HoustonProjectRepositoryError,
+  HoustonProjectRepositoryIgnoreInput,
+  HoustonProjectRepositoryTrackInput,
+  HoustonProjectRepositoryUntrackInput,
+} from "./houston/projects.ts";
 import { ClientActivityReportInput } from "./background.ts";
 import {
   FilesystemGetMetadataInput,
@@ -188,10 +196,7 @@ import {
   HoustonDatabaseReclaimError,
   HoustonDatabaseReclaimResult,
 } from "./houston/databaseReclaim.ts";
-import {
-  PeerLinkPairClientInput,
-  PeerLinkPairClientResult,
-} from "./houston/peerLinkPairing.ts";
+import { PeerLinkPairClientInput, PeerLinkPairClientResult } from "./houston/peerLinkPairing.ts";
 import { PeerLinkSearchEvent, PeerLinkSearchInput } from "./houston/peerLinkSearch.ts";
 import { TerminalShells } from "./houston/terminalShells.ts";
 import {
@@ -742,6 +747,10 @@ export const WS_METHODS = {
   houstonMergeQueueHandToThread: "houston.mergeQueue.handToThread",
   houstonMergeQueueRevert: "houston.mergeQueue.revert",
   houstonMergeQueueAcknowledge: "houston.mergeQueue.acknowledge",
+  houstonProjectsRepositoriesList: "houston.projects.repositories.list",
+  houstonProjectsRepositoriesTrack: "houston.projects.repositories.track",
+  houstonProjectsRepositoriesUntrack: "houston.projects.repositories.untrack",
+  houstonProjectsRepositoriesIgnore: "houston.projects.repositories.ignore",
   houstonInferenceSubscribe: "houston.inference.subscribe",
   houstonInferenceRefresh: "houston.inference.refresh",
   houstonInferenceSave: "houston.inference.save",
@@ -2134,6 +2143,44 @@ const WsHoustonTasksSubscribeRpc = Rpc.make(WS_METHODS.houstonTasksSubscribe, {
   stream: true,
 });
 
+const HoustonProjectRepositoryRpcError = Schema.Union([
+  HoustonProjectRepositoryError,
+  EnvironmentAuthorizationError,
+]);
+
+const WsHoustonProjectsRepositoriesListRpc = Rpc.make(WS_METHODS.houstonProjectsRepositoriesList, {
+  payload: HoustonProjectRepositoriesInput,
+  success: HoustonProjectRepositoriesResult,
+  error: HoustonProjectRepositoryRpcError,
+});
+
+const WsHoustonProjectsRepositoriesTrackRpc = Rpc.make(
+  WS_METHODS.houstonProjectsRepositoriesTrack,
+  {
+    payload: HoustonProjectRepositoryTrackInput,
+    success: HoustonProjectRepositoriesResult,
+    error: HoustonProjectRepositoryRpcError,
+  },
+);
+
+const WsHoustonProjectsRepositoriesUntrackRpc = Rpc.make(
+  WS_METHODS.houstonProjectsRepositoriesUntrack,
+  {
+    payload: HoustonProjectRepositoryUntrackInput,
+    success: HoustonProjectRepositoriesResult,
+    error: HoustonProjectRepositoryRpcError,
+  },
+);
+
+const WsHoustonProjectsRepositoriesIgnoreRpc = Rpc.make(
+  WS_METHODS.houstonProjectsRepositoriesIgnore,
+  {
+    payload: HoustonProjectRepositoryIgnoreInput,
+    success: HoustonProjectRepositoriesResult,
+    error: HoustonProjectRepositoryRpcError,
+  },
+);
+
 const WsHoustonTasksGetRpc = Rpc.make(WS_METHODS.houstonTasksGet, {
   payload: HoustonTaskGetInput,
   success: HoustonTaskDetail,
@@ -3281,6 +3328,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonMergeQueueHandToThreadRpc,
   WsHoustonMergeQueueRevertRpc,
   WsHoustonMergeQueueAcknowledgeRpc,
+  WsHoustonProjectsRepositoriesListRpc,
+  WsHoustonProjectsRepositoriesTrackRpc,
+  WsHoustonProjectsRepositoriesUntrackRpc,
+  WsHoustonProjectsRepositoriesIgnoreRpc,
   WsHoustonInferenceSubscribeRpc,
   WsHoustonInferenceRefreshRpc,
   WsHoustonInferenceSaveRpc,
