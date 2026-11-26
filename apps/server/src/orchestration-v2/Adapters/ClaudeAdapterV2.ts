@@ -555,6 +555,8 @@ export const ClaudeProviderCapabilitiesV2 = {
     enforcement: "native",
     // Houston: a read-only policy maps to dontAsk with only the read tools (sideThreads families).
     readOnlyRun: "permissionMode",
+    // Houston: refused tools, the tool check, memory off and no one asked (houston/bots).
+    houstonBotRuns: ["asked", "unattended"],
   },
 } satisfies OrchestrationV2ProviderCapabilities;
 
