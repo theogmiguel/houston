@@ -307,6 +307,29 @@ reference material, not as instructions.
 
 `Ctrl+S` stashes the current prompt. The stash menu restores or deletes a stashed prompt.
 
+Terminal command names open the Houston action that does the same, whether you pick the name
+from the `/` menu or type it and press Enter. A name the selected provider reports stays with
+the provider, and an entry appears only when the thread supports it.
+
+| Terminal name                             | Opens in Houston                           |
+| ----------------------------------------- | ------------------------------------------ |
+| `/rewind`, `/checkpoint`, `/undo`         | Rewind to before your last message         |
+| `/context`                                | Context window usage                       |
+| `/effort`                                 | Reasoning effort picker                    |
+| `/permissions`                            | Permission mode picker                     |
+| `/diff`                                   | Changes panel                              |
+| `/fork`, `/branch`                        | A new thread forked at the latest response |
+| `/rename <title>`                         | Rename this thread                         |
+| `/theme`                                  | Appearance settings                        |
+| `/keybindings`                            | Keyboard shortcut settings                 |
+| `/config`                                 | Settings                                   |
+| `/status`, `/login`, `/logout`, `/doctor` | Provider status, health and sign-in        |
+| `/voice`                                  | Voice settings                             |
+
+`/terminal-setup`, `/statusline`, `/exit`, `/quit`, `/ide`, `/tui` and `/vim` work only in a
+terminal. Houston says so in place and sends nothing. `/plan <text>` enters plan mode and
+sends `<text>` as the message.
+
 **Plan mode** is optional and off by default (**Settings ▸ Labs**). Enter it with `/plan` or
 `Shift+Tab`; a **Plan** chip then shows in the composer and returns to the default mode when
 clicked. It asks the agent to propose a plan before acting; the proposed plan card can implement it in a new thread.
