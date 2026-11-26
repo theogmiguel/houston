@@ -3540,6 +3540,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ...(command.linkOrigin === undefined || command.delegatedFrom === undefined
         ? {}
         : { delegatedFrom: command.delegatedFrom }),
+      ...(command.houstonBot === undefined ? {} : { houstonBot: command.houstonBot }),
       lineage: {
         parentThreadId: null,
         relationshipToParent: null,

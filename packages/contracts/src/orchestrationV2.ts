@@ -46,6 +46,7 @@ import {
   MessageDeliveryQueueHoldReason,
 } from "./houston/messageDelivery.ts";
 import { HoustonBlockingBackgroundWork } from "./houston/backgroundWork.ts";
+import { HoustonBotRunKind, HoustonBotThreadMark } from "./houston/bots.ts";
 import { HoustonProviderTurnCompaction } from "./houston/contextWindow.ts";
 import { HoustonSideThread, makeHoustonSideThreadCommands } from "./houston/sideThreads.ts";
 import { HoustonMergeQueueNotifyCommand } from "./houston/mergeQueue.ts";
@@ -383,6 +384,8 @@ export const OrchestrationV2RuntimePolicyCapabilities = Schema.Struct({
   readOnlyRun: Schema.optionalKey(
     Schema.Literals(["sandbox", "permissionMode", "permissionRules"]),
   ),
+  // Houston: the kinds of bot run whose rules this driver applies; absent applies none.
+  houstonBotRuns: Schema.optionalKey(Schema.Array(HoustonBotRunKind)),
 });
 export type OrchestrationV2RuntimePolicyCapabilities =
   typeof OrchestrationV2RuntimePolicyCapabilities.Type;
@@ -478,6 +481,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),
   linkOrigin: Schema.optional(OrchestrationV2LinkOrigin),
   delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
+  // Houston: the bot run this thread serves; only the server stamps it.
+  houstonBot: Schema.optional(HoustonBotThreadMark),
   // Houston: a read-only aside or second opinion beside another thread.
   side: Schema.optionalKey(HoustonSideThread),
   lineage: OrchestrationV2AppThreadLineage,
@@ -2153,6 +2158,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),
   linkOrigin: Schema.optional(OrchestrationV2LinkOrigin),
   delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
+  houstonBot: Schema.optional(HoustonBotThreadMark),
   side: Schema.optionalKey(HoustonSideThread),
   latestRunId: Schema.NullOr(RunId),
   latestRunRequestedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
@@ -2986,6 +2992,8 @@ export const OrchestrationV2Command = Schema.Union([
     linkOrigin: Schema.optional(OrchestrationV2LinkOrigin),
     /** Only the server sets this, with `linkOrigin`, for a linked environment's delegated task. */
     delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
+    /** Only the server sets this, for a bot run's thread; a client's thread.create never carries one. */
+    houstonBot: Schema.optional(HoustonBotThreadMark),
     importedNativeThread: Schema.optional(
       Schema.Struct({
         ref: Schema.Struct({

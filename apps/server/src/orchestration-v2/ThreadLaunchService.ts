@@ -1,4 +1,5 @@
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
+import type { HoustonBotThreadMark } from "@houston-app/contracts/houston/bots";
 import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import { resolveProjectSettings } from "@houston-app/shared/projectSettings";
@@ -104,6 +105,8 @@ export interface ThreadLaunchInput {
   readonly linkOrigin?: OrchestrationV2LinkOrigin;
   /** The parent there, when that environment's agent delegated this as a task. */
   readonly delegatedFrom?: OrchestrationV2DelegatedFrom;
+  /** Houston: the bot run this thread serves. Only the server's own launches pass one. */
+  readonly houstonBot?: HoustonBotThreadMark;
 }
 
 type PreparationInput = Pick<
@@ -949,6 +952,7 @@ const make = Effect.gen(function* () {
                 ...(input.delegatedFrom === undefined
                   ? {}
                   : { delegatedFrom: input.delegatedFrom }),
+                ...(input.houstonBot === undefined ? {} : { houstonBot: input.houstonBot }),
                 createdBy: input.createdBy,
                 creationSource: input.creationSource,
               });
