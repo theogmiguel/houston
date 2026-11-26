@@ -46,8 +46,17 @@ processes when the thread settles; an agent's own shell command is never attache
 ## Projects that cover several repositories
 
 A project can cover more than one git repository. A thread in the project folder works in every
-repository the project covers; a **worktree** thread still owns one repository, the worktree it
-started in. Git status, diff, commit and push act on one repository at a time.
+repository the project covers. A **worktree** thread of such a project gets a **task folder**: one
+worktree for each repository you choose, each at the same relative path it has in the project, all
+on the thread's branch name. Repositories you do not choose are not in the task folder. A project
+with one repository keeps the single worktree it had. Git status, diff, commit and push act on one
+repository at a time.
+
+When you start a new worktree thread, choose at least one repository. A repository with no commit
+yet is skipped with the reason; the thread is refused when none can be checked out. Removing the
+thread removes every worktree in its task folder. A file that exists only in the task folder is
+kept, and the folder's removal is reported with the path it kept. The project repositories and
+their branches are left as they were.
 
 Houston discovers repositories inside the project folder:
 
@@ -88,8 +97,10 @@ repository lies outside it, such as a tracked folder, it refuses to start a turn
 provider and the folders it cannot reach. A repository at or below the thread's `cwd` needs
 nothing extra.
 
-Limitations in this milestone: worktree threads see one repository; the merge queue and tasks
-stay single-repository; and a commit covers one repository, never several at once.
+Several repositories share one branch name, but they are separate histories: there is no commit
+across repositories. The merge queue and tasks stay single-repository and refuse a thread whose
+task folder holds several repositories. Checkpoints still cover one repository at a time, so
+rewind in a task folder is not yet available for the whole folder.
 
 ## Creating a thread
 
