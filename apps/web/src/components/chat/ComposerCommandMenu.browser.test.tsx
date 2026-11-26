@@ -12,6 +12,7 @@ import {
   TERMINAL_COMMAND_ENTRIES,
   type TerminalActionId,
 } from "../../composerTerminalCommands";
+import { parseTerminalOnlySlashCommand } from "../../composer-logic";
 import { ComposerCommandMenu, type ComposerCommandItem } from "./ComposerCommandMenu";
 import {
   searchSlashCommandItems,
@@ -265,6 +266,7 @@ function TerminalCommandHarness(props: {
   readonly onSend: (text: string) => void;
 }) {
   const [prompt, setPrompt] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
   const visible = searchSlashCommandItems(
     TERMINAL_ITEMS,
     prompt.startsWith("/") ? prompt.slice(1) : "",
@@ -273,6 +275,7 @@ function TerminalCommandHarness(props: {
   const run = (action: TerminalActionId) => {
     props.onAction(action);
     setPrompt("");
+    setNotice(null);
   };
   const submit = () => {
     const command = resolveTerminalCommand(prompt, {
@@ -283,6 +286,11 @@ function TerminalCommandHarness(props: {
       run(command.entry.action);
       return;
     }
+    const terminalOnly = parseTerminalOnlySlashCommand(prompt, []);
+    if (terminalOnly) {
+      setNotice(`Claude does not run /${terminalOnly.name}. Nothing was sent.`);
+      return;
+    }
     props.onSend(prompt);
   };
 
@@ -291,13 +299,17 @@ function TerminalCommandHarness(props: {
       <input
         aria-label="Message"
         value={prompt}
-        onChange={(event) => setPrompt(event.target.value)}
+        onChange={(event) => {
+          setPrompt(event.target.value);
+          setNotice(null);
+        }}
         onKeyDown={(event) => {
           if (event.key !== "Enter") return;
           event.preventDefault();
           submit();
         }}
       />
+      {notice === null ? null : <p role="status">{notice}</p>}
       {visible.length === 0 ? null : (
         <ComposerCommandMenu
           listId="terminal-commands"
@@ -347,4 +359,19 @@ it("typing /rewind and pressing Enter opens rewind instead of sending", async ()
 
   expect(actions).toEqual(["rewind"]);
   expect(sends).toEqual([]);
+});
+
+it("a terminal-only name answers locally and sends nothing", async () => {
+  const sends: string[] = [];
+  await using _screen = await render(
+    <TerminalCommandHarness onAction={() => {}} onSend={(text) => sends.push(text)} />,
+  );
+
+  const input = page.getByRole("textbox", { name: "Message" });
+  await act(async () => input.element().focus());
+  await userEvent.fill(input, "/terminal-setup");
+  await userEvent.keyboard("{Enter}");
+
+  expect(sends).toEqual([]);
+  expect(page.getByRole("status").element().textContent).toContain("/terminal-setup");
 });

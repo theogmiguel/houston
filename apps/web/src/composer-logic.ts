@@ -36,6 +36,8 @@ export interface ComposerTrigger {
   rangeEnd: number;
 }
 
+const TERMINAL_ONLY_COMMAND_TEXT = /^\/([a-z][a-z0-9-]*)(?:\s+[\s\S]*)?$/i;
+
 export function isPathSuggestionCurrent(
   searchTarget: ComposerPathSearchTarget,
   trigger: ComposerTrigger | null,
@@ -358,6 +360,32 @@ export function unescapeShellCommand(text: string): string {
 export function parseResumeCommand(text: string): { prompt: string } | null {
   const match = /^\/resume(?:\s+([\s\S]*))?$/i.exec(text.trim());
   return match ? { prompt: match[1]?.trim() ?? "" } : null;
+}
+
+/**
+ * Command names that exist only in a terminal. A message that is only one of these, and that the
+ * selected provider does not report, gets a local explanation instead of a model turn.
+ */
+export const TERMINAL_ONLY_COMMAND_NAMES = [
+  "terminal-setup",
+  "statusline",
+  "exit",
+  "quit",
+  "ide",
+  "tui",
+  "vim",
+] as const;
+
+export function parseTerminalOnlySlashCommand(
+  text: string,
+  providerCommandNames: ReadonlyArray<string>,
+): { readonly name: string } | null {
+  const match = TERMINAL_ONLY_COMMAND_TEXT.exec(text.trim());
+  const name = match?.[1]?.toLowerCase();
+  if (name === undefined) return null;
+  if (!(TERMINAL_ONLY_COMMAND_NAMES as ReadonlyArray<string>).includes(name)) return null;
+  if (providerCommandNames.some((reported) => reported.toLowerCase() === name)) return null;
+  return { name };
 }
 
 /** `/plan [prompt]` or `/default [prompt]` as the whole message; the prompt is sent as typed. */

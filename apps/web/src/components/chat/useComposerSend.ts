@@ -20,6 +20,7 @@ import { isUsageLimitsCommand } from "@houston-app/shared/usageLimits";
 import {
   AuthOrchestrationOperateScope,
   DEFAULT_MODEL,
+  PROVIDER_DISPLAY_NAMES,
   type EnvironmentId,
   type ModelSelection,
   type PreviewAnnotationPayload,
@@ -572,6 +573,25 @@ export function useComposerSend(input: ComposerSendInput) {
         composerRef.current?.resetCursorState();
         return;
       }
+    }
+    // A terminal-only name no provider reports gets a local explanation, not a model turn.
+    const terminalOnlyCommand =
+      !answeringQuestion &&
+      !directAnnotation &&
+      !queuedRunEdit.isEditing &&
+      !draftHasNonPromptContent(composerDraftTarget)
+        ? composerRef.current?.resolveTerminalOnlyCommand(promptAtSend)
+        : null;
+    if (terminalOnlyCommand && sendCtx) {
+      const provider = PROVIDER_DISPLAY_NAMES[sendCtx.selectedProvider] ?? sendCtx.selectedProvider;
+      toastManager.add(
+        stackedThreadToast({
+          type: "warning",
+          title: `${provider} does not run /${terminalOnlyCommand.name}`,
+          description: `/${terminalOnlyCommand.name} only works in a terminal, so nothing was sent. Houston has no equivalent for it.`,
+        }),
+      );
+      return;
     }
     // Where side chats are unavailable, `/side` text can still be a literal answer.
     if (sideChatDisabledReason !== null && sideChatCommand && !answeringQuestion) {

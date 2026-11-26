@@ -86,6 +86,7 @@ import {
   isPathSuggestionCurrent,
   extendReplacementRangeForTrailingSpace,
   parseShellCommand,
+  parseTerminalOnlySlashCommand,
   replaceTextRange,
   unescapeShellCommand,
 } from "../../composer-logic";
@@ -374,6 +375,8 @@ export interface ChatComposerHandle {
   runTerminalAction: (action: TerminalActionId, argument: string) => boolean;
   /** The terminal command a whole message names, when this thread and provider leave it to Houston. */
   resolveTerminalCommand: (text: string) => ReturnType<typeof resolveTerminalCommand>;
+  /** The terminal-only command a whole message names and the provider does not report. */
+  resolveTerminalOnlyCommand: (text: string) => ReturnType<typeof parseTerminalOnlySlashCommand>;
   isModelPickerOpen: () => boolean;
   /** An inline composer menu (mentions, commands, stash) owns Escape until it closes. */
   isComposerMenuOpen: () => boolean;
@@ -1370,6 +1373,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       availableActions: availableTerminalActions,
       providerCommandNames,
     }),
+  );
+  const resolveTerminalOnlyCommandStable = useStableCallback((text: string) =>
+    parseTerminalOnlySlashCommand(text, providerCommandNames),
   );
   const {
     items: composerMenuItems,
@@ -3607,6 +3613,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       openControl: openComposerControlStable,
       runTerminalAction: runTerminalActionStable,
       resolveTerminalCommand: resolveTerminalCommandStable,
+      resolveTerminalOnlyCommand: resolveTerminalOnlyCommandStable,
       compactContext: compactThreadContextStable,
       isModelPickerOpen: () => isComposerModelPickerOpen,
       isComposerMenuOpen: () => composerMenuOpen || isStashMenuOpen,

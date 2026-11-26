@@ -26,6 +26,7 @@ import {
   parseShellCommand,
   parseSideChatCommand,
   parseStandaloneComposerSlashCommand,
+  parseTerminalOnlySlashCommand,
   replaceTextRange,
   unescapeShellCommand,
 } from "./composer-logic";
@@ -618,6 +619,23 @@ describe("parseSideChatCommand", () => {
     expect(slashCommandItemsForPromptPosition(items, false).map((item) => item.id)).toEqual([
       "slash:plan",
     ]);
+  });
+});
+
+describe("parseTerminalOnlySlashCommand", () => {
+  it("classifies a terminal-only name as the whole message", () => {
+    expect(parseTerminalOnlySlashCommand("/exit", [])).toEqual({ name: "exit" });
+    expect(parseTerminalOnlySlashCommand("  /VIM  ", [])).toEqual({ name: "vim" });
+    expect(parseTerminalOnlySlashCommand("/terminal-setup --force", [])).toEqual({
+      name: "terminal-setup",
+    });
+  });
+
+  it("leaves a name the provider reports and any other message to the send path", () => {
+    expect(parseTerminalOnlySlashCommand("/exit", ["Exit"])).toBeNull();
+    expect(parseTerminalOnlySlashCommand("/context", [])).toBeNull();
+    expect(parseTerminalOnlySlashCommand("explain /vim mode", [])).toBeNull();
+    expect(parseTerminalOnlySlashCommand("/exit-now", [])).toBeNull();
   });
 });
 
