@@ -87,6 +87,22 @@ describe("marks become the structure", () => {
     ]);
   });
 
+  it("a `>` inside a code span does not close an angle mark before it", () => {
+    expect(inlineOf("if a<b then `c>d`")).toEqual([
+      { type: "text", text: "if a<b then " },
+      { type: "text", text: "c>d", style: { code: true } },
+    ]);
+    expect(inlineOf("a <b `>` c")).toEqual([
+      { type: "text", text: "a <b " },
+      { type: "text", text: ">", style: { code: true } },
+      { type: "text", text: " c" },
+    ]);
+    expect(inlineOf("`<@U1` x>")).toEqual([
+      { type: "text", text: "<@U1", style: { code: true } },
+      { type: "text", text: " x>" },
+    ]);
+  });
+
   it("a backslash before a mark character gives that character", () => {
     expect(inlineOf("\\*x\\* \\_y\\_ \\:wave\\: \\<@U1> \\\\")).toEqual([
       { type: "text", text: "*x* _y_ :wave: <@U1> \\" },

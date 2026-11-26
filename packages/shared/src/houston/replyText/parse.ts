@@ -138,7 +138,7 @@ export const lexInline = (line: string): ReadonlyArray<InlineToken> => {
     if (character === "<") {
       const close = line.indexOf(">", index + 1);
       const body = close > index + 1 ? line.slice(index + 1, close) : "";
-      const angle = body.includes("<") ? null : classifyAngle(body);
+      const angle = body.includes("<") || body.includes("`") ? null : classifyAngle(body);
       if (angle !== null) {
         tokens.push({ kind: "angle", angle, body, start: index, end: close + 1 });
         index = close + 1;
