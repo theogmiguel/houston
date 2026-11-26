@@ -1,6 +1,6 @@
 import { type ResolvedKeybindingsConfig } from "@houston-app/contracts";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
-import { ChevronRightIcon, MonitorIcon } from "lucide-react";
+import { ChevronRightIcon } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import { cn } from "~/lib/utils";
@@ -27,6 +27,7 @@ import {
   CommandListVirtualized,
   CommandShortcut,
 } from "./ui/command";
+import { CommandResultAction, CommandResultMachine } from "./ui/command-result-meta";
 import { getVirtualizedScrollFadeClassName } from "./ui/scroll-area";
 import { ProjectPinButton } from "./ProjectPinButton";
 import { SearchMatchHintLine, ThreadSearchMatchExcerpt } from "./ThreadSearchMatch";
@@ -289,14 +290,9 @@ function DisabledCommandPaletteResultRow(props: {
         </span>
       )}
       {props.item.titleTrailingContent}
-      {props.item.machineLabel ? (
-        <span className="flex max-w-[11ch] shrink-0 items-center gap-1 text-xs text-muted-foreground">
-          <MonitorIcon className="size-3.5 shrink-0" />
-          <span className="truncate">{props.item.machineLabel}</span>
-        </span>
-      ) : null}
+      {props.item.machineLabel ? <CommandResultMachine label={props.item.machineLabel} /> : null}
       {props.item.linkedActionLabel ? (
-        <span className="shrink-0 text-accent-ink text-xs">{props.item.linkedActionLabel}</span>
+        <CommandResultAction>{props.item.linkedActionLabel}</CommandResultAction>
       ) : null}
     </div>
   );
@@ -363,14 +359,9 @@ function CommandPaletteResultRow(props: {
         </span>
       )}
       {props.item.titleTrailingContent}
-      {props.item.machineLabel ? (
-        <span className="flex max-w-[11ch] shrink-0 items-center gap-1 text-xs text-muted-foreground">
-          <MonitorIcon className="size-3.5 shrink-0" />
-          <span className="truncate">{props.item.machineLabel}</span>
-        </span>
-      ) : null}
+      {props.item.machineLabel ? <CommandResultMachine label={props.item.machineLabel} /> : null}
       {props.item.linkedActionLabel ? (
-        <span className="shrink-0 text-accent-ink text-xs">{props.item.linkedActionLabel}</span>
+        <CommandResultAction>{props.item.linkedActionLabel}</CommandResultAction>
       ) : null}
       {props.item.kind === "action" && props.item.pin ? (
         <ProjectPinButton
