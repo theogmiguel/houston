@@ -88,6 +88,12 @@ repository lies outside it, such as a tracked folder, it refuses to start a turn
 provider and the folders it cannot reach. A repository at or below the thread's `cwd` needs
 nothing extra.
 
+In a thread that covers several repositories, Changes groups each repository's files under its
+own heading and offers a repository picker. The first view lists every repository; commits need
+one repository picked. The thread details card lists the repositories, and its git actions act on
+the selected one and name it in the action. A repository that cannot be read is reported with its
+path and the reason, and its git actions are refused.
+
 Limitations in this milestone: worktree threads see one repository; the merge queue and tasks
 stay single-repository; and a commit covers one repository, never several at once.
 
