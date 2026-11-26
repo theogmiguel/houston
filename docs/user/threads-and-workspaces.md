@@ -64,9 +64,10 @@ A bound that trips keeps what was found so far and is reported with the bound, t
 and the repository requested.
 
 **Tracked folders** add a repository that lives elsewhere on disk. Houston stores the absolute
-folder with the project; the project settings screen for adding one arrives in a later change.
-A tracked folder must exist, be a git repository, lie outside the project folder, and not
-already be tracked. A project tracks at most 128 folders; past that, adding one is refused with
+folder with the project. Add, review and remove them in **Settings ▸ Projects ▸ <project> ▸
+Repositories**, which also lists the repositories found in the project folder and the ignore
+patterns saved with the project. A tracked folder must exist, be a git repository, lie outside
+the project folder, and not already be tracked. A project tracks at most 128 folders; past that, adding one is refused with
 the limit, the current count and the folder.
 
 Both the repo's `houston.json` and the project's stored list can **ignore** repositories. Each
@@ -80,7 +81,9 @@ character. `houston.json` spells the field `ignoreRepositories`, for example:
 }
 ```
 
-The project's own repository and tracked folders are never ignored.
+The project's own repository and tracked folders are never ignored. The same **Repositories**
+section edits the patterns saved with the project; patterns from `houston.json` stay listed and
+ignored.
 
 Claude can read every repository directory of a project-folder thread. Every other provider
 (Codex and Antigravity among them) cannot read directories outside the thread's `cwd`: when any
