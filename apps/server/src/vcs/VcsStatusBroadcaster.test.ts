@@ -1112,4 +1112,50 @@ describe("VcsStatusBroadcaster", () => {
       assert.isTrue(Option.isSome(yield* Deferred.poll(remoteInterrupted)));
     }).pipe(Effect.provide(layerTest));
   });
+
+  it.effect("caps concurrent remote pollers and names the repository that fell back", () => {
+    const state = {
+      currentLocalStatus: baseLocalStatus,
+      currentRemoteStatus: baseRemoteStatus,
+      localStatusCalls: 0,
+      remoteStatusCalls: 0,
+      localInvalidationCalls: 0,
+      remoteInvalidationCalls: 0,
+    };
+    const layerTest = layerTestFor(state).pipe(
+      Layer.provideMerge(Layer.succeed(VcsStatusBroadcaster.VcsStatusRemotePollerLimit, 2)),
+    );
+    return Effect.gen(function* () {
+      const broadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
+      const subscriptions: Array<Scope.Closeable> = [];
+      const events: Array<VcsStatusStreamEvent> = [];
+      for (const cwd of ["/repo-1", "/repo-2", "/repo-3"]) {
+        const scope = yield* Scope.make();
+        const snapshot = yield* Deferred.make<VcsStatusStreamEvent>();
+        yield* Stream.runForEach(broadcaster.streamStatus({ cwd }), (event) =>
+          event._tag === "snapshot"
+            ? Deferred.succeed(snapshot, event).pipe(Effect.ignore)
+            : Effect.void,
+        ).pipe(Effect.forkIn(scope));
+        subscriptions.push(scope);
+        events.push(yield* Deferred.await(snapshot));
+      }
+
+      const first = events[0]!;
+      const third = events[2]!;
+      assert.equal(first._tag, "snapshot");
+      assert.equal(third._tag, "snapshot");
+      if (first._tag !== "snapshot" || third._tag !== "snapshot") return;
+      assert.isUndefined(first.local.remotePollingLimit);
+      assert.deepEqual(third.local.remotePollingLimit, {
+        limit: 2,
+        count: 3,
+        repository: "/repo-3",
+      });
+
+      yield* Effect.forEach(subscriptions, (scope) => Scope.close(scope, Exit.void), {
+        discard: true,
+      });
+    }).pipe(Effect.provide(layerTest), Effect.scoped);
+  });
 });
