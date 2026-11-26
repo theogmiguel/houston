@@ -78,6 +78,7 @@ import {
 } from "./rules.ts";
 import { slackBriefOf } from "../slack/Brief.ts";
 import * as TaskGit from "./TaskGit.ts";
+import { ThreadRepositoryResolver } from "../../project/threadRepositories.ts";
 import { HoustonTaskService, USER_ACTOR } from "./TaskService.ts";
 import {
   HoustonTaskStore,
@@ -279,6 +280,7 @@ const make = Effect.gen(function* () {
   const adapters = yield* ProviderAdapterRegistry.ProviderAdapterRegistryV2;
   const readOnlyThreads = readOnlyThreadsOf(sql);
   const fs = yield* FileSystem.FileSystem;
+  const repositoryResolver = yield* ThreadRepositoryResolver;
 
   const newThreadId = (prefix: string) =>
     Effect.map(randomUuidV4, (uuid) => ThreadId.make(`${prefix}-${uuid}`));
@@ -561,6 +563,18 @@ const make = Effect.gen(function* () {
     },
   ) {
     const authority = input.authority ?? USER_LAUNCH;
+    const projectId = row.project_id as ProjectId;
+    const root = yield* workspaceRoot(operation, projectId);
+    const repositories = yield* repositoryResolver.list({ projectId, workspaceRoot: root });
+    if (repositories.length > 1) {
+      const detail = `task run thread ${runRow.thread_id ?? "none"} cannot start: tasks stay single-repository and project ${projectId} covers ${repositories.length} repositories`;
+      yield* store.write(
+        setRunState(runRow.id, "failed", detail).pipe(
+          Effect.map(() => ({ result: undefined, touched: [row.id] })),
+        ),
+      );
+      return yield* refuse("invalid", operation, detail);
+    }
     const launched = yield* launcher
       .launch({
         commandId: CommandId.make(`houston-task-run:${runRow.id}`),
