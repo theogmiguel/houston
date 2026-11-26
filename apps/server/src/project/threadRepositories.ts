@@ -6,12 +6,8 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 /**
- * One git repository a thread works in.
- *
- * `key` is the repository's path relative to the project root; the repository at the root of the
- * project's working tree is `"."`. `root` is the absolute directory git runs in. `baseBranch` is
- * null when the thread carries no base branch; it names the branch the thread was cut from once
- * one is recorded.
+ * One git repository a thread works in. `key` is its path relative to the project root (`"."`
+ * for the root itself); `root` is the absolute directory git runs in.
  */
 export interface ThreadRepository {
   readonly key: string;
@@ -63,50 +59,45 @@ export class ThreadRepositoryResolver extends Context.Reference<{
  * project covers. `lookupProject` runs only when the thread has no worktree, so a worktree thread
  * resolves even when its project is gone.
  */
-export const repositoriesOf = <E, R>(
+export const repositoriesOf = Effect.fn("repositoriesOf")(function* <E, R>(
   thread: Pick<OrchestrationV2ThreadShell, "id" | "projectId" | "worktreePath" | "branch">,
   lookupProject: Effect.Effect<Option.Option<{ readonly workspaceRoot: string }>, E, R>,
-): Effect.Effect<
-  readonly [ThreadRepository, ...ThreadRepository[]],
-  E | ThreadProjectNotFoundError,
-  R
-> =>
-  Effect.gen(function* () {
-    if (thread.worktreePath !== null) {
-      return [
-        {
-          key: ".",
-          root: thread.worktreePath,
-          branch: thread.branch,
-          baseBranch: null,
-        },
-      ] as const;
-    }
-    const project = yield* lookupProject.pipe(
-      Effect.flatMap(
-        Option.match({
-          onNone: () =>
-            Effect.fail(
-              new ThreadProjectNotFoundError({
-                threadId: thread.id,
-                projectId: thread.projectId,
-              }),
-            ),
-          onSome: (project) => Effect.succeed(project),
-        }),
-      ),
-    );
-    const resolver = yield* ThreadRepositoryResolver;
-    const repositories = yield* resolver.list({
-      projectId: thread.projectId,
-      workspaceRoot: project.workspaceRoot,
-    });
-    const [head, ...rest] = repositories;
-    const first = head ?? {
-      key: ".",
-      root: project.workspaceRoot,
-      branch: null,
-      baseBranch: null,
-    };
-    return [{ ...first, branch: thread.branch ?? first.branch }, ...rest] as const;
+) {
+  if (thread.worktreePath !== null) {
+    return [
+      {
+        key: ".",
+        root: thread.worktreePath,
+        branch: thread.branch,
+        baseBranch: null,
+      },
+    ] as const;
+  }
+  const project = yield* lookupProject.pipe(
+    Effect.flatMap(
+      Option.match({
+        onNone: () =>
+          Effect.fail(
+            new ThreadProjectNotFoundError({
+              threadId: thread.id,
+              projectId: thread.projectId,
+            }),
+          ),
+        onSome: (project) => Effect.succeed(project),
+      }),
+    ),
+  );
+  const resolver = yield* ThreadRepositoryResolver;
+  const repositories = yield* resolver.list({
+    projectId: thread.projectId,
+    workspaceRoot: project.workspaceRoot,
   });
+  const [head, ...rest] = repositories;
+  const first = head ?? {
+    key: ".",
+    root: project.workspaceRoot,
+    branch: null,
+    baseBranch: null,
+  };
+  return [{ ...first, branch: thread.branch ?? first.branch }, ...rest] as const;
+});
