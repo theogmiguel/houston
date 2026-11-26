@@ -69,6 +69,14 @@ Each row shows whether the provider is installed, turned off, signed out, has re
 credentials or is out of usage, with the action that resolves it. Sign-in belongs to the
 provider; Houston never asks for your provider password.
 
+An agent can also use MCP servers of its own. When one of them needs a sign-in, the thread shows
+a notice with **Sign in**. Houston opens the provider's sign-in page in your browser; after you
+approve, paste the address the page ended on back into the notice and choose **Continue**. Claude
+and Codex support this; for another provider the notice stays plain text naming the provider. The
+address is sent only to the server that runs the thread, which validates it and hands it to the
+agent's own local sign-in listener. Houston keeps no copy; a rejected address stays in the field
+and is never repeated in the error or logged.
+
 Antigravity is reached only through its ACP runtime, where Houston identifies itself as
 Houston. The runtime Houston installs offers Claude and GPT models only to editors Google
 allowlists, so Houston lists the Gemini models it offers.
