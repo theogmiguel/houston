@@ -72,7 +72,7 @@ const CASES = [
       "VcsProcess.spawn": 211,
       "processRunner.runProcessCore": 211,
       "GitVcsDriver.gitCommand": 193,
-      "CodexAppServerClient.handleServerNotification": 174,
+      "CodexAppServerClient.handleServerNotification": 184,
       "ProviderEventIngestor.syncSubagentThreadModel": 110,
     },
   },
