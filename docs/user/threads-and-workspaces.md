@@ -316,6 +316,7 @@ the provider, and an entry appears only when the thread supports it.
 | `/rewind`, `/checkpoint`, `/undo`         | Rewind to before your last message         |
 | `/context`                                | Context window usage                       |
 | `/effort`                                 | Reasoning effort picker                    |
+| `/fast`                                   | Response speed picker                      |
 | `/permissions`                            | Permission mode picker                     |
 | `/diff`                                   | Changes panel                              |
 | `/fork`, `/branch`                        | A new thread forked at the latest response |

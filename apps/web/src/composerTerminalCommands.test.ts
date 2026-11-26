@@ -97,6 +97,7 @@ describe("TERMINAL_COMMAND_ENTRIES", () => {
       "undo",
       "context",
       "effort",
+      "fast",
       "permissions",
       "diff",
       "fork",
