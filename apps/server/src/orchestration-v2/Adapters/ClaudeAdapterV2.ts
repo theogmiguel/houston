@@ -1806,6 +1806,8 @@ export function makeClaudeQueryOptions(input: {
   readonly resume: boolean;
   readonly resumeSessionAt?: string;
   readonly cwd: string | null;
+  /** The runtime policy's directory list; defaults to `cwd` alone. */
+  readonly directories?: readonly string[];
   readonly attachmentsDir?: string;
   readonly settings?: ClaudeSettings;
   /** The provider's Claude in Chrome switch; `--chrome` is passed only when it is on. */
@@ -1992,7 +1994,7 @@ export function makeClaudeQueryOptions(input: {
     ...(Object.keys(extraArgs).length === 0 ? {} : { extraArgs }),
   };
   const additionalDirectories = [
-    ...(input.cwd === null ? [] : [input.cwd]),
+    ...(input.directories ?? (input.cwd === null ? [] : [input.cwd])),
     ...(input.attachmentsDir === undefined ? [] : [input.attachmentsDir]),
     ...claudeLaunchArgDirectories(input.settings?.launchArgs),
   ];
@@ -11481,6 +11483,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             resume: shouldResume,
             ...(resumeSessionAt === undefined ? {} : { resumeSessionAt }),
             cwd: turnInput.runtimePolicy.cwd,
+            ...(turnInput.runtimePolicy.directories === undefined
+              ? {}
+              : { directories: turnInput.runtimePolicy.directories }),
             attachmentsDir,
             settings: adapterOptions.settings,
             // Delegated threads have no one typing, so they never ask for suggestions.
