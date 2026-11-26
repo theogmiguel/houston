@@ -56,6 +56,7 @@ import * as InferenceGateway from "@houston-app/provider-core/server/inferenceGa
 import type { InferenceServerId } from "@houston-app/contracts/houston/inference";
 import * as InferenceGatewayCredentials from "../houston/inference/InferenceGatewayCredentials.ts";
 import * as EventSink from "./EventSink.ts";
+import { writeLostBackgroundWork } from "../houston/lostBackgroundWork.ts";
 import * as CommandOutputHub from "./CommandOutputHub.ts";
 import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
@@ -417,6 +418,7 @@ function providerEventThreadId(
     case "plan.updated":
       return event.plan.threadId;
     case "provider_turn.updated":
+    case "background_work.lost":
     case "command_output.delta":
     case "runtime_request.updated":
     case "message.delivery":
@@ -2453,6 +2455,31 @@ export const layerWithOptions = (
                 }
                 return next;
               });
+            }
+            // Houston: a query process can exit under a live session, after the run's last event.
+            if (event.type === "background_work.lost") {
+              return writeLostBackgroundWork(
+                {
+                  readRuns: (threadId) =>
+                    projectionStore
+                      .getThreadRecords(threadId, ["runs"])
+                      .pipe(Effect.map(({ runs }) => runs)),
+                  eventSink,
+                  allocateEventId: idAllocator.allocate.event({
+                    threadId: event.threadId,
+                    providerSessionId: entry.runtime.providerSessionId,
+                  }),
+                },
+                event,
+              ).pipe(
+                Effect.catchCause((cause) =>
+                  Effect.logWarning("orchestration-v2.lost-background-work-write-failed", {
+                    providerSessionId: entry.runtime.providerSessionId,
+                    providerThreadId: event.providerThreadId,
+                    cause,
+                  }),
+                ),
+              );
             }
             const releaseLiveOutput =
               event.type === "turn_item.updated" &&

@@ -5170,6 +5170,113 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("a settle refused by queued messages names them in the order they would be sent", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const eventSink = yield* EventSink.EventSinkV2;
+      const threadId = ThreadId.make("runtime-layer-settle-blocking-queue");
+
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("settle-blocking-create"),
+        threadId,
+        projectId: ProjectId.make("settle-blocking-project"),
+        title: "Settle blocking queue",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: "/tmp/runtime-layer-settle-blocking",
+      });
+      const send = (id: string, queued: boolean, automatic = false) =>
+        orchestrator.dispatch({
+          type: "message.dispatch",
+          createdBy: automatic ? "agent" : "user",
+          creationSource: automatic ? "provider" : "web",
+          ...(automatic
+            ? {
+                notification: {
+                  source: { kind: "background_task" as const },
+                  outcome: "updated" as const,
+                  summary: "Background activity updated",
+                },
+              }
+            : {}),
+          commandId: CommandId.make(id),
+          threadId,
+          messageId: MessageId.make(id),
+          text: id,
+          attachments: [],
+          modelSelection,
+          dispatchMode: { type: queued ? "queue_after_active" : "start_immediately" },
+        });
+      const queuedRunId = (messageId: string) =>
+        orchestrator.getThreadProjection(threadId).pipe(
+          Effect.map((projection) => {
+            const run = projection.runs.find(
+              (candidate) =>
+                candidate.status === "queued" &&
+                candidate.userMessageId === MessageId.make(messageId),
+            );
+            assert.isDefined(run);
+            return run!.id;
+          }),
+        );
+
+      yield* send("settle-blocking-active", false);
+      yield* send("settle-blocking-first", true);
+      yield* send("settle-blocking-automatic", true, true);
+      yield* send("settle-blocking-second", true);
+      const firstRunId = yield* queuedRunId("settle-blocking-first");
+      const secondRunId = yield* queuedRunId("settle-blocking-second");
+      yield* orchestrator.dispatch({
+        type: "queued-run.reorder",
+        commandId: CommandId.make("settle-blocking-reorder"),
+        threadId,
+        runId: secondRunId,
+        beforeRunId: firstRunId,
+      });
+
+      const settle = (commandId: string) =>
+        orchestrator
+          .dispatch({ type: "thread.settle", commandId: CommandId.make(commandId), threadId })
+          .pipe(Effect.flip);
+      const refusedByRun = yield* settle("settle-blocking-refused-by-run");
+      assert.equal(refusedByRun._tag, "OrchestratorDispatchError");
+      assert.isFalse("blockingQueuedRunIds" in refusedByRun);
+
+      // A restart cancels the open run and holds what was queued behind it.
+      const { runs } = yield* orchestrator.getThreadProjection(threadId);
+      const now = yield* DateTime.now;
+      yield* eventSink.commitCommand({
+        commandId: CommandId.make("settle-blocking-restart"),
+        threadId,
+        commandType: "provider-runtime.reconcile",
+        acceptedAt: now,
+        events: runs.map((run) => ({
+          id: EventId.make(`settle-blocking-restart:${run.id}`),
+          type: "run.updated" as const,
+          threadId,
+          runId: run.id,
+          occurredAt: now,
+          payload:
+            run.status === "queued"
+              ? { ...run, queueHeld: true }
+              : { ...run, status: "cancelled" as const, completedAt: now },
+        })),
+        effects: [],
+      });
+      const refused = yield* settle("settle-blocking-refused-by-queue");
+      assert.equal(refused._tag, "OrchestratorDispatchError");
+      assert.deepEqual(
+        "blockingQueuedRunIds" in refused ? refused.blockingQueuedRunIds : undefined,
+        [secondRunId, firstRunId],
+      );
+    }),
+  );
+
   it.effect("cancels preparing work on archive and keeps it cancelled through replay", () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;

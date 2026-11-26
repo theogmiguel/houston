@@ -682,6 +682,8 @@ export const OrchestrationV2RestartCancelledBackgroundWork = Schema.Struct({
   id: Schema.optional(TrimmedNonEmptyString),
   /** The agent was waiting on this work, so its restart note wakes the agent even for a shell. */
   awaited: Schema.optional(Schema.Literal(true)),
+  /** Set when the provider process exited under a running server; absent means a server restart. */
+  cause: Schema.optional(Schema.Literal("provider_exit")),
 });
 export type OrchestrationV2RestartCancelledBackgroundWork =
   typeof OrchestrationV2RestartCancelledBackgroundWork.Type;
@@ -4011,6 +4013,8 @@ export class OrchestrationV2DispatchCommandError extends Schema.TaggedError<Orch
     reason: Schema.optional(Schema.Literal("thread_not_found")),
     /** Set when a provider switch was refused because the session still runs this work. */
     blockingBackgroundWork: Schema.optional(Schema.Array(HoustonBlockingBackgroundWork)),
+    /** Set when a settle was refused because these messages are queued, in delivery order. */
+    blockingQueuedRunIds: Schema.optional(Schema.Array(RunId)),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {}

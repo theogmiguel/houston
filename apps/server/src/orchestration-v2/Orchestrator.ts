@@ -239,6 +239,8 @@ export class OrchestratorDispatchError extends Schema.TaggedError<OrchestratorDi
   {
     commandId: CommandId,
     commandType: Schema.String,
+    /** Set when a settle was refused because these messages are queued, in delivery order. */
+    blockingQueuedRunIds: Schema.optional(Schema.Array(RunId)),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {
@@ -3973,10 +3975,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const runningRunExists = projection.runs.some((run) =>
         ["preparing", "starting", "running", "waiting"].includes(run.status),
       );
-      const blockingQueuedRun = projection.runs.find(
-        (run) => run.status === "queued" && !automaticQueuedRuns.includes(run),
-      );
-      const queuedMessageExists = blockingQueuedRun !== undefined;
+      const blockingQueuedRuns = queuedRunsInDeliveryOrder({
+        runs: projection.runs,
+        messages: [...queuedMessages.values()],
+      }).filter((run) => !automaticQueuedRuns.includes(run));
+      const blockingQueuedRun = blockingQueuedRuns[0];
       const pendingRequests = projection.runtimeRequests.filter(
         (request) => request.status === "pending",
       );
@@ -3987,13 +3990,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ? "is waiting on an approval or question. Answer it before settling."
         : runningRunExists
           ? "is still running. Stop it before settling."
-          : queuedMessageExists
+          : blockingQueuedRun !== undefined
             ? `has queued run ${blockingQueuedRun.id}. Send it now or discard it from the queue before settling.`
             : null;
       if (blocker !== null) {
         return yield* new OrchestratorDispatchError({
           commandId: command.commandId,
           commandType: command.type,
+          ...(blockingRequestExists || runningRunExists || blockingQueuedRun === undefined
+            ? {}
+            : { blockingQueuedRunIds: blockingQueuedRuns.map((run) => run.id) }),
           cause: `Thread ${command.threadId} ${blocker}`,
         });
       }

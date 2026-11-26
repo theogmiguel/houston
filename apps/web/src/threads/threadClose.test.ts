@@ -2,7 +2,11 @@ import * as Cause from "effect/Cause";
 import { describe, expect, it } from "vite-plus/test";
 
 import { DraftId } from "../composerDraftStore";
-import { isThreadNotFoundDispatchFailure, unsentDraftIdForThread } from "./threadClose";
+import {
+  blockingQueuedRunIdsOf,
+  isThreadNotFoundDispatchFailure,
+  unsentDraftIdForThread,
+} from "./threadClose";
 
 const draftId = DraftId.make("draft-1");
 
@@ -56,5 +60,27 @@ describe("isThreadNotFoundDispatchFailure", () => {
         cause: Cause.empty,
       }),
     ).toBe(false);
+  });
+});
+
+describe("blockingQueuedRunIdsOf", () => {
+  const failure = (error: unknown) => ({ _tag: "Failure" as const, cause: Cause.fail(error) });
+  const refusal = { _tag: "OrchestrationV2DispatchCommandError", message: "Refused." };
+
+  it("returns the runs the server named", () => {
+    expect(
+      blockingQueuedRunIdsOf(failure({ ...refusal, blockingQueuedRunIds: ["run-1", "run-2"] })),
+    ).toEqual(["run-1", "run-2"]);
+  });
+
+  it("returns null for any other refusal, however its message reads", () => {
+    expect(
+      blockingQueuedRunIdsOf(failure({ ...refusal, message: "Thread 1 has queued run run-1." })),
+    ).toBeNull();
+    expect(blockingQueuedRunIdsOf(failure({ ...refusal, blockingQueuedRunIds: [] }))).toBeNull();
+    expect(
+      blockingQueuedRunIdsOf(failure({ _tag: "Other", blockingQueuedRunIds: ["run-1"] })),
+    ).toBeNull();
+    expect(blockingQueuedRunIdsOf({ _tag: "Success", cause: Cause.empty })).toBeNull();
   });
 });

@@ -611,10 +611,7 @@ export function ThreadSidebar({
       if (next !== undefined) openThread(next);
     }
     for (const thread of threadsToClose) {
-      void (async () => {
-        const result = await actions.settleThread(scopeThreadRef(thread.environmentId, thread.id));
-        reportFailure(t("Failed to close thread"), result);
-      })();
+      void actions.closeThread(scopeThreadRef(thread.environmentId, thread.id));
     }
   };
 
