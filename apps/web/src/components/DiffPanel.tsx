@@ -103,6 +103,8 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { requestConfirmDialog } from "../confirmDialog";
 import { toastManager } from "./ui/toast";
+import { Select, SelectItem, SelectPopup, SelectValue } from "./ui/select";
+import { RepositoryChoiceNotice, RepositorySelectTrigger } from "./ui/repository-list";
 import { useEnvironmentQuery } from "../state/query";
 import { useAtomCommand } from "../state/use-atom-command";
 import { serverEnvironment } from "../state/server";
@@ -110,6 +112,10 @@ import { reviewEnvironment } from "../state/review";
 import { vcsEnvironment } from "../state/vcs";
 import { buildBaseRefChoices, filterBaseRefChoices } from "../lib/baseRefChoices";
 import { createGitDiffFileContentsLoader } from "../lib/diffFileContents";
+import { MultiRepositoryChanges } from "./diffs/MultiRepositoryChanges";
+import { isMultiRepository, resolveActiveRepository } from "./diffs/multiRepositoryChanges.logic";
+import { selectActiveRepositoryKey, useActiveRepositoryStore } from "../state/activeRepository";
+import { useThreadRepositories } from "../state/threadRepositories";
 
 import { observeIntersection } from "~/lib/observeIntersection";
 import { useReviewFilePatches } from "./diffs/useReviewFilePatches";
@@ -125,6 +131,7 @@ type DiffThemeType = "light" | "dark";
 type FailedAtomCommand = Extract<AtomCommandResult<unknown, unknown>, { readonly _tag: "Failure" }>;
 const matchesEmpty = (matches: ReadonlyArray<unknown>) => matches.length === 0;
 const AUTOMATIC_BASE_REF = "__automatic_base_ref__";
+const ALL_REPOSITORIES = "__all_repositories__";
 const DIFF_FILE_TREE_STORAGE_KEY = "houston.diffFileTreeOpen";
 // A review brief past this is mostly noise for the agent, so the prompt names the cut.
 const REVIEW_DIFF_MAX_CHARS = 60_000;
@@ -337,10 +344,30 @@ export default function DiffPanel({
         }
       : null,
   );
-  const activeCwd = activeThread?.worktreePath ?? activeProject?.workspaceRoot;
+  const threadRepositories = useThreadRepositories(
+    activeThread
+      ? {
+          environmentId: activeThread.environmentId,
+          projectId: activeThread.projectId,
+          worktreePath: activeThread.worktreePath,
+        }
+      : null,
+  );
+  const repositories = threadRepositories.repositories;
+  const multiRepository = isMultiRepository(repositories);
+  const activeRepositoryKey = useActiveRepositoryStore((state) =>
+    selectActiveRepositoryKey(state, threadRef),
+  );
+  const selectedRepository = resolveActiveRepository(repositories, activeRepositoryKey);
+  const fallbackRepository = repositories[0] ?? null;
+  const activeCwd =
+    (multiRepository ? (selectedRepository ?? fallbackRepository)?.root : undefined) ??
+    activeThread?.worktreePath ??
+    activeProject?.workspaceRoot;
   const activeRepositoryRoot = activeThread?.worktreePath
     ? undefined
-    : activeProject?.repositoryIdentity?.rootPath;
+    : ((multiRepository ? selectedRepository?.root : undefined) ??
+      activeProject?.repositoryIdentity?.rootPath);
   const serverConfig = useAtomValue(
     serverEnvironment.configValueAtom(activeThread?.environmentId ?? null),
   );
@@ -402,6 +429,13 @@ export default function DiffPanel({
     diffSelection.kind === "unstaged" || diffSelection.kind === "commit"
       ? diffSelection.kind
       : "branch";
+  const needsRepositoryChoice =
+    multiRepository && selectedGitScope === "commit" && selectedRepository === null;
+  const showAllRepositoryChanges =
+    multiRepository &&
+    isGitSelection &&
+    selectedGitScope !== "commit" &&
+    selectedRepository === null;
   const isWorkingTreeSelection = diffSelection.kind === "unstaged";
   const stageFiles = useAtomCommand(vcsEnvironment.stageFiles, { reportFailure: false });
   const unstageFiles = useAtomCommand(vcsEnvironment.unstageFiles, { reportFailure: false });
@@ -449,8 +483,11 @@ export default function DiffPanel({
       : selectedCommitSha !== null
         ? `commit:${selectedCommitSha}`
         : selectedGitScope;
+  const repositoryScopeKey = multiRepository ? (selectedRepository?.key ?? "all-repositories") : "";
   const collapseScopeKey = threadRef
-    ? `${threadRef.environmentId}:${threadRef.threadId}:${reviewSectionId}`
+    ? `${threadRef.environmentId}:${threadRef.threadId}:${reviewSectionId}${
+        multiRepository ? `:${repositoryScopeKey}` : ""
+      }`
     : null;
   const codeViewMountKey = `${collapseScopeKey ?? reviewSectionId}:${codeViewRevision}`;
   const selectedCheckpointRange =
@@ -505,7 +542,7 @@ export default function DiffPanel({
       : null,
   );
   const branchCommitsQuery = useEnvironmentQuery(
-    visible && isGitRepo && canReadFiles && activeThread && activeCwd
+    visible && isGitRepo && canReadFiles && activeThread && activeCwd && !needsRepositoryChoice
       ? reviewEnvironment.branchCommits({
           environmentId: activeThread.environmentId,
           input: {
@@ -1066,6 +1103,17 @@ export default function DiffPanel({
     }
   }, [collapseScopeKey, selectedFilePath, selectedFileRevealRequestId, revealDiffFile]);
 
+  // A file picked from every repository's group opens in its repository, which the select
+  // switched to; the diff loads after that switch and is revealed once.
+  const repositoryRevealRef = useRef<string | null>(null);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- reveals the file picked from a repository group after its repository's diff loads
+  useEffect(() => {
+    if (!activeDiffPath || activeDiffPath.key !== diffSelectionKey) return;
+    const revealKey = `${activeDiffPath.key}\u0000${activeDiffPath.path}`;
+    if (repositoryRevealRef.current === revealKey) return;
+    if (revealDiffFile(activeDiffPath.path)) repositoryRevealRef.current = revealKey;
+  }, [activeDiffPath, diffSelectionKey, revealDiffFile]);
+
   // A phone hides a one-file list, so nothing taps the file to load it: load it once it is listed.
   const soleFilePath =
     isPhone && !fileTreeOpen && filteredFileListEntries.length === 1
@@ -1150,8 +1198,26 @@ export default function DiffPanel({
     if (!threadRef) return;
     useDiffPanelStore.getState().selectBranchBaseRef(threadRef, baseRef);
   };
+  const selectRepository = (value: string) => {
+    if (!threadRef) return;
+    useActiveRepositoryStore
+      .getState()
+      .setActiveRepository(threadRef, value === ALL_REPOSITORIES ? null : value);
+  };
+  const selectRepositoryFile = (repositoryKey: string, path: string) => {
+    if (!threadRef) return;
+    useActiveRepositoryStore.getState().setActiveRepository(threadRef, repositoryKey);
+    setActiveDiffPath({
+      key: `${threadRef.environmentId}:${threadRef.threadId}:${reviewSectionId}:${repositoryKey}`,
+      path,
+    });
+  };
   const selectedTurnValue = selectedTurn ? `turn:${selectedTurn.runId}` : "";
   const selectedCommitValue = selectedCommitSha !== null ? `commit:${selectedCommitSha}` : "";
+  const repositoryItems = [
+    { value: ALL_REPOSITORIES, label: "All repositories" },
+    ...repositories.map((repository) => ({ value: repository.key, label: repository.name })),
+  ];
   const selectedScopeValue = toolCallSelection
     ? ""
     : selectedRunId === null
@@ -1185,6 +1251,27 @@ export default function DiffPanel({
             {selectedScopeLabel}
           </span>
         )}
+        {multiRepository && isGitSelection ? (
+          <Select
+            value={selectedRepository?.key ?? ALL_REPOSITORIES}
+            onValueChange={(value) => {
+              if (value) selectRepository(value);
+            }}
+            items={repositoryItems}
+          >
+            <RepositorySelectTrigger aria-label="Repository">
+              <SelectValue />
+            </RepositorySelectTrigger>
+            <SelectPopup>
+              <SelectItem value={ALL_REPOSITORIES}>All repositories</SelectItem>
+              {repositories.map((repository) => (
+                <SelectItem key={repository.key} value={repository.key}>
+                  <span className="min-w-0 truncate">{repository.name}</span>
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        ) : null}
         {canSelectBranchBase && (
           <div
             className="flex min-w-0 max-w-full items-center gap-2 overflow-hidden text-xs text-muted-foreground"
@@ -1321,7 +1408,8 @@ export default function DiffPanel({
           headerCommitSha !== null && "gap-0",
         )}
       >
-        {codeViewFiles.length > 0 || (isGitSelection && selectedGitSource?.files?.length) ? (
+        {!showAllRepositoryChanges &&
+        (codeViewFiles.length > 0 || (isGitSelection && selectedGitSource?.files?.length)) ? (
           <DiffStatLabel
             additions={diffLineStat.additions}
             deletions={diffLineStat.deletions}
@@ -1463,7 +1551,11 @@ export default function DiffPanel({
                       );
                     })}
                   </DropdownMenuRadioGroup>
-                  {branchCommitsQuery.error ? (
+                  {needsRepositoryChoice ? (
+                    <DropdownMenuItem disabled>
+                      Pick a repository to see its commits.
+                    </DropdownMenuItem>
+                  ) : branchCommitsQuery.error ? (
                     <DropdownMenuItem disabled>{branchCommitsQuery.error}</DropdownMenuItem>
                   ) : !canReadFiles ? (
                     <DropdownMenuItem disabled>
@@ -1554,6 +1646,8 @@ export default function DiffPanel({
         <div className="flex flex-1 items-center justify-center px-5 text-center text-xs text-muted-foreground/70">
           No completed turns yet.
         </div>
+      ) : needsRepositoryChoice ? (
+        <RepositoryChoiceNotice>Pick a repository to see its commits.</RepositoryChoiceNotice>
       ) : isGitSelection && !canReadFiles ? (
         fileAccess.isPending ? (
           <DiffPanelLoadingState label="Checking file access..." />
@@ -1643,6 +1737,22 @@ export default function DiffPanel({
                     </pre>
                   </div>
                 ))}
+              </div>
+            ) : showAllRepositoryChanges ? (
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <MultiRepositoryChanges
+                  environmentId={activeThread.environmentId}
+                  repositories={repositories}
+                  scope={selectedGitScope === "unstaged" ? "unstaged" : "branch"}
+                  baseRef={selectedBaseRef}
+                  ignoreWhitespace={diffIgnoreWhitespace}
+                  selectedRepositoryKey={null}
+                  selectedPath={
+                    activeDiffPath?.key === diffSelectionKey ? activeDiffPath.path : null
+                  }
+                  onSelectFile={selectRepositoryFile}
+                  onRefreshRepositories={threadRepositories.refresh}
+                />
               </div>
             ) : !renderablePatch && !lazySource ? (
               isLoadingSelectedPatch ? (
