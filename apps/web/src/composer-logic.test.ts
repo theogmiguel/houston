@@ -25,6 +25,7 @@ import {
   parseClaudeInChromeCommand,
   parseShellCommand,
   parseSideChatCommand,
+  parseStandaloneComposerSlashCommand,
   replaceTextRange,
   unescapeShellCommand,
 } from "./composer-logic";
@@ -617,6 +618,26 @@ describe("parseSideChatCommand", () => {
     expect(slashCommandItemsForPromptPosition(items, false).map((item) => item.id)).toEqual([
       "slash:plan",
     ]);
+  });
+});
+
+describe("parseStandaloneComposerSlashCommand", () => {
+  it("reads the mode and keeps the text after /plan or /default as the message", () => {
+    expect(parseStandaloneComposerSlashCommand("/plan")).toEqual({ mode: "plan", prompt: "" });
+    expect(parseStandaloneComposerSlashCommand("  /PLAN  fix the failing test ")).toEqual({
+      mode: "plan",
+      prompt: "fix the failing test",
+    });
+    expect(parseStandaloneComposerSlashCommand("/default keep going")).toEqual({
+      mode: "default",
+      prompt: "keep going",
+    });
+  });
+
+  it("ignores a mode name inside a message or with another command", () => {
+    expect(parseStandaloneComposerSlashCommand("please /plan later")).toBeNull();
+    expect(parseStandaloneComposerSlashCommand("/planning ahead")).toBeNull();
+    expect(parseStandaloneComposerSlashCommand("/plan@file")).toBeNull();
   });
 });
 

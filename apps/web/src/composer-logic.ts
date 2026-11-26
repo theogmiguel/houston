@@ -360,14 +360,18 @@ export function parseResumeCommand(text: string): { prompt: string } | null {
   return match ? { prompt: match[1]?.trim() ?? "" } : null;
 }
 
-export function parseStandaloneComposerSlashCommand(text: string): "plan" | "default" | null {
-  const match = /^\/(plan|default)\s*$/i.exec(text.trim());
+/** `/plan [prompt]` or `/default [prompt]` as the whole message; the prompt is sent as typed. */
+export function parseStandaloneComposerSlashCommand(
+  text: string,
+): { readonly mode: "plan" | "default"; readonly prompt: string } | null {
+  const match = /^\/(plan|default)(?:\s+([\s\S]*))?$/i.exec(text.trim());
   if (!match) {
     return null;
   }
-  const command = match[1]?.toLowerCase();
-  if (command === "plan") return "plan";
-  return "default";
+  return {
+    mode: match[1]?.toLowerCase() === "plan" ? "plan" : "default",
+    prompt: match[2]?.trim() ?? "",
+  };
 }
 
 /**
