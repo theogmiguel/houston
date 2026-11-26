@@ -115,6 +115,10 @@ const LIST_REFS_REFRESH_COALESCE_TTL = Duration.seconds(5);
 const LIST_REFS_REFRESH_FAILURE_COOLDOWN = Duration.seconds(30);
 const STATUS_DEFAULT_BRANCH_CACHE_TTL = Duration.minutes(5);
 const STATUS_ORIGIN_EXISTS_CACHE_TTL = Duration.minutes(5);
+// The stamp already ends an entry when config or refs change; the TTL bounds memory and covers
+// event-write races the stamp cannot see.
+const BASE_BRANCH_CACHE_TTL = Duration.minutes(5);
+const BASE_BRANCH_CACHE_CAPACITY = 2_048;
 const STATUS_UPSTREAM_REFRESH_ENV = Object.freeze({
   GCM_INTERACTIVE: "never",
   GIT_ASKPASS: "",
@@ -196,6 +200,16 @@ class GitRefsSnapshotCacheKey extends Data.Class<{
 class GitRefsRefreshCacheKey extends Data.Class<{
   gitCommonDir: string;
   generation: number;
+}> {}
+
+class BaseBranchCacheKey extends Data.Class<{
+  cwd: string;
+  refName: string;
+  inputsStamp: string;
+  allowUpstream: boolean;
+  allowRemoteOfCurrent: boolean;
+  knownOriginDefaultBranch: string | null;
+  knownChangeRequestBase: string | null;
 }> {}
 
 interface GitRepositoryPaths {
@@ -1955,17 +1969,26 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   // Choosing the nearest base already ran merge-base against HEAD; review totals reuse it.
   const knownMergeBases = new WeakMap<object, string>();
 
-  const resolveBaseBranchRef = Effect.fn("resolveBaseBranchRef")(function* (
+  const findBaseBranchRef = Effect.fn("findBaseBranchRef")(function* (
     cwd: string,
     refName: string,
-    options?: GitVcsDriver.GitResolveBaseBranchOptions,
+    options: GitVcsDriver.GitResolveBaseBranchOptions | undefined,
+    trace: { degraded: boolean },
   ): Effect.fn.Return<GitVcsDriver.GitResolvedBaseBranch | null, GitCommandError> {
-    const remoteNames = yield* listRemoteNames(cwd).pipe(Effect.orElseSucceed(() => []));
+    const remoteNames = yield* listRemoteNames(cwd).pipe(
+      Effect.orElseSucceed(() => {
+        trace.degraded = true;
+        return [];
+      }),
+    );
     const remoteNamesLongestFirst = remoteNames.toSorted(
       (left, right) => right.length - left.length,
     );
     const primaryRemoteName = yield* resolvePrimaryRemoteName(cwd).pipe(
-      Effect.orElseSucceed(() => null),
+      Effect.orElseSucceed(() => {
+        trace.degraded = true;
+        return null;
+      }),
     );
 
     const toResolvedBase = (
@@ -2081,7 +2104,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         ["for-each-ref", "--format=%(refname:short)", `refs/remotes/${primaryRemoteName}`],
         { allowNonZeroExit: true },
       );
-      if (listing.exitCode === 0) {
+      if (listing.exitCode !== 0) {
+        // A failed listing can pick the default branch instead of the nearest one.
+        trace.degraded = true;
+      } else {
         const candidates: string[] = [];
         for (const line of listing.stdout.split("\n")) {
           const ref = line.trim();
@@ -2213,6 +2239,116 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }
 
     return null;
+  });
+
+  // The effective config listing covers included, global, system and worktree config. Git writes
+  // packed-refs by rename and each loose ref by a rename in its directory, so those stats change
+  // whenever a ref could. Cost: one git process, plus a stat and listing per refs directory.
+  const readBaseBranchInputsStamp = Effect.fn("GitVcsDriverCore.readBaseBranchInputsStamp")(
+    function* (cwd: string, gitCommonDir: string) {
+      const effectiveConfig = yield* executeGit(
+        "GitVcsDriver.readBaseBranchInputsStamp",
+        cwd,
+        ["config", "--list", "-z"],
+        { allowNonZeroExit: true },
+      );
+      if (effectiveConfig.exitCode !== 0 || effectiveConfig.stdoutTruncated) return null;
+      const configHash = Hex.encode(
+        yield* digest.digest(Digest.sha256, new TextEncoder().encode(effectiveConfig.stdout)),
+      );
+      const statToken = (target: string) =>
+        fileSystem.stat(target).pipe(
+          Effect.map(
+            (info) =>
+              `${Option.getOrElse(info.ino, () => "")}:${info.size}:${Option.match(info.mtime, {
+                onNone: () => "",
+                onSome: (mtime) => mtime.getTime(),
+              })}`,
+          ),
+          Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed("-")),
+        );
+      const tokens = yield* Effect.forEach(
+        ["packed-refs", "reftable/tables.list"],
+        (name) => statToken(path.join(gitCommonDir, name)),
+        { concurrency: "unbounded" },
+      );
+      const directories = [
+        path.join(gitCommonDir, "refs", "heads"),
+        path.join(gitCommonDir, "refs", "remotes"),
+      ];
+      for (let index = 0; index < directories.length; index++) {
+        const directory = directories[index]!;
+        tokens.push(`${directory}=${yield* statToken(directory)}`);
+        const entries = yield* fileSystem.readDirectoryEntries(directory).pipe(
+          Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed([])),
+        );
+        for (const entry of entries.toSorted((left, right) => left.name.localeCompare(right.name))) {
+          if (entry.type === "Directory") directories.push(path.join(directory, entry.name));
+        }
+      }
+      tokens.push(configHash);
+      return tokens.join("\0");
+    },
+  );
+  const baseBranchCache = yield* Cache.makeWith(
+    (key: BaseBranchCacheKey) =>
+      Effect.suspend(() => {
+        const trace = { degraded: false };
+        return findBaseBranchRef(
+          key.cwd,
+          key.refName,
+          {
+            allowUpstream: key.allowUpstream,
+            allowRemoteOfCurrent: key.allowRemoteOfCurrent,
+            knownOriginDefaultBranch: key.knownOriginDefaultBranch,
+            knownChangeRequestBase: key.knownChangeRequestBase,
+          },
+          trace,
+        ).pipe(Effect.map((base) => ({ base, degraded: trace.degraded })));
+      }),
+    {
+      capacity: BASE_BRANCH_CACHE_CAPACITY,
+      timeToLive: Exit.match({
+        onSuccess: () => BASE_BRANCH_CACHE_TTL,
+        onFailure: () => Duration.zero,
+      }),
+    },
+  );
+  const resolveBaseBranchRef = Effect.fn("resolveBaseBranchRef.cached")(function* (
+    cwd: string,
+    refName: string,
+    options?: GitVcsDriver.GitResolveBaseBranchOptions,
+  ): Effect.fn.Return<GitVcsDriver.GitResolvedBaseBranch | null, GitCommandError> {
+    // Reuse a resolved repository root when one is cached; a review-only path reads just the
+    // common directory instead of resolving the worktree root again.
+    const repositoryPathsKey = normalizeRepositoryPathsCacheKey(cwd);
+    const gitCommonDir = (yield* Cache.has(repositoryPathsCache, repositoryPathsKey))
+      ? ((yield* Cache.get(repositoryPathsCache, repositoryPathsKey))?.gitCommonDir ?? null)
+      : yield* readGitCommonDir(cwd).pipe(Effect.orElseSucceed(() => null));
+    const inputsStamp =
+      gitCommonDir === null
+        ? null
+        : yield* readBaseBranchInputsStamp(cwd, gitCommonDir).pipe(
+            Effect.orElseSucceed(() => null),
+          );
+    if (inputsStamp === null) {
+      return yield* findBaseBranchRef(cwd, refName, options, { degraded: false });
+    }
+    const cacheKey = new BaseBranchCacheKey({
+      cwd: normalizeRepositoryPathsCacheKey(cwd),
+      refName,
+      inputsStamp,
+      allowUpstream: options?.allowUpstream !== false,
+      allowRemoteOfCurrent: options?.allowRemoteOfCurrent === true,
+      knownOriginDefaultBranch: options?.knownOriginDefaultBranch ?? null,
+      knownChangeRequestBase: options?.knownChangeRequestBase ?? null,
+    });
+    const entry = yield* Cache.get(baseBranchCache, cacheKey);
+    // A fallback forced by a failed remote lookup must not outlive the failure.
+    if (entry.degraded) {
+      yield* Cache.invalidate(baseBranchCache, cacheKey);
+    }
+    return entry.base;
   });
 
   const computeAheadCountAgainstBase = Effect.fn("computeAheadCountAgainstBase")(function* (

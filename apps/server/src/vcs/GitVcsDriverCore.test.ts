@@ -739,7 +739,9 @@ it.effect.each(["on a branch", "detached", "unborn"] as const)(
         }
 
         const general = yield* driver.getReviewDiffPreview({ cwd });
-        assert.equal(discoveries(), 3);
+        // The base lookup reads the common directory because no status read warmed the root;
+        // a detached head has no base to resolve.
+        assert.equal(discoveries(), state === "detached" ? 3 : 4);
         assert.equal(
           general.sources.find((source) => source.kind === "branch-range")!.headRef,
           state === "detached" ? "HEAD" : yield* git(cwd, ["branch", "--show-current"]),
