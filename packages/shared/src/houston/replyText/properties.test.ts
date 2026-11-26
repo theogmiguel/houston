@@ -123,8 +123,13 @@ const URLS = [
   "http://y.test/p.q",
 ];
 
-const genWord = (rng: Random) =>
-  Array.from({ length: 1 + rng.int(5) }, () => rng.pick(WORD_CHARACTERS)).join("");
+// A label never reads as an address (no `.` or `@`), so the normaliser accepts it as written.
+const LABEL_CHARACTERS = WORD_CHARACTERS.filter(
+  (character) => character !== "." && character !== "@",
+);
+
+const genWord = (rng: Random, characters = WORD_CHARACTERS) =>
+  Array.from({ length: 1 + rng.int(5) }, () => rng.pick(characters)).join("");
 
 const genAtom = (rng: Random, styles: ReadonlyArray<Style>, budget: { links: number }): Atom => {
   const roll = rng.int(20);
@@ -141,7 +146,7 @@ const genAtom = (rng: Random, styles: ReadonlyArray<Style>, budget: { links: num
     budget.links -= 1;
     return rng.chance(0.5)
       ? { kind: "url", url: rng.pick(URLS) }
-      : { kind: "labelled", label: genWord(rng), url: rng.pick(URLS) };
+      : { kind: "labelled", label: genWord(rng, LABEL_CHARACTERS), url: rng.pick(URLS) };
   }
   if (roll === 7) return { kind: "emoji", name: rng.pick(EMOJI) };
   if (roll === 8) return { kind: "letters", name: rng.pick(LETTERS) };

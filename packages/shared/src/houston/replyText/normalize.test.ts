@@ -158,6 +158,41 @@ describe("normalizeReplyText: refusals name the mark and the line", () => {
     );
   });
 
+  it.each([
+    ["[paypal.de](https://evil.test)", "paypal.de"],
+    ["[google.co.uk](https://evil.test/a)", "google.co.uk"],
+    ["[support@paypal.com](https://evil.test)", "support@paypal.com"],
+    ["[see paypal.com now](https://evil.test)", "paypal.com"],
+    ["[pаypal.com](https://evil.test)", "pаypal.com"],
+    ["[pаypal.com](https://paypal.com)", "pаypal.com"],
+    ["[paypal。com](https://evil.test)", "paypal。com"],
+    ["[10.0.0.1](https://evil.test)", "10.0.0.1"],
+    ["[support@paypal.com](https://paypal.com/help)", "support@paypal.com"],
+    ["[paypal.com](mailto:a@evil.test)", "paypal.com"],
+    ["[paypal.com/login](https://evil.test/paypal.com)", "paypal.com/login"],
+    ["[(paypal.com)](https://evil.test)", "paypal.com"],
+  ])("the label of %j names %s on another host and is refused", (raw, named) => {
+    const refusal = refused(raw).find((entry) => entry.mark === "link label");
+    expect(refusal, raw).toBeDefined();
+    expect(refusal?.message).toContain(named);
+    expect(refusal?.line).toBe(1);
+  });
+
+  it.each([
+    "[README.md](https://x.test/o/r/blob/main/README.md)",
+    "[v1.2](https://x.test/releases)",
+    "[the docs, e.g. this](https://x.test/d)",
+    "[www.paypal.com](https://paypal.com/x)",
+    "[paypal.com/login](https://www.paypal.com/login)",
+    "[see PayPal.com.](https://paypal.com)",
+    "[support@paypal.com](mailto:support@paypal.com)",
+    "[paypal.com](mailto:help@paypal.com)",
+    "[pаypal.com](https://pаypal.com/)",
+    "[3.14 and 10:30](https://x.test)",
+  ])("the label of %j names only its own address and is accepted", (raw) => {
+    expect(normalized(raw).text).toBe(raw);
+  });
+
   it("refuses past each bound with the limit and the value", () => {
     const cases: ReadonlyArray<readonly [string, string, number, number]> = [
       ["x".repeat(4_001), "length", 4_000, 4_001],

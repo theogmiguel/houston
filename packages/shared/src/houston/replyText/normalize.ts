@@ -68,10 +68,18 @@ export type ReplyNormalized =
 
 const MAX_PASSES = 4;
 const MAILTO = /^mailto:/i;
-const ADDRESS_LABEL =
-  /^(?:(?:https?:\/\/|www\.)?)([a-z0-9-]+(?:\.[a-z0-9-]+)+)(?::\d+)?([/?#]\S*)?$/i;
-const EXPLICIT_ADDRESS = /^(?:https?:\/\/|www\.)/i;
-const LETTER_TLD = /\.[a-z]{2,}$/i;
+// A dot or one of the full stops a browser reads as a dot.
+const HOST_NAME = String.raw`[\p{L}\p{N}\p{M}-]+(?:[.\u3002\uff0e\uff61][\p{L}\p{N}\p{M}-]+)+`;
+const LABEL_HOST = new RegExp(
+  String.raw`^(?:[a-z][a-z0-9+.-]*:\/\/)?(${HOST_NAME})(?::\d+)?([/?#].*)?$`,
+  "iu",
+);
+const LABEL_EMAIL = new RegExp(String.raw`^(?:mailto:)?[^\s@]+@(${HOST_NAME})$`, "iu");
+const ADDRESS_TLD = /[.\u3002\uff0e\uff61](?:\p{L}{2,}|xn--[a-z0-9-]+)$/iu;
+const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
+const EXPLICIT_ADDRESS = /^(?:[a-z][a-z0-9+.-]*:\/\/|www[.\u3002\uff0e\uff61])/iu;
+const LABEL_WORD_SEPARATOR = /[\s,;!?()[\]<>"'|]+/u;
+const WORD_EDGE = /^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu;
 const WWW = /^www\./;
 const WEB_ADDRESS = /^(?:https?:\/\/[^\s/]|mailto:[^\s@]+@\S)/i;
 const LABEL_SPECIALS = /[\\[\]]/g;
@@ -85,7 +93,6 @@ const HEADING = /^#{1,6}[ \t]+(.+?)(?:[ \t]+#+)?$/;
 const OTHER_BULLET = /^([ \t]*)[*+][ \t]+(?=\S)/;
 const TASK_BOX = /^\[[ xX]\](?: |$)/;
 const LANGUAGE_WORD = /^[A-Za-z0-9_+.#-]+[ \t]*$/;
-const WEB_TLD = /\.(?:com|net|org|io|dev|app|co|ai|gov|edu|me|info|biz|xyz)$/i;
 
 interface Pass {
   readonly changes: Array<ReplyChange>;
@@ -145,14 +152,46 @@ const hostOf = (url: string): string | null => {
   }
 };
 
-/** The host a label names when it reads as an address, else null. */
-const labelHost = (label: string): string | null => {
-  const text = label.trim();
-  const match = ADDRESS_LABEL.exec(text);
-  if (match === null) return null;
-  const host = (match[1] as string).toLowerCase();
-  const explicit = EXPLICIT_ADDRESS.test(text) || match[2] !== undefined || WEB_TLD.test(host);
-  return explicit && LETTER_TLD.test(host) ? host.replace(WWW, "") : null;
+/** A host as a browser opens it (lower case, punycode, dots mapped), `www.` dropped. */
+const canonicalHost = (host: string): string | null => {
+  try {
+    return new URL(`http://${host}`).hostname.replace(WWW, "");
+  } catch {
+    return null;
+  }
+};
+
+const lastPathPart = (url: string): string | null => {
+  try {
+    const part = new URL(url).pathname.split("/").findLast((segment) => segment !== "");
+    return part === undefined ? null : decodeURIComponent(part).toLowerCase();
+  } catch {
+    return null;
+  }
+};
+
+// The first label word shaped as an address that is not the link's host or mailto domain,
+// nor, for a bare word, the link's last path part.
+const misleadingLabelWord = (label: string, url: string): string | null => {
+  const mailto = MAILTO.test(url);
+  const opens = canonicalHost(hostOf(url) ?? "");
+  for (const word of label.normalize("NFC").split(LABEL_WORD_SEPARATOR)) {
+    const trimmed = word.replace(WORD_EDGE, "");
+    const email = LABEL_EMAIL.exec(trimmed);
+    if (email !== null) {
+      if (!mailto || canonicalHost(email[1] as string) !== opens) return trimmed;
+      continue;
+    }
+    const host = LABEL_HOST.exec(trimmed);
+    if (host === null) continue;
+    const name = host[1] as string;
+    if (!ADDRESS_TLD.test(name) && !IPV4.test(name)) continue;
+    if (canonicalHost(name) === opens) continue;
+    const bare = !EXPLICIT_ADDRESS.test(trimmed) && host[2] === undefined;
+    if (bare && !mailto && trimmed.toLowerCase() === lastPathPart(url)) continue;
+    return trimmed;
+  }
+  return null;
 };
 
 const isWebAddress = (url: string) => WEB_ADDRESS.test(url);
@@ -260,8 +299,8 @@ const normalizeInline = (line: string, lineNumber: number, pass: Pass): string =
               `Only http, https and mailto addresses can be linked, not \`${token.url.slice(0, 40)}\``,
             );
           }
-          const named = labelHost(token.label);
-          if (named !== null && named !== hostOf(token.url)?.replace(WWW, "")) {
+          const named = misleadingLabelWord(token.label, token.url);
+          if (named !== null) {
             refuse(
               pass,
               "link label",
