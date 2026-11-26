@@ -40,6 +40,7 @@ import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { vcsEnvironment } from "../state/vcs";
+import { useWorktreeRepositories } from "../state/worktreeRepositories";
 import { cn } from "../lib/utils";
 import { THREAD_DETAILS_PANEL_ICON_CLASS } from "./chat/threadDetailsPanelStyles";
 import { ThreadDetailsPrRows } from "./chat/ThreadDetailsPrRows";
@@ -70,6 +71,7 @@ import { ComboboxItem, ComboboxTrigger } from "./ui/combobox";
 import { ComposerControl } from "./chat/ComposerControl";
 import { MiddleTruncate } from "./ui/middle-truncate";
 import { BranchPicker, BranchPickerRefItem } from "./BranchPicker";
+import { WorktreeRepositoryPicker } from "./WorktreeRepositoryPicker";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 
@@ -183,6 +185,16 @@ export function BranchToolbarBranchSelector({
       hasServerThread,
       draftThreadEnvMode: draftThread?.envMode,
     });
+  const worktreeRepositories = useWorktreeRepositories({
+    environmentId,
+    projectId: activeProject?.id ?? null,
+    enabled: effectiveEnvMode === "worktree" && !envLocked && activeWorktreePath === null,
+  });
+  const showRepositoryPicker =
+    effectiveEnvMode === "worktree" &&
+    !envLocked &&
+    activeWorktreePath === null &&
+    worktreeRepositories.usesRepositoryChoice;
 
   const setThreadBranch = (
     branch: string | null,
@@ -249,6 +261,13 @@ export function BranchToolbarBranchSelector({
   const prReference = parsePullRequestReference(trimmedBranchQuery);
   const isSelectingWorktreeBase =
     effectiveEnvMode === "worktree" && !envLocked && !activeWorktreePath;
+  const setWorktreeBaseBranch = (branch: string | null) => {
+    if (activeThreadBranchOverride !== undefined) {
+      onActiveThreadBranchOverrideChange?.(branch);
+      return;
+    }
+    if (isSelectingWorktreeBase) setThreadBranch(branch, null);
+  };
   const checkoutPullRequestItemValue =
     canChangeThreadBranch && prReference && onCheckoutPullRequestRequest
       ? `__checkout_pull_request__:${prReference}`
@@ -506,6 +525,7 @@ export function BranchToolbarBranchSelector({
       effectiveEnvMode !== "worktree" ||
       activeWorktreePath ||
       activeThreadBranch ||
+      showRepositoryPicker ||
       !worktreeBaseBranchCandidate
     ) {
       return;
@@ -516,6 +536,7 @@ export function BranchToolbarBranchSelector({
     activeWorktreePath,
     effectiveEnvMode,
     setThreadBranch,
+    showRepositoryPicker,
     threadStarted,
     worktreeBaseBranchCandidate,
   ]);
@@ -759,7 +780,16 @@ export function BranchToolbarBranchSelector({
             }}
             onContextMenu={(event) => handleBranchContextMenu(event, resolvedActiveBranch)}
           >
-            {branchSwitchBlockedReason === null ? (
+            {showRepositoryPicker && activeProject ? (
+              <WorktreeRepositoryPicker
+                environmentId={environmentId}
+                projectId={activeProject.id}
+                displayMode={displayMode === "panel" ? "panel" : "toolbar"}
+                baseBranch={activeThreadBranch}
+                fallbackBranch={currentGitBranch}
+                onBaseBranchChange={setWorktreeBaseBranch}
+              />
+            ) : branchSwitchBlockedReason === null ? (
               branchTrigger
             ) : (
               <Tooltip>
