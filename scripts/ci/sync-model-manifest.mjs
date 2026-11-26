@@ -112,22 +112,18 @@ function compatibilitySpans(text) {
   throw new Error("Manifest compatibility array is not closed; expected valid JSON");
 }
 
-function heldEntrySpan(text, driver, side) {
-  const spans = compatibilitySpans(text).filter(
-    ([start, end]) => JSON.parse(text.slice(start, end)).driver === driver,
+/** Indexes into `spans` of the compatibility entries for `driver`. */
+function driverSpanIndexes(text, spans, driver) {
+  return spans.flatMap(([start, end], index) =>
+    JSON.parse(text.slice(start, end)).driver === driver ? [index] : [],
   );
-  if (spans.length !== 1) {
-    throw new Error(
-      `${side} manifest has ${spans.length} compatibility entries for held driver "${driver}"; expected exactly 1`,
-    );
-  }
-  return spans[0];
 }
 
 /**
  * Renames keys in the upstream text rather than re-serialising the object, so the
- * formatter's layout survives and the pull request diff shows only real changes. Held
- * compatibility entries are copied verbatim from `currentText`, Houston's committed file.
+ * formatter's layout survives and the pull request diff shows only real changes. Each held
+ * driver's upstream entries, however many, become Houston's one entry from `currentText`,
+ * the committed file, at the position of upstream's first.
  */
 export function translateUpstreamText(text, currentText) {
   const translated = translateUpstreamManifest(JSON.parse(text));
@@ -135,12 +131,32 @@ export function translateUpstreamText(text, currentText) {
   if (!output.endsWith("\n")) output = `${output}\n`;
   const expected = { ...translated, compatibility: [...translated.compatibility] };
   for (const driver of currentText === undefined ? [] : HELD_COMPATIBILITY.keys()) {
-    const [heldStart, heldEnd] = heldEntrySpan(currentText, driver, "Houston");
-    const [start, end] = heldEntrySpan(output, driver, "Upstream");
+    const currentSpans = compatibilitySpans(currentText);
+    const heldIndexes = driverSpanIndexes(currentText, currentSpans, driver);
+    if (heldIndexes.length !== 1) {
+      throw new Error(
+        `Houston manifest has ${heldIndexes.length} compatibility entries for held driver "${driver}"; expected exactly 1`,
+      );
+    }
+    const spans = compatibilitySpans(output);
+    const indexes = driverSpanIndexes(output, spans, driver);
+    if (indexes.length === 0) {
+      throw new Error(
+        `Upstream manifest has 0 compatibility entries for held driver "${driver}"; expected at least 1`,
+      );
+    }
+    const [heldStart, heldEnd] = currentSpans[heldIndexes[0]];
     const held = currentText.slice(heldStart, heldEnd);
+    // Later entries go first, each with the separator before it, so earlier offsets stay valid.
+    for (const index of indexes.slice(1).toReversed()) {
+      output = `${output.slice(0, spans[index - 1][1])}${output.slice(spans[index][1])}`;
+    }
+    const [start, end] = spans[indexes[0]];
     output = `${output.slice(0, start)}${held}${output.slice(end)}`;
-    const index = expected.compatibility.findIndex((entry) => entry.driver === driver);
-    expected.compatibility[index] = JSON.parse(held);
+    const first = expected.compatibility.findIndex((entry) => entry.driver === driver);
+    expected.compatibility = expected.compatibility.flatMap((entry, index) =>
+      index === first ? [JSON.parse(held)] : entry.driver === driver ? [] : [entry],
+    );
   }
   if (JSON.stringify(JSON.parse(output)) !== JSON.stringify(expected)) {
     throw new Error(
