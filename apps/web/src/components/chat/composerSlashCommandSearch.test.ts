@@ -31,12 +31,13 @@ function houstonItem(
 function providerItem(
   name: string,
   description: string,
+  aliases?: ReadonlyArray<string>,
 ): Extract<SlashItem, { type: "provider-slash-command" }> {
   return {
     id: `provider-slash-command:${PROVIDER}:${name}`,
     type: "provider-slash-command",
     provider: PROVIDER,
-    command: { name, description },
+    command: { name, description, ...(aliases ? { aliases } : {}) },
     label: `/${name}`,
     description,
   };
@@ -173,5 +174,24 @@ describe("slashCommandSections", () => {
       "slash:model",
       `skill:${PROVIDER}:deploy`,
     ]);
+  });
+});
+
+describe("searchSlashCommandItems aliases", () => {
+  const usage = providerItem("usage", "Show plan usage", ["cost", "stats"]);
+  const review = providerItem("review", "Review changes");
+
+  it("finds a command by an alias the provider reports", () => {
+    expect(searchSlashCommandItems([review, usage], "/cost")).toEqual([usage]);
+    expect(searchSlashCommandItems([review, usage], "stat")).toEqual([usage]);
+  });
+
+  it("ranks an exact alias above a description match", () => {
+    const other = providerItem("other", "Explains the cost of a run");
+    expect(searchSlashCommandItems([other, usage], "cost")).toEqual([usage, other]);
+  });
+
+  it("still matches commands that carry no aliases", () => {
+    expect(searchSlashCommandItems([review, usage], "review")).toEqual([review]);
   });
 });
