@@ -43,6 +43,50 @@ or lint. Add them under **Settings ▸ Projects ▸ Actions** or from the thread
 An action with **Stop this action when the thread settles** turned on stops its terminal and child
 processes when the thread settles; an agent's own shell command is never attached to it.
 
+## Projects that cover several repositories
+
+A project can cover more than one git repository. A thread in the project folder sees all of
+them: its **Changes** and git actions read status, diff, commit and push per repository. A
+**worktree** thread still owns one repository, the worktree it started in.
+
+Houston discovers repositories inside the project folder:
+
+- the project folder itself when its `.git` is a directory, keyed `.`;
+- each direct child folder that is a repository;
+- one further level inside a direct child that is a plain folder, keyed `<child>/<repository>`;
+- the submodules a discovered repository's `.gitmodules` lists, each as its own repository.
+
+Names starting with `.` and `node_modules` are skipped. A folder counts as a repository only
+when `.git` is a directory, so linked worktrees and submodules on disk are not discovered by
+walking; submodules come from `.gitmodules` instead. Discovery reads a bounded number of
+entries and repositories; a limit that trips is reported with the limit, the value at it and the
+repository requested.
+
+**Tracked folders** add a repository that lives elsewhere on disk: use the project's repository
+settings to add an absolute folder. A tracked folder must exist, be a git repository, lie
+outside the project folder, and not already be tracked. A project tracks at most 128 folders;
+past that, adding one is refused with the limit, the current count and the folder.
+
+Both the repo's `houston.json` and the project's stored list can **ignore** repositories. Each
+entry is a glob matched against a repository's path relative to the project folder and against
+its folder name; `*` stays within one path segment and `**` crosses them. `houston.json` spells
+the field `ignoreRepositories`, for example:
+
+```json
+{
+  "ignoreRepositories": ["legacy", "vendor/**"]
+}
+```
+
+Claude receives every repository directory of a project-folder thread. A provider that cannot
+read directories outside the thread's `cwd` (Codex and the other adapters included in this
+milestone) refuses to start a turn when the project covers a tracked folder outside it, naming
+the provider and the folders it cannot reach; the thread needs a project-folder repository it can
+reach, or Claude. Repositories inside the project folder need nothing extra.
+
+Limitations in this milestone: worktree threads see one repository; the merge queue and tasks
+stay single-repository; and a commit covers one repository, never several at once.
+
 ## Creating a thread
 
 Choose **New thread** from a workspace's **+** or from the **New thread** action of an empty
