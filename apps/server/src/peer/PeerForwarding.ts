@@ -11,6 +11,11 @@ import {
   OrchestrationSearchThreadsInput,
   OrchestrationThreadSearchMatch,
 } from "@houston-app/contracts";
+import {
+  PEER_LINK_CLIENT_PAIRING_TOOL,
+  PeerLinkClientPairingToolInput,
+  PeerLinkClientPairingToolResult,
+} from "@houston-app/contracts/houston/peerLinkPairing";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
@@ -96,6 +101,12 @@ export class PeerForwarding extends Context.Service<
       environmentId: EnvironmentId,
       input: OrchestrationSearchThreadsInput,
     ) => Effect.Effect<PeerThreadSearchResult, OrchestratorMcpFailure>;
+    /** A one-time client pairing from a full-access link there. */
+    readonly pairClient: (
+      scope: Scope,
+      environmentId: EnvironmentId,
+      input: PeerLinkClientPairingToolInput,
+    ) => Effect.Effect<PeerLinkClientPairingToolResult, OrchestratorMcpFailure>;
     /** The environments this one links to, as an agent sees them. */
     readonly links: (
       scope: Scope,
@@ -216,6 +227,16 @@ const make = Effect.gen(function* () {
       input,
     );
 
+  const pairClient: PeerForwarding["Service"]["pairClient"] = (scope, environmentId, input) =>
+    forward<PeerLinkClientPairingToolResult>(
+      scope,
+      PEER_LINK_CLIENT_PAIRING_TOOL,
+      PeerLinkClientPairingToolInput,
+      PeerLinkClientPairingToolResult,
+      environmentId,
+      input,
+    );
+
   const waitForThread: PeerForwarding["Service"]["waitForThread"] = Effect.fn(
     "PeerForwarding.waitForThread",
   )(function* (scope, environmentId, input) {
@@ -306,6 +327,7 @@ const make = Effect.gen(function* () {
     interruptThread,
     waitForThread,
     searchThreads,
+    pairClient,
     links: listLinks,
   });
 });

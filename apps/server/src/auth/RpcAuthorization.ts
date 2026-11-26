@@ -93,6 +93,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.peerLinksList]: AuthAccessReadScope,
   // Sends the query to the machines this environment links to, so it needs the links' read grant.
   [WS_METHODS.houstonPeerLinksSearch]: AuthAccessReadScope,
+  [WS_METHODS.houstonPeerLinksPairClient]: AuthAccessWriteScope,
   [WS_METHODS.serverUpdateSettings]: AuthSettingsWriteScope,
   [WS_METHODS.serverSearchAcpRegistry]: AuthOrchestrationReadScope,
   [WS_METHODS.serverPrepareAcpRegistryAgent]: AuthProvidersManageScope,

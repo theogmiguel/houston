@@ -6,6 +6,7 @@ import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
 import * as PeerForwarding from "./peer/PeerForwarding.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
 import * as PeerLinkSearch from "./houston/peerLinkSearch.ts";
+import * as PeerLinkPairing from "./houston/peerLinkPairing.ts";
 
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -1648,6 +1649,7 @@ export const layerWsRpc = (
       const secretResolver = yield* SecretResolver.SecretResolver;
       const peerLinks = yield* PeerLinks.PeerLinks;
       const peerLinkSearch = yield* PeerLinkSearch.PeerLinkSearch;
+      const peerLinkPairing = yield* PeerLinkPairing.PeerLinkPairing;
       const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
@@ -2842,6 +2844,11 @@ export const layerWsRpc = (
         [WS_METHODS.peerLinksList]: (_input) =>
           peerLinks.list.pipe(Effect.map((links) => ({ links }))),
         [WS_METHODS.houstonPeerLinksSearch]: (input) => peerLinkSearch.search(input),
+        [WS_METHODS.houstonPeerLinksPairClient]: (input) =>
+          peerLinkPairing.pairClient(input, {
+            scopes: currentSession.scopes,
+            clientLabel: currentSession.client?.label ?? "Houston client",
+          }),
         [WS_METHODS.peerLinksLink]: (input) => peerLinks.link(input),
         [WS_METHODS.peerLinksUnlink]: ({ environmentId }) =>
           peerLinks.unlink(environmentId).pipe(Effect.map((removed) => ({ removed }))),
@@ -3956,7 +3963,10 @@ export const layer = Layer.unwrap(
               ),
               Layer.provide(Layer.succeed(PeerLinks.PeerLinks, peerLinks)),
               Layer.provide(
-                PeerLinkSearch.layer.pipe(
+                Layer.merge(
+                  PeerLinkSearch.layer,
+                  PeerLinkPairing.layer,
+                ).pipe(
                   Layer.provideMerge(Layer.succeed(PeerLinks.PeerLinks, peerLinks)),
                   Layer.provideMerge(Layer.succeed(PeerForwarding.PeerForwarding, peerForwarding)),
                   Layer.provideMerge(

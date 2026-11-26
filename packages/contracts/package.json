@@ -71,6 +71,10 @@
       "types": "./src/houston/observability.ts",
       "import": "./src/houston/observability.ts"
     },
+    "./houston/peerLinkPairing": {
+      "types": "./src/houston/peerLinkPairing.ts",
+      "import": "./src/houston/peerLinkPairing.ts"
+    },
     "./houston/peerLinkSearch": {
       "types": "./src/houston/peerLinkSearch.ts",
       "import": "./src/houston/peerLinkSearch.ts"
