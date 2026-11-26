@@ -65,8 +65,16 @@ export const layer: Layer.Layer<
       readonly runId: RunId;
       readonly scopeId: CheckpointScopeId;
     }) {
-      const { run, rootNode, scope, providerThread, readyCheckpointOrdinals, sideChat } =
-        yield* projections.getCheckpointCaptureContext(input.threadId, input);
+      const {
+        run,
+        rootNode,
+        scope,
+        providerThread,
+        readyCheckpointOrdinals,
+        childScopes: storedChildScopes,
+        sideChat,
+      } = yield* projections.getCheckpointCaptureContext(input.threadId, input);
+      const existingChildScopes = storedChildScopes ?? [];
       // Stopped runs remain terminal; their checkpoint is the next message's rollback point.
       const stopped = run?.status === "interrupted" || run?.status === "cancelled";
 
@@ -130,9 +138,98 @@ export const layer: Layer.Layer<
         forceMissing: sideChat,
         previousCheckpointReady: baselineCheckpoint?.status === "ready",
       });
+      // A task folder's root scope holds its first repository; every other repository gets a
+      // child scope, captured and rewound with it.
+      const newChildScopes =
+        existingChildScopes.length === 0
+          ? yield* checkpoints.repositoryScopes({ parent: scope })
+          : [];
+      const childScopes =
+        existingChildScopes.length === 0
+          ? newChildScopes.map((childScope) => ({
+              scope: childScope,
+              readyCheckpointOrdinals: [] as ReadonlyArray<number>,
+            }))
+          : existingChildScopes;
+      const childCaptures = yield* Effect.forEach(childScopes, (child) =>
+        Effect.gen(function* () {
+          const childHasReady = (ordinalWithinScope: number) =>
+            child.readyCheckpointOrdinals.includes(ordinalWithinScope);
+          const materializeChildBaseline = (ordinalWithinScope: number) =>
+            checkpoints.materializeBaselineCheckpoint({
+              scope: child.scope,
+              ordinalWithinScope,
+              nodeId: rootNode.id,
+              capturedAt: run.requestedAt,
+              forceMissing: sideChat,
+            });
+          const childThreadStart =
+            baselineOrdinalWithinScope === 0 || childHasReady(0)
+              ? null
+              : yield* materializeChildBaseline(0);
+          const childBaseline = childHasReady(baselineOrdinalWithinScope)
+            ? null
+            : yield* materializeChildBaseline(baselineOrdinalWithinScope);
+          const childCheckpoint = yield* checkpoints.capture({
+            scope: child.scope,
+            runId: run.id,
+            nodeId: rootNode.id,
+            ordinalWithinScope: run.ordinal,
+            appRunOrdinal: run.ordinal,
+            capturedAt,
+            forceMissing: sideChat,
+            previousCheckpointReady: childBaseline?.status === "ready",
+          });
+          return {
+            threadStart: childThreadStart,
+            baseline: childBaseline,
+            checkpoint: childCheckpoint,
+          };
+        }),
+      );
       // Omit delegatedCompletion to preserve cohort writes made after capture loaded the run.
       const { delegatedCompletion: _delegatedCompletion, ...runWithoutDelegatedCompletion } = run;
       const commandId = CommandId.make(`command:effect:checkpoint.capture:${run.id}`);
+      const childEvents = yield* Effect.forEach(
+        [
+          ...newChildScopes.map((childScope) => ({ kind: "scope" as const, childScope })),
+          ...childCaptures.flatMap((capture) => [
+            ...(capture.threadStart === null
+              ? []
+              : [{ kind: "checkpoint" as const, checkpoint: capture.threadStart }]),
+            ...(capture.baseline === null
+              ? []
+              : [{ kind: "checkpoint" as const, checkpoint: capture.baseline }]),
+            { kind: "checkpoint" as const, checkpoint: capture.checkpoint },
+          ]),
+        ],
+        (entry) =>
+          Effect.map(ids.allocate.event({ threadId: input.threadId, commandId }), (id) =>
+            entry.kind === "scope"
+              ? {
+                  id,
+                  type: "checkpoint-scope.created" as const,
+                  threadId: input.threadId,
+                  runId: run.id,
+                  nodeId: entry.childScope.nodeId,
+                  driver: providerThread.driver,
+                  providerInstanceId: run.providerInstanceId,
+                  occurredAt: capturedAt,
+                  payload: entry.childScope,
+                }
+              : {
+                  id,
+                  type: "checkpoint.captured" as const,
+                  threadId: input.threadId,
+                  ...(entry.checkpoint.runId === null ? {} : { runId: entry.checkpoint.runId }),
+                  nodeId: entry.checkpoint.nodeId,
+                  driver: providerThread.driver,
+                  providerInstanceId: run.providerInstanceId,
+                  occurredAt: capturedAt,
+                  payload: entry.checkpoint,
+                },
+          ),
+      );
       yield* eventSink.commitCommand({
         commandId,
         threadId: input.threadId,
@@ -168,6 +265,7 @@ export const layer: Layer.Layer<
                   payload: baselineCheckpoint,
                 },
               ]),
+          ...childEvents,
           {
             id: yield* ids.allocate.event({ threadId: input.threadId, commandId }),
             type: "checkpoint.captured",

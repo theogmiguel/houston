@@ -298,6 +298,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
                         "baseline materialization must be skipped when ordinal 0 is ready",
                       ),
                     capture: () => Effect.succeed(captured),
+                    repositoryScopes: () => Effect.succeed([]),
                   }),
               Layer.mock(EventSink.EventSinkV2)({
                 commitCommand: (input) =>
@@ -451,6 +452,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
             Layer.mock(CheckpointService.CheckpointServiceV2)({
               materializeBaselineCheckpoint: () => Effect.die("a discarded run has no baseline"),
               capture: () => Effect.die("a discarded run must not be captured"),
+              repositoryScopes: () => Effect.succeed([]),
             }),
             Layer.mock(EventSink.EventSinkV2)({
               commitCommand: (input) =>
@@ -874,6 +876,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
               materializeBaselineCheckpoint: () =>
                 Effect.die("baseline materialization must be skipped when ordinal 0 is ready"),
               capture: () => Effect.succeed(captured),
+              repositoryScopes: () => Effect.succeed([]),
             }),
             Layer.mock(EventSink.EventSinkV2)({
               commitCommand: (input) =>
@@ -1104,3 +1107,158 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
     }),
   );
 });
+
+it.effect("creates a child scope per repository and captures every one with the run", () =>
+  Effect.gen(function* () {
+    const now = DateTime.makeUnsafe("2026-01-01T00:00:00.000Z");
+    const run = {
+      id: runId,
+      threadId,
+      ordinal: 1,
+      providerInstanceId,
+      modelSelection,
+      providerThreadId,
+      userMessageId: MessageId.make("message:child-scope-user"),
+      rootNodeId,
+      activeAttemptId: null,
+      status: "waiting" as const,
+      requestedAt: now,
+      startedAt: now,
+      completedAt: null,
+      checkpointId: null,
+      contextHandoffId: null,
+    };
+    const rootNode = {
+      id: rootNodeId,
+      threadId,
+      runId,
+      parentNodeId: null,
+      rootNodeId,
+      kind: "root_turn" as const,
+      status: "waiting" as const,
+      countsForRun: true,
+      providerThreadId,
+      providerTurnId: null,
+      nativeItemRef: null,
+      runtimeRequestId: null,
+      checkpointScopeId: scopeId,
+      startedAt: now,
+      completedAt: null,
+    };
+    const scope = {
+      id: scopeId,
+      threadId,
+      runId,
+      nodeId: rootNodeId,
+      parentScopeId: null,
+      providerThreadId,
+      kind: "root_run" as const,
+      ordinalWithinParent: 0,
+      advancesAppRunCount: true,
+      cwd: "/work/task-folder",
+      createdAt: now,
+    };
+    const childScope = {
+      id: CheckpointScopeId.make("scope:checkpoint-capture-child"),
+      threadId,
+      runId,
+      nodeId: rootNodeId,
+      parentScopeId: scopeId,
+      providerThreadId,
+      kind: "provider_thread" as const,
+      ordinalWithinParent: 1,
+      advancesAppRunCount: false,
+      cwd: "/work/task-folder/web",
+      createdAt: now,
+    };
+    const providerThread = {
+      id: providerThreadId,
+      driver,
+      providerInstanceId,
+      providerSessionId: null,
+      appThreadId: threadId,
+      ownerNodeId: rootNodeId,
+      nativeThreadRef: null,
+      nativeConversationHeadRef: null,
+      status: "idle" as const,
+      firstRunOrdinal: 1,
+      lastRunOrdinal: 1,
+      handoffIds: [],
+      forkedFrom: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const context = {
+      run,
+      rootNode,
+      scope,
+      providerThread,
+      readyCheckpointOrdinals: [0],
+      childScopes: [],
+      sideChat: false,
+    } as unknown as ProjectionStore.ProjectionCheckpointCaptureContext;
+    const makeCheckpoint = (scopeForCheckpoint: { id: CheckpointScopeId }, ordinal: number) => ({
+      id: CheckpointId.make(`checkpoint:${scopeForCheckpoint.id}:${ordinal}`),
+      threadId,
+      scopeId: scopeForCheckpoint.id,
+      runId: ordinal === 0 ? null : runId,
+      nodeId: rootNodeId,
+      parentCheckpointId: null,
+      ordinalWithinScope: ordinal,
+      appRunOrdinal: ordinal === 0 ? null : ordinal,
+      ref: CheckpointRef.make(`checkpoint-ref:${scopeForCheckpoint.id}:${ordinal}`),
+      status: "ready" as const,
+      files: [],
+      capturedAt: now,
+    });
+    const committed = yield* Ref.make<ReadonlyArray<OrchestrationV2DomainEvent>>([]);
+    const layerCapture = CheckpointCaptureService.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          Layer.mock(CheckpointService.CheckpointServiceV2)({
+            repositoryScopes: () => Effect.succeed([childScope]),
+            materializeBaselineCheckpoint: ({ scope: scoped, ordinalWithinScope }) =>
+              Effect.succeed(makeCheckpoint(scoped, ordinalWithinScope)),
+            capture: ({ scope: scoped, ordinalWithinScope }) =>
+              Effect.succeed(makeCheckpoint(scoped, ordinalWithinScope)),
+          }),
+          Layer.mock(EventSink.EventSinkV2)({
+            commitCommand: (input) =>
+              Ref.set(committed, input.events).pipe(Effect.as({ committed: true } as never)),
+          }),
+          Layer.mock(ProjectionStore.ProjectionStoreV2)({
+            getCheckpointCaptureContext: () => Effect.succeed(context),
+          }),
+        ),
+      ),
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* CheckpointCaptureService.CheckpointCaptureServiceV2;
+      yield* service.execute({ threadId, runId, scopeId });
+      const events = yield* Ref.get(committed);
+      assert.deepEqual(
+        events.map((event) => event.type),
+        [
+          "checkpoint-scope.created",
+          "checkpoint.captured",
+          "checkpoint.captured",
+          "checkpoint.captured",
+          "turn-item.updated",
+          "run.updated",
+          "node.updated",
+        ],
+      );
+      const created = events[0]!;
+      assert.equal(created.type, "checkpoint-scope.created");
+      assert.deepEqual(
+        created.type === "checkpoint-scope.created" ? created.payload.id : null,
+        childScope.id,
+      );
+      const scopesCaptured = events
+        .filter((event) => event.type === "checkpoint.captured")
+        .map((event) => (event.type === "checkpoint.captured" ? event.payload.scopeId : null));
+      assert.deepEqual(scopesCaptured, [childScope.id, childScope.id, scope.id]);
+    }).pipe(Effect.provide(layerCapture));
+  }),
+);

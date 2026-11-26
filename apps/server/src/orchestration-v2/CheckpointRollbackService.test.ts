@@ -46,6 +46,7 @@ import * as ProjectStore from "./ProjectStore.ts";
 import type * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
+import * as HoustonTaskFolders from "../houston/worktrees/TaskFolders.ts";
 
 const unrelatedProject = Option.some({
   workspaceRoot: "/nonexistent/houston-rollback-project",
@@ -345,6 +346,135 @@ it.effect.each([
           ? ["cleanup", "prune", "create", ...rollbackCalls]
           : [...rollbackCalls, "cleanup"],
       );
+    }).pipe(Effect.provide(testLayer));
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+it.effect("names every repository the rewind could not restore after the others are restored", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const worktreePath = yield* fileSystem.makeTempDirectoryScoped({
+      prefix: "rollback-task-folder-",
+    });
+    const childPath = `${worktreePath}/web`;
+    yield* fileSystem.makeDirectory(childPath).pipe(Effect.orDie);
+    const threadId = ThreadId.make("thread:rollback-task-folder");
+    const providerThreadId = ProviderThreadId.make("provider-thread:rollback-task-folder");
+    const providerInstanceId = ProviderInstanceId.make("provider_rollback_task_folder");
+    const projectId = ProjectId.make("project:rollback-task-folder");
+    const scopeId = CheckpointScopeId.make("checkpoint-scope:rollback-task-folder:root");
+    const childScopeId = CheckpointScopeId.make("checkpoint-scope:rollback-task-folder:web");
+    const checkpointId = CheckpointId.make("checkpoint:rollback-task-folder:root");
+    const childCheckpointId = CheckpointId.make("checkpoint:rollback-task-folder:web");
+    const calls: string[] = [];
+    const checkpoint = { id: checkpointId, scopeId, status: "ready", appRunOrdinal: 0 };
+    const scope = { id: scopeId, cwd: worktreePath };
+    const childScope = { id: childScopeId, cwd: childPath, parentScopeId: scopeId };
+    const childCheckpoint = { id: childCheckpointId, scopeId: childScopeId, status: "ready" };
+    const projection = {
+      thread: {
+        id: threadId,
+        projectId,
+        worktreePath,
+        branch: null,
+        activeProviderThreadId: providerThreadId,
+        modelSelection: { instanceId: providerInstanceId, model: "test-model" },
+      },
+      providerThread: {
+        id: providerThreadId,
+        providerSessionId: ProviderSessionId.make("provider-session:rollback-task-folder"),
+        providerInstanceId,
+      },
+      providerSession: undefined,
+      checkpoint,
+      scope,
+      childScopes: [{ scope: childScope, checkpoint: childCheckpoint, staleCheckpoints: [] }],
+      runsToRollback: [],
+      targetAttempt: undefined,
+      rolledBackAttemptIds: [],
+      staleCheckpoints: [],
+      rootNodes: [],
+      providerTurns: [],
+    } as unknown as ProjectionStore.ProjectionCheckpointRollbackContext;
+    const taskFolder = {
+      folderPath: worktreePath,
+      realPath: worktreePath,
+      projectId,
+      projectRoot: "/project",
+      repositories: [
+        { key: "api", projectPath: "/project/api", worktreePath, branch: "thread" },
+        { key: "web", projectPath: "/project/web", worktreePath: childPath, branch: "thread" },
+      ],
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    const testLayer = CheckpointRollbackService.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          ThreadCommandExecutor.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+          Layer.mock(ServerConfig.ServerConfig)({ worktreesDir: "/synthetic-worktrees" } as never),
+          ServerSettings.layerTest(),
+          Layer.mock(ProjectStore.ProjectStoreV2)({
+            get: () => Effect.succeedSome({ workspaceRoot: "/project" } as never),
+          }),
+          Layer.mock(GitWorkflow.GitWorkflowService)({}),
+          Layer.mock(CheckpointService.CheckpointServiceV2)({
+            restore: ({ scope: restored }) =>
+              restored.id === scopeId
+                ? Effect.sync(() => {
+                    calls.push("root");
+                  })
+                : Effect.fail(
+                    new CheckpointService.CheckpointRestoreError({
+                      scopeId: childScopeId,
+                      checkpointId: childCheckpointId,
+                      cause: "the checkpoint ref is unavailable",
+                    }),
+                  ),
+          }),
+          Layer.mock(EventSink.EventSinkV2)({
+            write: () => Effect.sync(() => (calls.push("events"), [])),
+          }),
+          IdAllocator.layer,
+          Layer.mock(ProjectionStore.ProjectionStoreV2)({
+            getThread: () => Effect.succeed(projection.thread),
+            getCheckpointRollbackContext: () => Effect.succeed(projection),
+            getShellSnapshot: () =>
+              Effect.succeed({
+                schemaVersion: 1,
+                snapshotSequence: 0,
+                threads: [],
+                archivedThreads: [],
+              }),
+          }),
+          Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
+            open: () => Effect.succeed({} as never),
+          }),
+          Layer.mock(RuntimePolicy.RuntimePolicyV2)({
+            resolve: () => Effect.succeed({ cwd: worktreePath } as never),
+          }),
+          Layer.succeed(HoustonTaskFolders.HoustonTaskFolders, {
+            plan: () => Effect.succeed(null),
+            create: () => Effect.die("unused"),
+            find: () => Effect.succeed(taskFolder),
+            remove: () => Effect.die("unused"),
+          } as unknown as HoustonTaskFolders.HoustonTaskFoldersShape),
+        ),
+      ),
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* CheckpointRollbackService.CheckpointRollbackServiceV2;
+      const error = yield* service
+        .execute({ threadId, providerThreadId, checkpointId, scopeId })
+        .pipe(Effect.flip);
+      assert.equal(error._tag, "CheckpointRollbackExecutionError");
+      assert.equal(error.reason, "repositories-unrestored");
+      assert.deepEqual(error.unrestored, [
+        { key: "web", reason: "the checkpoint ref is unavailable" },
+      ]);
+      assert.include(error.message, "web (the checkpoint ref is unavailable)");
+      assert.deepEqual(calls, ["root", "events"]);
     }).pipe(Effect.provide(testLayer));
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

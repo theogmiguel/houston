@@ -34,6 +34,7 @@ import * as ProjectStore from "./ProjectStore.ts";
 import type * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 import { ProviderSessionManagerV2 } from "./ProviderSessionManager.ts";
 import { RuntimePolicyAboveCeilingError, RuntimePolicyV2 } from "./RuntimePolicy.ts";
+import * as HoustonTaskFolders from "../houston/worktrees/TaskFolders.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 
 export const ROLLBACK_FAILED_MESSAGE =
@@ -48,10 +49,14 @@ export class CheckpointRollbackExecutionError extends Schema.TaggedError<Checkpo
       "provider-turn-unavailable",
       "unexpected-failure",
       "shared-workspace",
+      "repositories-unrestored",
     ]),
     threadId: ThreadId,
     providerThreadId: ProviderThreadId,
     checkpointId: CheckpointId,
+    unrestored: Schema.optional(
+      Schema.Array(Schema.Struct({ key: Schema.String, reason: Schema.String })),
+    ),
     cause: Schema.optional(Schema.Defect()),
   },
 ) {
@@ -65,6 +70,8 @@ export class CheckpointRollbackExecutionError extends Schema.TaggedError<Checkpo
         return `Provider turn for rollback target ${this.checkpointId} is unavailable on provider thread ${this.providerThreadId}.`;
       case "shared-workspace":
         return SHARED_WORKSPACE_RESTORE_MESSAGE;
+      case "repositories-unrestored":
+        return `Thread ${this.threadId}'s conversation was rolled back, but these repositories could not be restored: ${(this.unrestored ?? []).map((entry) => `${entry.key} (${entry.reason})`).join(", ")}.`;
       case "unexpected-failure":
         return ROLLBACK_FAILED_MESSAGE;
     }
@@ -82,6 +89,7 @@ const isRuntimePolicyAboveCeilingError = Schema.is(RuntimePolicyAboveCeilingErro
  * output, so they fall back to the generic message.
  */
 export function rollbackFailureClientMessage(error: CheckpointRollbackExecutionError): string {
+  if (error.reason === "repositories-unrestored") return error.message;
   if (isRuntimePolicyAboveCeilingError(error.cause)) return error.cause.message;
   const restoreCause = isCheckpointRestoreError(error.cause) ? error.cause.cause : undefined;
   return isVcsProcessExitError(restoreCause) && restoreCause.detail === GIT_INDEX_LOCKED_DETAIL
@@ -134,6 +142,7 @@ export const layer: Layer.Layer<
     const projects = yield* ProjectStore.ProjectStoreV2;
     const path = yield* Path.Path;
     const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
+    const taskFolders = yield* HoustonTaskFolders.HoustonTaskFolders;
     const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
 
     const execute = Effect.fn("orchestrationV2.checkpointRollback.execute")(function* (input: {
@@ -144,8 +153,16 @@ export const layer: Layer.Layer<
       readonly restoreFiles?: boolean;
     }) {
       const context = yield* projections.getCheckpointRollbackContext(input.threadId, input);
-      const { providerThread, checkpoint, scope, targetAttempt, runsToRollback, staleCheckpoints } =
-        context;
+      const {
+        providerThread,
+        checkpoint,
+        scope,
+        targetAttempt,
+        runsToRollback,
+        staleCheckpoints,
+        childScopes: storedChildScopes,
+      } = context;
+      const childScopes = storedChildScopes ?? [];
       if (
         providerThread === undefined ||
         providerThread.providerSessionId === null ||
@@ -289,9 +306,56 @@ export const layer: Layer.Layer<
               target: rollbackTarget,
               providerThreadTurns,
             });
-      if (input.restoreFiles !== false) yield* checkpoints.restore({ scope, checkpoint });
+      const unrestored: Array<{ key: string; reason: string }> = [];
+      let taskFoldersFolder: {
+        readonly repositories: ReadonlyArray<{
+          readonly key: string;
+          readonly worktreePath: string;
+        }>;
+      } | null = null;
+      const repositoryKeyOf = (cwd: string) =>
+        taskFoldersFolder?.repositories.find((repository) => repository.worktreePath === cwd)
+          ?.key ?? cwd;
+      if (input.restoreFiles !== false && childScopes.length > 0) {
+        taskFoldersFolder =
+          context.thread.worktreePath === null
+            ? null
+            : yield* taskFolders
+                .find(context.thread.worktreePath)
+                .pipe(Effect.orElseSucceed(() => null));
+        yield* checkpoints.restore({ scope, checkpoint });
+        for (const child of childScopes) {
+          const key = repositoryKeyOf(child.scope.cwd);
+          if (child.checkpoint === undefined) {
+            unrestored.push({ key, reason: "no checkpoint at this rewind point" });
+            continue;
+          }
+          const result = yield* checkpoints
+            .restore({ scope: child.scope, checkpoint: child.checkpoint })
+            .pipe(Effect.result);
+          if (result._tag === "Failure") {
+            const cause = result.failure;
+            unrestored.push({
+              key,
+              reason: isCheckpointRestoreError(cause)
+                ? typeof cause.cause === "string"
+                  ? cause.cause
+                  : "the checkpoint ref could not be restored"
+                : "the repository could not be restored",
+            });
+          }
+        }
+      } else if (input.restoreFiles !== false) {
+        yield* checkpoints.restore({ scope, checkpoint });
+      }
       if (staleCheckpoints.length > 0) {
         yield* checkpoints.deleteStaleRefs({ scope, checkpoints: staleCheckpoints });
+      }
+      for (const child of childScopes) {
+        if (child.staleCheckpoints.length === 0) continue;
+        yield* checkpoints
+          .deleteStaleRefs({ scope: child.scope, checkpoints: child.staleCheckpoints })
+          .pipe(Effect.ignoreCause({ log: true }));
       }
 
       // Lock against full-row thread writes that could restore the old native session after rollback.
@@ -323,7 +387,11 @@ export const layer: Layer.Layer<
               },
             }),
           );
-          for (const staleCheckpoint of staleCheckpoints) {
+          const staleForEvents = [
+            ...staleCheckpoints,
+            ...childScopes.flatMap((child) => child.staleCheckpoints),
+          ];
+          for (const staleCheckpoint of staleForEvents) {
             events.push(
               yield* makeEvent({
                 type: "checkpoint.captured",
@@ -366,6 +434,16 @@ export const layer: Layer.Layer<
           yield* eventSink.write({ events });
         }),
       );
+      // The run is durably rolled back; name the repositories a rewind could not restore.
+      if (unrestored.length > 0) {
+        return yield* new CheckpointRollbackExecutionError({
+          reason: "repositories-unrestored",
+          threadId: input.threadId,
+          providerThreadId: input.providerThreadId,
+          checkpointId: input.checkpointId,
+          unrestored,
+        });
+      }
     });
 
     return CheckpointRollbackServiceV2.of({
