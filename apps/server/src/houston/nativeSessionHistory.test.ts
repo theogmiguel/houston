@@ -16,7 +16,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
-import { runHoustonMigrations } from "./migrations.ts";
+import { HOUSTON_BUILD_MIGRATION_IDS, runHoustonMigrations } from "./migrations.ts";
 import {
   backfillNativeSessionsFromEvents,
   hasUnrecordedEarlierSessions,
@@ -415,14 +415,15 @@ describe("the session history backfills what the database still names", () => {
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* earlierBuild;
-      // Composed fixture: a later id merged and ran before this one did.
-      yield* sql`INSERT INTO houston_sql_migrations (migration_id, name) VALUES (33, 'LaterMigration')`;
+      // Composed fixture: a later build's id merged and ran before this one did. It is the next
+      // id past this build's list, so a new Houston migration never collides with it.
+      const laterId = Math.max(...HOUSTON_BUILD_MIGRATION_IDS) + 1;
+      yield* sql`INSERT INTO houston_sql_migrations (migration_id, name) VALUES (${laterId}, 'LaterMigration')`;
       yield* sql`DELETE FROM houston_sql_migrations WHERE migration_id = 28`;
       yield* sql`DROP TABLE houston_pending_device_approvals`;
       assert.deepEqual(yield* runHoustonMigrations(), [
         [28, "PendingDeviceApprovals"],
         [32, "ProviderNativeSessions"],
-        [34, "TaskFolders"],
       ]);
       yield* backfillNativeSessionsFromEvents();
       assert.lengthOf(yield* sessionRows, 2);
