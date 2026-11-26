@@ -49,6 +49,7 @@ const configuredHostedAppChannel = process.env.VITE_HOSTED_APP_CHANNEL?.trim() |
 const configuredReleaseChannel =
   process.env.HOUSTON_BUILT_DEV === "1" ? "dev" : process.env.VITE_RELEASE_CHANNEL?.trim() || "";
 const configuredAppVersion = process.env.APP_VERSION?.trim() || desktopPackageJson.version;
+const configuredCaptureDir = process.env.HOUSTON_CAPTURE_DIR?.trim() || "";
 const configuredDesktopUpdateRepository =
   process.env.HOUSTON_DESKTOP_UPDATE_REPOSITORY?.trim() ||
   process.env.GITHUB_REPOSITORY?.trim() ||
@@ -340,6 +341,7 @@ export default defineConfig(() => {
       "import.meta.env.HOUSTON_FEATURE_SECRETS": JSON.stringify(configuredFeatureSecrets),
       "import.meta.env.VITE_RELEASE_CHANNEL": JSON.stringify(configuredReleaseChannel),
       "import.meta.env.APP_VERSION": JSON.stringify(configuredAppVersion),
+      "import.meta.env.VITE_HOUSTON_CAPTURE_DIR": JSON.stringify(configuredCaptureDir),
     },
     resolve: {
       tsconfigPaths: true,
@@ -363,6 +365,9 @@ export default defineConfig(() => {
       warmup: {
         clientFiles: ["./src/main.tsx"],
       },
+      ...(configuredCaptureDir
+        ? { fs: { allow: [import.meta.dirname, configuredCaptureDir] } }
+        : {}),
       ...(devProxyTarget
         ? {
             // Share prefixes with the backend catch-all so the proxy and 404 lists cannot drift.

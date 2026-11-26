@@ -46,3 +46,24 @@ export const PICKER_SEGMENT_ACCENT_CLS = "data-checked:text-(--accent-ink)";
 /** A footer chip: a track around one or more segments, sized to its content. */
 export const PICKER_CHIP_TRACK_CLS = "flex shrink-0 rounded-md bg-(--field) p-0.5";
 export const PICKER_CHIP_SEGMENT_CLS = "flex-none";
+
+/** The repository choice a multi-repository worktree starts from, sized like the branch picker. */
+export const REPOSITORY_PICKER_POPUP_CLASS = "flex flex-col w-[min(22rem,calc(100vw-2rem))]";
+export const REPOSITORY_PICKER_HEADER_CLASS =
+  "flex min-w-0 items-center justify-between gap-2 border-b border-border/60 px-3 py-2";
+export const REPOSITORY_PICKER_TITLE_CLASS = "text-xs font-medium text-foreground";
+export const REPOSITORY_PICKER_LIST_CLASS =
+  "min-h-0 max-h-56 overflow-y-auto overscroll-y-contain p-1";
+export const REPOSITORY_PICKER_MESSAGE_CLASS = "px-2 py-3 text-xs text-muted-foreground";
+export const REPOSITORY_PICKER_ROW_CLASS =
+  "flex min-h-8 w-full min-w-0 cursor-pointer items-start gap-2 rounded-(--r-ctl) px-2 py-1.5 font-normal hover:bg-hover";
+export const REPOSITORY_PICKER_ROW_DISABLED_CLASS = "cursor-not-allowed text-muted-foreground";
+export const REPOSITORY_PICKER_NAME_CLASS =
+  "min-w-0 max-w-[65%] shrink-0 text-xs font-medium text-foreground";
+export const REPOSITORY_PICKER_BRANCH_CLASS =
+  "min-w-0 flex-1 font-mono text-2xs text-muted-foreground";
+export const REPOSITORY_PICKER_REASON_CLASS = "whitespace-normal text-2xs text-muted-foreground";
+export const REPOSITORY_PICKER_BASE_SECTION_CLASS = "border-t border-border/60 px-3 py-2.5";
+export const REPOSITORY_PICKER_BASE_LABEL_CLASS =
+  "mb-1 flex text-2xs font-medium text-muted-foreground";
+export const REPOSITORY_PICKER_ICON_CLASS = "size-3 shrink-0 text-icon-muted";

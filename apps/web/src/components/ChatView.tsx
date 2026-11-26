@@ -250,6 +250,12 @@ import { collectInlineContextIds } from "../lib/composerContextReferences";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useKnownTerminalSessions, useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useEnvironmentQueryRefresh } from "../state/query";
+import { useWorktreeRepositories } from "../state/worktreeRepositories";
+import {
+  repositoryKeysForSend,
+  resolveRepositoryBaseBranch,
+  worktreeRepositorySendBlockReason,
+} from "../state/worktreeRepositories.logic";
 import { useEnvironmentScope } from "~/state/session";
 import {
   primaryServerAvailableEditorsAtom,
@@ -2420,6 +2426,27 @@ export default function ChatView(props: ChatViewProps) {
     requestedEnvMode: envMode,
     isGitRepo,
   });
+  const worktreeRepositories = useWorktreeRepositories({
+    environmentId: activeProject?.environmentId ?? environmentId,
+    projectId: activeProject?.id ?? null,
+    enabled: sendEnvMode === "worktree" && activeProject !== null && isGitRepo,
+  });
+  const usesRepositoryChoiceForWorktree =
+    sendEnvMode === "worktree" && worktreeRepositories.usesRepositoryChoice;
+  const repositoryBaseBranch = resolveRepositoryBaseBranch({
+    typed: activeThreadBranch,
+    fallback: gitStatusQuery.data?.refName ?? null,
+  });
+  const repositorySendBlockReason = worktreeRepositorySendBlockReason({
+    usesRepositoryChoice: usesRepositoryChoiceForWorktree,
+    selectedCount: worktreeRepositories.selectedKeys.length,
+  });
+  const repositoryKeys = repositoryKeysForSend({
+    usesRepositoryChoice: usesRepositoryChoiceForWorktree,
+    selectedKeys: worktreeRepositories.selectedKeys,
+  });
+  const worktreeStartFromOrigin =
+    usesRepositoryChoiceForWorktree && repositoryBaseBranch === "HEAD" ? false : startFromOrigin;
   const localCheckoutBranchMismatch = isServerThread
     ? resolveLocalCheckoutBranchMismatch({
         effectiveEnvMode: envMode,
@@ -3269,6 +3296,9 @@ export default function ChatView(props: ChatViewProps) {
     runtimeMode,
     sendEnvMode,
     startFromOrigin,
+    worktreeBaseBranch: usesRepositoryChoiceForWorktree ? repositoryBaseBranch : null,
+    worktreeStartFromOrigin: usesRepositoryChoiceForWorktree ? worktreeStartFromOrigin : undefined,
+    repositoryKeys,
     localCheckoutBranchMismatch,
     logicalProjectEnvironments,
     providerInstanceEntries,
@@ -4108,9 +4138,11 @@ export default function ChatView(props: ChatViewProps) {
                                         ? t("Sending feedback")
                                         : threadDetailLoading
                                           ? t("Messages loading")
-                                          : worktreeSetupBlocksSend
-                                            ? t("Preparing worktree")
-                                            : projectCloneSendBlockReason
+                                          : repositorySendBlockReason
+                                            ? t(repositorySendBlockReason)
+                                            : worktreeSetupBlocksSend
+                                              ? t("Preparing worktree")
+                                              : projectCloneSendBlockReason
                               }
                               isPreparingWorktree={isPreparingWorktree && !sendQueuesBehindSetup}
                               bannerItems={isDraftHeroState ? [] : shownInlineComposerBanners}

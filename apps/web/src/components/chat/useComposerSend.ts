@@ -191,6 +191,11 @@ interface ComposerSendInput {
   readonly runtimeMode: RuntimeMode;
   readonly sendEnvMode: DraftThreadEnvMode;
   readonly startFromOrigin: boolean;
+  /** A multi-repository worktree's base branch, which may differ from the thread's branch. */
+  readonly worktreeBaseBranch?: string | null | undefined;
+  readonly worktreeStartFromOrigin?: boolean | undefined;
+  /** The project's chosen repositories for a multi-repository worktree. */
+  readonly repositoryKeys?: ReadonlyArray<string> | undefined;
   readonly localCheckoutBranchMismatch: {
     readonly threadBranch: string;
     readonly currentBranch: string;
@@ -294,6 +299,9 @@ export function useComposerSend(input: ComposerSendInput) {
     runtimeMode,
     sendEnvMode,
     startFromOrigin,
+    worktreeBaseBranch,
+    worktreeStartFromOrigin,
+    repositoryKeys,
     localCheckoutBranchMismatch,
     logicalProjectEnvironments,
     providerInstanceEntries,
@@ -349,6 +357,9 @@ export function useComposerSend(input: ComposerSendInput) {
     layoutTabId,
     persistThreadSettingsForNextTurn,
   } = input;
+  // A multi-repository worktree may start from a branch its repositories share, or from HEAD.
+  const effectiveWorktreeBaseBranch = worktreeBaseBranch ?? activeThreadBranch;
+  const effectiveWorktreeStartFromOrigin = worktreeStartFromOrigin ?? startFromOrigin;
   const linkedEnvironments = useLinkedEnvironments(environmentId);
   const handleNewThread = useNewThreadHandler();
   const navigate = useNavigate();
@@ -938,7 +949,7 @@ export function useComposerSend(input: ComposerSendInput) {
       activeMessageCount,
       sendEnvMode,
       worktreePath: activeThread.worktreePath,
-      activeThreadBranch,
+      activeThreadBranch: effectiveWorktreeBaseBranch,
       resumeCompactionTokens,
       keepFullHistory,
       phase,
@@ -1249,7 +1260,9 @@ export function useComposerSend(input: ComposerSendInput) {
       await sendToMultipleModels({
         threadId: threadIdForSend,
         project: activeProject,
-        branch: activeThreadBranch!,
+        branch: effectiveWorktreeBaseBranch!,
+        startFromOrigin: effectiveWorktreeStartFromOrigin,
+        ...(repositoryKeys === undefined ? {} : { repositoryKeys }),
         selections: multipleModelSelections,
         targets: multipleTargets,
         sendSnapshot,
@@ -1406,7 +1419,8 @@ export function useComposerSend(input: ComposerSendInput) {
                     prepareWorktree: {
                       projectCwd: activeProject.workspaceRoot,
                       baseBranch: baseBranchForWorktree,
-                      ...(startFromOrigin ? { startFromOrigin: true } : {}),
+                      ...(effectiveWorktreeStartFromOrigin ? { startFromOrigin: true } : {}),
+                      ...(repositoryKeys === undefined ? {} : { repositoryKeys }),
                     },
                     runSetupScript: true,
                   }
@@ -1451,8 +1465,8 @@ export function useComposerSend(input: ComposerSendInput) {
               scopeProjectRef(activeProject.environmentId, activeProject.id),
               resolveBackgroundDraftWorkspaceOptions({
                 envMode: sendEnvMode,
-                branch: activeThreadBranch,
-                startFromOrigin,
+                branch: effectiveWorktreeBaseBranch,
+                startFromOrigin: effectiveWorktreeStartFromOrigin,
               }),
             ),
           );

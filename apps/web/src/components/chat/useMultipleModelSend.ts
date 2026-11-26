@@ -70,7 +70,7 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
     composerRef,
     promptRef,
     runtimeMode,
-    startFromOrigin,
+    startFromOrigin: defaultStartFromOrigin,
     resetLocalDispatch,
     setThreadError,
   } = input;
@@ -87,6 +87,8 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
     threadId,
     project,
     branch,
+    startFromOrigin = defaultStartFromOrigin,
+    repositoryKeys,
     selections,
     targets,
     sendSnapshot,
@@ -100,6 +102,8 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
     readonly threadId: ThreadId;
     readonly project: EnvironmentProject;
     readonly branch: string;
+    readonly startFromOrigin?: boolean;
+    readonly repositoryKeys?: ReadonlyArray<string> | undefined;
     readonly selections: ReadonlyArray<ModelSelection>;
     readonly targets: ReadonlyArray<MultipleModelTarget>;
     readonly sendSnapshot: ComposerSendSnapshot;
@@ -191,6 +195,7 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
                       baseBranch: branch,
                       requireWorktree: true,
                       ...(startFromOrigin ? { startFromOrigin: true } : {}),
+                      ...(repositoryKeys === undefined ? {} : { repositoryKeys }),
                     },
                     runSetupScript: true,
                   },

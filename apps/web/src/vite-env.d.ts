@@ -11,6 +11,7 @@ interface ImportMetaEnv {
   readonly HOUSTON_DESKTOP_UPDATE_REPOSITORY: string;
   readonly HOUSTON_FEATURE_SECRETS: string;
   readonly APP_VERSION: string;
+  readonly VITE_HOUSTON_CAPTURE_DIR?: string;
 }
 
 interface ImportMeta {

@@ -339,6 +339,52 @@ describe("V2 environment commands", () => {
     }).pipe(Effect.provide(layerTestRandom)),
   );
 
+  it.effect("passes the chosen repositories and base branch to a multi-repository worktree", () =>
+    Effect.gen(function* () {
+      const launches: OrchestrationV2ThreadLaunchInput[] = [];
+      const supervisor = yield* makeSupervisor({ commands: [], projects: [], launches });
+
+      yield* startThreadTurn({
+        commandId: CommandId.make("launch-multi-repository-worktree"),
+        threadId: v2ThreadId,
+        message: {
+          messageId: MessageId.make("message-multi-repository-worktree"),
+          role: "user",
+          text: "Start here",
+          attachments: [],
+        },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        titleSeed: "Start here",
+        bootstrap: {
+          createThread: {
+            projectId: ProjectId.make("project-1"),
+            title: "Thread",
+            modelSelection: v2Projection.thread.modelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            createdAt: "2026-06-20T00:00:00.000Z",
+          },
+          prepareWorktree: {
+            projectCwd: "/workspace/project",
+            baseBranch: "release",
+            startFromOrigin: true,
+            repositoryKeys: ["api", "web"],
+          },
+        },
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+
+      expect(launches[0]?.workspaceStrategy).toEqual({
+        type: "worktree",
+        baseRef: "release",
+        startFromOrigin: true,
+        repositoryKeys: ["api", "web"],
+      });
+    }).pipe(Effect.provide(layerTestRandom)),
+  );
+
   it.effect("uses server-resolved delivery intent without fetching the full projection", () =>
     Effect.gen(function* () {
       const commands: OrchestrationV2Command[] = [];
