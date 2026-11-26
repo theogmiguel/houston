@@ -6,7 +6,7 @@ import { stableStringify } from "../../stableStringify.ts";
 import { fallbackText } from "./fallbackText.ts";
 import { checkMentions } from "./mentions.ts";
 import { parseReply } from "./parse.ts";
-import { previewModel, previewRuns } from "./previewModel.ts";
+import { previewModel, previewRuns, type PreviewBlock, type PreviewRun } from "./previewModel.ts";
 import { SAMPLE_PEOPLE } from "./slackSamples.testkit.ts";
 import {
   replyRuns,
@@ -416,6 +416,58 @@ const plainOf = (blocks: ReplyBlocks): string =>
     )
     .join("");
 
+const EMOJI_CHARACTERS: Readonly<Record<string, string>> = {
+  wave: "👋",
+  tada: "🎉",
+  "+1": "👍",
+  white_check_mark: "✅",
+  eyes: "👀",
+  rocket: "🚀",
+  "100": "💯",
+};
+
+const displayOf = (element: ReplyInline): string => {
+  switch (element.type) {
+    case "text":
+      return `text:${element.text}`;
+    case "link":
+      return `link:${element.text ?? element.url}`;
+    case "emoji":
+      return `emoji:${EMOJI_CHARACTERS[element.name] ?? "missing"}`;
+    case "user": {
+      const person = SAMPLE_PEOPLE.find((candidate) => candidate.id === element.user_id);
+      return `mention:@${person?.name ?? element.user_id}`;
+    }
+  }
+};
+
+/** What the generator's structure must look like on screen, from the test's own tables. */
+const expectedDrawing = (blocks: ReplyBlocks): ReadonlyArray<string> =>
+  blocks[0].elements.flatMap((element): ReadonlyArray<string> => {
+    switch (element.type) {
+      case "rich_text_preformatted":
+        return [`code:${element.elements[0].text}`];
+      case "rich_text_list":
+        return element.elements.flatMap((item) => item.elements.map(displayOf));
+      default:
+        return element.elements.map(displayOf);
+    }
+  });
+
+const drawnOf = (model: ReadonlyArray<PreviewBlock>): ReadonlyArray<string> =>
+  model.flatMap((block): ReadonlyArray<string> => {
+    const runs = (items: ReadonlyArray<PreviewRun>) =>
+      items.map((run) => `${run.kind}:${run.display}`);
+    switch (block.kind) {
+      case "code":
+        return [`code:${block.text}`];
+      case "list":
+        return block.items.flatMap(runs);
+      default:
+        return runs(block.runs);
+    }
+  });
+
 const FRAGMENTS = [
   "*",
   "**",
@@ -533,13 +585,14 @@ describe("reply text properties", () => {
     });
   });
 
-  it("preview equals post: the preview's runs are the structure's", () => {
+  it("preview equals post: the preview of the parse is the generator's structure, as drawn", () => {
     forEachSeed((rng) => {
-      const source = printDocument(genDocument(rng), rng);
-      const posted = parseReply(source).structure;
-      const shown = parseReply(source).structure;
-      expect(stableStringify(posted)).toBe(stableStringify(shown));
-      expect(previewRuns(previewModel(shown))).toEqual(replyRuns(posted));
+      const document = genDocument(rng);
+      const source = printDocument(document, rng);
+      const expected = expectedBlocks(document);
+      const model = previewModel(parseReply(source).structure, SAMPLE_PEOPLE);
+      expect(previewRuns(model), source).toEqual(replyRuns(expected));
+      expect(drawnOf(model), source).toEqual(expectedDrawing(expected));
     });
   });
 });
