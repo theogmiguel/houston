@@ -50,6 +50,31 @@ value. While it is off, nothing is forwarded, every existing forward stops, and 
 why. Removing or disconnecting an environment stops its forwards, and quitting Houston stops
 them all. Linux and Windows support the feature.
 
+### Linked environments
+
+**Settings ▸ Labs ▸ Linked environments** (beta, off by default) links this environment to the
+user's other machines without adding them as environments. A thread can then hand work to an
+agent on a linked machine, and the command palette searches that machine's threads alongside
+this machine's.
+
+A linked machine is named in **Settings ▸ Connections**, with its access and an **Unlink**
+control. Its access limits what agents here may do there; **Full access** is required to connect
+this window to that machine from a search result. Nothing is sent to a linked machine while the
+beta is off.
+
+When you search the command palette, each linked machine receives the text you typed, once per
+search, and answers with its matching thread titles and message excerpts. Nothing else leaves
+this machine: no files, thread contents or credentials. A machine that is slow or does not
+answer is named in the palette footer with **Retry**, and local results are never held back.
+The excerpt is shown as text and never opens a link on this machine.
+
+Choosing a match on a linked machine that is not connected here pairs this window with it. The
+linked machine issues a one-time pairing code valid for three minutes, carrying no more than the
+permissions this window already holds, and the thread opens when the connection is ready. A link
+without **Full access** cannot issue that code; the palette names the required and actual access
+and offers **Add environment** with the machine's address filled in. An expired link leads to
+**Settings ▸ Connections** so it can be linked again with a new pairing code from that machine.
+
 ## Sharing and access
 
 **Settings ▸ Connections ▸ Sharing & access** controls this machine's server:
