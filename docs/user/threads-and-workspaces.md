@@ -247,7 +247,9 @@ A thread's menu offers:
 
 Closing a thread leaves its history intact, moves it to **Closed** and closes its chat tab,
 whether you closed it or its pull request merged. A thread opened from **Closed** keeps its tab
-until it is closed again. **Archive** removes
+until it is closed again. A stopped thread with queued messages stays open: a notice offers
+**Send now**, which starts the queue and leaves the thread open, or **Remove and close**, which
+discards every message it counts and then closes the thread. **Archive** removes
 it from the rail into **Settings ▸ Archive**, and is refused while a run is active.
 **Delete** removes the thread and its conversation from Houston's database after confirmation.
 The agent CLI keeps its own session files (for example Claude Code's or Codex's transcripts in

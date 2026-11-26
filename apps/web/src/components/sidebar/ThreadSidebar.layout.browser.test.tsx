@@ -103,7 +103,7 @@ const fixtures = vi.hoisted(() => ({
   ],
   threads: [] as unknown[],
   actions: {
-    settleThread: vi.fn(),
+    closeThread: vi.fn(),
     unsettleThread: vi.fn(),
     snoozeThread: vi.fn(),
     unsnoozeThread: vi.fn(),

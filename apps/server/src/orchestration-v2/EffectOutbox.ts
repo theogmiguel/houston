@@ -245,6 +245,8 @@ export interface EffectOutboxV2Shape {
   readonly retry: (input: {
     readonly effectId: string;
     readonly workerId: string;
+    /** The claim to give back: a later claim of the same effect keeps its row. */
+    readonly attemptCount: number;
     readonly error: string;
     readonly delayMs: number;
   }) => Effect.Effect<boolean, EffectOutboxError>;
@@ -634,7 +636,7 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
           ),
       ),
       retry: Effect.fn("EffectOutbox.retry")(
-        function* ({ effectId, workerId, error, delayMs }) {
+        function* ({ effectId, workerId, attemptCount, error, delayMs }) {
           const now = yield* DateTime.now;
           const nowIso = DateTime.formatIso(now);
           const availableAt = DateTime.formatIso(
@@ -651,6 +653,7 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
             WHERE effect_id = ${effectId}
               AND status = 'running'
               AND lease_owner = ${workerId}
+              AND attempt_count = ${attemptCount}
             RETURNING effect_id
           `;
           if (rows.length === 1) {
