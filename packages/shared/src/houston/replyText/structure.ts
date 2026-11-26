@@ -129,12 +129,15 @@ export const replyRuns = (blocks: ReplyBlocks): ReadonlyArray<ReplyRun> =>
     }
   });
 
+/** The inline elements of one block, a list's items in order. */
 const inlinesOf = (element: ReplyBlockElement): ReadonlyArray<ReplyInline> =>
   element.type === "rich_text_list"
     ? element.elements.flatMap((item) => item.elements)
-    : element.type === "rich_text_preformatted"
-      ? element.elements
-      : element.elements;
+    : element.elements;
+
+/** Every inline element of a structure, in order. */
+export const replyInlines = (blocks: ReplyBlocks): ReadonlyArray<ReplyInline> =>
+  blocks[0].elements.flatMap(inlinesOf);
 
 const isEmptyInline = (element: ReplyInline): boolean =>
   (element.type === "text" && element.text.length === 0) ||

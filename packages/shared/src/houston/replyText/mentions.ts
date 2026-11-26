@@ -1,18 +1,10 @@
-import type { ReplyBlocks, ReplyInline, ReplyPerson } from "./structure.ts";
+import { replyInlines, type ReplyBlocks, type ReplyPerson } from "./structure.ts";
 
 export interface ReplyMentionRefusal {
   readonly mark: "mention";
   readonly userId: string;
   readonly message: string;
 }
-
-/** Every inline element of a structure, in order. */
-export const replyInlines = (blocks: ReplyBlocks): ReadonlyArray<ReplyInline> =>
-  blocks[0].elements.flatMap((element) =>
-    element.type === "rich_text_list"
-      ? element.elements.flatMap((item) => item.elements)
-      : element.elements,
-  );
 
 /** Refuses, by id, every mention outside the snapshot; `people` null (no destination) refuses all. */
 export const checkMentions = (
