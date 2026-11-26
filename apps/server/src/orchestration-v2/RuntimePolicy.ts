@@ -20,6 +20,7 @@ import { HoustonReadOnlyThreads, hasReadOnlyRun, readOnlyPolicy } from "../houst
 import * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
 import { isThreadProjectNotFoundError, repositoriesOf } from "../project/threadRepositories.ts";
+import * as HoustonTaskFolders from "../houston/worktrees/TaskFolders.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 
@@ -172,6 +173,7 @@ export const layerFromProjectStore: Layer.Layer<
   Effect.gen(function* () {
     const projects = yield* ProjectStore.ProjectStoreV2;
     const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
+    const taskFolders = yield* HoustonTaskFolders.HoustonTaskFolders;
     // The same ceiling the orchestrator enforces, fixed for the server's life.
     const { managedPolicy } = yield* ServerSettings.ServerSettingsService;
     const maxRuntimeMode = managedPolicy?.limits?.maxRuntimeMode;
@@ -196,8 +198,25 @@ export const layerFromProjectStore: Layer.Layer<
               }),
           ),
         );
-        const cwd = repositories[0].root;
-        const directories = repositories.map((repository) => repository.root);
+        // A task folder is the thread's cwd; its repository worktrees sit inside it.
+        const taskFolder =
+          input.thread.worktreePath === null
+            ? null
+            : yield* taskFolders.find(input.thread.worktreePath).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new RuntimePolicyResolveError({
+                      projectId: input.thread.projectId,
+                      providerInstanceId: input.modelSelection.instanceId,
+                      cause,
+                    }),
+                ),
+              );
+        const cwd = taskFolder?.folderPath ?? repositories[0].root;
+        const directories =
+          taskFolder === null
+            ? repositories.map((repository) => repository.root)
+            : taskFolder.repositories.map((repository) => repository.worktreePath);
         const outsideCwd = directories.filter((directory) => {
           if (directory === cwd) return false;
           const relative = NodePath.relative(cwd, directory);
