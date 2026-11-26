@@ -101,6 +101,7 @@ import * as HoustonSlackService from "./houston/slack/Service.ts";
 import * as HoustonSlackV1Import from "./houston/slack/V1Import.ts";
 import * as HoustonIssueV1Import from "./issue/V1Import.ts";
 import * as HoustonMergeQueueService from "./houston/mergeQueue/Service.ts";
+import * as HoustonProjectRepositories from "./houston/projects/ProjectRepositoriesService.ts";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
@@ -738,6 +739,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(HoustonSlackV1Import.HoustonSlackV1Import)({}),
   Layer.mock(HoustonIssueV1Import.HoustonIssueV1Import)({}),
   Layer.mock(HoustonMergeQueueService.HoustonMergeQueueService)({}),
+  Layer.mock(HoustonProjectRepositories.HoustonProjectRepositories)({}),
   Layer.mock(ScheduledTasks.ScheduledTaskService)({}),
   Layer.mock(SecretRequests.SecretRequests)({}),
   Layer.mock(SecretResolver.SecretResolver)({}),

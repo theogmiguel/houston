@@ -47,6 +47,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [30, "InferenceRequests"],
   [31, "InferenceImageVerdicts"],
   [32, "ProviderNativeSessions"],
+  [33, "ProjectRepositories"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -172,6 +173,44 @@ describe("the Houston track applies every id it has not recorded", () => {
         assert.deepEqual(yield* runHoustonMigrations(), HOUSTON_TRACK);
         assert.deepEqual(yield* houstonHistory, HOUSTON_TRACK);
       }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: file }))),
+    ),
+  );
+
+  it.effect("applies on a populated database without touching the rows already stored", () =>
+    withDatabaseFile((file) =>
+      Effect.gen(function* () {
+        // Composed fixture: a migrated database with a mark stored and the id-33 migration removed
+        // is the state of one that ran before this migration existed.
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`
+            INSERT INTO houston_review_files_viewed
+              (worktree_root, ref_name, path, head_sha, blob, viewed_at)
+            VALUES ('/work', 'main', 'src/a.ts', NULL, 'blob', '2026-01-01T00:00:00.000Z')
+          `;
+          yield* sql`DROP TABLE houston_project_repositories`;
+          yield* sql`DROP TABLE houston_project_repository_ignores`;
+          yield* sql`DELETE FROM houston_sql_migrations WHERE migration_id = 33`;
+        }).pipe(Effect.provide(openThroughSqlite(file)));
+
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          assert.deepEqual(yield* runHoustonMigrations(), [[33, "ProjectRepositories"]]);
+          const marks = yield* sql<{ readonly count: number }>`
+            SELECT COUNT(*) AS count FROM houston_review_files_viewed
+          `;
+          assert.equal(marks[0]!.count, 1);
+          const tables = yield* sql<{ readonly name: string }>`
+            SELECT name FROM sqlite_master WHERE type = 'table'
+              AND name IN ('houston_project_repositories', 'houston_project_repository_ignores')
+            ORDER BY name
+          `;
+          assert.deepEqual(tables.map((table) => table.name), [
+            "houston_project_repositories",
+            "houston_project_repository_ignores",
+          ]);
+        }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: file })));
+      }),
     ),
   );
 
@@ -1073,7 +1112,7 @@ describe("the grids removal migration", () => {
   );
 
   it.effect(
-    "a file database at the main track's head applies 18 to 32 and ends without the table",
+    "a file database at the main track's head applies 18 to 33 and ends without the table",
     () =>
       withDatabaseFile((file) =>
         Effect.gen(function* () {
@@ -1096,6 +1135,7 @@ describe("the grids removal migration", () => {
               [30, "InferenceRequests"],
               [31, "InferenceImageVerdicts"],
               [32, "ProviderNativeSessions"],
+              [33, "ProjectRepositories"],
             ],
           );
           assert.deepEqual(yield* gridObjects, []);

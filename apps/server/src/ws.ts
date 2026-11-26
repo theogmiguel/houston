@@ -228,6 +228,7 @@ import * as HoustonLayoutWorkspaces from "./houston/layoutWorkspaces.ts";
 import * as HoustonSlackService from "./houston/slack/Service.ts";
 import * as HoustonSlackV1Import from "./houston/slack/V1Import.ts";
 import * as HoustonMergeQueueService from "./houston/mergeQueue/Service.ts";
+import * as HoustonProjectRepositories from "./houston/projects/ProjectRepositoriesService.ts";
 import * as InferenceDiscovery from "./houston/inference/InferenceDiscovery.ts";
 import * as InferenceImageChecks from "./houston/inference/InferenceImageChecks.ts";
 import * as InferenceServerRegistry from "./houston/inference/InferenceServerRegistry.ts";
@@ -1601,6 +1602,8 @@ export const layerWsRpc = (
       const houstonSlack = yield* HoustonSlackService.HoustonSlackService;
       const houstonSlackImport = yield* HoustonSlackV1Import.HoustonSlackV1Import;
       const houstonMergeQueue = yield* HoustonMergeQueueService.HoustonMergeQueueService;
+      const houstonProjectRepositories =
+        yield* HoustonProjectRepositories.HoustonProjectRepositories;
       const inferenceRegistry = yield* InferenceServerRegistry.InferenceServerRegistry;
       const inferenceDiscovery = yield* InferenceDiscovery.InferenceDiscovery;
       const inferenceImageChecks = yield* InferenceImageChecks.InferenceImageChecks;
@@ -3471,6 +3474,14 @@ export const layerWsRpc = (
           houstonMergeQueue.handToThread(input),
         [WS_METHODS.houstonMergeQueueRevert]: (input) => houstonMergeQueue.revert(input),
         [WS_METHODS.houstonMergeQueueAcknowledge]: (input) => houstonMergeQueue.acknowledge(input),
+        [WS_METHODS.houstonProjectsRepositoriesList]: (input) =>
+          houstonProjectRepositories.list(input),
+        [WS_METHODS.houstonProjectsRepositoriesTrack]: (input) =>
+          houstonProjectRepositories.track(input),
+        [WS_METHODS.houstonProjectsRepositoriesUntrack]: (input) =>
+          houstonProjectRepositories.untrack(input),
+        [WS_METHODS.houstonProjectsRepositoriesIgnore]: (input) =>
+          houstonProjectRepositories.setIgnorePatterns(input),
         [WS_METHODS.houstonInferenceSubscribe]: () =>
           inferenceRegistry.streamChanges.pipe(Stream.map((servers) => ({ servers }))),
         [WS_METHODS.houstonInferenceRefresh]: (input) =>
