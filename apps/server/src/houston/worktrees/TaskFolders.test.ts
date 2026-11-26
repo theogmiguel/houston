@@ -215,6 +215,47 @@ it.effect("creates one worktree per chosen repository on one branch and removes 
   ),
 );
 
+it.effect("preserves files that exist only in the task folder and leaves repository branches", () =>
+  withWorkspace(({ join, taskFolders, store }) =>
+    Effect.gen(function* () {
+      const { projectRoot, repositories } = yield* twoRepositories(join);
+      const plan = yield* taskFolders.plan({ projectId, projectRoot, repositories });
+      const folder = yield* taskFolders.create({
+        plan: plan!,
+        branch: "houston/worktree-task",
+        startRef: "HEAD",
+        baseRefName: "HEAD",
+        startFromOrigin: false,
+      });
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const notes = path.join(folder.folderPath, "notes.md");
+      yield* fs.writeFileString(notes, "only here\n");
+
+      const removal = yield* taskFolders.remove({
+        folderPath: folder.folderPath,
+        force: false,
+        deleteBranch: false,
+        preserveExistingFiles: true,
+      });
+      assert.isTrue(removal.removed);
+      assert.isTrue(yield* fs.exists(notes));
+      assert.isTrue(
+        removal.kept.some(
+          (entry) => entry.path === folder.folderPath && entry.reason.includes("notes.md"),
+        ),
+      );
+      // The row stays so a later cleanup can report the folder again.
+      assert.isNotNull(yield* store.findByPath(folder.folderPath));
+      for (const repository of folder.repositories)
+        assert.isFalse(yield* fs.exists(repository.worktreePath));
+      // The original repositories keep their branch.
+      const branches = yield* git(join("project", "api"), ["branch", "--list"]);
+      assert.isTrue(branches.stdout.includes("houston/worktree-task"));
+    }),
+  ),
+);
+
 it.effect("removes every worktree it created when a later repository fails", () =>
   withWorkspace(({ join, taskFolders, store }) =>
     Effect.gen(function* () {

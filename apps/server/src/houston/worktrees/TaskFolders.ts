@@ -445,6 +445,7 @@ export const layer = Layer.effect(
         const rootKept = yield* fs
           .exists(taskFolder.folderPath)
           .pipe(Effect.orElseSucceed(() => false));
+        let preservedRoot = false;
         if (rootKept) {
           if (input.preserveExistingFiles === true) {
             const entries = yield* fs
@@ -458,6 +459,7 @@ export const layer = Layer.effect(
             );
             const extra = entries.filter((entry) => !owned.has(entry));
             if (extra.length > 0) {
+              preservedRoot = true;
               kept.push({
                 path: taskFolder.folderPath,
                 reason: `holds files that exist only in this task folder: ${extra.join(", ")}`,
@@ -473,9 +475,11 @@ export const layer = Layer.effect(
               .pipe(Effect.ignoreCause({ log: true }));
           }
         }
-        yield* store
-          .delete(taskFolder.folderPath)
-          .pipe(Effect.mapError((cause) => fail("remove", errorText(cause), cause)));
+        if (!preservedRoot) {
+          yield* store
+            .delete(taskFolder.folderPath)
+            .pipe(Effect.mapError((cause) => fail("remove", errorText(cause), cause)));
+        }
         return { removed: true, kept };
       },
     );
