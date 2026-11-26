@@ -146,6 +146,7 @@ beforeEach(() => {
   });
 });
 
+const isMcpSignInError = Schema.is(HoustonMcpSignInError);
 const DEFAULT_CLAUDE_SETTINGS = Schema.decodeSync(ClaudeSettings)({});
 
 const houstonContextOf = (attributes: ReadonlyMap<string, unknown>): Record<string, unknown> =>
@@ -389,6 +390,19 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
       "/shared",
     ]);
     assert.isUndefined(options.extraArgs?.["add-dir"]);
+  });
+
+  it("passes every repository directory the runtime policy names to Claude", () => {
+    const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      nativeThreadId: "native-repository-directories",
+      resume: false,
+      cwd: "/workspace",
+      directories: ["/workspace", "/sibling"],
+      attachmentsDir: "/attachments",
+      settings: DEFAULT_CLAUDE_SETTINGS,
+    });
+    assert.deepEqual(options.additionalDirectories, ["/workspace", "/sibling", "/attachments"]);
   });
 
   it("gives delegated children Claude's subagent prompt cache TTL", () => {
@@ -4156,7 +4170,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
               })
               .pipe(Effect.flip);
             assert.instanceOf(error, HoustonMcpSignInError);
-            if (!Schema.is(HoustonMcpSignInError)(error)) return;
+            if (!isMcpSignInError(error)) return;
             assert.equal(error.kind, "callback-rejected");
             assert.deepEqual(calls, []);
             for (const text of [error.message, JSON.stringify(error)]) {
@@ -4214,7 +4228,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             })
             .pipe(Effect.flip);
           assert.instanceOf(error, HoustonMcpSignInError);
-          if (!Schema.is(HoustonMcpSignInError)(error)) return;
+          if (!isMcpSignInError(error)) return;
           assert.equal(error.kind, "failed");
           assert.notInclude(error.message, CODE);
           assert.notInclude(JSON.stringify(error), CODE);

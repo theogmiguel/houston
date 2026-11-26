@@ -131,6 +131,26 @@ it.layer(layerTest)("RuntimePolicyV2", (it) => {
       assert.equal(yield* modeFor(providerInstanceId, "auto-accept-edits"), "auto-accept-edits");
     }),
   );
+
+  it.effect("names the repositories a thread works in, cwd first", () =>
+    Effect.gen(function* () {
+      const policy = yield* RuntimePolicy.RuntimePolicyV2;
+      const now = yield* DateTime.now;
+      const fromProject = yield* policy.resolve({
+        thread: makeThread({ now, worktreePath: null }),
+        modelSelection,
+      });
+      assert.equal(fromProject.cwd, "/project-root");
+      assert.deepStrictEqual(fromProject.directories, ["/project-root"]);
+
+      const fromWorktree = yield* policy.resolve({
+        thread: makeThread({ now, worktreePath: "/work/wt/feature" }),
+        modelSelection,
+      });
+      assert.equal(fromWorktree.cwd, "/work/wt/feature");
+      assert.deepStrictEqual(fromWorktree.directories, ["/work/wt/feature"]);
+    }),
+  );
 });
 
 it.layer(

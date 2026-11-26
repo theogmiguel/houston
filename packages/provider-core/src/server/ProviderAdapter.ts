@@ -52,6 +52,11 @@ export const ProviderAdapterV2RuntimePolicy = Schema.Struct({
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   cwd: Schema.NullOr(Schema.String),
+  /**
+   * The repository roots the thread works in, `cwd` first. Absent when the caller has no
+   * resolved list; adapters then use `cwd` alone.
+   */
+  directories: Schema.optional(Schema.Array(Schema.String)),
   approvalPolicy: Schema.optional(Schema.Unknown),
   sandboxPolicy: Schema.optional(Schema.Unknown),
   /** Houston: the one Houston tool a read-only task planner or reviewer may call. */

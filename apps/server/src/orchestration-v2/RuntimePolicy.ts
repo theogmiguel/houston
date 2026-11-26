@@ -161,7 +161,7 @@ export const layerFromProjectStore: Layer.Layer<
           instance === undefined
             ? undefined
             : (yield* instance.snapshot.getSnapshot).supportedRuntimeModes;
-        const [{ root: cwd }] = yield* repositoriesOf(
+        const repositories = yield* repositoriesOf(
           input.thread,
           projects.get(input.thread.projectId),
         ).pipe(
@@ -177,7 +177,8 @@ export const layerFromProjectStore: Layer.Layer<
         return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
           runtimeMode: providerRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
           interactionMode: input.thread.interactionMode,
-          cwd,
+          cwd: repositories[0].root,
+          directories: repositories.map((repository) => repository.root),
           ...(maxRuntimeMode === undefined ? {} : { maxRuntimeMode }),
         });
       }),

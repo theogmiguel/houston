@@ -9,7 +9,8 @@ import * as Schema from "effect/Schema";
  *
  * `key` is the repository's path relative to the project root; the repository at the root of the
  * project's working tree is `"."`. `root` is the absolute directory git runs in. `baseBranch` is
- * null until a thread records the branch it was cut from.
+ * null when the thread carries no base branch; it names the branch the thread was cut from once
+ * one is recorded.
  */
 export interface ThreadRepository {
   readonly key: string;
