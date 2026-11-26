@@ -1,4 +1,8 @@
-import { type AuthEnvironmentScope, type EnvironmentId, PeerLinkError } from "@houston-app/contracts";
+import {
+  type AuthEnvironmentScope,
+  type EnvironmentId,
+  PeerLinkError,
+} from "@houston-app/contracts";
 import { type PeerLinkPairClientResult } from "@houston-app/contracts/houston/peerLinkPairing";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";

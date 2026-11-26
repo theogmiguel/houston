@@ -93,7 +93,10 @@ export function buildLinkedMachineActionItems(input: {
   readonly query: string;
   readonly machines: ReadonlyArray<LinkedMachineWithAccess>;
   readonly icon: ReactNode;
-  readonly runMatch: (machine: LinkedMachineWithAccess, match: PeerLinkSearchMatch) => Promise<void>;
+  readonly runMatch: (
+    machine: LinkedMachineWithAccess,
+    match: PeerLinkSearchMatch,
+  ) => Promise<void>;
 }): CommandPaletteActionItem[] {
   return input.machines.flatMap((machine) =>
     machine.matches.map((match) => ({
@@ -757,7 +760,9 @@ export function filterCommandPaletteGroups(input: {
     ...(messageItems.length === 0
       ? []
       : [{ value: "threads-messages", label: "In messages", items: messageItems }]),
-    ...(linkedItems.length === 0 ? [] : [{ value: "linked-machines", label: "", items: linkedItems }]),
+    ...(linkedItems.length === 0
+      ? []
+      : [{ value: "linked-machines", label: "", items: linkedItems }]),
   ];
   return [...groups, ...trailing];
 }

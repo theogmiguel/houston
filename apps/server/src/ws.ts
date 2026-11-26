@@ -3963,10 +3963,7 @@ export const layer = Layer.unwrap(
               ),
               Layer.provide(Layer.succeed(PeerLinks.PeerLinks, peerLinks)),
               Layer.provide(
-                Layer.merge(
-                  PeerLinkSearch.layer,
-                  PeerLinkPairing.layer,
-                ).pipe(
+                Layer.merge(PeerLinkSearch.layer, PeerLinkPairing.layer).pipe(
                   Layer.provideMerge(Layer.succeed(PeerLinks.PeerLinks, peerLinks)),
                   Layer.provideMerge(Layer.succeed(PeerForwarding.PeerForwarding, peerForwarding)),
                   Layer.provideMerge(

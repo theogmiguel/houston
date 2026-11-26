@@ -52,29 +52,30 @@ const serveBox = () =>
     ),
   );
 
-const makeLaptop = () => Effect.gen(function* () {
-  const linking = yield* layerLinkingEnvironment(laptop).pipe(Layer.build);
-  const layerPairing = PeerLinkPairing.layer.pipe(
-    Layer.provide(PeerForwarding.layer),
-    Layer.provide(Layer.succeedContext(linking)),
-    Layer.provide(NodeCrypto.layer),
-    Layer.provide(
-      Layer.mock(ThreadManagement.ThreadManagementService)({
-        getThreadShell: () => Effect.succeed(null),
-      }),
-    ),
-  );
-  const pairing = Context.get(
-    yield* Layer.build(Layer.fresh(layerPairing)),
-    PeerLinkPairing.PeerLinkPairing,
-  );
-  return {
-    links: Context.get(linking, PeerLinks.PeerLinks),
-    settings: Context.get(linking, ServerSettings.ServerSettingsService),
-    sql: Context.get(linking, SqlClient.SqlClient),
-    pairing,
-  };
-});
+const makeLaptop = () =>
+  Effect.gen(function* () {
+    const linking = yield* layerLinkingEnvironment(laptop).pipe(Layer.build);
+    const layerPairing = PeerLinkPairing.layer.pipe(
+      Layer.provide(PeerForwarding.layer),
+      Layer.provide(Layer.succeedContext(linking)),
+      Layer.provide(NodeCrypto.layer),
+      Layer.provide(
+        Layer.mock(ThreadManagement.ThreadManagementService)({
+          getThreadShell: () => Effect.succeed(null),
+        }),
+      ),
+    );
+    const pairing = Context.get(
+      yield* Layer.build(Layer.fresh(layerPairing)),
+      PeerLinkPairing.PeerLinkPairing,
+    );
+    return {
+      links: Context.get(linking, PeerLinks.PeerLinks),
+      settings: Context.get(linking, ServerSettings.ServerSettingsService),
+      sql: Context.get(linking, SqlClient.SqlClient),
+      pairing,
+    };
+  });
 
 const scopes = [...AuthStandardClientScopes];
 const caller = { scopes, clientLabel: "Laptop window" };

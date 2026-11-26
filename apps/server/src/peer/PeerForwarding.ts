@@ -213,11 +213,7 @@ const make = Effect.gen(function* () {
       input,
     );
 
-  const searchThreads: PeerForwarding["Service"]["searchThreads"] = (
-    scope,
-    environmentId,
-    input,
-  ) =>
+  const searchThreads: PeerForwarding["Service"]["searchThreads"] = (scope, environmentId, input) =>
     forward<PeerThreadSearchResult>(
       scope,
       "houston_thread_search",

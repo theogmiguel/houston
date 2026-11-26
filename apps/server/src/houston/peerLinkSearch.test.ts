@@ -226,7 +226,9 @@ it.live("a slow machine does not hold back another, and is named with its limit"
       // The quick machine answered well before the slow one's bound ran out.
       expect(arrivals[1]!.at).toBeLessThan(300);
       expect(arrivals[2]!.at).toBeGreaterThanOrEqual(390);
-      const events = yield* collect(a.search.search({ query: "release", environmentIds: [desk.environmentId] }));
+      const events = yield* collect(
+        a.search.search({ query: "release", environmentIds: [desk.environmentId] }),
+      );
       expect(machineOf(events, desk.environmentId)).toMatchObject({
         status: "timed_out",
         matches: [],
