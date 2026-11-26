@@ -161,6 +161,15 @@ It covers **On hold** and **Closed** threads, which expand while a search runs. 
 message match opens its thread with Find on the matched text. With no match the rail says
 **No threads found**.
 
+Message search finds every word you type, in any order. Put words in double quotes to match
+that exact wording: `"fix sidebar"` finds only messages that contain `fix sidebar` as written,
+ignoring case, and the match is highlighted as one run. A quoted phrase can sit beside plain
+words (`lag "fix sidebar"`), and each phrase must match. Whitespace inside a phrase is one
+space, so a phrase does not match across a line break. A phrase shorter than three
+characters is not searched alone and only narrows the results of a longer word or phrase. A
+quote without a partner is an ordinary character. Titles, branches and pull requests ignore
+the quotes.
+
 ### Rows
 
 Every thread row is three lines tall:
