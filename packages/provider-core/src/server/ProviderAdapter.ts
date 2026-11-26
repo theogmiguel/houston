@@ -35,6 +35,7 @@ import {
   ThreadId,
   TurnItemId,
 } from "@houston-app/contracts";
+import type { HoustonMcpSignInError } from "@houston-app/contracts/houston/mcpSignIn";
 import { MessageDeliveryReportEvidence } from "@houston-app/contracts/houston/messageDelivery";
 import * as Context from "effect/Context";
 import * as Schema from "effect/Schema";
@@ -650,6 +651,27 @@ export interface ProviderAdapterV2McpApps {
   }) => Effect.Effect<{ readonly contents: ReadonlyArray<unknown> }, ProviderAdapterV2Error>;
 }
 
+/**
+ * Signs one of the session's MCP servers in. `start` returns the page to approve on, or null when
+ * the server needs no sign-in any more; `complete` takes the address the browser ended on
+ * afterwards, usually a dead localhost page that belongs to the agent's machine, and finishes the
+ * sign-in there. Failures are `HoustonMcpSignInError`s, which never carry the address.
+ */
+export interface ProviderAdapterV2McpSignIn {
+  readonly start: (input: {
+    readonly providerThread: OrchestrationV2ProviderThread;
+    readonly server: string;
+  }) => Effect.Effect<
+    { readonly authorizationUrl: string | null },
+    HoustonMcpSignInError | ProviderAdapterV2Error
+  >;
+  readonly complete: (input: {
+    readonly providerThread: OrchestrationV2ProviderThread;
+    readonly server: string;
+    readonly callbackUrl: string;
+  }) => Effect.Effect<void, HoustonMcpSignInError | ProviderAdapterV2Error>;
+}
+
 export type ProviderAdapterV2SubagentOutcome = {
   readonly status: "completed" | "failed" | "cancelled";
   readonly completedAt: NonNullable<OrchestrationV2Subagent["completedAt"]>;
@@ -739,6 +761,8 @@ export interface ProviderAdapterV2SessionRuntime {
   }) => Effect.Effect<{ readonly feedbackId: string }, ProviderAdapterV2Error>;
   /** Absent means non-interactive apps with plain tool rows. */
   readonly mcpApps?: ProviderAdapterV2McpApps;
+  /** Absent when the agent has no way to sign an MCP server in. */
+  readonly mcpSignIn?: ProviderAdapterV2McpSignIn;
   readonly rollbackThread: (
     input: ProviderAdapterV2RollbackThreadInput,
   ) => Effect.Effect<ProviderAdapterV2ThreadSnapshot, ProviderAdapterV2Error>;
