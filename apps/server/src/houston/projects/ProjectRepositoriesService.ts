@@ -24,8 +24,14 @@ import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
 import { isWithinRoot } from "../../workspace/KnownWorkspaces.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import * as HoustonProjectFileLoader from "../../project/HoustonProjectFileLoader.ts";
-import { discoverRepositories, type DiscoveredRepository } from "../../project/repositoryDiscovery.ts";
-import type { ThreadRepository } from "../../project/threadRepositories.ts";
+import {
+  discoverRepositories,
+  type DiscoveredRepository,
+} from "../../project/repositoryDiscovery.ts";
+import {
+  ThreadRepositoryResolver,
+  type ThreadRepository,
+} from "../../project/threadRepositories.ts";
 import * as HoustonProjectRepositoriesStore from "./ProjectRepositoriesStore.ts";
 
 const MAX_REPOSITORY_ERROR_LENGTH = 512;
@@ -103,25 +109,26 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  const ignoredPatternsOf = Effect.fn("HoustonProjectRepositories.ignoredPatternsOf")(
-    function* (projectId: ProjectId, workspaceRoot: string) {
-      const loaded = yield* projectFile.load(workspaceRoot);
-      const fromFile = Option.match(loaded, {
-        onNone: (): ReadonlyArray<string> => [],
-        onSome: (file) => file.ignoreRepositories ?? [],
-      });
-      const stored = yield* store.listIgnorePatterns(projectId).pipe(
-        Effect.mapError((cause) =>
-          refuse({
-            kind: "unsupported",
-            operation: "HoustonProjectRepositories.ignorePatterns",
-            message: `Could not read ignore patterns for project ${projectId}: ${cause.message}`,
-          }),
-        ),
-      );
-      return [...new Set([...fromFile, ...stored])];
-    },
-  );
+  const ignoredPatternsOf = Effect.fn("HoustonProjectRepositories.ignoredPatternsOf")(function* (
+    projectId: ProjectId,
+    workspaceRoot: string,
+  ) {
+    const loaded = yield* projectFile.load(workspaceRoot);
+    const fromFile = Option.match(loaded, {
+      onNone: (): ReadonlyArray<string> => [],
+      onSome: (file) => file.ignoreRepositories ?? [],
+    });
+    const stored = yield* store.listIgnorePatterns(projectId).pipe(
+      Effect.mapError((cause) =>
+        refuse({
+          kind: "unsupported",
+          operation: "HoustonProjectRepositories.ignorePatterns",
+          message: `Could not read ignore patterns for project ${projectId}: ${cause.message}`,
+        }),
+      ),
+    );
+    return [...new Set([...fromFile, ...stored])];
+  });
 
   const discoveredEntries = (project: ProjectFolder, ignorePatterns: ReadonlyArray<string>) =>
     discoverRepositories({ projectRoot: project.workspaceRoot, ignorePatterns }).pipe(
@@ -151,50 +158,50 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  const entriesOf = Effect.fn("HoustonProjectRepositories.entriesOf")(
-    function* (project: ProjectFolder) {
-      const ignorePatterns = yield* ignoredPatternsOf(project.projectId, project.workspaceRoot);
-      const discovered = yield* discoveredEntries(project, ignorePatterns);
-      const tracked = yield* trackedEntries(project);
-      return {
-        repositories: [...discovered.repositories, ...tracked],
-        notices: discovered.notices,
-        ignored: ignorePatterns,
-      };
-    },
-  );
+  const entriesOf = Effect.fn("HoustonProjectRepositories.entriesOf")(function* (
+    project: ProjectFolder,
+  ) {
+    const ignorePatterns = yield* ignoredPatternsOf(project.projectId, project.workspaceRoot);
+    const discovered = yield* discoveredEntries(project, ignorePatterns);
+    const tracked = yield* trackedEntries(project);
+    return {
+      repositories: [...discovered.repositories, ...tracked],
+      notices: discovered.notices,
+      ignored: ignorePatterns,
+    };
+  });
 
-  const withBranches = (entries: ReadonlyArray<{
-    readonly key: string;
-    readonly root: string;
-    readonly kind: HoustonProjectRepository["kind"];
-  }>) =>
+  const withBranches = (
+    entries: ReadonlyArray<{
+      readonly key: string;
+      readonly root: string;
+      readonly kind: HoustonProjectRepository["kind"];
+    }>,
+  ) =>
     Effect.forEach(
       entries,
       (entry) =>
         git.statusDetailsLocal(entry.root).pipe(
-          Effect.map(
-            (details): HoustonProjectRepository =>
-              details.isRepo
-                ? {
-                    key: entry.key,
-                    root: entry.root,
-                    branch: details.branch,
-                    detached: details.branch === null,
-                    kind: entry.kind,
-                  }
-                : {
-                    key: entry.key,
-                    root: entry.root,
-                    branch: null,
-                    detached: false,
-                    kind: entry.kind,
-                    error: `${entry.root} is not a readable git repository; expected a folder whose .git is a directory.`,
-                  },
+          Effect.map((details): HoustonProjectRepository =>
+            details.isRepo
+              ? {
+                  key: entry.key,
+                  root: entry.root,
+                  branch: details.branch,
+                  detached: details.branch === null,
+                  kind: entry.kind,
+                }
+              : {
+                  key: entry.key,
+                  root: entry.root,
+                  branch: null,
+                  detached: false,
+                  kind: entry.kind,
+                  error: `${entry.root} is not a readable git repository; expected a folder whose .git is a directory.`,
+                },
           ),
           Effect.catch((cause) => {
-            const message =
-              cause instanceof Error ? cause.message : String(cause);
+            const message = cause instanceof Error ? cause.message : String(cause);
             return Effect.succeed({
               key: entry.key,
               root: entry.root,
@@ -208,17 +215,17 @@ const make = Effect.gen(function* () {
       { concurrency: "unbounded" },
     );
 
-  const resultOf = Effect.fn("HoustonProjectRepositories.resultOf")(
-    function* (project: ProjectFolder) {
-      const entries = yield* entriesOf(project);
-      return {
-        projectId: project.projectId,
-        repositories: yield* withBranches(entries.repositories),
-        ignored: entries.ignored,
-        notices: entries.notices,
-      } satisfies HoustonProjectRepositoriesResult;
-    },
-  );
+  const resultOf = Effect.fn("HoustonProjectRepositories.resultOf")(function* (
+    project: ProjectFolder,
+  ) {
+    const entries = yield* entriesOf(project);
+    return {
+      projectId: project.projectId,
+      repositories: yield* withBranches(entries.repositories),
+      ignored: entries.ignored,
+      notices: entries.notices,
+    } satisfies HoustonProjectRepositoriesResult;
+  });
 
   const list: HoustonProjectRepositories["Service"]["list"] = Effect.fn(
     "HoustonProjectRepositories.list",
@@ -227,26 +234,26 @@ const make = Effect.gen(function* () {
     return yield* resultOf(project);
   });
 
-  const requireRepository = Effect.fn("HoustonProjectRepositories.requireRepository")(
-    function* (folder: string) {
-      const info = yield* fs.stat(folder).pipe(Effect.option);
-      if (Option.isNone(info) || info.value.type !== "Directory") {
-        return yield* refuse({
-          kind: "invalid",
-          operation: "HoustonProjectRepositories.track",
-          message: `${folder} is not a directory; expected a folder that exists.`,
-        });
-      }
-      const gitEntry = yield* fs.stat(path.join(folder, ".git")).pipe(Effect.option);
-      if (Option.isNone(gitEntry) || gitEntry.value.type !== "Directory") {
-        return yield* refuse({
-          kind: "invalid",
-          operation: "HoustonProjectRepositories.track",
-          message: `${folder} is not a git repository; expected a folder whose .git is a directory.`,
-        });
-      }
-    },
-  );
+  const requireRepository = Effect.fn("HoustonProjectRepositories.requireRepository")(function* (
+    folder: string,
+  ) {
+    const info = yield* fs.stat(folder).pipe(Effect.option);
+    if (Option.isNone(info) || info.value.type !== "Directory") {
+      return yield* refuse({
+        kind: "invalid",
+        operation: "HoustonProjectRepositories.track",
+        message: `${folder} is not a directory; expected a folder that exists.`,
+      });
+    }
+    const gitEntry = yield* fs.stat(path.join(folder, ".git")).pipe(Effect.option);
+    if (Option.isNone(gitEntry) || gitEntry.value.type !== "Directory") {
+      return yield* refuse({
+        kind: "invalid",
+        operation: "HoustonProjectRepositories.track",
+        message: `${folder} is not a git repository; expected a folder whose .git is a directory.`,
+      });
+    }
+  });
 
   const track: HoustonProjectRepositories["Service"]["track"] = Effect.fn(
     "HoustonProjectRepositories.track",
@@ -259,21 +266,25 @@ const make = Effect.gen(function* () {
         message: `${input.path} is not absolute; expected an absolute folder path.`,
       });
     }
-    const folder = yield* fs
-      .realPath(path.resolve(input.path))
-      .pipe(
-        Effect.mapError(() =>
-          refuse({
-            kind: "invalid",
-            operation: "HoustonProjectRepositories.track",
-            message: `${input.path} does not exist; expected an absolute folder path.`,
-          }),
-        ),
-      );
+    const folder = yield* fs.realPath(path.resolve(input.path)).pipe(
+      Effect.mapError(() =>
+        refuse({
+          kind: "invalid",
+          operation: "HoustonProjectRepositories.track",
+          message: `${input.path} does not exist; expected an absolute folder path.`,
+        }),
+      ),
+    );
     yield* requireRepository(folder);
-    if (isWithinRoot(path, folder, yield* fs.realPath(project.workspaceRoot).pipe(
-      Effect.orElseSucceed(() => project.workspaceRoot),
-    ))) {
+    if (
+      isWithinRoot(
+        path,
+        folder,
+        yield* fs
+          .realPath(project.workspaceRoot)
+          .pipe(Effect.orElseSucceed(() => project.workspaceRoot)),
+      )
+    ) {
       return yield* refuse({
         kind: "conflict",
         operation: "HoustonProjectRepositories.track",
@@ -404,14 +415,12 @@ const make = Effect.gen(function* () {
           }).pipe(Effect.as({ repositories: [], notices: [], ignored: [] })),
         ),
       );
-      const repositories = entries.repositories.map(
-        (entry): ThreadRepository => ({
-          key: entry.key,
-          root: entry.root,
-          branch: null,
-          baseBranch: null,
-        }),
-      );
+      const repositories = entries.repositories.map((entry): ThreadRepository => ({
+        key: entry.key,
+        root: entry.root,
+        branch: null,
+        baseBranch: null,
+      }));
       return repositories.length === 0
         ? [
             {
@@ -434,3 +443,16 @@ const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(HoustonProjectRepositories, make);
+
+/** Makes the runtime see every repository a project covers instead of its project folder alone. */
+export const layerThreadRepositoryResolver = Layer.effect(
+  ThreadRepositoryResolver,
+  Effect.gen(function* () {
+    const repositories = yield* HoustonProjectRepositories;
+    return {
+      list: Effect.fn("ThreadRepositoryResolver.list")((project) =>
+        repositories.repositoriesForThread(project),
+      ),
+    };
+  }),
+);

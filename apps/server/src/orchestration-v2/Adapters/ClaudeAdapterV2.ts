@@ -5329,6 +5329,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   return ProviderAdapter.ProviderAdapterV2.of({
     instanceId: adapterOptions.instanceId,
     driver: CLAUDE_PROVIDER,
+    supportsAdditionalDirectories: true,
     getCapabilities: Effect.fn("ClaudeAdapterV2.getCapabilities")(function () {
       return Effect.succeed(ClaudeProviderCapabilitiesV2);
     }),

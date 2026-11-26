@@ -1,16 +1,13 @@
 import type { OrchestrationV2ThreadShell } from "@houston-app/contracts";
 import { ProjectId, ThreadId } from "@houston-app/contracts";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 /**
- * One git repository a thread works in.
- *
- * `key` is the repository's path relative to the project root; the repository at the root of the
- * project's working tree is `"."`. `root` is the absolute directory git runs in. `baseBranch` is
- * null when the thread carries no base branch; it names the branch the thread was cut from once
- * one is recorded.
+ * One git repository a thread works in. `key` is its path relative to the project root (`"."`
+ * for the root itself); `root` is the absolute directory git runs in.
  */
 export interface ThreadRepository {
   readonly key: string;
@@ -30,35 +27,77 @@ export class ThreadProjectNotFoundError extends Schema.TaggedError<ThreadProject
 
 export const isThreadProjectNotFoundError = Schema.is(ThreadProjectNotFoundError);
 
+export interface ThreadRepositoryProject {
+  readonly projectId: ProjectId;
+  readonly workspaceRoot: string;
+}
+
 /**
- * The repositories a thread works in: its worktree when it has one, otherwise its project's root.
- * `lookupProject` runs only when the thread has no worktree, so a worktree thread resolves even
- * when its project is gone.
+ * The repositories a project covers, as the runtime resolves them. The default is the project
+ * folder alone, so a caller that provides nothing keeps the single-repository behaviour.
  */
-export const repositoriesOf = <E, R>(
+export class ThreadRepositoryResolver extends Context.Reference<{
+  readonly list: (
+    project: ThreadRepositoryProject,
+  ) => Effect.Effect<ReadonlyArray<ThreadRepository>, never>;
+}>("@houston-app/cli/project/threadRepositories/ThreadRepositoryResolver", {
+  defaultValue: () => ({
+    list: (project) =>
+      Effect.succeed([
+        {
+          key: ".",
+          root: project.workspaceRoot,
+          branch: null,
+          baseBranch: null,
+        },
+      ]),
+  }),
+}) {}
+
+/**
+ * The repositories a thread works in: its worktree when it has one, otherwise every repository its
+ * project covers. `lookupProject` runs only when the thread has no worktree, so a worktree thread
+ * resolves even when its project is gone.
+ */
+export const repositoriesOf = Effect.fn("repositoriesOf")(function* <E, R>(
   thread: Pick<OrchestrationV2ThreadShell, "id" | "projectId" | "worktreePath" | "branch">,
   lookupProject: Effect.Effect<Option.Option<{ readonly workspaceRoot: string }>, E, R>,
-): Effect.Effect<
-  readonly [ThreadRepository, ...ThreadRepository[]],
-  E | ThreadProjectNotFoundError,
-  R
-> =>
-  Effect.gen(function* () {
-    const root =
-      thread.worktreePath ??
-      (yield* lookupProject.pipe(
-        Effect.flatMap(
-          Option.match({
-            onNone: () =>
-              Effect.fail(
-                new ThreadProjectNotFoundError({
-                  threadId: thread.id,
-                  projectId: thread.projectId,
-                }),
-              ),
-            onSome: (project) => Effect.succeed(project.workspaceRoot),
-          }),
-        ),
-      ));
-    return [{ key: ".", root, branch: thread.branch, baseBranch: null }] as const;
+) {
+  if (thread.worktreePath !== null) {
+    return [
+      {
+        key: ".",
+        root: thread.worktreePath,
+        branch: thread.branch,
+        baseBranch: null,
+      },
+    ] as const;
+  }
+  const project = yield* lookupProject.pipe(
+    Effect.flatMap(
+      Option.match({
+        onNone: () =>
+          Effect.fail(
+            new ThreadProjectNotFoundError({
+              threadId: thread.id,
+              projectId: thread.projectId,
+            }),
+          ),
+        onSome: (project) => Effect.succeed(project),
+      }),
+    ),
+  );
+  const resolver = yield* ThreadRepositoryResolver;
+  const repositories = yield* resolver.list({
+    projectId: thread.projectId,
+    workspaceRoot: project.workspaceRoot,
   });
+  const [head, ...rest] = repositories;
+  const first = head ?? {
+    key: ".",
+    root: project.workspaceRoot,
+    branch: null,
+    baseBranch: null,
+  };
+  return [{ ...first, branch: thread.branch ?? first.branch }, ...rest] as const;
+});

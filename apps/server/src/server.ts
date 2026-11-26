@@ -447,10 +447,19 @@ const layerKnownWorkspaces = KnownWorkspaces.layer.pipe(
   Layer.provide(GitVcsDriver.layer),
 );
 
-const layerProjectRepositories = HoustonProjectRepositories.layer.pipe(
+const layerHoustonProjectRepositories = HoustonProjectRepositories.layer.pipe(
   Layer.provideMerge(HoustonProjectRepositoriesStore.layer),
   Layer.provide(HoustonProjectFileLoader.layer),
   Layer.provide(ProjectStore.layer),
+);
+
+// The resolver reads the same service, so provide that instance rather than leaving the
+// resolver's requirement on the merged layer.
+const layerProjectRepositories = Layer.merge(
+  layerHoustonProjectRepositories,
+  HoustonProjectRepositories.layerThreadRepositoryResolver.pipe(
+    Layer.provide(layerHoustonProjectRepositories),
+  ),
 );
 
 const layerGitWorkflow = GitWorkflowService.layer.pipe(

@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - the containment check is purely lexical and must not add a Path requirement to the runtime policy.
 import {
   isRuntimeModeAbove,
   managedRuntimeModeCeilingMessage,
@@ -8,6 +9,7 @@ import {
   RuntimeMode,
   ThreadId,
 } from "@houston-app/contracts";
+import * as NodePath from "node:path";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -55,9 +57,29 @@ export class RuntimePolicyAboveCeilingError extends Schema.TaggedError<RuntimePo
 
 export const isRuntimePolicyAboveCeilingError = Schema.is(RuntimePolicyAboveCeilingError);
 
+/** A provider would start a turn unable to read repositories the project covers. */
+export class RuntimePolicyUnreachableRepositoriesError extends Schema.TaggedError<RuntimePolicyUnreachableRepositoriesError>()(
+  "RuntimePolicyUnreachableRepositoriesError",
+  {
+    threadId: ThreadId,
+    provider: Schema.String,
+    missingCapability: Schema.String,
+    folders: Schema.Array(Schema.String),
+  },
+) {
+  override get message(): string {
+    return `Provider ${this.provider} cannot start thread ${this.threadId}: ${this.missingCapability}. It cannot reach ${this.folders.join(", ")}; expected a provider that reads additional directories.`;
+  }
+}
+
+export const isRuntimePolicyUnreachableRepositoriesError = Schema.is(
+  RuntimePolicyUnreachableRepositoriesError,
+);
+
 export const RuntimePolicyV2Error = Schema.Union([
   RuntimePolicyResolveError,
   RuntimePolicyAboveCeilingError,
+  RuntimePolicyUnreachableRepositoriesError,
 ]);
 export type RuntimePolicyV2Error = typeof RuntimePolicyV2Error.Type;
 
@@ -174,11 +196,29 @@ export const layerFromProjectStore: Layer.Layer<
               }),
           ),
         );
+        const cwd = repositories[0].root;
+        const directories = repositories.map((repository) => repository.root);
+        const outsideCwd = directories.filter((directory) => {
+          if (directory === cwd) return false;
+          const relative = NodePath.relative(cwd, directory);
+          return relative !== "" && (relative.startsWith("..") || NodePath.isAbsolute(relative));
+        });
+        if (
+          outsideCwd.length > 0 &&
+          instance?.orchestrationAdapter.supportsAdditionalDirectories !== true
+        ) {
+          return yield* new RuntimePolicyUnreachableRepositoriesError({
+            threadId: input.thread.id,
+            provider: instance?.driverKind ?? input.modelSelection.instanceId,
+            missingCapability: "reading directories outside its cwd",
+            folders: outsideCwd,
+          });
+        }
         return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
           runtimeMode: providerRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
           interactionMode: input.thread.interactionMode,
-          cwd: repositories[0].root,
-          directories: repositories.map((repository) => repository.root),
+          cwd,
+          directories,
           ...(maxRuntimeMode === undefined ? {} : { maxRuntimeMode }),
         });
       }),

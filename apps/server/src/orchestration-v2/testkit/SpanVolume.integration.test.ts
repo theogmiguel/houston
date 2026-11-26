@@ -28,7 +28,7 @@ const CASES = [
     fixture: "subagent",
     driver: "claudeAgent",
     total: 17_249,
-    exported: 8_881,
+    exported: 8_882,
     ceilings: {
       sqlite: 4731,
       "sql.transaction": 1299,
