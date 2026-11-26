@@ -1,6 +1,6 @@
 import { type ResolvedKeybindingsConfig } from "@houston-app/contracts";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon, MonitorIcon } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import { cn } from "~/lib/utils";
@@ -289,6 +289,12 @@ function DisabledCommandPaletteResultRow(props: {
         </span>
       )}
       {props.item.titleTrailingContent}
+      {props.item.machineLabel ? (
+        <span className="flex max-w-[11ch] shrink-0 items-center gap-1 text-xs text-muted-foreground">
+          <MonitorIcon className="size-3.5 shrink-0" />
+          <span className="truncate">{props.item.machineLabel}</span>
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -354,6 +360,12 @@ function CommandPaletteResultRow(props: {
         </span>
       )}
       {props.item.titleTrailingContent}
+      {props.item.machineLabel ? (
+        <span className="flex max-w-[11ch] shrink-0 items-center gap-1 text-xs text-muted-foreground">
+          <MonitorIcon className="size-3.5 shrink-0" />
+          <span className="truncate">{props.item.machineLabel}</span>
+        </span>
+      ) : null}
       {props.item.kind === "action" && props.item.pin ? (
         <ProjectPinButton
           name={props.item.pin.name}

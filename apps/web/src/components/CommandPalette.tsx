@@ -80,8 +80,11 @@ import {
   SquarePenIcon,
   TextSearchIcon,
   TrashIcon,
+  TriangleAlertIcon,
 } from "lucide-react";
 import { openThreadFind } from "./chat/threadFindStore";
+import { Button } from "./ui/button";
+import { Spinner } from "./ui/spinner";
 import {
   useDeferredValue,
   useEffect,
@@ -305,6 +308,19 @@ function openIntentView(intent: CommandPaletteOpenIntent | null): CommandPalette
     case "search":
     case undefined:
       return null;
+  }
+}
+
+function linkedFailureText(status: string): string {
+  switch (status) {
+    case "timed_out":
+      return "is slow, still searching";
+    case "off":
+      return "has Linked environments turned off";
+    case "expired":
+      return "link expired";
+    default:
+      return "isn't answering";
   }
 }
 
@@ -970,6 +986,8 @@ function OpenCommandPaletteDialog(props: {
   const {
     threadItems: allThreadItems,
     threadMessageItems,
+    linkedMachineItems,
+    linkedSearch,
     now: searchNow,
     isSearchPending: isThreadSearchPending,
   } = useCommandPaletteThreadItems({ activeThread: activeThread ?? null, threadSearchQuery });
@@ -1907,6 +1925,7 @@ function OpenCommandPaletteDialog(props: {
           })
         : allThreadItems,
     threadMessageItems: isLinkedThreadSearch ? [] : threadMessageItems,
+    linkedMachineItems: isLinkedThreadSearch ? [] : linkedMachineItems,
     now: searchNow,
   });
 
@@ -2993,6 +3012,44 @@ function OpenCommandPaletteDialog(props: {
             : undefined
           : "Open";
 
+  const linkedFooter =
+    linkedSearch.isSearching && linkedSearch.machines.length > 0 ? (
+      <span className="flex items-center gap-1.5 text-muted-foreground text-xs">
+        <Spinner size="sm" />
+        <span>
+          Searching{" "}
+          {linkedSearch.machines
+            .filter((machine) => machine.status === "searching")
+            .map((machine) => machine.label)
+            .join(", ")}
+        </span>
+      </span>
+    ) : linkedSearch.failed.length > 0 ? (
+      <span className="flex items-center gap-2 text-xs">
+        <TriangleAlertIcon className="size-3.5 shrink-0 text-warning-foreground" />
+        <span>
+          {linkedSearch.failed.length === 1 ? (
+            <>
+              <b className="font-medium text-foreground">{linkedSearch.failed[0]!.label}</b>{" "}
+              {linkedFailureText(linkedSearch.failed[0]!.status)}
+            </>
+          ) : (
+            <>
+              {linkedSearch.failed.map((machine, index) => (
+                <span key={machine.environmentId}>
+                  {index > 0 ? ", " : null}
+                  <b className="font-medium text-foreground">{machine.label}</b>
+                </span>
+              ))}{" "}
+              did not answer
+            </>
+          )}
+        </span>
+        <Button variant="ghost" size="xs" onClick={linkedSearch.retry}>
+          Retry
+        </Button>
+      </span>
+    ) : null;
   const footerTrailing = canOpenProjectFromFileManager ? (
     <CommandFooterAction
       disabled={isPickingProjectFolder}
@@ -3002,6 +3059,8 @@ function OpenCommandPaletteDialog(props: {
     >
       {`Open in ${fileManagerName}`}
     </CommandFooterAction>
+  ) : linkedFooter !== null ? (
+    linkedFooter
   ) : isThreadSearchPending && !isLinkedThreadSearch && !isBrowsing ? (
     // In the footer, so the list keeps its height while message results may
     // still arrive below it.
@@ -3012,6 +3071,8 @@ function OpenCommandPaletteDialog(props: {
     isBrowsing,
     relativePathNeedsActiveProject,
     isThreadSearchPending,
+    linkedMachinesSearching: linkedSearch.isSearching,
+    linkedMachinesFailed: linkedSearch.failed.length > 0,
   });
 
   // Browsing mode edits the query in place; swapping the view would remount the
