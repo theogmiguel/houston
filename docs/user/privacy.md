@@ -7,6 +7,10 @@ state directory on the machine that runs it.
 
 - **Agents.** Each provider receives the prompts you send and the files its agent reads, under
   that provider's own terms.
+- **MCP server sign-in.** When an agent's MCP server needs a sign-in, the provider's page opens in
+  your browser and Houston sends the address it ended on only to the server that runs the thread,
+  which validates it and passes it to the agent's own local listener. Houston makes no other
+  request for that sign-in.
 - **Features you turn on.** Integrations such as GitHub, Slack, Notion, Linear, usage hubs and
   transcript cleanup contact the services you configure for them, and nothing while they are off.
   A connected Linear tracker sends the API key with each request and reads the teams, issues,
