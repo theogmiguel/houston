@@ -69,6 +69,7 @@
 1 apps/web/src/components/chat/MarkdownMermaidCodeBlock.tsx
 2 apps/web/src/components/chat/MarkdownTable.tsx
 21 apps/web/src/components/chat/McpAppFrame.tsx
+7 apps/web/src/components/chat/McpSignInNotice.tsx
 8 apps/web/src/components/chat/MermaidDiagram.tsx
 59 apps/web/src/components/chat/MessagesTimeline.tsx
 16 apps/web/src/components/chat/ModelListRow.tsx

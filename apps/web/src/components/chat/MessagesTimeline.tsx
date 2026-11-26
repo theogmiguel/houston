@@ -31,6 +31,7 @@ import { useStableCallback } from "~/hooks/useStableCallback";
 const NOOP_USE_ARTIFACT_TEMPLATE = () => {};
 const EMPTY_PENDING_APPROVALS: ReadonlyArray<PendingApproval> = [];
 const EMPTY_RESPONDING_REQUEST_IDS: TimelineRowSharedState["respondingRequestIds"] = [];
+const EMPTY_MCP_SIGN_IN_TIMES: ReadonlyMap<string, string> = new Map();
 
 const NOOP_OPEN_ATTACHMENT = (_attachment: ChatFileAttachment) => {};
 
@@ -465,6 +466,19 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const [playingAudioRows, setPlayingAudioRows] = useState<ReadonlyMap<HTMLAudioElement, string>>(
     () => new Map(),
   );
+  const [mcpSignInState, setMcpSignInState] = useState<{
+    readonly threadKey: string;
+    readonly times: ReadonlyMap<string, string>;
+  }>(() => ({ threadKey: listIdentityKey, times: new Map() }));
+  const mcpSignInTimes =
+    mcpSignInState.threadKey === listIdentityKey ? mcpSignInState.times : EMPTY_MCP_SIGN_IN_TIMES;
+  const onMcpSignedIn = useStableCallback((server: string, signedInAt: string) => {
+    setMcpSignInState((previous) => {
+      const times = new Map(previous.threadKey === listIdentityKey ? previous.times : []);
+      times.set(server, signedInAt);
+      return { threadKey: listIdentityKey, times };
+    });
+  });
   const [fullscreenAppRowId, setFullscreenAppRowId] = useState<string | null>(null);
   let paintedExpandedRunIds = expandedRunIds;
   let paintedExpandedWorkGroupIds = expandedWorkGroupIds;
@@ -1097,6 +1111,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
     onToggleAttemptFold,
     onToggleWorkGroup,
     onToggleWorkEntry: suspendEndScrollMaintenanceForDisclosure,
+    mcpSignInTimes,
+    onMcpSignedIn,
     onCancelWorktreeSetup: onCancelWorktreeSetup ?? null,
     retryableWorkspacePreparationRunIds,
     onRetryWorkspacePreparation: onRetryWorkspacePreparation ?? null,
