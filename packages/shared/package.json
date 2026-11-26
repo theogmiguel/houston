@@ -563,6 +563,10 @@
       "types": "./src/houston/replyText/structure.ts",
       "import": "./src/houston/replyText/structure.ts"
     },
+    "./houston/replyText/normalize": {
+      "types": "./src/houston/replyText/normalize.ts",
+      "import": "./src/houston/replyText/normalize.ts"
+    },
     "./houston/replyText/parse": {
       "types": "./src/houston/replyText/parse.ts",
       "import": "./src/houston/replyText/parse.ts"

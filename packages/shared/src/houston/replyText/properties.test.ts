@@ -5,6 +5,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { stableStringify } from "../../stableStringify.ts";
 import { fallbackText } from "./fallbackText.ts";
 import { checkMentions } from "./mentions.ts";
+import { normalizeReplyText } from "./normalize.ts";
 import { parseReply } from "./parse.ts";
 import { previewModel, previewRuns, type PreviewBlock, type PreviewRun } from "./previewModel.ts";
 import { SAMPLE_PEOPLE } from "./slackSamples.testkit.ts";
@@ -541,6 +542,24 @@ const randomText = (rng: Random) =>
   ).join("");
 
 describe("reply text properties", () => {
+  it("normalize is idempotent and never throws on arbitrary Unicode", () => {
+    forEachSeed((rng) => {
+      const raw = randomText(rng);
+      const once = normalizeReplyText(raw);
+      if (!once.ok) {
+        for (const refusal of once.refusals) {
+          expect(refusal.line).toBeGreaterThanOrEqual(1);
+          expect(refusal.mark.length).toBeGreaterThan(0);
+          expect(refusal.message).toContain(`line ${refusal.line}`);
+        }
+        return;
+      }
+      const twice = normalizeReplyText(once.text);
+      expect(twice).toEqual({ ok: true, text: once.text, changes: [] });
+      expect(validateReplyBlocks(parseReply(once.text).structure)).toEqual([]);
+    });
+  });
+
   it("parse is total on arbitrary Unicode; mentions and the fallback hold", () => {
     forEachSeed((rng) => {
       const { structure } = parseReply(randomText(rng));
@@ -556,11 +575,12 @@ describe("reply text properties", () => {
     });
   });
 
-  it("parse(print(s)) = s and the plain text is the generator's", () => {
+  it("parse(print(s)) = s, the plain text is the generator's, and the source is already normal", () => {
     forEachSeed((rng) => {
       const document = genDocument(rng);
       const source = printDocument(document, rng);
       const expected = expectedBlocks(document);
+      expect(normalizeReplyText(source), source).toEqual({ ok: true, text: source, changes: [] });
       const { structure } = parseReply(source);
       expect(structure, source).toEqual(expected);
       expect(stableStringify(structure)).toBe(stableStringify(expected));
