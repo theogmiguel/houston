@@ -7,6 +7,7 @@ export type TerminalActionId =
   | "rewind"
   | "context"
   | "effort"
+  | "fast"
   | "permissions"
   | "diff"
   | "fork"
@@ -35,6 +36,7 @@ export const TERMINAL_COMMAND_ENTRIES: ReadonlyArray<TerminalCommandEntry> = [
   },
   { action: "context", names: ["context"], description: "Show context window usage" },
   { action: "effort", names: ["effort"], description: "Choose the reasoning effort" },
+  { action: "fast", names: ["fast"], description: "Choose the response speed" },
   {
     action: "permissions",
     names: ["permissions"],

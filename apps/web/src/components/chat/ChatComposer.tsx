@@ -341,7 +341,7 @@ const runtimeModeOptions = runtimeModes.map((mode) => ({ mode, ...runtimeModeCon
 /** Terminal-command actions the chat view runs; the composer runs the rest itself. */
 export type ExternalTerminalCommandActions = Partial<
   Record<
-    Exclude<TerminalActionId, "context" | "effort" | "permissions">,
+    Exclude<TerminalActionId, "context" | "effort" | "fast" | "permissions">,
     (argument: string) => void
   >
 >;
@@ -1318,6 +1318,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ...(Object.keys(terminalCommandActions ?? {}) as TerminalActionId[]),
     ...(settings.contextWindowMeterEnabled && activeContextWindow ? (["context"] as const) : []),
     ...(terminalTraitsVisibility?.showEffort ? (["effort"] as const) : []),
+    ...(terminalTraitsVisibility?.showFastMode ? (["fast"] as const) : []),
     ...(compatibleRuntimeModeOptions.length > 1 ? (["permissions"] as const) : []),
   ]);
   const providerCommandNames = selectedProviderSlashCommands.flatMap((command) => [
@@ -1357,6 +1358,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           setIsContextMeterOpen(true);
           return true;
         case "effort":
+        case "fast":
           openComposerControlStable("composer.effort");
           return true;
         case "permissions":
