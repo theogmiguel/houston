@@ -422,6 +422,7 @@ describe("the session history backfills what the database still names", () => {
       assert.deepEqual(yield* runHoustonMigrations(), [
         [28, "PendingDeviceApprovals"],
         [32, "ProviderNativeSessions"],
+        [34, "TaskFolders"],
       ]);
       yield* backfillNativeSessionsFromEvents();
       assert.lengthOf(yield* sessionRows, 2);
