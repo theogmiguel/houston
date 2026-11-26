@@ -69,10 +69,13 @@ export function AddEnvironmentDialog({
   savedEnvironments,
   onOpenChange,
   onErrorChange,
+  initialHost,
   phone = false,
 }: {
   /** A phone shows the trigger as a full-width bordered button inside its card. */
   readonly phone?: boolean;
+  /** A host to offer when the dialog opens, such as a linked machine's address. */
+  readonly initialHost?: string;
   readonly open: boolean;
   readonly routeTarget: EnvironmentPresentation | null;
   readonly error: string | null;
@@ -104,7 +107,7 @@ export function AddEnvironmentDialog({
     return keys;
   })();
   const [savedBackendMode, setSavedBackendMode] = useState<"remote" | "ssh">("remote");
-  const [savedBackendHost, setSavedBackendHost] = useState("");
+  const [savedBackendHost, setSavedBackendHost] = useState(initialHost ?? "");
   const [savedBackendPairingCode, setSavedBackendPairingCode] = useState("");
   const [savedBackendSshHost, setSavedBackendSshHost] = useState("");
   const [savedBackendSshUsername, setSavedBackendSshUsername] = useState("");
@@ -113,6 +116,10 @@ export function AddEnvironmentDialog({
   const highlightedSshHostRef = useRef<DesktopDiscoveredSshHost | undefined>(undefined);
   const [isAddingSavedBackend, setIsAddingSavedBackend] = useState(false);
   const savedBackendSessionRef = useRef(0);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- opens with the linked machine's host prefilled
+  useEffect(() => {
+    if (open && initialHost !== undefined) setSavedBackendHost(initialHost);
+  }, [open, initialHost]);
   const isSshDiscoveryActive = hostBridge !== undefined && open && savedBackendMode === "ssh";
   const desktopSshHosts = useEnvironmentQuery(
     isSshDiscoveryActive ? desktopSshHostsStateAtom : null,

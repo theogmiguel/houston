@@ -7,6 +7,7 @@ import {
   ThreadId,
   TrimmedNonEmptyString,
 } from "../baseSchemas.ts";
+import { AuthMcpClientAccess } from "../auth.ts";
 import { OrchestrationSearchThreadsInput } from "../threadSearch.ts";
 
 /**
@@ -67,6 +68,10 @@ export const PeerLinkSearchMachine = Schema.Struct({
   environmentId: EnvironmentId,
   /** The name this machine was linked under, as Settings lists it. */
   label: TrimmedNonEmptyString,
+  /** What the link allows here; only a full-access link can pair this window with it. */
+  access: AuthMcpClientAccess,
+  /** Its first address as an add-environment host, for pairing from a result. */
+  host: TrimmedNonEmptyString,
   /** `off` means the linked machine has Linked environments off. */
   status: PeerLinkSearchMachineStatus,
   matches: Schema.Array(PeerLinkSearchMatch),

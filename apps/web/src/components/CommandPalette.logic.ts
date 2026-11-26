@@ -10,6 +10,7 @@ import {
   type ThreadSearchSubject,
 } from "@houston-app/shared/paletteSearch";
 import { threadSearchSubject } from "@houston-app/client-runtime/state/thread-search";
+import type { AuthMcpClientAccess } from "@houston-app/contracts";
 import type { PeerLinkSearchMatch } from "@houston-app/contracts/houston/peerLinkSearch";
 import type { AddProjectFlowRequest } from "../addProjectFlow";
 import type { CommandPaletteLinkedThreads } from "../commandPaletteBus";
@@ -65,18 +66,34 @@ export function buildLinkedThreadActionItems(
  * excerpts are the other machine's text: plain strings, never rendered as
  * links, and each row names the machine it came from.
  */
+export function linkedAccessLabel(access: AuthMcpClientAccess): string {
+  switch (access) {
+    case "full-access":
+      return "Full access";
+    case "approval-required":
+      return "Approval required";
+    case "auto-accept-edits":
+      return "Auto-accept edits";
+    case "auto":
+      return "Auto";
+    case "read-only":
+      return "Read only";
+  }
+}
+
+export interface LinkedMachineWithAccess {
+  readonly environmentId: EnvironmentId;
+  readonly label: string;
+  readonly access: AuthMcpClientAccess;
+  readonly host: string;
+  readonly matches: ReadonlyArray<PeerLinkSearchMatch>;
+}
+
 export function buildLinkedMachineActionItems(input: {
   readonly query: string;
-  readonly machines: ReadonlyArray<{
-    readonly environmentId: EnvironmentId;
-    readonly label: string;
-    readonly matches: ReadonlyArray<PeerLinkSearchMatch>;
-  }>;
+  readonly machines: ReadonlyArray<LinkedMachineWithAccess>;
   readonly icon: ReactNode;
-  readonly runMatch: (
-    machine: { readonly environmentId: EnvironmentId; readonly label: string },
-    match: PeerLinkSearchMatch,
-  ) => Promise<void>;
+  readonly runMatch: (machine: LinkedMachineWithAccess, match: PeerLinkSearchMatch) => Promise<void>;
 }): CommandPaletteActionItem[] {
   return input.machines.flatMap((machine) =>
     machine.matches.map((match) => ({
@@ -86,6 +103,12 @@ export function buildLinkedMachineActionItems(input: {
       searchTerms: [match.title, match.snippet ?? ""].filter((term) => term.length > 0),
       icon: input.icon,
       machineLabel: machine.label,
+      ...(machine.access === "full-access"
+        ? {}
+        : {
+            description: `Pairing needs a Full access link. ${machine.label}'s link is ${linkedAccessLabel(machine.access)}.`,
+            linkedActionLabel: "Add environment…",
+          }),
       ...(match.messageCreatedAt != null
         ? { timestamp: formatRelativeTimeLabel(match.messageCreatedAt) }
         : {}),
@@ -254,6 +277,8 @@ export interface CommandPaletteItem {
   readonly icon: ReactNode;
   /** The machine a result came from, shown at the row's right edge. */
   readonly machineLabel?: string;
+  /** A row-level action a linked result offers, such as adding the environment. */
+  readonly linkedActionLabel?: string;
   readonly disabled?: boolean;
   readonly titleLeadingContent?: ReactNode;
   readonly titleTrailingContent?: ReactNode;

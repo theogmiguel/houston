@@ -47,10 +47,16 @@ const clip = (text: string, max: number) => text.slice(0, max);
 
 const machineEvent = (
   link: PeerLink,
-  answer: Omit<PeerLinkSearchMachine, "environmentId" | "label">,
+  answer: Omit<PeerLinkSearchMachine, "environmentId" | "label" | "access" | "host">,
 ): PeerLinkSearchEvent => ({
   type: "machine",
-  machine: { environmentId: link.environmentId, label: link.label, ...answer },
+  machine: {
+    environmentId: link.environmentId,
+    label: link.label,
+    access: link.access,
+    host: (link.urls[0] !== undefined ? URL.parse(link.urls[0])?.host : undefined) ?? link.urls[0] ?? link.label,
+    ...answer,
+  },
 });
 
 const make = Effect.fn("PeerLinkSearch.make")(function* (options?: PeerLinkSearchOptions) {

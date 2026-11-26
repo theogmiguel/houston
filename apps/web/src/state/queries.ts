@@ -18,6 +18,7 @@ import {
   type PeerLinkSearchMachineStatus,
   type PeerLinkSearchMatch,
 } from "@houston-app/contracts/houston/peerLinkSearch";
+import type { AuthMcpClientAccess } from "@houston-app/contracts";
 import { messageSearchTokens } from "@houston-app/shared/paletteSearch";
 import { type VcsRefTarget } from "@houston-app/client-runtime/state/vcs";
 import type {
@@ -177,6 +178,8 @@ export function useThreadSearch(
 export interface LinkedSearchMachine {
   readonly environmentId: EnvironmentId;
   readonly label: string;
+  readonly access: AuthMcpClientAccess;
+  readonly host: string;
   readonly status: PeerLinkSearchMachineStatus | "searching";
   /** The other machine's text, untrusted: shown as plain text only. */
   readonly matches: ReadonlyArray<PeerLinkSearchMatch>;
@@ -205,8 +208,15 @@ export function reduceLinkedSearchEvent(
   if (event.type === "started") {
     if (!event.enabled) return { enabled: false, started: true, machines: [] };
     const machines = new Map(state.machines.map((machine) => [machine.environmentId, machine]));
-    for (const { environmentId, label } of event.machines) {
-      machines.set(environmentId, { environmentId, label, status: "searching", matches: [] });
+    for (const machine of event.machines) {
+      const previous = machines.get(machine.environmentId);
+      machines.set(machine.environmentId, {
+        access: previous?.access ?? "read-only",
+        host: previous?.host ?? "",
+        status: "searching",
+        matches: [],
+        ...machine,
+      });
     }
     return { enabled: true, started: true, machines: [...machines.values()] };
   }
@@ -217,6 +227,8 @@ export function reduceLinkedSearchEvent(
           ? {
               environmentId: answer.environmentId,
               label: answer.label,
+              access: answer.access,
+              host: answer.host,
               status: answer.status,
               matches: answer.matches,
               ...(answer.message === undefined ? {} : { message: answer.message }),
@@ -228,6 +240,8 @@ export function reduceLinkedSearchEvent(
         {
           environmentId: answer.environmentId,
           label: answer.label,
+          access: answer.access,
+          host: answer.host,
           status: answer.status,
           matches: answer.matches,
           ...(answer.message === undefined ? {} : { message: answer.message }),
