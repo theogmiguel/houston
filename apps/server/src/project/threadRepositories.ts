@@ -27,6 +27,8 @@ export class ThreadProjectNotFoundError extends Schema.TaggedError<ThreadProject
   }
 }
 
+export const isThreadProjectNotFoundError = Schema.is(ThreadProjectNotFoundError);
+
 /**
  * The repositories a thread works in: its worktree when it has one, otherwise its project's root.
  * `lookupProject` runs only when the thread has no worktree, so a worktree thread resolves even
