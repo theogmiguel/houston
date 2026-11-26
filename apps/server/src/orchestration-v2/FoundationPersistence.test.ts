@@ -2338,6 +2338,7 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
       yield* outbox.retry({
         effectId: rollback.value.id,
         workerId,
+        attemptCount: rollback.value.attemptCount,
         error: "rollback failed once",
         delayMs: 60_000,
       });
