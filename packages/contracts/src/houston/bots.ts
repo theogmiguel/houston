@@ -189,3 +189,69 @@ export const HoustonBotRevisionsResult = Schema.Struct({
   hasMore: Schema.Boolean,
 });
 export type HoustonBotRevisionsResult = typeof HoustonBotRevisionsResult.Type;
+
+/** What started a bot run fixes its kind, and its kind fixes the rules of its thread. */
+export const HoustonBotRunKind = Schema.Literals(["asked", "unattended"]);
+export type HoustonBotRunKind = typeof HoustonBotRunKind.Type;
+
+const KNOWN_RUN_KINDS: ReadonlySet<string> = new Set(HoustonBotRunKind.literals);
+
+/** For display: a kind this build does not know, from a newer server, decodes to `other`. */
+export const HoustonBotRunKindOrOther = Schema.String.pipe(
+  Schema.decodeTo(
+    Schema.Literals(["asked", "unattended", "other"]),
+    SchemaTransformation.transform({
+      decode: (kind) =>
+        KNOWN_RUN_KINDS.has(kind) ? (kind as HoustonBotRunKind) : ("other" as const),
+      encode: (kind): string => kind,
+    }),
+  ),
+);
+
+/** Which tool calls a bot thread may make beyond its refused names. */
+export const HoustonBotToolRules = Schema.Struct({
+  /** Built-in tools allowed by name; absent allows every one that is not refused. */
+  builtinTools: Schema.optional(Schema.Array(Schema.String)),
+  /** `reads`: a connector call is refused unless its name says it only reads. */
+  connectorTools: Schema.Literals(["all", "reads"]),
+  /** Houston tools allowed by name; absent allows every one that is not refused. */
+  houstonTools: Schema.optional(Schema.Array(Schema.String)),
+  /** `reads`: a shell command may run `gh` only to read. */
+  gh: Schema.Literals(["any", "reads"]),
+});
+export type HoustonBotToolRules = typeof HoustonBotToolRules.Type;
+
+/** A kind's rules as a bot run started with them; stored, so a later build does not widen them. */
+export const HoustonBotRunPolicy = Schema.Struct({
+  kind: HoustonBotRunKind,
+  /** The mode the kind fixes; absent leaves the thread's own mode. */
+  runtimeMode: Schema.optional(RuntimeMode),
+  refusedTools: Schema.Array(Schema.String),
+  rules: HoustonBotToolRules,
+  /** No question, approval or dialog waits for a person. */
+  neverAsk: Schema.Boolean,
+  /** Minutes of running time, for a kind that has a limit. */
+  maxMinutes: Schema.optional(PositiveInt),
+});
+export type HoustonBotRunPolicy = typeof HoustonBotRunPolicy.Type;
+
+/** What a provider applies to one turn of a bot thread. */
+export const HoustonBotProviderPolicy = Schema.Struct({
+  botName: Schema.String,
+  kind: HoustonBotRunKind,
+  /** A delegated child of the bot thread, which hands back no result of its own. */
+  child: Schema.Boolean,
+  refusedTools: Schema.Array(Schema.String),
+  rules: HoustonBotToolRules,
+  neverAsk: Schema.Boolean,
+  instructionsAppend: Schema.optional(Schema.String),
+});
+export type HoustonBotProviderPolicy = typeof HoustonBotProviderPolicy.Type;
+
+/** Stamped by the server on the thread of a bot run, for display; policy reads the bot run. */
+export const HoustonBotThreadMark = Schema.Struct({
+  botId: Schema.String,
+  botRunId: Schema.String,
+  kind: HoustonBotRunKindOrOther,
+});
+export type HoustonBotThreadMark = typeof HoustonBotThreadMark.Type;

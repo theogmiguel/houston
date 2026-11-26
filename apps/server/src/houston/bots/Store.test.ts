@@ -27,6 +27,8 @@ import {
   setSwitch,
   storedBots,
 } from "./bots.testkit.ts";
+import { insertBotRun } from "./botRuns.ts";
+import { policyFor } from "./kinds.ts";
 import { BOTS_OFF_MESSAGE } from "./rules.ts";
 import { HoustonBotStore } from "./Store.ts";
 
@@ -385,6 +387,40 @@ describe("on, off and deleted", () => {
           [kept.id],
         );
         assert.equal((yield* store.save(botInput(), LAPTOP)).slug, "digest-writer-2");
+      }),
+    ),
+  );
+
+  it.effect("deleting a bot keeps its bot runs, with the name it had", () =>
+    withStore(
+      Effect.gen(function* () {
+        const store = yield* HoustonBotStore;
+        const sql = yield* SqlClient.SqlClient;
+        const bot = yield* store.save(botInput(), LAPTOP);
+        for (const kind of ["asked", "unattended"] as const) {
+          yield* insertBotRun({
+            id: `run-${kind}`,
+            botId: bot.id,
+            botName: bot.name,
+            kind,
+            origin: kind === "asked" ? "owner" : "test",
+            projectId: PROJECT,
+            threadId: `thread-${kind}`,
+            revisionN: 1,
+            revisionSha256: bot.instructions.sha256,
+            template: "v1",
+            policy: policyFor({ kind, bot }),
+            startedAt: "2026-11-25T09:00:00.000Z",
+          });
+        }
+        yield* store.remove({ botId: bot.id });
+        const runs = yield* sql<{ readonly id: string; readonly bot_name: string }>`
+          SELECT id, bot_name FROM houston_bot_runs WHERE bot_id = ${bot.id} ORDER BY id
+        `;
+        assert.deepEqual(runs, [
+          { id: "run-asked", bot_name: "Digest writer" },
+          { id: "run-unattended", bot_name: "Digest writer" },
+        ]);
       }),
     ),
   );

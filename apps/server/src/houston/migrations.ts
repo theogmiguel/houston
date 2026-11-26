@@ -1500,6 +1500,47 @@ const Bots = Effect.gen(function* () {
   yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_bot_changes_bot ON houston_bot_changes(bot_id, at)`;
 });
 
+// One row per bot run. The policy is stored as applied, so a later build does not widen it. Bot
+// runs outlive their bot; `bot_name` keeps what it was called.
+const BotRuns = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_bot_runs (
+      id TEXT PRIMARY KEY,
+      request_id TEXT UNIQUE,
+      source_key TEXT,
+      bot_id TEXT NOT NULL,
+      bot_name TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      origin TEXT NOT NULL,
+      routine_id TEXT,
+      project_id TEXT NOT NULL,
+      thread_id TEXT UNIQUE,
+      revision_n INTEGER NOT NULL,
+      revision_sha256 TEXT NOT NULL,
+      template TEXT NOT NULL,
+      policy_json TEXT NOT NULL,
+      state TEXT NOT NULL,
+      reason TEXT,
+      stop_run_id TEXT,
+      stop_reason TEXT,
+      due_at TEXT,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      active_ms INTEGER NOT NULL DEFAULT 0,
+      result_id TEXT,
+      missed_count INTEGER,
+      refused_calls INTEGER NOT NULL DEFAULT 0
+    )
+  `;
+  yield* sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_houston_bot_runs_occurrence
+    ON houston_bot_runs(routine_id, due_at)
+    WHERE routine_id IS NOT NULL AND due_at IS NOT NULL
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_bot_runs_bot ON houston_bot_runs(bot_id, started_at)`;
+});
+
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
@@ -1532,6 +1573,7 @@ const houstonMigrationEntries = [
   [31, "InferenceImageVerdicts", InferenceImageVerdicts],
   [32, "ProviderNativeSessions", createNativeSessionHistory],
   [35, "Bots", Bots],
+  [36, "BotRuns", BotRuns],
 ] as const;
 
 /** Every Houston migration id this build knows, for callers that must not run beside an older schema. */
