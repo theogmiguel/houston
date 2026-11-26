@@ -149,6 +149,7 @@ import * as HoustonSlackService from "./slack/Service.ts";
 import * as HoustonSlackV1Import from "./slack/V1Import.ts";
 import * as HoustonIssueV1Import from "../issue/V1Import.ts";
 import * as HoustonMergeQueueService from "./mergeQueue/Service.ts";
+import * as HoustonProjectRepositories from "./projects/ProjectRepositoriesService.ts";
 
 const decodeReadiness = Schema.decodeUnknownSync(ProviderReadiness);
 
@@ -450,6 +451,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(HoustonSlackV1Import.HoustonSlackV1Import)({}),
   Layer.mock(HoustonIssueV1Import.HoustonIssueV1Import)({}),
   Layer.mock(HoustonMergeQueueService.HoustonMergeQueueService)({}),
+  Layer.mock(HoustonProjectRepositories.HoustonProjectRepositories)({}),
   Layer.mock(ScheduledTasks.ScheduledTaskService)({}),
   Layer.mock(SecretRequests.SecretRequests)({}),
   Layer.mock(SecretResolver.SecretResolver)({}),
