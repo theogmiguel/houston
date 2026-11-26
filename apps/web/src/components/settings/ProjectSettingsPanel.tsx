@@ -39,6 +39,7 @@ import {
 import { MergeQueueSettingsSection } from "./MergeQueueSettingsSection";
 import { ProjectActionsSettings } from "./ProjectActionsSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
+import { ProjectRepositoriesSettings } from "./ProjectRepositoriesSettings";
 import { projectGroupTitleNeedsUpdate, SCRATCH_PROJECT_TITLE } from "./ProjectSettingsPanel.logic";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
@@ -472,6 +473,18 @@ function ProjectDetail({
             }
             environmentLabel={
               group.memberProjects.length > 1 ? (member.environmentLabel ?? null) : null
+            }
+          />
+        ))}
+        {group.memberProjects.map((member) => (
+          <ProjectRepositoriesSettings
+            key={`repositories:${member.environmentId}:${member.id}`}
+            environmentId={member.environmentId}
+            projectId={member.id}
+            title={
+              group.memberProjects.length > 1
+                ? `Repositories · ${member.environmentLabel ?? member.environmentId}`
+                : "Repositories"
             }
           />
         ))}

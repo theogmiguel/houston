@@ -48,6 +48,8 @@ const configuredRelayTracingToken = repoEnv.VITE_RELAY_OTLP_TRACES_TOKEN?.trim()
 const configuredHostedAppChannel = process.env.VITE_HOSTED_APP_CHANNEL?.trim() || "";
 const configuredReleaseChannel =
   process.env.HOUSTON_BUILT_DEV === "1" ? "dev" : process.env.VITE_RELEASE_CHANNEL?.trim() || "";
+// Opt-in browser captures write PNGs outside the checkout; CI leaves this unset.
+const configuredCaptureDir = process.env.HOUSTON_CAPTURE_DIR?.trim() || "";
 const configuredAppVersion = process.env.APP_VERSION?.trim() || desktopPackageJson.version;
 const configuredDesktopUpdateRepository =
   process.env.HOUSTON_DESKTOP_UPDATE_REPOSITORY?.trim() ||
@@ -340,6 +342,7 @@ export default defineConfig(() => {
       "import.meta.env.HOUSTON_FEATURE_SECRETS": JSON.stringify(configuredFeatureSecrets),
       "import.meta.env.VITE_RELEASE_CHANNEL": JSON.stringify(configuredReleaseChannel),
       "import.meta.env.APP_VERSION": JSON.stringify(configuredAppVersion),
+      "import.meta.env.HOUSTON_CAPTURE_DIR": JSON.stringify(configuredCaptureDir),
     },
     resolve: {
       tsconfigPaths: true,
@@ -358,6 +361,12 @@ export default defineConfig(() => {
       port,
       strictPort: true,
       allowedHosts,
+      fs: {
+        allow: [
+          new URL("../../", import.meta.url).pathname,
+          ...(configuredCaptureDir.length > 0 ? [configuredCaptureDir] : []),
+        ],
+      },
       // Warm the module graph before first request to avoid serial import transforms over tailnet.
       // Bundled dev ignores this; warmBundledDevPlugin handles it there.
       warmup: {
