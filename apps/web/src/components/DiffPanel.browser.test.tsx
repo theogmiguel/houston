@@ -15,12 +15,14 @@ import {
 } from "@houston-app/contracts";
 import * as DateTime from "effect/DateTime";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
-import { expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { act, render as renderScreen } from "../../test/render";
 import { makeThreadFixture } from "~/test-fixtures";
+
+const captureDir = import.meta.env.VITE_HOUSTON_CAPTURE_DIR;
 
 // The default browser viewport is phone-sized; these cases cover the desktop panel.
 async function render(...args: Parameters<typeof renderScreen>) {
@@ -34,10 +36,15 @@ const state = vi.hoisted(() => ({
   thread: null as ReturnType<typeof makeThreadFixture> | null,
   threadRef: null as ScopedThreadRef | null,
   previews: new Map<string | null, ResultAtom<ReviewDiffPreviewResult>>(),
+  previewsByCwd: new Map<string, ResultAtom<ReviewDiffPreviewResult>>(),
   patch: null as unknown as ResultAtom<ReviewDiffPreviewSource>,
   diffFilesCollapsed: false,
+  theme: "dark" as "dark" | "light",
   config: null as unknown as Atom.Atom<null>,
   status: null as unknown as ResultAtom<VcsStatusResult>,
+  statusesByCwd: new Map<string, ResultAtom<VcsStatusResult>>(),
+  repositories: [] as ReadonlyArray<RepositoryChoice>,
+  repositoryRefreshCount: 0,
   localRefs: null as unknown as ResultAtom<VcsListRefsResult>,
   remoteRefs: null as unknown as ResultAtom<VcsListRefsResult>,
   commits: null as unknown as ResultAtom<ReviewBranchCommitsResult>,
@@ -48,8 +55,8 @@ vi.mock("~/state/server", () => ({
 }));
 vi.mock("~/state/review", () => ({
   reviewEnvironment: {
-    diffPreview: ({ input }: { input: { baseRef?: string } }) =>
-      state.previews.get(input.baseRef ?? null)!,
+    diffPreview: ({ input }: { input: { baseRef?: string; cwd?: string } }) =>
+      state.previewsByCwd.get(input.cwd ?? "") ?? state.previews.get(input.baseRef ?? null)!,
     branchCommits: () => state.commits,
     diffFilePatch: () => state.patch,
     diffFileContents: {},
@@ -57,10 +64,21 @@ vi.mock("~/state/review", () => ({
 }));
 vi.mock("~/state/vcs", () => ({
   vcsEnvironment: {
-    status: () => state.status,
+    status: ({ input }: { input: { cwd?: string } }) =>
+      state.statusesByCwd.get(input.cwd ?? "") ?? state.status,
     listRefs: ({ input }: { input: { refKind: "local" | "remote" } }) =>
       input.refKind === "local" ? state.localRefs : state.remoteRefs,
   },
+}));
+vi.mock("~/state/threadRepositories", () => ({
+  useThreadRepositories: () => ({
+    repositories: state.repositories,
+    isLoading: false,
+    error: null,
+    refresh: () => {
+      state.repositoryRefreshCount += 1;
+    },
+  }),
 }));
 vi.mock("~/state/entities", () => ({
   useQuietThreadShell: () => state.thread,
@@ -81,8 +99,8 @@ vi.mock("~/hooks/useSettings", () => ({
   updateClientSettings: async () => {},
 }));
 vi.mock("~/hooks/useTheme", () => ({
-  useRenderedAppearance: () => "dark",
-  getRenderedAppearance: () => "dark",
+  useRenderedAppearance: () => state.theme,
+  getRenderedAppearance: () => state.theme,
   subscribeRenderedAppearance: () => () => {},
 }));
 vi.mock("~/state/queries", () => ({
@@ -138,6 +156,8 @@ vi.mock("./DiffFilePathCopyButton", () => ({ DiffFilePathCopyButton: () => null 
 import DiffPanel from "./DiffPanel";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { useDiffPanelSessionStore, useDiffPanelStore } from "~/diffPanelStore";
+import { useActiveRepositoryStore } from "~/state/activeRepository";
+import type { RepositoryChoice } from "./diffs/multiRepositoryChanges.logic";
 
 const cwd = "/project-worktree";
 const errorMessage = "Could not find a common commit between 'origin/orphan' and HEAD.";
@@ -172,9 +192,15 @@ function setup(failedBaseRef: string | null, diff = "") {
     });
     useDiffPanelSessionStore.setState({ collapsedFileKeysByScopeKey: {} });
     useComposerDraftStore.setState(useComposerDraftStore.getInitialState(), true);
+    useActiveRepositoryStore.setState({ byThreadKey: {} });
+    state.previewsByCwd.clear();
+    state.statusesByCwd.clear();
+    state.repositories = [];
+    state.repositoryRefreshCount = 0;
   };
   reset();
   state.diffFilesCollapsed = false;
+  state.theme = "dark";
   const patch = Atom.make<AsyncResult.AsyncResult<ReviewDiffPreviewSource, Error>>(
     AsyncResult.initial(),
   );
@@ -443,3 +469,435 @@ it.each([false, true])(
     await expect.element(toggle).toHaveAttribute("aria-expanded", "false");
   },
 );
+
+function repositoryPreview(
+  cwd: string,
+  files: ReadonlyArray<{ path: string; additions: number; deletions: number }>,
+  options: { diff?: string; patchesDeferred?: boolean } = {},
+): ReviewDiffPreviewResult {
+  return {
+    cwd,
+    generatedAt: DateTime.makeUnsafe("2026-10-30T00:00:00Z"),
+    sources: [
+      {
+        id: "branch",
+        kind: "branch-range",
+        title: "Changes",
+        baseRef: "main",
+        headRef: "dev",
+        diff: options.diff ?? "",
+        diffHash: options.diff ? "patch" : "empty",
+        truncated: false,
+        patchesDeferred: options.patchesDeferred ?? true,
+        files: files.map((file) => ({ ...file, previousPath: null })),
+      },
+    ],
+  };
+}
+
+function repositoryStatus(
+  root: string,
+  files: ReadonlyArray<{ path: string; insertions: number; deletions: number }>,
+): VcsStatusResult {
+  return {
+    isRepo: true,
+    hasPrimaryRemote: true,
+    isDefaultRef: false,
+    refName: "dev",
+    hasWorkingTreeChanges: files.length > 0,
+    workingTree: {
+      rootPath: root,
+      files: files.map((file) => ({ ...file, status: "modified" })),
+      insertions: files.reduce((total, file) => total + file.insertions, 0),
+      deletions: files.reduce((total, file) => total + file.deletions, 0),
+    },
+    hasUpstream: true,
+    aheadCount: 0,
+    behindCount: 0,
+    pr: null,
+  };
+}
+
+const apiRepository: RepositoryChoice = {
+  key: "api",
+  root: "/project/api",
+  name: "api",
+  branch: "feature/api",
+  detached: false,
+};
+const webRepository: RepositoryChoice = {
+  key: "web",
+  root: "/project/web",
+  name: "web",
+  branch: "feature/web",
+  detached: false,
+};
+
+function multiRepositorySetup(
+  repositories: ReadonlyArray<RepositoryChoice>,
+  {
+    previews = {},
+    statuses = {},
+  }: {
+    previews?: Record<string, ReviewDiffPreviewResult>;
+    statuses?: Record<string, VcsStatusResult>;
+  } = {},
+) {
+  const context = setup(null);
+  state.thread = makeThreadFixture({
+    ...context.threadRef,
+    id: context.threadRef.threadId,
+    projectId: ProjectId.make("project"),
+    branch: "dev",
+    worktreePath: null,
+  });
+  state.repositories = repositories;
+  for (const [cwd, preview] of Object.entries(previews)) {
+    state.previewsByCwd.set(cwd, Atom.make(AsyncResult.success(preview)));
+  }
+  for (const [cwd, status] of Object.entries(statuses)) {
+    state.statusesByCwd.set(cwd, Atom.make(AsyncResult.success(status)));
+  }
+  return context;
+}
+
+function renderEmbedded(
+  registry: ReturnType<typeof AtomRegistry.make>,
+  threadRef: ScopedThreadRef,
+  width = 700,
+) {
+  const container = document.createElement("div");
+  container.style.width = `${width}px`;
+  return render(panel(registry, threadRef, "embedded"), { container });
+}
+
+it("groups a multi-repository thread's changes by repository", async () => {
+  using context = multiRepositorySetup([apiRepository, webRepository], {
+    previews: {
+      "/project/api": repositoryPreview("/project/api", [
+        { path: "api.ts", additions: 3, deletions: 1 },
+      ]),
+      "/project/web": repositoryPreview("/project/web", [
+        { path: "web.ts", additions: 2, deletions: 0 },
+      ]),
+    },
+  });
+  await using screen = await renderEmbedded(context.registry, context.threadRef);
+
+  const select = screen.getByRole("combobox", { name: "Repository" });
+  await expect.element(select).toBeVisible();
+  await expect.element(select).toHaveTextContent("All repositories");
+  await expect.element(screen.getByRole("button", { name: "Collapse api" })).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "Collapse web" })).toBeVisible();
+  await expect.element(screen.getByText("api.ts")).toBeVisible();
+  await expect.element(screen.getByText("web.ts")).toBeVisible();
+  await expect
+    .element(screen.getByRole("group", { name: "3 additions, 1 deletions" }))
+    .toBeVisible();
+  await expect
+    .element(screen.getByRole("group", { name: "2 additions, 0 deletions" }))
+    .toBeVisible();
+
+  await userEvent.click(screen.getByRole("button", { name: "Collapse api" }));
+  await expect.element(screen.getByRole("button", { name: "Expand api" })).toBeVisible();
+  await expect.element(screen.getByText("api.ts")).not.toBeInTheDocument();
+  await expect.element(screen.getByText("web.ts")).toBeVisible();
+});
+
+it("narrows the changes to the repository picked from the repository select", async () => {
+  using context = multiRepositorySetup([apiRepository, webRepository], {
+    previews: {
+      "/project/api": repositoryPreview("/project/api", [
+        { path: "api.ts", additions: 3, deletions: 1 },
+      ]),
+      "/project/web": repositoryPreview("/project/web", [
+        { path: "web.ts", additions: 2, deletions: 0 },
+      ]),
+    },
+  });
+  await using screen = await renderEmbedded(context.registry, context.threadRef);
+  await userEvent.click(screen.getByRole("combobox", { name: "Repository" }));
+  await userEvent.click(page.getByRole("option", { name: "web", exact: true }));
+
+  expect(screen.getByText("web.ts").elements().length).toBeGreaterThan(0);
+  expect(screen.getByText("api.ts").elements()).toHaveLength(0);
+  expect(useActiveRepositoryStore.getState().byThreadKey).toEqual({
+    [scopedThreadKey(context.threadRef)]: "web",
+  });
+  await expect
+    .element(screen.getByRole("combobox", { name: "Repository" }))
+    .toHaveTextContent("web");
+});
+
+it("opens a file picked from another repository's group in that repository", async () => {
+  using context = multiRepositorySetup([apiRepository, webRepository], {
+    previews: {
+      "/project/api": repositoryPreview(
+        "/project/api",
+        [{ path: "api.ts", additions: 3, deletions: 1 }],
+        { diff: samplePatch, patchesDeferred: false },
+      ),
+      "/project/web": repositoryPreview("/project/web", [
+        { path: "web.ts", additions: 2, deletions: 0 },
+      ]),
+    },
+  });
+  await using screen = await renderEmbedded(context.registry, context.threadRef);
+  await userEvent.click(screen.getByRole("button", { name: /api\.ts/ }));
+
+  expect(useActiveRepositoryStore.getState().byThreadKey).toEqual({
+    [scopedThreadKey(context.threadRef)]: "api",
+  });
+  await expect
+    .element(screen.getByRole("combobox", { name: "Repository" }))
+    .toHaveTextContent("api");
+  await expect.element(screen.getByRole("button", { name: "Add diff comment" })).toBeVisible();
+});
+
+it("asks for a repository before it shows commits in a multi-repository thread", async () => {
+  using context = multiRepositorySetup([apiRepository, webRepository], {
+    previews: {
+      "/project/api": repositoryPreview("/project/api", []),
+      "/project/web": repositoryPreview("/project/web", []),
+    },
+  });
+  useDiffPanelStore.getState().selectCommit(context.threadRef, "abc1234");
+  await using screen = await renderEmbedded(context.registry, context.threadRef);
+  await expect.element(screen.getByText("Pick a repository to see its commits.")).toBeVisible();
+
+  await userEvent.click(screen.getByRole("combobox", { name: "Repository" }));
+  await userEvent.click(page.getByRole("option", { name: "web", exact: true }));
+  await expect
+    .element(screen.getByText("Pick a repository to see its commits."))
+    .not.toBeInTheDocument();
+  expect(useActiveRepositoryStore.getState().byThreadKey).toEqual({
+    [scopedThreadKey(context.threadRef)]: "web",
+  });
+});
+
+it("keeps a single-repository project free of a repository picker or group", async () => {
+  using context = multiRepositorySetup(
+    [{ ...apiRepository, key: ".", root: "/project", name: "project" }],
+    {
+      previews: {
+        "/project": repositoryPreview("/project", [{ path: "api.ts", additions: 3, deletions: 1 }]),
+      },
+    },
+  );
+  await using screen = await renderEmbedded(context.registry, context.threadRef);
+  expect(screen.getByRole("combobox", { name: "Repository" }).elements()).toHaveLength(0);
+  expect(screen.getByRole("button", { name: /Collapse api/ }).elements()).toHaveLength(0);
+  expect(screen.getByText("api.ts").elements().length).toBeGreaterThan(0);
+});
+
+it("says no repository has changes when every group is empty", async () => {
+  using context = multiRepositorySetup([apiRepository, webRepository], {
+    previews: {
+      "/project/api": repositoryPreview("/project/api", []),
+      "/project/web": repositoryPreview("/project/web", []),
+    },
+  });
+  await using screen = await renderEmbedded(context.registry, context.threadRef);
+  await expect.element(screen.getByText("No changes in any repository.")).toBeVisible();
+  expect(screen.getByRole("button", { name: /Collapse api/ }).elements()).toHaveLength(0);
+});
+
+it("shows an unreadable repository in its place with a retry", async () => {
+  const broken: RepositoryChoice = {
+    key: "broken",
+    root: "/project/broken",
+    name: "broken",
+    branch: null,
+    detached: false,
+    error: "permission denied",
+  };
+  using context = multiRepositorySetup([apiRepository, broken], {
+    previews: {
+      "/project/api": repositoryPreview("/project/api", [
+        { path: "api.ts", additions: 3, deletions: 1 },
+      ]),
+    },
+  });
+  await using screen = await renderEmbedded(context.registry, context.threadRef);
+  await expect
+    .element(
+      screen.getByText("Could not read broken: /project/broken — permission denied", {
+        exact: true,
+      }),
+    )
+    .toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+  expect(state.repositoryRefreshCount).toBeGreaterThan(0);
+});
+
+it("keeps a long repository name readable while its branch truncates first", async () => {
+  const longName = "repository-with-a-long-but-readable-name";
+  const longBranch = `feature/${"very-long-branch-name-".repeat(10)}end`;
+  const longRepository: RepositoryChoice = {
+    key: "long",
+    root: "/project/long",
+    name: longName,
+    branch: longBranch,
+    detached: false,
+  };
+  using context = multiRepositorySetup([apiRepository, longRepository], {
+    previews: {
+      "/project/api": repositoryPreview("/project/api", [
+        { path: "api.ts", additions: 3, deletions: 1 },
+      ]),
+      "/project/long": repositoryPreview("/project/long", [
+        { path: "src/long.ts", additions: 1, deletions: 0 },
+      ]),
+    },
+    statuses: {
+      "/project/long": { ...repositoryStatus("/project/long", []), refName: longBranch },
+    },
+  });
+  await using screen = await renderEmbedded(context.registry, context.threadRef);
+  const name = screen.getByText(longName, { exact: true }).element();
+  expect(name.scrollWidth).toBeLessThanOrEqual(name.clientWidth + 1);
+  const branch = screen.container.querySelector<HTMLElement>(`[title="${longBranch}"]`);
+  expect(branch).not.toBeNull();
+  expect(branch!.querySelector("[data-overflow]")).not.toBeNull();
+});
+
+type ChangesCaptureCase =
+  | "several-repositories"
+  | "long-repository-and-branch"
+  | "one-repository"
+  | "empty"
+  | "unreadable-repository"
+  | "commits-needs-repository";
+
+const CHANGES_CAPTURE_CASES: ReadonlyArray<ChangesCaptureCase> = [
+  "several-repositories",
+  "long-repository-and-branch",
+  "one-repository",
+  "empty",
+  "unreadable-repository",
+  "commits-needs-repository",
+];
+
+function changesCaptureContext(name: ChangesCaptureCase) {
+  switch (name) {
+    case "long-repository-and-branch": {
+      const longName = "repository-with-a-long-but-readable-name";
+      const longBranch = `feature/${"very-long-branch-name-".repeat(10)}end`;
+      return multiRepositorySetup(
+        [
+          apiRepository,
+          {
+            key: "long",
+            root: "/project/long",
+            name: longName,
+            branch: longBranch,
+            detached: false,
+          },
+        ],
+        {
+          previews: {
+            "/project/api": repositoryPreview("/project/api", [
+              { path: "src/api.ts", additions: 3, deletions: 1 },
+            ]),
+            "/project/long": repositoryPreview("/project/long", [
+              { path: "src/long.ts", additions: 1, deletions: 0 },
+            ]),
+          },
+          statuses: {
+            "/project/long": { ...repositoryStatus("/project/long", []), refName: longBranch },
+          },
+        },
+      );
+    }
+    case "one-repository":
+      return multiRepositorySetup(
+        [{ ...apiRepository, key: ".", root: "/project", name: "project" }],
+        {
+          previews: {
+            "/project": repositoryPreview("/project", [
+              { path: "src/api.ts", additions: 3, deletions: 1 },
+            ]),
+          },
+        },
+      );
+    case "empty":
+      return multiRepositorySetup([apiRepository, webRepository], {
+        previews: {
+          "/project/api": repositoryPreview("/project/api", []),
+          "/project/web": repositoryPreview("/project/web", []),
+        },
+      });
+    case "unreadable-repository":
+      return multiRepositorySetup(
+        [
+          apiRepository,
+          {
+            key: "broken",
+            root: "/project/broken",
+            name: "broken",
+            branch: null,
+            detached: false,
+            error: "permission denied",
+          },
+        ],
+        {
+          previews: {
+            "/project/api": repositoryPreview("/project/api", [
+              { path: "src/api.ts", additions: 3, deletions: 1 },
+            ]),
+          },
+        },
+      );
+    case "commits-needs-repository": {
+      const context = multiRepositorySetup([apiRepository, webRepository], {
+        previews: {
+          "/project/api": repositoryPreview("/project/api", []),
+          "/project/web": repositoryPreview("/project/web", []),
+        },
+      });
+      useDiffPanelStore.getState().selectCommit(context.threadRef, "abc1234");
+      return context;
+    }
+    case "several-repositories":
+      return multiRepositorySetup([apiRepository, webRepository], {
+        previews: {
+          "/project/api": repositoryPreview("/project/api", [
+            { path: "src/api.ts", additions: 3, deletions: 1 },
+            { path: "src/routes.ts", additions: 12, deletions: 4 },
+          ]),
+          "/project/web": repositoryPreview("/project/web", [
+            { path: "src/web.ts", additions: 2, deletions: 0 },
+          ]),
+        },
+      });
+  }
+}
+
+describe.skipIf(!captureDir)("changes captures", () => {
+  it.each(CHANGES_CAPTURE_CASES)("captures %s in both themes and widths", async (name) => {
+    for (const theme of ["light", "dark"] as const) {
+      state.theme = theme;
+      document.documentElement.classList.toggle("dark", theme === "dark");
+      for (const width of [390, 1280] as const) {
+        const context = changesCaptureContext(name);
+        const container = document.createElement("div");
+        container.style.width = `${width}px`;
+        const screen = await renderScreen(panel(context.registry, context.threadRef, "embedded"), {
+          container,
+        });
+        try {
+          await page.viewport(width, 800);
+          await page.screenshot({
+            element: screen.container,
+            path: `${captureDir}/changes/${name}-${theme}-${width}.png`,
+          });
+        } finally {
+          await screen[Symbol.asyncDispose]();
+          context[Symbol.dispose]();
+        }
+      }
+    }
+    document.documentElement.classList.remove("dark");
+    state.theme = "dark";
+  });
+});
