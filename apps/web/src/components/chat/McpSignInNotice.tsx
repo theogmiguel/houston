@@ -1,7 +1,4 @@
-import type {
-  HoustonMcpSignInErrorKind,
-  OrchestrationV2TurnItem,
-} from "@houston-app/contracts";
+import type { HoustonMcpSignInErrorKind, OrchestrationV2TurnItem } from "@houston-app/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -13,15 +10,18 @@ import { readLocalApi } from "../../localApi";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { completeMcpSignIn, startMcpSignIn } from "../../state/mcpSignIn";
 import { useT } from "~/i18n/useT";
+import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
+import { Glyph } from "../ui/glyph";
 import { Input } from "../ui/input";
+import { MOTION_DISCLOSURE_REVEAL } from "../ui/motion-recipes";
 import { Spinner } from "../ui/spinner";
 import { Swap } from "../ui/swap";
+import { Text } from "../ui/text";
 import { TimelineRowTimestamp } from "./TimelineRowParts";
 import { WorkLogRow } from "./WorkLog";
 import type { TimestampFormat } from "@houston-app/contracts/settings";
 import type { EnvironmentId } from "@houston-app/contracts";
-
 
 type SignInFailure = {
   readonly kind: HoustonMcpSignInErrorKind | "failed";
@@ -97,8 +97,7 @@ export function McpSignInNotice({
   });
 
   const signedIn = mcpSignInCoversNotice(signedInAt, createdAt);
-  const terminal =
-    error?.kind === "session-ended" || error?.kind === "unsupported-provider";
+  const terminal = error?.kind === "session-ended" || error?.kind === "unsupported-provider";
   const rejected = error?.kind === "callback-rejected";
   const fieldError = rejected
     ? t("Expected the http://127.0.0.1 address the sign-in ended on.")
@@ -190,9 +189,9 @@ export function McpSignInNotice({
       data-v2-item-type="system_notice"
       icon={
         signedIn ? (
-          <CheckIcon className="size-3.5 text-(--ok-ink)" aria-hidden />
+          <Glyph icon={CheckIcon} tone="success" />
         ) : (
-          <CircleAlertIcon className="size-3.5 text-warning" aria-hidden />
+          <Glyph icon={CircleAlertIcon} tone="warning" />
         )
       }
       meta={<TimelineRowTimestamp createdAt={createdAt} timestampFormat={timestampFormat} />}
@@ -207,34 +206,37 @@ export function McpSignInNotice({
       wrapLabel
       label={
         <div className="flex min-w-0 flex-col gap-1">
-          <Swap swapKey={swapKey} className="inline-block max-w-full align-top">
-            <p className={signedIn ? "text-(--ok-ink)" : "text-body"}>
+          <Swap swapKey={swapKey} className="inline-block max-w-full">
+            <Text as="p" variant="body" tone={signedIn ? "success" : "secondary"}>
               {signedIn ? (
                 <>
-                  <span className="font-mono">{server}</span> {t("signed in")}
+                  <Text as="span" mono tone="inherit">
+                    {server}
+                  </Text>{" "}
+                  {t("signed in")}
                 </>
               ) : (
                 labelText
               )}
-            </p>
+            </Text>
           </Swap>
           {noticeError !== null ? (
-            <p role="alert" className="text-callout text-(--stop-ink)">
+            <Text as="p" role="alert" variant="callout" tone="danger">
               {noticeError}
-            </p>
+            </Text>
           ) : null}
         </div>
       }
     >
       {showForm ? (
         <form
-          className="ms-7 mt-1 flex max-w-xl min-w-0 flex-col gap-1 motion-safe:transition-[opacity,translate] motion-safe:duration-(--motion-disclosure) motion-safe:ease-standard starting:opacity-0 starting:translate-y-1 motion-reduce:transition-none"
+          className={cn("ms-7 mt-1 flex max-w-xl min-w-0 flex-col gap-1", MOTION_DISCLOSURE_REVEAL)}
           onSubmit={submit}
           autoComplete="off"
         >
-          <p className="text-callout text-(--t2)">
+          <Text as="p" variant="callout" tone="secondary">
             {t("Paste the address of the page that opened at 127.0.0.1.")}
-          </p>
+          </Text>
           <div className="flex min-w-0 items-start gap-2">
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <Input
@@ -251,13 +253,15 @@ export function McpSignInNotice({
                 spellCheck={false}
               />
               {fieldError !== null ? (
-                <p
+                <Text
+                  as="p"
                   id={`${item.id}-mcp-sign-in-error`}
                   role="alert"
-                  className="text-callout text-(--stop-ink)"
+                  variant="callout"
+                  tone="danger"
                 >
                   {fieldError}
-                </p>
+                </Text>
               ) : null}
             </div>
             <div className="flex shrink-0 items-center gap-1">
