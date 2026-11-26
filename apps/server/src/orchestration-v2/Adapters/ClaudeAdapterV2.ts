@@ -27,6 +27,7 @@ import {
 } from "./claudeWorkflowProgress.ts";
 
 import { isWorkspaceImagePreviewPath } from "@houston-app/shared/filePreview";
+import { oauthCallbackUrl, pastedUrl } from "@houston-app/shared/oauthCallback";
 import {
   claudeReportedContextWindows,
   normalizeClaudeTurnTokenUsage,
@@ -116,6 +117,7 @@ import {
   type OrchestrationV2WorkflowRunHandles,
   type OrchestrationV2TurnItem,
   type OrchestrationV2WebSearchResult,
+  HoustonMcpSignInError,
   type ProviderApprovalDecision,
   type ProviderApprovalFullAccessOverride,
   type ProviderApprovalOption,
@@ -158,6 +160,10 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { CHECK_TIMEOUT, checkWorkingDirectory } from "../../houston/nonBlockingSpawner.ts";
 import * as TraceContext from "../../houston/observability/TraceContext.ts";
+import {
+  ClaudeSdkMethodMissingError,
+  claudeMcpSignInSdk,
+} from "../../houston/claudeMcpSignInSdk.ts";
 import { mcpSignInNoticeText, mcpSignInServerName } from "../../houston/mcpSignInNotice.ts";
 import { snapshotMcpApp } from "../../mcpApps/McpAppSnapshot.ts";
 import { resolveClaudeSdkExecutablePath } from "../../provider/Drivers/ClaudeExecutable.ts";
@@ -641,6 +647,18 @@ export interface ClaudeAgentSdkQuerySession {
     { readonly contents: ReadonlyArray<unknown> },
     ClaudeAgentSdkQueryRunnerError
   >;
+  /** Starts an MCP server's sign-in. The CLI never opens a browser; null means none is needed. */
+  readonly mcpAuthenticate: (
+    server: string,
+  ) => Effect.Effect<string | null, ClaudeAgentSdkQueryRunnerError>;
+  /** Finishes it with the address the browser was sent to; the CLI checks its state. */
+  readonly mcpSubmitOAuthCallbackUrl: (input: {
+    readonly server: string;
+    readonly callbackUrl: string;
+  }) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
+  readonly reconnectMcpServer: (
+    server: string,
+  ) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   /** Runs an MCP tool without a model turn and returns the server's raw `CallToolResult`. */
   readonly callMcpTool: (input: {
     readonly tool: string;
@@ -805,6 +823,13 @@ async function sendClaudeControlRequest(
   return Predicate.isObject(reply) ? reply.response : undefined;
 }
 
+const decodeClaudeMcpAuthenticateReply = Schema.decodeUnknownEffect(
+  Schema.Struct({
+    authUrl: Schema.optional(Schema.String),
+    requiresUserAction: Schema.optional(Schema.Boolean),
+  }),
+);
+
 const ClaudePermissionRules = Schema.Struct({
   state: Schema.Struct({
     rules: Schema.Array(
@@ -828,6 +853,27 @@ const CLAUDE_MCP_APP_CAPABILITIES = [
 ] as const;
 // Captured inline, unlike Codex's shared app-server: a slow read delays only this session's stream, and only this long.
 const CLAUDE_MCP_APP_CAPTURE_TIMEOUT = "20 seconds";
+
+const mcpSignInFailure = (
+  server: string,
+  step: "start" | "complete" | "submit" | "reconnect",
+  cause?: unknown,
+) =>
+  new HoustonMcpSignInError({
+    kind: "failed",
+    server,
+    // The runner's cause can hold the pasted address, so only a fixed line per step is kept.
+    message:
+      cause instanceof ClaudeSdkMethodMissingError
+        ? cause.message
+        : step === "start"
+          ? `Claude couldn't start the sign-in to ${server}.`
+          : step === "reconnect"
+            ? `Signed in, but ${server} didn't reconnect. Restart the agent session to use it.`
+            : step === "submit"
+              ? "Claude didn't accept that address. Paste the address your browser went to after you approved, or start again."
+              : `Claude couldn't finish the sign-in to ${server}.`,
+  });
 
 // claude.ai connectors the user never connected report needs-auth without being a sign-in this
 // session can finish.
@@ -1541,6 +1587,29 @@ export const layerQueryRunner: Layer.Layer<
               Effect.tryPromise({
                 try: () => queryRuntime.readMcpResource(server, uri),
                 catch: (cause) => queryRunnerError(cause, "readMcpResource"),
+              }),
+            mcpAuthenticate: (server) =>
+              Effect.tryPromise({
+                try: () => claudeMcpSignInSdk(queryRuntime).authenticate(server),
+                catch: (cause) => queryRunnerError(cause, "mcpAuthenticate"),
+              }).pipe(
+                Effect.flatMap(decodeClaudeMcpAuthenticateReply),
+                Effect.map((reply) =>
+                  reply.requiresUserAction === true && reply.authUrl !== undefined
+                    ? reply.authUrl
+                    : null,
+                ),
+                Effect.mapError((cause) => queryRunnerError(cause, "mcpAuthenticate")),
+              ),
+            mcpSubmitOAuthCallbackUrl: ({ server, callbackUrl }) =>
+              Effect.tryPromise({
+                try: () => claudeMcpSignInSdk(queryRuntime).submitCallbackUrl(server, callbackUrl),
+                catch: (cause) => queryRunnerError(cause, "mcpSubmitOAuthCallbackUrl"),
+              }).pipe(Effect.asVoid),
+            reconnectMcpServer: (server) =>
+              Effect.tryPromise({
+                try: () => queryRuntime.reconnectMcpServer(server),
+                catch: (cause) => queryRunnerError(cause, "reconnectMcpServer"),
               }),
             callMcpTool: (call) =>
               Effect.tryPromise({
@@ -7734,6 +7803,40 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           }
         });
 
+        const liveQueryForThread = Effect.fn("ClaudeAdapterV2.liveQueryForThread")(function* (
+          providerThread: OrchestrationV2ProviderThread,
+        ) {
+          const liveQuery = yield* Ref.get(queryContext);
+          if (
+            liveQuery === null ||
+            liveQuery.stopping ||
+            liveQuery.nativeThreadId !== providerThread.nativeThreadRef?.nativeId
+          ) {
+            return yield* new ProviderAdapter.ProviderAdapterSessionStoppedError({
+              driver: CLAUDE_PROVIDER,
+            });
+          }
+          return liveQuery;
+        });
+
+        // What the pasted address must match, from the page `start` returned. Without it
+        // (a page that names no redirect or state) the CLI's own check is the only one.
+        const pendingMcpSignIns = new Map<string, { redirectUri: string; state: string }>();
+        const pendingMcpSignInKey = (liveQuery: ClaudeLiveQueryContext, server: string) =>
+          `${liveQuery.nativeThreadId}\u0000${server}`;
+        const expectedCallback = (authorizationUrl: string) => {
+          try {
+            const url = new URL(authorizationUrl);
+            const redirectUri = url.searchParams.get("redirect_uri");
+            const state = url.searchParams.get("state");
+            return redirectUri === null || state === null || state === ""
+              ? undefined
+              : { redirectUri, state };
+          } catch {
+            return undefined;
+          }
+        };
+
         // App requests never start a CLI; they reuse the live process that ran the tool.
         const mcpAppQuery = Effect.fn("ClaudeAdapterV2.mcpAppQuery")(function* (
           providerThread: OrchestrationV2ProviderThread,
@@ -12770,6 +12873,68 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                         cause,
                       }),
                   ),
+                );
+            }),
+          },
+          mcpSignIn: {
+            start: Effect.fn("ClaudeAdapterV2.mcpSignIn.start")(function* ({
+              providerThread,
+              server,
+            }) {
+              const liveQuery = yield* liveQueryForThread(providerThread);
+              const authorizationUrl = yield* liveQuery.query
+                .mcpAuthenticate(server)
+                .pipe(Effect.mapError((error) => mcpSignInFailure(server, "start", error.cause)));
+              const expected =
+                authorizationUrl === null ? undefined : expectedCallback(authorizationUrl);
+              const key = pendingMcpSignInKey(liveQuery, server);
+              if (expected === undefined) pendingMcpSignIns.delete(key);
+              else pendingMcpSignIns.set(key, expected);
+              return { authorizationUrl };
+            }),
+            complete: Effect.fn("ClaudeAdapterV2.mcpSignIn.complete")(function* ({
+              providerThread,
+              server,
+              callbackUrl,
+            }) {
+              const liveQuery = yield* liveQueryForThread(providerThread);
+              const statuses = yield* liveQuery.query.mcpServerStatus.pipe(
+                Effect.mapError((error) => mcpSignInFailure(server, "complete", error.cause)),
+              );
+              // A browser on this machine may already have finished it on Claude's own page.
+              if (statuses.find((status) => status.name === server)?.status === "connected") return;
+              const expected = pendingMcpSignIns.get(pendingMcpSignInKey(liveQuery, server));
+              const pasted = yield* Effect.try({
+                try: () =>
+                  expected === undefined
+                    ? pastedUrl(callbackUrl).toString()
+                    : oauthCallbackUrl(
+                        callbackUrl,
+                        expected.redirectUri,
+                        expected.state,
+                      ).toString(),
+                // The parser's own message can repeat the pasted address, so only ours is kept.
+                catch: (cause) =>
+                  new HoustonMcpSignInError({
+                    kind: "callback-rejected",
+                    server,
+                    message:
+                      expected === undefined
+                        ? "That isn't an address. Paste the whole address from your browser."
+                        : cause instanceof Error
+                          ? cause.message
+                          : "This redirect URL does not belong to the current sign-in.",
+                  }),
+              });
+              yield* liveQuery.query
+                .mcpSubmitOAuthCallbackUrl({ server, callbackUrl: pasted })
+                .pipe(Effect.mapError((error) => mcpSignInFailure(server, "submit", error.cause)));
+              pendingMcpSignIns.delete(pendingMcpSignInKey(liveQuery, server));
+              // The CLI reconnects after its own callback page, but not after a pasted address.
+              yield* liveQuery.query
+                .reconnectMcpServer(server)
+                .pipe(
+                  Effect.mapError((error) => mcpSignInFailure(server, "reconnect", error.cause)),
                 );
             }),
           },
