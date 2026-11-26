@@ -71,6 +71,10 @@
       "types": "./src/houston/observability.ts",
       "import": "./src/houston/observability.ts"
     },
+    "./houston/peerLinkSearch": {
+      "types": "./src/houston/peerLinkSearch.ts",
+      "import": "./src/houston/peerLinkSearch.ts"
+    },
     "./houston/terminalShells": {
       "types": "./src/houston/terminalShells.ts",
       "import": "./src/houston/terminalShells.ts"

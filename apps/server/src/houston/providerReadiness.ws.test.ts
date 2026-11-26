@@ -75,6 +75,7 @@ import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as OtlpEndpointCheck from "../observability/OtlpEndpointCheck.ts";
 import * as PairingGrantStore from "../auth/PairingGrantStore.ts";
 import * as PeerLinkRequests from "../peer/PeerLinkRequests.ts";
+import * as PeerLinkSearch from "./peerLinkSearch.ts";
 import * as PeerLinks from "../peer/PeerLinks.ts";
 import * as PortScanner from "../preview/PortScanner.ts";
 import * as PreviewAutomationBroker from "../mcp/PreviewAutomationBroker.ts";
@@ -420,6 +421,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(OtlpEndpointCheck.OtlpEndpointCheck)({}),
   Layer.mock(PairingGrantStore.PairingGrantStore)({}),
   Layer.mock(PeerLinks.PeerLinks)({}),
+  Layer.mock(PeerLinkSearch.PeerLinkSearch)({}),
   Layer.mock(PeerLinkRequests.PeerLinkRequests)({}),
   Layer.mock(PortScanner.PortDiscovery)({ trackAgent: () => () => undefined }),
   Layer.mock(PreviewManager.PreviewManager)({}),
