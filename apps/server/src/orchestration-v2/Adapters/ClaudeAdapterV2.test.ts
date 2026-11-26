@@ -6,6 +6,8 @@ import * as NodePath from "node:path";
 import * as NodeStream from "node:stream";
 
 import * as ClaudeSdk from "@anthropic-ai/claude-agent-sdk";
+import { policyFor } from "../../houston/bots/kinds.ts";
+import { NOBODY_WATCHING_MESSAGE } from "./claudeBotRules.ts";
 import { beforeEach, vi } from "vite-plus/test";
 
 import type {
@@ -3860,6 +3862,341 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       };
     });
   const makeWakeHarness = makeWakeHarnessWithOptions();
+
+  describe("bot threads", () => {
+    const botTestLayer = Layer.mergeAll(
+      IdAllocator.layer,
+      McpProviderSessions.layer,
+      NodeServices.layer,
+      NodeCrypto.layer,
+    );
+    const botRuntimePolicy = (kind: "asked" | "unattended") => {
+      const stored = policyFor({
+        kind,
+        bot: { askedMode: "auto", unattendedFullAccess: false, maxMinutes: 20 },
+      });
+      return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "auto",
+        interactionMode: "default",
+        cwd: "/workspace",
+        houstonBot: {
+          botName: "Digest writer",
+          kind,
+          child: false,
+          refusedTools: stored.refusedTools,
+          rules: stored.rules,
+          neverAsk: stored.neverAsk,
+        },
+      });
+    };
+    const startBotTurn = Effect.fnUntraced(function* (kind: "asked" | "unattended") {
+      const harness = yield* makeWakeHarness;
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make(`attempt-bot-${kind}`),
+          text: "Write the digest.",
+          attachments: [],
+          runtimePolicy: botRuntimePolicy(kind),
+        }),
+      );
+      const options = harness.getOpenedOptions()!;
+      const check = options.hooks?.PreToolUse?.[0]?.hooks[0];
+      if (check === undefined) throw new Error("The bot thread's query has no tool check.");
+      const decide = (toolName: string, toolUseId: string, toolInput: unknown = {}) =>
+        Effect.promise(() =>
+          check(
+            {
+              hook_event_name: "PreToolUse",
+              session_id: WAKE_NATIVE_SESSION,
+              transcript_path: "/transcript",
+              cwd: "/workspace",
+              tool_name: toolName,
+              tool_input: toolInput,
+              tool_use_id: toolUseId,
+            },
+            toolUseId,
+            { signal: new AbortController().signal },
+          ),
+        );
+      const ask = (toolName: string, toolUseId: string, toolInput: Record<string, unknown> = {}) =>
+        Effect.promise(() =>
+          options.canUseTool!(toolName, toolInput, {
+            signal: new AbortController().signal,
+            toolUseID: toolUseId,
+            requestId: `request-${toolUseId}`,
+          }),
+        );
+      const runtimeRequests = () =>
+        harness.events.filter((event) => event.type === "runtime_request.updated");
+      return { harness, options, decide, ask, runtimeRequests };
+    });
+
+    it.effect(
+      "unattended: a checked call, a resume dialog and an elicitation all go on without a person",
+      () =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const { harness, options, decide, ask, runtimeRequests } =
+              yield* startBotTurn("unattended");
+            yield* decide("Bash", "bot-call", { command: "rm -rf build" });
+            const decision = yield* ask("Bash", "bot-call", { command: "rm -rf build" });
+            assert.deepInclude(decision, {
+              behavior: "deny",
+              message: NOBODY_WATCHING_MESSAGE,
+            });
+            const dialog = yield* Effect.promise(() =>
+              options.onUserDialog!(
+                {
+                  dialogKind: "resume_return",
+                  payload: { sessionAgeMinutes: 600, estimatedTokens: 150000 },
+                },
+                { signal: new AbortController().signal, requestId: "dialog-bot" },
+              ),
+            );
+            assert.deepEqual(dialog, { behavior: "completed", result: "continue" });
+            const elicitation = yield* Effect.promise(() =>
+              options.onElicitation!(
+                {
+                  serverName: "deploys",
+                  message: "Deploy web to production?",
+                  mode: "form",
+                  requestedSchema: { type: "object", properties: {} },
+                  title: "Deploy",
+                },
+                { signal: new AbortController().signal, requestId: "sdk-bot" },
+              ),
+            );
+            assert.deepEqual(elicitation, { action: "decline" });
+            assert.lengthOf(runtimeRequests(), 0);
+            yield* Queue.offer(
+              harness.sdkMessages,
+              makeResultFrame({ uuid: "result-bot", result: "Done" }),
+            );
+            assert.equal((yield* Queue.take(harness.terminalReceipts)).status, "completed");
+          }).pipe(Effect.provide(botTestLayer)),
+        ),
+    );
+
+    it.effect("asked: a checked call still asks a person, as in any thread", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { harness, decide, ask } = yield* startBotTurn("asked");
+          yield* decide("Bash", "asked-call", { command: "rm -rf build" });
+          const decision = yield* ask("Bash", "asked-call", { command: "rm -rf build" }).pipe(
+            Effect.forkScoped,
+          );
+          const request = yield* Queue.take(harness.runtimeRequestReceipts);
+          yield* harness.runtime.respondToRuntimeRequest({
+            requestId: request.runtimeRequest.id,
+            decision: "decline",
+          });
+          assert.equal((yield* Fiber.join(decision)).behavior, "deny");
+        }).pipe(Effect.provide(botTestLayer)),
+      ),
+    );
+
+    it.effect.each(["asked", "unattended"] as const)(
+      "%s: a call that reaches the permission callback unchecked stops the bot run by name",
+      (kind) =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const { harness, ask, runtimeRequests } = yield* startBotTurn(kind);
+            const decision = yield* ask("Bash", "unchecked-call", { command: "echo hi" });
+            assert.equal(decision.behavior, "deny");
+            const terminal = yield* Queue.take(harness.terminalReceipts);
+            assert.equal(terminal.status, "failed");
+            assert.equal(
+              terminal.failure?.message,
+              "Houston's tool check did not run, so Digest writer was stopped.",
+            );
+            assert.lengthOf(runtimeRequests(), 0);
+          }).pipe(Effect.provide(botTestLayer)),
+        ),
+    );
+
+    it.effect(
+      "a call that shows progress unchecked stops the bot run; a checked one does not",
+      () =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const { harness, decide } = yield* startBotTurn("unattended");
+            const progress = (toolUseId: string) =>
+              claudeSdkFrame({
+                type: "tool_progress",
+                tool_use_id: toolUseId,
+                tool_name: "Bash",
+                parent_tool_use_id: null,
+                elapsed_time_seconds: 1,
+                uuid: `progress-${toolUseId}`,
+                session_id: WAKE_NATIVE_SESSION,
+              });
+            yield* decide("Bash", "checked-progress", { command: "sleep 1" });
+            yield* harness.offerAndWait(progress("checked-progress"));
+            assert.lengthOf(harness.terminalEvents(), 0);
+            yield* Queue.offer(harness.sdkMessages, progress("unchecked-progress"));
+            const terminal = yield* Queue.take(harness.terminalReceipts);
+            assert.equal(terminal.status, "failed");
+            assert.include(terminal.failure?.message, "tool check did not run");
+          }).pipe(Effect.provide(botTestLayer)),
+        ),
+    );
+
+    it.effect(
+      "a continuation of a live bot process is refused when the rules changed, not when the name or instructions did",
+      () =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const harness = yield* makeWakeHarness;
+            const now = yield* DateTime.now;
+            const unattended = botRuntimePolicy("unattended");
+            const turn = (
+              attempt: string,
+              ordinal: number,
+              runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
+            ) =>
+              harness.runtime.startTurn(
+                makeClaudeTestTurnInput({
+                  threadId: harness.threadId,
+                  providerThread: harness.providerThread,
+                  now,
+                  attemptId: RunAttemptId.make(attempt),
+                  text: "Background task completed.",
+                  attachments: [],
+                  runtimePolicy,
+                  providerTurnOrdinal: ordinal,
+                  ...(ordinal === 1
+                    ? {}
+                    : {
+                        messageCreatedBy: "agent" as const,
+                        messageCreationSource: "provider" as const,
+                      }),
+                }),
+              );
+            yield* turn("attempt-bot-live", 1, unattended);
+            yield* Queue.offer(
+              harness.sdkMessages,
+              claudeSdkFrame({
+                ...makeResultFrame({
+                  uuid: "00000000-0000-4000-8000-000000000901",
+                  result: "Started the build in the background.",
+                }),
+                user_message_uuid: harness.promptUuid(0),
+              }),
+            );
+            yield* harness.awaitTerminal(1);
+            const renamed = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+              ...unattended,
+              houstonBot: {
+                ...unattended.houstonBot!,
+                botName: "Renamed writer",
+                instructionsAppend: "Newer instructions.",
+              },
+            });
+            const kept = yield* turn("attempt-bot-renamed", 2, renamed).pipe(Effect.exit);
+            assert.isTrue(Exit.isSuccess(kept));
+            const changed = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+              ...unattended,
+              houstonBot: {
+                ...unattended.houstonBot!,
+                refusedTools: [...unattended.houstonBot!.refusedTools, "WebFetch"],
+              },
+            });
+            const refused = yield* turn("attempt-bot-changed", 3, changed).pipe(Effect.flip);
+            assert.include(
+              JSON.stringify(refused),
+              "Digest writer's rules changed; stop its background work first.",
+            );
+          }).pipe(Effect.provide(botTestLayer)),
+        ),
+    );
+
+    it.effect(
+      "a Claude Code that cannot run the check fails a bot thread's turn by name, and an ordinary turn as before",
+      () =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const refusal = new Error(
+              "The process answering initialize does not honor onFailure on hook matchers, so a hook that fails would not block.",
+            );
+            const failingTurn = Effect.fnUntraced(function* (
+              runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy | undefined,
+            ) {
+              const harness = yield* makeWakeHarnessWithOptions({
+                onMessage: (message) =>
+                  "uuid" in message && message.uuid === "refused-initialize"
+                    ? Effect.die(refusal)
+                    : Effect.void,
+              });
+              yield* harness.runtime.startTurn(
+                makeClaudeTestTurnInput({
+                  threadId: harness.threadId,
+                  providerThread: harness.providerThread,
+                  now: yield* DateTime.now,
+                  attemptId: RunAttemptId.make("attempt-old-cli"),
+                  text: "Write the digest.",
+                  attachments: [],
+                  ...(runtimePolicy === undefined ? {} : { runtimePolicy }),
+                }),
+              );
+              yield* Queue.offer(
+                harness.sdkMessages,
+                claudeSdkFrame({
+                  type: "tool_progress",
+                  tool_use_id: "never-read",
+                  tool_name: "Bash",
+                  parent_tool_use_id: null,
+                  elapsed_time_seconds: 1,
+                  uuid: "refused-initialize",
+                  session_id: WAKE_NATIVE_SESSION,
+                }),
+              );
+              return yield* Queue.take(harness.terminalReceipts);
+            });
+            const bot = yield* failingTurn(botRuntimePolicy("unattended"));
+            assert.equal(bot.status, "failed");
+            assert.include(bot.failure?.message, "cannot run Houston's tool check");
+            assert.include(bot.failure?.message, ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID);
+            const ordinary = yield* failingTurn(undefined);
+            assert.equal(ordinary.status, "failed");
+            assert.notInclude(ordinary.failure?.message ?? "", "Houston's tool check");
+          }).pipe(Effect.provide(botTestLayer)),
+        ),
+    );
+
+    it.effect("an ordinary thread's call needs no decision from a tool check", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const harness = yield* makeWakeHarness;
+          yield* harness.runtime.startTurn(
+            makeClaudeTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now: yield* DateTime.now,
+              attemptId: RunAttemptId.make("attempt-ordinary-no-check"),
+              text: "Hello.",
+              attachments: [],
+            }),
+          );
+          assert.isUndefined(harness.getOpenedOptions()?.hooks?.PreToolUse);
+          yield* harness.offerAndWait(
+            claudeSdkFrame({
+              type: "tool_progress",
+              tool_use_id: "ordinary-progress",
+              tool_name: "Bash",
+              parent_tool_use_id: null,
+              elapsed_time_seconds: 1,
+              uuid: "progress-ordinary",
+              session_id: WAKE_NATIVE_SESSION,
+            }),
+          );
+          assert.lengthOf(harness.terminalEvents(), 0);
+        }).pipe(Effect.provide(botTestLayer)),
+      ),
+    );
+  });
 
   it.effect.each(["release-after", "cancel-after", "release-before", "resume-pending"] as const)(
     "keeps attachment reservations across compaction: %s boundary",
