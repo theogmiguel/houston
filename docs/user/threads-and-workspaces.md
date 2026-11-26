@@ -52,11 +52,19 @@ on the thread's branch name. Repositories you do not choose are not in the task 
 with one repository keeps the single worktree it had. Git status, diff, commit and push act on one
 repository at a time.
 
-When you start a new worktree thread, choose at least one repository. A repository with no commit
-yet is skipped with the reason; the thread is refused when none can be checked out. Removing the
-thread removes every worktree in its task folder. A file that exists only in the task folder is
-kept, and the folder's removal is reported with the path it kept. The project repositories and
-their branches are left as they were.
+When you start a new worktree thread, the composer's repository control replaces the base-branch
+picker. It lists the project's repositories with **All** and **None**, searches once there are more
+than eight, and starts with none chosen in that case; otherwise it starts with all of them. The
+control also takes a base branch: each repository starts from that branch when it has one, and
+otherwise from its own current branch or `HEAD`. A repository with no commit or one Houston cannot
+read is disabled with the reason. Your choice is remembered for the project, and repositories that
+leave the project drop out of it. Choose at least one repository to send: otherwise the message
+waits with the reason. A repository with no commit is skipped when the worktree is created, and the
+thread is refused when none can be checked out.
+
+Removing the thread removes every worktree in its task folder. A file that exists only in the task
+folder is kept, and the folder's removal is reported with the path it kept. The project repositories
+and their branches are left as they were.
 
 Houston discovers repositories inside the project folder:
 
