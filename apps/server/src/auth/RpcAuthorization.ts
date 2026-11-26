@@ -90,6 +90,9 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverGetDatabaseStorage]: AuthOrchestrationReadScope,
   [WS_METHODS.houstonDatabaseReclaim]: AuthSettingsWriteScope,
   [WS_METHODS.houstonTerminalShells]: AuthOrchestrationReadScope,
+  // An MCP sign-in stores a credential for the agent, as an account sign-in does.
+  [WS_METHODS.houstonMcpSignInStart]: AuthProvidersManageScope,
+  [WS_METHODS.houstonMcpSignInComplete]: AuthProvidersManageScope,
   [WS_METHODS.peerLinksList]: AuthAccessReadScope,
   [WS_METHODS.serverUpdateSettings]: AuthSettingsWriteScope,
   [WS_METHODS.serverSearchAcpRegistry]: AuthOrchestrationReadScope,

@@ -64,6 +64,8 @@ const RPC_AGGREGATES = {
   [WS_METHODS.serverGetDatabaseStorage]: "server",
   [WS_METHODS.houstonDatabaseReclaim]: "server",
   [WS_METHODS.houstonTerminalShells]: "terminal",
+  [WS_METHODS.houstonMcpSignInStart]: "provider",
+  [WS_METHODS.houstonMcpSignInComplete]: "provider",
   [WS_METHODS.peerLinksList]: "peerLinks",
   [WS_METHODS.peerLinksLink]: "peerLinks",
   [WS_METHODS.peerLinksUnlink]: "peerLinks",
@@ -356,6 +358,9 @@ export const CREDENTIAL_CARRYING_WS_METHODS: ReadonlyArray<WsRpcMethod> = [
   WS_METHODS.providerAuthStart,
   WS_METHODS.providerAuthRespond,
   WS_METHODS.providerAuthComplete,
+  // The pasted callback address carries an authorization code.
+  WS_METHODS.houstonMcpSignInStart,
+  WS_METHODS.houstonMcpSignInComplete,
   WS_METHODS.chatGptImportProfile,
   WS_METHODS.chatGptHandoffSubscribe,
   WS_METHODS.houstonSlackConnect,

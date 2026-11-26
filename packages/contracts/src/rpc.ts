@@ -190,6 +190,13 @@ import {
 } from "./houston/databaseReclaim.ts";
 import { TerminalShells } from "./houston/terminalShells.ts";
 import {
+  HoustonMcpSignInCompleteInput,
+  HoustonMcpSignInCompleteResult,
+  HoustonMcpSignInError,
+  HoustonMcpSignInStartInput,
+  HoustonMcpSignInStartResult,
+} from "./houston/mcpSignIn.ts";
+import {
   HoustonReviewAnchorLinesInput,
   HoustonReviewAnchorMapResult,
   HoustonReviewAnchorRangeError,
@@ -684,6 +691,8 @@ export const WS_METHODS = {
   houstonTasksSettingsSet: "houston.tasks.settings.set",
   houstonDatabaseReclaim: "houston.database.reclaim",
   houstonTerminalShells: "houston.terminal.shells",
+  houstonMcpSignInStart: "houston.mcpSignIn.start",
+  houstonMcpSignInComplete: "houston.mcpSignIn.complete",
   houstonTasksImportV1Status: "houston.tasks.importV1.status",
   houstonTasksImportV1Run: "houston.tasks.importV1.run",
   houstonTasksStart: "houston.tasks.start",
@@ -1095,6 +1104,18 @@ const WsHoustonTerminalShellsRpc = Rpc.make(WS_METHODS.houstonTerminalShells, {
   payload: Schema.Struct({}),
   success: TerminalShells,
   error: EnvironmentAuthorizationError,
+});
+
+const WsHoustonMcpSignInStartRpc = Rpc.make(WS_METHODS.houstonMcpSignInStart, {
+  payload: HoustonMcpSignInStartInput,
+  success: HoustonMcpSignInStartResult,
+  error: Schema.Union([HoustonMcpSignInError, EnvironmentAuthorizationError]),
+});
+
+const WsHoustonMcpSignInCompleteRpc = Rpc.make(WS_METHODS.houstonMcpSignInComplete, {
+  payload: HoustonMcpSignInCompleteInput,
+  success: HoustonMcpSignInCompleteResult,
+  error: Schema.Union([HoustonMcpSignInError, EnvironmentAuthorizationError]),
 });
 
 const WsServerGetDatabaseStorageRpc = Rpc.make(WS_METHODS.serverGetDatabaseStorage, {
@@ -3192,6 +3213,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonTasksSettingsSetRpc,
   WsHoustonDatabaseReclaimRpc,
   WsHoustonTerminalShellsRpc,
+  WsHoustonMcpSignInStartRpc,
+  WsHoustonMcpSignInCompleteRpc,
   WsHoustonTasksImportV1StatusRpc,
   WsHoustonTasksImportV1RunRpc,
   WsHoustonTasksStartRpc,
