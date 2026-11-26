@@ -3861,6 +3861,207 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     });
   const makeWakeHarness = makeWakeHarnessWithOptions();
 
+  describe("MCP sign-in notices", () => {
+    const initWith = (servers: ReadonlyArray<{ name: string; status: string }>, uuid: string) =>
+      claudeSdkFrame({
+        type: "system",
+        subtype: "init",
+        mcp_servers: servers,
+        uuid,
+        session_id: WAKE_NATIVE_SESSION,
+      });
+
+    const runTurn = Effect.fnUntraced(function* (
+      harness: Effect.Success<ReturnType<typeof makeWakeHarnessWithOptions>>,
+      input: {
+        readonly attempt: string;
+        readonly ordinal: number;
+        readonly init: SDKMessage;
+        readonly result: SDKMessage;
+      },
+    ) {
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make(input.attempt),
+          providerTurnOrdinal: input.ordinal,
+          text: "Use the tools.",
+          attachments: [],
+        }),
+      );
+      yield* harness.offerAndWait(input.init);
+      yield* harness.offerAndWait(input.result);
+      yield* harness.awaitTerminal(input.ordinal);
+    });
+
+    const mcpWith = (statuses: ReadonlyArray<ClaudeSdk.McpServerStatus>, calls: Array<string>) => ({
+      mcpServerStatus: Effect.sync(() => {
+        calls.push("mcpServerStatus");
+        return statuses;
+      }),
+      readMcpResource: () => Effect.die("unexpected MCP resource read"),
+      callMcpTool: () => Effect.die("unexpected MCP tool call"),
+    });
+
+    const notices = (harness: Effect.Success<ReturnType<typeof makeWakeHarnessWithOptions>>) =>
+      harness.events.flatMap((event) =>
+        event.type === "turn_item.updated" &&
+        event.turnItem.type === "system_notice" &&
+        event.turnItem.mcpSignIn !== undefined
+          ? [event.turnItem]
+          : [],
+      );
+
+    it.effect(
+      "adds one notice per server that needs a sign-in, once per session, and skips claude.ai connectors",
+      () =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const calls: Array<string> = [];
+            const harness = yield* makeWakeHarnessWithOptions({
+              mcp: mcpWith(
+                [
+                  { name: "notion", status: "needs-auth" },
+                  { name: "claude.ai Gmail", status: "needs-auth", scope: "claudeai" },
+                  { name: "github", status: "connected" },
+                ],
+                calls,
+              ),
+            });
+            yield* runTurn(harness, {
+              attempt: "attempt-mcp-sign-in-1",
+              ordinal: 1,
+              init: initWith(
+                [
+                  { name: "notion", status: "pending" },
+                  { name: "claude.ai Gmail", status: "needs-auth" },
+                  { name: "github", status: "connected" },
+                ],
+                "00000000-0000-4000-8000-000000000a01",
+              ),
+              result: makeResultFrame({
+                uuid: "00000000-0000-4000-8000-000000000a02",
+                result: "Done.",
+              }),
+            });
+            assert.deepEqual(
+              notices(harness).map((notice) => notice.mcpSignIn),
+              [{ server: "notion" }],
+            );
+            assert.deepEqual(calls, ["mcpServerStatus"]);
+
+            // A later turn that lists the server again adds nothing.
+            yield* runTurn(harness, {
+              attempt: "attempt-mcp-sign-in-2",
+              ordinal: 2,
+              init: initWith(
+                [{ name: "notion", status: "needs-auth" }],
+                "00000000-0000-4000-8000-000000000a03",
+              ),
+              result: makeResultFrame({
+                uuid: "00000000-0000-4000-8000-000000000a04",
+                result: "Done again.",
+              }),
+            });
+            assert.lengthOf(notices(harness), 1);
+          }).pipe(
+            Effect.provide(
+              Layer.mergeAll(
+                IdAllocator.layer,
+                McpProviderSessions.layer,
+                NodeServices.layer,
+                NodeCrypto.layer,
+              ),
+            ),
+          ),
+        ),
+    );
+
+    it.effect("asks for no statuses when init lists nothing that needs a sign-in", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const calls: Array<string> = [];
+          const harness = yield* makeWakeHarnessWithOptions({
+            mcp: mcpWith(
+              [{ name: "claude.ai Gmail", status: "needs-auth", scope: "claudeai" }],
+              calls,
+            ),
+          });
+          yield* runTurn(harness, {
+            attempt: "attempt-mcp-sign-in-none",
+            ordinal: 1,
+            init: initWith(
+              [
+                { name: "github", status: "connected" },
+                { name: "claude.ai Gmail", status: "needs-auth" },
+              ],
+              "00000000-0000-4000-8000-000000000a11",
+            ),
+            result: makeResultFrame({
+              uuid: "00000000-0000-4000-8000-000000000a12",
+              result: "Done.",
+            }),
+          });
+          assert.deepEqual(calls, []);
+          assert.lengthOf(notices(harness), 0);
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              IdAllocator.layer,
+              McpProviderSessions.layer,
+              NodeServices.layer,
+              NodeCrypto.layer,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    it.effect(
+      "refuses to announce a server name that is blank, over-long or has control characters",
+      () =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const calls: Array<string> = [];
+            const hostile = ["x".repeat(257), "line\nbreak", "ok-server"];
+            const harness = yield* makeWakeHarnessWithOptions({
+              mcp: mcpWith(
+                hostile.map((name) => ({ name, status: "needs-auth" as const })),
+                calls,
+              ),
+            });
+            yield* runTurn(harness, {
+              attempt: "attempt-mcp-sign-in-hostile",
+              ordinal: 1,
+              init: initWith(
+                hostile.map((name) => ({ name, status: "pending" })),
+                "00000000-0000-4000-8000-000000000a21",
+              ),
+              result: makeResultFrame({
+                uuid: "00000000-0000-4000-8000-000000000a22",
+                result: "Done.",
+              }),
+            });
+            assert.deepEqual(
+              notices(harness).map((notice) => notice.mcpSignIn),
+              [{ server: "ok-server" }],
+            );
+          }).pipe(
+            Effect.provide(
+              Layer.mergeAll(
+                IdAllocator.layer,
+                McpProviderSessions.layer,
+                NodeServices.layer,
+                NodeCrypto.layer,
+              ),
+            ),
+          ),
+        ),
+    );
+  });
+
   it.effect.each(["release-after", "cancel-after", "release-before", "resume-pending"] as const)(
     "keeps attachment reservations across compaction: %s boundary",
     (outcome) =>
