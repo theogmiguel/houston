@@ -12,7 +12,12 @@ import {
   type ThreadSearchResultsState,
   type ThreadSearchScope,
 } from "@houston-app/client-runtime/state/thread-search";
-import { THREAD_SEARCH_QUERY_MAX_LENGTH } from "@houston-app/contracts";
+import { THREAD_SEARCH_QUERY_MAX_LENGTH, WS_METHODS } from "@houston-app/contracts";
+import {
+  type PeerLinkSearchEvent,
+  type PeerLinkSearchMachineStatus,
+  type PeerLinkSearchMatch,
+} from "@houston-app/contracts/houston/peerLinkSearch";
 import { messageSearchTokens } from "@houston-app/shared/paletteSearch";
 import { type VcsRefTarget } from "@houston-app/client-runtime/state/vcs";
 import type {
@@ -26,11 +31,16 @@ import type {
   VcsListRefsResult,
   VcsRef,
 } from "@houston-app/contracts";
+import { subscribe } from "@houston-app/client-runtime/rpc";
+import { followStreamInEnvironment } from "@houston-app/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
+import * as Stream from "effect/Stream";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { connectionAtomRuntime } from "../connection/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
+import { usePrimaryEnvironmentId } from "./environments";
 import { useFilesystemReadAccess } from "./filesystem";
 import { orchestrationEnvironment } from "./orchestration";
 import { olderSettledThreads, threadFamilies } from "./threads";
@@ -160,6 +170,136 @@ export function useThreadSearch(
     matches: visible.matches,
     query: visible.query,
     isPending,
+  };
+}
+
+/** One machine's answer in a linked thread search, or that it is still searching. */
+export interface LinkedSearchMachine {
+  readonly environmentId: EnvironmentId;
+  readonly label: string;
+  readonly status: PeerLinkSearchMachineStatus | "searching";
+  /** The other machine's text, untrusted: shown as plain text only. */
+  readonly matches: ReadonlyArray<PeerLinkSearchMatch>;
+  readonly message?: string;
+}
+
+export interface LinkedSearchState {
+  readonly enabled: boolean;
+  readonly started: boolean;
+  readonly machines: ReadonlyArray<LinkedSearchMachine>;
+}
+
+const EMPTY_LINKED_SEARCH: LinkedSearchState = { enabled: false, started: false, machines: [] };
+const EMPTY_LINKED_SEARCH_ATOM = Atom.make(
+  AsyncResult.success<LinkedSearchState, unknown>(EMPTY_LINKED_SEARCH),
+).pipe(Atom.withLabel("web:linked-search:empty"));
+
+const isLinkedSearchDone = (state: LinkedSearchState) =>
+  state.started && state.machines.every((machine) => machine.status !== "searching");
+
+/** Applies one streamed answer; a retry resets only the machines it asks again. */
+export function reduceLinkedSearchEvent(
+  state: LinkedSearchState,
+  event: PeerLinkSearchEvent,
+): LinkedSearchState {
+  if (event.type === "started") {
+    if (!event.enabled) return { enabled: false, started: true, machines: [] };
+    const machines = new Map(state.machines.map((machine) => [machine.environmentId, machine]));
+    for (const { environmentId, label } of event.machines) {
+      machines.set(environmentId, { environmentId, label, status: "searching", matches: [] });
+    }
+    return { enabled: true, started: true, machines: [...machines.values()] };
+  }
+  const answer = event.machine;
+  const machines = state.machines.some((machine) => machine.environmentId === answer.environmentId)
+    ? state.machines.map((machine) =>
+        machine.environmentId === answer.environmentId
+          ? {
+              environmentId: answer.environmentId,
+              label: answer.label,
+              status: answer.status,
+              matches: answer.matches,
+              ...(answer.message === undefined ? {} : { message: answer.message }),
+            }
+          : machine,
+      )
+    : [
+        ...state.machines,
+        {
+          environmentId: answer.environmentId,
+          label: answer.label,
+          status: answer.status,
+          matches: answer.matches,
+          ...(answer.message === undefined ? {} : { message: answer.message }),
+        },
+      ];
+  return { ...state, machines };
+}
+
+export interface LinkedThreadSearchView {
+  readonly enabled: boolean;
+  readonly machines: ReadonlyArray<LinkedSearchMachine>;
+  readonly isSearching: boolean;
+  /** Machines that did not answer, so a result list is incomplete and can offer Retry. */
+  readonly failed: ReadonlyArray<LinkedSearchMachine>;
+  readonly retry: () => void;
+}
+
+/**
+ * The other machines this environment links to answer the same typed query,
+ * one streamed answer per machine. Nothing here starts while the query is too
+ * short, and the server sends nothing to any machine while the beta is off.
+ */
+export function useLinkedThreadSearch(query: string): LinkedThreadSearchView {
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const normalizedQuery = query.trim().slice(0, THREAD_SEARCH_QUERY_MAX_LENGTH).trim();
+  const debouncedQuery = useDebouncedValue(normalizedQuery, THREAD_SEARCH_DEBOUNCE_MS);
+  const [attempt, setAttempt] = useState(0);
+  const previous = useRef<LinkedSearchState>(EMPTY_LINKED_SEARCH);
+  const retrying = useRef<ReadonlyArray<EnvironmentId> | null>(null);
+  // oxlint-disable-next-line houston/no-unreasoned-state-sync -- a new query starts a fresh search, not a retry of the old one
+  useEffect(() => {
+    retrying.current = null;
+    setAttempt(0);
+  }, [debouncedQuery, primaryEnvironmentId]);
+  const ready =
+    primaryEnvironmentId !== null &&
+    normalizedQuery === debouncedQuery &&
+    debouncedQuery.length >= 2;
+  const atom = useMemo(() => {
+    if (!ready || primaryEnvironmentId === null) return null;
+    const ids = retrying.current;
+    const input =
+      ids === null || ids.length === 0
+        ? { query: debouncedQuery }
+        : { query: debouncedQuery, environmentIds: ids };
+    const seed = attempt === 0 ? EMPTY_LINKED_SEARCH : previous.current;
+    const stream = subscribe(WS_METHODS.houstonPeerLinksSearch, input).pipe(
+      Stream.scan(() => seed, reduceLinkedSearchEvent),
+      Stream.takeUntil(isLinkedSearchDone),
+    );
+    return connectionAtomRuntime.atom(followStreamInEnvironment(primaryEnvironmentId, stream));
+  }, [attempt, debouncedQuery, primaryEnvironmentId, ready]);
+  const searchAtom = (atom ?? EMPTY_LINKED_SEARCH_ATOM) as Atom.Atom<
+    AsyncResult.AsyncResult<LinkedSearchState, unknown>
+  >;
+  const result = useAtomValue(searchAtom);
+  const state = AsyncResult.getOrElse(result, () => EMPTY_LINKED_SEARCH);
+  previous.current = state;
+  const failed = state.machines.filter(
+    (machine) => machine.status !== "searching" && machine.status !== "ok",
+  );
+  const retry = useCallback(() => {
+    if (failed.length === 0) return;
+    retrying.current = failed.map((machine) => machine.environmentId);
+    setAttempt((current) => current + 1);
+  }, [failed]);
+  return {
+    enabled: state.enabled,
+    machines: state.machines,
+    isSearching: state.machines.some((machine) => machine.status === "searching"),
+    failed,
+    retry,
   };
 }
 

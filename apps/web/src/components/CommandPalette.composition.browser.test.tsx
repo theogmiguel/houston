@@ -12,6 +12,13 @@ import { primaryServerKeybindingsAtom } from "../state/server";
 
 const state = vi.hoisted(() => ({
   browseData: undefined as unknown,
+  linkedSearch: {
+    enabled: false,
+    machines: [],
+    isSearching: false,
+    failed: [],
+    retry: () => undefined,
+  } as unknown,
 }));
 
 vi.mock("@effect/atom-react", async (original) => ({
@@ -84,6 +91,7 @@ vi.mock("../state/queries", async (original) => ({
     query,
     isPending: false,
   }),
+  useLinkedThreadSearch: () => state.linkedSearch,
 }));
 vi.mock("../state/session", async (original) => ({
   ...(await original<typeof import("../state/session")>()),
@@ -239,5 +247,83 @@ describe("add folder path mode", () => {
     await userEvent.keyboard("{Enter}");
 
     await expect.element(page.getByRole("combobox")).not.toBeInTheDocument();
+  });
+});
+
+describe("linked machine results", () => {
+  const machine = (overrides: Record<string, unknown> = {}) => ({
+    environmentId: "environment-box",
+    label: "Homelab",
+    status: "ok",
+    matches: [],
+    ...overrides,
+  });
+
+  it("names the machine on each linked row and renders its text, never a link", async () => {
+    state.linkedSearch = {
+      enabled: true,
+      machines: [
+        machine({
+          matches: [
+            {
+              threadId: "thread:box-1",
+              projectId: "project:box",
+              title: "Rotate the Postgres backup credentials",
+              source: "title",
+            },
+          ],
+        }),
+      ],
+      isSearching: false,
+      failed: [],
+      retry: () => undefined,
+    };
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+
+    openCommandPalette({ query: "postgres" });
+
+    await expect
+      .element(page.getByText("Rotate the Postgres backup credentials"))
+      .toBeInTheDocument();
+    await expect.element(page.getByText("Homelab")).toBeInTheDocument();
+    expect(page.getByRole("link").elements()).toHaveLength(0);
+  });
+
+  it("names a machine that did not answer, offers Retry and does not claim nothing matched", async () => {
+    let retried = 0;
+    state.linkedSearch = {
+      enabled: true,
+      machines: [machine({ status: "unreachable", matches: [] })],
+      isSearching: false,
+      failed: [machine({ status: "unreachable" })],
+      retry: () => {
+        retried += 1;
+      },
+    };
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+
+    openCommandPalette({ query: "kubernetes" });
+
+    await expect.element(page.getByText(/isn't answering/)).toBeInTheDocument();
+    await expect.element(page.getByText("No matches on this machine.")).toBeInTheDocument();
+    await act(() => {
+      (page.getByText("Retry", { exact: true }).element() as HTMLElement).click();
+    });
+    expect(retried).toBe(1);
+  });
+
+  it("names the machines it is still searching", async () => {
+    state.linkedSearch = {
+      enabled: true,
+      machines: [machine({ status: "searching" })],
+      isSearching: true,
+      failed: [],
+      retry: () => undefined,
+    };
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+
+    openCommandPalette({ query: "reconnect" });
+
+    await expect.element(page.getByText("Searching Homelab")).toBeInTheDocument();
   });
 });

@@ -15,6 +15,7 @@ import {
 import type { EnvironmentId, ThreadId } from "@houston-app/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
+import { MessageSquareIcon } from "lucide-react";
 import { openThreadInLayout } from "../threads/openThreadInLayout";
 import { useState } from "react";
 
@@ -29,14 +30,18 @@ import {
   useEnvironments,
   usePrimaryEnvironmentId,
 } from "../state/environments";
-import { useThreadSearch } from "../state/queries";
+import { useLinkedThreadSearch, useThreadSearch } from "../state/queries";
 import { primaryServerProvidersAtom } from "../state/server";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { resolveThreadRowState } from "../threads/sidebarModel";
 import { ThreadStatusGlyph } from "./sidebar/threadStatusMark";
 import { formatRelativeTimeLabel } from "../timestampFormat";
-import { buildThreadActionItems } from "./CommandPalette.logic";
+import {
+  buildLinkedMachineActionItems,
+  buildThreadActionItems,
+  ITEM_ICON_CLASS,
+} from "./CommandPalette.logic";
 import { useEnvironmentLookups, useProjectLookups } from "./CommandPaletteLookups";
 import { ThreadCommandSubtitle } from "./ThreadCommandSubtitle";
 import { ThreadRowTrailingStatus, ThreadSearchPullRequestNumber } from "./ThreadStatusIndicators";
@@ -101,6 +106,7 @@ export function useCommandPaletteThreadItems(input: {
   const { projectEnvironmentLocationById } = useEnvironmentLookups();
   const providerEntryByEnvironmentAndInstanceId = useProviderEntryByEnvironmentAndInstanceId();
   const messageSearch = useConnectedThreadSearch(threadSearchQuery);
+  const linkedSearch = useLinkedThreadSearch(threadSearchQuery);
   const { projectByKey } = useProjectLookups();
   const visitThread = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
   // Ranking is relative to when the palette opened, so rows do not reorder as time passes.
@@ -248,9 +254,41 @@ export function useCommandPaletteThreadItems(input: {
     .slice(0, order.shown)
     .flatMap((value) => messageItemByValue.get(value) ?? []);
 
+  const connectedEnvironmentIds = new Set(
+    environments
+      .filter((environment) => environment.connection.phase === "connected")
+      .map((environment) => environment.environmentId),
+  );
+  const linkedMachineItems = buildLinkedMachineActionItems({
+    query: threadSearchQuery,
+    machines: linkedSearch.machines
+      .filter((machine) => machine.status === "ok" && machine.matches.length > 0)
+      .map((machine) => ({
+        environmentId: machine.environmentId,
+        label: machine.label,
+        matches: machine.matches,
+      })),
+    icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
+    runMatch: async (machine, match) => {
+      // A machine already connected here opens its thread like a local row.
+      // One that is not connected is opened from a result once its link can
+      // pair this window; until then the row names where the thread lives.
+      if (!connectedEnvironmentIds.has(machine.environmentId)) return;
+      await openThreadInLayout(
+        {
+          navigate: (options) => navigate(options),
+          pathname: () => router.state.location.pathname,
+        },
+        scopeThreadRef(machine.environmentId, match.threadId),
+      );
+    },
+  });
+
   return {
     threadItems,
     threadMessageItems,
+    linkedMachineItems,
+    linkedSearch,
     now,
     isSearchPending: messageSearch.isPending,
   };
