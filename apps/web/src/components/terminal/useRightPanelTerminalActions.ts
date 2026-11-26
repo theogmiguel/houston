@@ -1,6 +1,7 @@
 import { AuthTerminalOperateScope, type ScopedThreadRef } from "@houston-app/contracts";
 
 import { useStableCallback } from "../../hooks/useStableCallback";
+import type { TerminalCycleDirection } from "../../lib/terminalCycle";
 import { focusActivePanelTerminal, focusTerminal } from "../../lib/terminalFocus";
 import {
   selectThreadRightPanelState,
@@ -62,6 +63,11 @@ export function useRightPanelTerminalActions(input: {
     focusTerminal(threadRef, terminalId);
   };
   const activatePanelTerminalStable = useStableCallback(activatePanelTerminal);
+  const cyclePanelTerminal = (direction: TerminalCycleDirection) => {
+    if (!threadRef || surface?.kind !== "terminal") return;
+    useRightPanelStore.getState().cycleTerminal(threadRef, surface.id, direction);
+    focusActivePanelTerminal(threadRef);
+  };
   const closePanelTerminal = (terminalId: string, target = threadRef) => {
     if (!target || !readEnvironmentScope(target.environmentId, AuthTerminalOperateScope)) return;
     const store = useRightPanelStore.getState();
@@ -83,6 +89,7 @@ export function useRightPanelTerminalActions(input: {
     splitPanelTerminalStable,
     splitPanelTerminalVerticalStable,
     activatePanelTerminalStable,
+    cyclePanelTerminal,
     closePanelTerminal,
     closePanelTerminalStable,
   };
