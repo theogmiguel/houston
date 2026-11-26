@@ -82,10 +82,11 @@ character. `houston.json` spells the field `ignoreRepositories`, for example:
 
 The project's own repository and tracked folders are never ignored.
 
-Claude can read every repository directory of a project-folder thread. Codex and Antigravity
-cannot read directories outside the thread's `cwd`: when any repository lies outside it, such as
-a tracked folder, they refuse to start a turn, naming the provider and the folders it cannot
-reach. A repository at or below the thread's `cwd` needs nothing extra.
+Claude can read every repository directory of a project-folder thread. Every other provider
+(Codex and Antigravity among them) cannot read directories outside the thread's `cwd`: when any
+repository lies outside it, such as a tracked folder, it refuses to start a turn, naming the
+provider and the folders it cannot reach. A repository at or below the thread's `cwd` needs
+nothing extra.
 
 Limitations in this milestone: worktree threads see one repository; the merge queue and tasks
 stay single-repository; and a commit covers one repository, never several at once.
