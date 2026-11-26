@@ -71,6 +71,10 @@
       "types": "./src/houston/observability.ts",
       "import": "./src/houston/observability.ts"
     },
+    "./houston/mcpSignIn": {
+      "types": "./src/houston/mcpSignIn.ts",
+      "import": "./src/houston/mcpSignIn.ts"
+    },
     "./houston/terminalShells": {
       "types": "./src/houston/terminalShells.ts",
       "import": "./src/houston/terminalShells.ts"
