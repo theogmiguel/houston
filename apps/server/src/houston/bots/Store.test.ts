@@ -1,3 +1,4 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off - a hash made apart from the store checks its own.
 import * as NodeCrypto from "node:crypto";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -13,6 +14,7 @@ import * as PubSub from "effect/PubSub";
 import * as SqlClient from "effect/sql/SqlClient";
 import { TestClock } from "effect/testing";
 
+import type { ServerSettingsService } from "../../serverSettings.ts";
 import {
   botInput,
   CLAUDE,
@@ -30,14 +32,11 @@ import { HoustonBotStore } from "./Store.ts";
 
 const sha256 = (text: string) => NodeCrypto.createHash("sha256").update(text, "utf8").digest("hex");
 
-type Test = Effect.Effect<
-  void,
-  unknown,
-  HoustonBotStore | SqlClient.SqlClient | import("../../serverSettings.ts").ServerSettingsService
->;
-
-const withStore = (body: Test, options: { readonly on?: boolean } = {}) =>
-  body.pipe(Effect.provide(layerBotsTest(options)));
+/** Runs `body` over a fresh store; its error type is what the body can fail with. */
+const withStore = <E>(
+  body: Effect.Effect<void, E, HoustonBotStore | SqlClient.SqlClient | ServerSettingsService>,
+  options: { readonly on?: boolean } = {},
+) => body.pipe(Effect.provide(layerBotsTest(options)));
 
 const failed = <A, R>(effect: Effect.Effect<A, HoustonBotError, R>) => Effect.flip(effect);
 

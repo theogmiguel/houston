@@ -1,6 +1,6 @@
 // The bots, their instruction revisions and the record of changes. Writes are serialised, each
 // commits in one transaction that checks Labs ▸ Bots, and the change is published in commit order.
-import type { ProjectId } from "@houston-app/contracts";
+import { ProjectId } from "@houston-app/contracts";
 import {
   HOUSTON_BOT_LIMITS,
   HoustonBot,
@@ -114,6 +114,9 @@ export class HoustonBotStore extends Context.Service<
 >()("@houston-app/cli/houston/bots/Store/HoustonBotStore") {}
 
 const decodeBot = Schema.decodeUnknownOption(HoustonBot);
+const ProjectIdsJson = Schema.fromJsonString(Schema.Array(ProjectId));
+const encodeProjectIds = Schema.encodeSync(ProjectIdsJson);
+const decodeProjectIds = Schema.decodeUnknownOption(ProjectIdsJson);
 
 const parseJson = (json: string): unknown => {
   try {
@@ -153,7 +156,7 @@ const changedFields = (
   }
   if (
     before.defaultProjectId !== input.defaultProjectId ||
-    JSON.stringify(before.otherProjectIds) !== JSON.stringify(input.otherProjectIds)
+    encodeProjectIds(before.otherProjectIds) !== encodeProjectIds(input.otherProjectIds)
   ) {
     fields.push("projects");
   }
@@ -210,7 +213,7 @@ const make = Effect.gen(function* () {
       mark: row.mark,
       job: row.job,
       defaultProjectId: row.default_project_id,
-      otherProjectIds: parseJson(row.other_project_ids_json),
+      otherProjectIds: Option.getOrUndefined(decodeProjectIds(row.other_project_ids_json)),
       modelSelection: parseJson(row.model_selection_json),
       askedMode: row.asked_mode,
       unattendedFullAccess: row.unattended_full_access === 1,
@@ -362,7 +365,7 @@ const make = Effect.gen(function* () {
         max_minutes, row_revision, created_at, updated_at
       ) VALUES (
         ${id}, ${slug}, ${input.name.trim()}, ${input.mark.trim()}, ${input.job.trim()},
-        ${input.defaultProjectId}, ${JSON.stringify(input.otherProjectIds)},
+        ${input.defaultProjectId}, ${encodeProjectIds(input.otherProjectIds)},
         ${encodeModelSelection(input.modelSelection)}, ${input.askedMode},
         ${input.unattendedFullAccess ? 1 : 0}, ${input.maxAtOnce}, ${input.maxStartsPerDay},
         ${input.maxMinutes}, 1, ${at}, ${at}
@@ -401,7 +404,7 @@ const make = Effect.gen(function* () {
             UPDATE houston_bots SET
               name = ${input.name.trim()}, mark = ${input.mark.trim()}, job = ${input.job.trim()},
               default_project_id = ${input.defaultProjectId},
-              other_project_ids_json = ${JSON.stringify(input.otherProjectIds)},
+              other_project_ids_json = ${encodeProjectIds(input.otherProjectIds)},
               model_selection_json = ${encodeModelSelection(input.modelSelection)},
               asked_mode = ${input.askedMode},
               unattended_full_access = ${input.unattendedFullAccess ? 1 : 0},
@@ -541,7 +544,7 @@ const make = Effect.gen(function* () {
           if (kept.length === bot.otherProjectIds.length) return { result: undefined, event: null };
           const at = yield* nowIso;
           yield* run(sql`
-            UPDATE houston_bots SET other_project_ids_json = ${JSON.stringify(kept)}
+            UPDATE houston_bots SET other_project_ids_json = ${encodeProjectIds(kept)}
             WHERE id = ${botId}
           `);
           yield* touch(botId, at);
@@ -550,7 +553,7 @@ const make = Effect.gen(function* () {
           return { result: undefined, event };
         }),
         // Deleted or switched off since the list was read: nothing is left to take off.
-      ).pipe(Effect.catch(() => Effect.void));
+      ).pipe(Effect.ignore);
     }
   });
 

@@ -1,5 +1,5 @@
 // The houston.bots.* requests: each is refused by name while Labs ▸ Bots is off, then its projects
-// and account are checked and the store does the rest.
+// are checked, and its account when a bot is made or moves to another; the store does the rest.
 import type { ProjectId } from "@houston-app/contracts";
 import type {
   HoustonBot,
@@ -77,10 +77,14 @@ const make = Effect.gen(function* () {
       for (const projectId of input.otherProjectIds) {
         yield* requireProject(operation, "otherProjectIds", projectId);
       }
+      // An account checked before may be only unavailable now; a start checks it again.
       const { instanceId } = input.modelSelection;
-      const account = yield* accounts.getInstance(instanceId);
-      const refusal = checkAccount(operation, instanceId, account?.driverKind);
-      if (refusal !== null) return yield* refusal;
+      const before = input.target === null ? undefined : yield* store.find(input.target.botId);
+      if (before?.modelSelection.instanceId !== instanceId) {
+        const account = yield* accounts.getInstance(instanceId);
+        const refusal = checkAccount(operation, instanceId, account?.driverKind);
+        if (refusal !== null) return yield* refusal;
+      }
       return yield* store.save(input, actor);
     },
   );

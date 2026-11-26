@@ -147,6 +147,7 @@ import {
   CODEX,
   DELETED_PROJECT,
   editOf,
+  LAPTOP,
   layerTestAccounts,
   layerTestProjects,
   OTHER_PROJECT,
@@ -519,6 +520,34 @@ describe("bots over /ws", () => {
         );
         assert.equal((yield* storedBots).bots[0]?.["row_revision"], 1);
         assert.include(String((yield* storedBots).bots[0]?.["model_selection_json"]), CLAUDE);
+      }),
+    ),
+  );
+
+  it.effect("the account is checked only when a bot is made or its account changes", () =>
+    withServer(
+      Effect.gen(function* () {
+        const store = yield* HoustonBotStore;
+        const client = yield* makeWsClient();
+        // An account that Houston cannot reach now, such as one whose secrets are locked.
+        const away = ProviderInstanceId.make("away");
+        const bot = yield* store.save(
+          botInput({ modelSelection: { instanceId: away, model: "opus" } }),
+          LAPTOP,
+        );
+        const edited = yield* saveBot(client, editOf(bot, { job: "Writes the evening digest" }));
+        assert.equal(edited.job, "Writes the evening digest");
+        assert.equal(edited.modelSelection.instanceId, away);
+        for (const [instanceId, kind] of [
+          [ProviderInstanceId.make("gone"), "not_found"],
+          [CODEX, "unsupported"],
+        ] as const) {
+          const moved = editOf(edited, { modelSelection: { instanceId, model: "x" } });
+          const refusal = failureOf(yield* client.call(WS_METHODS.houstonBotsSave, moved));
+          assert.deepInclude(refusal, { kind, field: "modelSelection" });
+          assert.include(refusal?.message, instanceId);
+        }
+        assert.equal((yield* storedBots).bots[0]?.["row_revision"], 2);
       }),
     ),
   );
