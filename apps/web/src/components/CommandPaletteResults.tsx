@@ -295,6 +295,9 @@ function DisabledCommandPaletteResultRow(props: {
           <span className="truncate">{props.item.machineLabel}</span>
         </span>
       ) : null}
+      {props.item.linkedActionLabel ? (
+        <span className="shrink-0 text-accent-ink text-xs">{props.item.linkedActionLabel}</span>
+      ) : null}
     </div>
   );
 }
@@ -365,6 +368,9 @@ function CommandPaletteResultRow(props: {
           <MonitorIcon className="size-3.5 shrink-0" />
           <span className="truncate">{props.item.machineLabel}</span>
         </span>
+      ) : null}
+      {props.item.linkedActionLabel ? (
+        <span className="shrink-0 text-accent-ink text-xs">{props.item.linkedActionLabel}</span>
       ) : null}
       {props.item.kind === "action" && props.item.pin ? (
         <ProjectPinButton

@@ -15,9 +15,14 @@ import {
 import type { EnvironmentId, ThreadId } from "@houston-app/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
-import { MessageSquareIcon } from "lucide-react";
+import { CheckIcon, MessageSquareIcon } from "lucide-react";
+import { squashAtomCommandFailure } from "@houston-app/client-runtime/state/runtime";
+import { connectPairing as connectPairingAtom } from "../connection/onboarding";
+import { dispatchCommandPalette } from "../commandPaletteStore";
+import { peerLinkEnvironment } from "../state/peerLinks";
 import { openThreadInLayout } from "../threads/openThreadInLayout";
 import { useState } from "react";
+import { Spinner } from "./ui/spinner";
 
 import {
   applyProviderInstanceSettings,
@@ -98,6 +103,8 @@ function useConnectedThreadSearch(query: string) {
 export function useCommandPaletteThreadItems(input: {
   readonly activeThread: { readonly environmentId: EnvironmentId; readonly id: ThreadId } | null;
   readonly threadSearchQuery: string;
+  /** Opens the add-environment dialog with a linked machine's host prefilled. */
+  readonly onRequestAddEnvironment?: (host: string) => void;
 }) {
   const { activeThread, threadSearchQuery } = input;
   const navigate = useNavigate();
@@ -107,6 +114,15 @@ export function useCommandPaletteThreadItems(input: {
   const providerEntryByEnvironmentAndInstanceId = useProviderEntryByEnvironmentAndInstanceId();
   const messageSearch = useConnectedThreadSearch(threadSearchQuery);
   const linkedSearch = useLinkedThreadSearch(threadSearchQuery);
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const pairClient = useAtomCommand(peerLinkEnvironment.pairClient, { reportFailure: false });
+  const connectPairing = useAtomCommand(connectPairingAtom, { reportFailure: false });
+  const [linkedRow, setLinkedRow] = useState<
+    | { readonly kind: "connecting"; readonly value: string }
+    | { readonly kind: "connected"; readonly value: string }
+    | { readonly kind: "failed"; readonly value: string; readonly message: string }
+    | null
+  >(null);
   const { projectByKey } = useProjectLookups();
   const visitThread = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
   // Ranking is relative to when the palette opened, so rows do not reorder as time passes.
@@ -259,6 +275,24 @@ export function useCommandPaletteThreadItems(input: {
       .filter((environment) => environment.connection.phase === "connected")
       .map((environment) => environment.environmentId),
   );
+  const openThread = async (environmentId: EnvironmentId, threadId: ThreadId) => {
+    await openThreadInLayout(
+      {
+        navigate: (options) => navigate(options),
+        pathname: () => router.state.location.pathname,
+      },
+      scopeThreadRef(environmentId, threadId),
+    );
+    dispatchCommandPalette({ _tag: "SetOpen", open: false });
+  };
+  const openLinkedMachinesSettings = async () => {
+    dispatchCommandPalette({ _tag: "SetOpen", open: false });
+    await navigate({ to: "/settings/connections", hash: "linked-environments" });
+  };
+  const failureMessage = (result: Parameters<typeof squashAtomCommandFailure>[0]) => {
+    const error = squashAtomCommandFailure(result);
+    return error instanceof Error ? error.message : "The machine could not be reached.";
+  };
   const linkedMachineItems = buildLinkedMachineActionItems({
     query: threadSearchQuery,
     machines: linkedSearch.machines
@@ -266,22 +300,78 @@ export function useCommandPaletteThreadItems(input: {
       .map((machine) => ({
         environmentId: machine.environmentId,
         label: machine.label,
+        access: machine.access,
+        host: machine.host,
         matches: machine.matches,
       })),
     icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
     runMatch: async (machine, match) => {
+      const value = `linked:${machine.environmentId}:${match.threadId}`;
+      // A narrower link cannot pair a client; its row offers the add-environment dialog instead.
+      if (machine.access !== "full-access") {
+        input.onRequestAddEnvironment?.(machine.host);
+        return;
+      }
       // A machine already connected here opens its thread like a local row.
-      // One that is not connected is opened from a result once its link can
-      // pair this window; until then the row names where the thread lives.
-      if (!connectedEnvironmentIds.has(machine.environmentId)) return;
-      await openThreadInLayout(
-        {
-          navigate: (options) => navigate(options),
-          pathname: () => router.state.location.pathname,
-        },
-        scopeThreadRef(machine.environmentId, match.threadId),
-      );
+      if (connectedEnvironmentIds.has(machine.environmentId)) {
+        await openThread(machine.environmentId, match.threadId);
+        return;
+      }
+      if (primaryEnvironmentId === null) return;
+      setLinkedRow({ kind: "connecting", value });
+      const paired = await pairClient({
+        environmentId: primaryEnvironmentId,
+        input: { environmentId: machine.environmentId },
+      });
+      if (paired._tag === "Failure") {
+        const message = failureMessage(paired);
+        setLinkedRow({ kind: "failed", value, message });
+        return;
+      }
+      const connected = await connectPairing({
+        host: paired.value.host,
+        pairingCode: paired.value.credential,
+        expectedEnvironmentId: machine.environmentId,
+      });
+      if (connected._tag === "Failure") {
+        setLinkedRow({ kind: "failed", value, message: failureMessage(connected) });
+        return;
+      }
+      setLinkedRow({ kind: "connected", value });
+      await openThread(machine.environmentId, match.threadId);
     },
+  }).map((item) => {
+    if (linkedRow === null || linkedRow.value !== item.value) return item;
+    if (linkedRow.kind === "connecting") {
+      return {
+        ...item,
+        titleTrailingContent: (
+          <span className="flex items-center gap-1.5 text-muted-foreground text-xs">
+            <Spinner size="sm" />
+            Connecting
+          </span>
+        ),
+      };
+    }
+    if (linkedRow.kind === "connected") {
+      return {
+        ...item,
+        titleTrailingContent: (
+          <span className="flex items-center gap-1.5 text-ok-ink text-xs">
+            <CheckIcon className="size-3.5" />
+            Connected
+          </span>
+        ),
+      };
+    }
+    const { threadContentMatch: _match, ...rest } = item;
+    return {
+      ...rest,
+      description: linkedRow.message,
+      ...(linkedRow.message.toLowerCase().includes("expired")
+        ? { linkedActionLabel: "Open linked machines", run: openLinkedMachinesSettings }
+        : {}),
+    };
   });
 
   return {

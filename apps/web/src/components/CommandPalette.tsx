@@ -83,6 +83,7 @@ import {
   TriangleAlertIcon,
 } from "lucide-react";
 import { openThreadFind } from "./chat/threadFindStore";
+import { AddEnvironmentDialog } from "./settings/AddEnvironmentDialog";
 import { Button } from "./ui/button";
 import { Spinner } from "./ui/spinner";
 import {
@@ -432,6 +433,8 @@ function OpenCommandPaletteDialog(props: {
     reportFailure: false,
   });
   const { environments } = useEnvironments();
+  const [linkedAddEnvironmentHost, setLinkedAddEnvironmentHost] = useState<string | null>(null);
+  const [linkedAddEnvironmentError, setLinkedAddEnvironmentError] = useState<string | null>(null);
   const desktopLocalBootstraps = useDesktopLocalBootstraps();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
@@ -990,7 +993,11 @@ function OpenCommandPaletteDialog(props: {
     linkedSearch,
     now: searchNow,
     isSearchPending: isThreadSearchPending,
-  } = useCommandPaletteThreadItems({ activeThread: activeThread ?? null, threadSearchQuery });
+  } = useCommandPaletteThreadItems({
+    activeThread: activeThread ?? null,
+    threadSearchQuery,
+    onRequestAddEnvironment: setLinkedAddEnvironmentHost,
+  });
   // Recent means used recently: written in or opened, whichever is later. The
   // open thread would always lead that list, so it is left out.
   const activeThreadValue = activeThread
@@ -3079,8 +3086,27 @@ function OpenCommandPaletteDialog(props: {
   // input and drop its caret and focus mid-edit.
   const viewKey = `${viewStack.length}-${browseGeneration}-${newProjectFlow ? "new-project" : (addProjectCloneFlow?.step ?? "none")}`;
 
+  const linkedAddEnvironmentDialog =
+    linkedAddEnvironmentHost === null ? null : (
+      <AddEnvironmentDialog
+        open
+        initialHost={linkedAddEnvironmentHost}
+        routeTarget={null}
+        error={linkedAddEnvironmentError}
+        savedEnvironments={environments}
+        onOpenChange={(open) => {
+          if (open) return;
+          setLinkedAddEnvironmentHost(null);
+          setLinkedAddEnvironmentError(null);
+        }}
+        onErrorChange={setLinkedAddEnvironmentError}
+      />
+    );
+
   return (
-    <Swap swapKey={viewKey}>
+    <>
+      {linkedAddEnvironmentDialog}
+      <Swap swapKey={viewKey}>
       <CommandPaletteContent
         aria-label="Command palette"
         autoHighlight={autoHighlightsFirstRow ? "always" : false}
@@ -3181,6 +3207,7 @@ function OpenCommandPaletteDialog(props: {
                 : { emptyStateMessage })}
         />
       </CommandPaletteContent>
-    </Swap>
+      </Swap>
+    </>
   );
 }

@@ -254,6 +254,8 @@ describe("linked machine results", () => {
   const machine = (overrides: Record<string, unknown> = {}) => ({
     environmentId: "environment-box",
     label: "Homelab",
+    access: "full-access",
+    host: "homelab.tailnet.ts.net:3773",
     status: "ok",
     matches: [],
     ...overrides,
@@ -310,6 +312,38 @@ describe("linked machine results", () => {
       (page.getByText("Retry", { exact: true }).element() as HTMLElement).click();
     });
     expect(retried).toBe(1);
+  });
+
+  it("names the access a pairing needs and offers to add the environment", async () => {
+    state.linkedSearch = {
+      enabled: true,
+      machines: [
+        machine({
+          access: "approval-required",
+          matches: [
+            {
+              threadId: "thread:box-1",
+              projectId: "project:box",
+              title: "Rotate the Postgres backup credentials",
+              source: "title",
+            },
+          ],
+        }),
+      ],
+      isSearching: false,
+      failed: [],
+      retry: () => undefined,
+    };
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+
+    openCommandPalette({ query: "postgres" });
+
+    await expect
+      .element(
+        page.getByText(/Pairing needs a Full access link\. Homelab's link is Approval required\./),
+      )
+      .toBeInTheDocument();
+    await expect.element(page.getByText("Add environment…")).toBeInTheDocument();
   });
 
   it("names the machines it is still searching", async () => {
