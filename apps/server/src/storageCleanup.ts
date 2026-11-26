@@ -455,6 +455,135 @@ const make = Effect.gen(function* () {
     return false;
   });
 
+  // A task folder is the thread's worktreePath but is not itself a checkout; its repositories are.
+  const taskFolderAt = Effect.fn("StorageCleanup.taskFolderAt")(function* (worktreePath: string) {
+    const rows = yield* sql<{
+      readonly folder_path: string;
+      readonly project_id: string;
+      readonly repositories_json: string;
+    }>`
+      SELECT folder_path, project_id, repositories_json FROM houston_task_folders
+      WHERE folder_path = ${worktreePath} OR real_path = ${worktreePath}
+      LIMIT 1
+    `.pipe(NodeSqliteClient.readOnly);
+    const row = rows[0];
+    if (row === undefined) return null;
+    const repositories = (() => {
+      try {
+        const parsed: unknown = JSON.parse(row.repositories_json);
+        if (!Array.isArray(parsed)) return [];
+        return parsed.flatMap((entry) => {
+          if (typeof entry !== "object" || entry === null) return [];
+          const value = entry as Record<string, unknown>;
+          return typeof value.projectPath === "string" &&
+            typeof value.worktreePath === "string" &&
+            typeof value.branch === "string"
+            ? [
+                {
+                  projectPath: value.projectPath,
+                  worktreePath: value.worktreePath,
+                  branch: value.branch,
+                },
+              ]
+            : [];
+        });
+      } catch {
+        return [];
+      }
+    })();
+    return { folderPath: row.folder_path, repositories };
+  });
+
+  const cleanTaskFolder = Effect.fn("StorageCleanup.cleanTaskFolder")(function* (input: {
+    readonly folder: {
+      readonly folderPath: string;
+      readonly repositories: ReadonlyArray<{
+        readonly projectPath: string;
+        readonly worktreePath: string;
+        readonly branch: string;
+      }>;
+    };
+    readonly thread: OrchestrationV2ThreadShell;
+    readonly group: ReadonlyArray<OrchestrationV2ThreadShell>;
+    readonly deleted: boolean;
+    readonly settings: WorktreeCleanupRules;
+    readonly worktreePath: string;
+    readonly entries: StorageCleanupReportEntry[];
+    readonly kept: string[];
+    readonly keep: (reason: string) => void;
+    readonly waitForStop: (reason: string) => string;
+    readonly reportFailure: (error: unknown) => void;
+    readonly now: number;
+    readonly serverSettings: ServerSettings;
+  }) {
+    const { folder, thread, group, deleted, settings, worktreePath, entries, kept } = input;
+    // A deleted thread's row is what remains of it; only the threads sharing its folder are live.
+    for (const member of deleted ? group : [thread, ...group]) {
+      if (!storageCleanupThreadIdle(member, input.now, input.serverSettings))
+        return input.keep(input.waitForStop("thread is running or has pending work"));
+    }
+    if (hasTerminal(worktreePath)) return input.keep(input.waitForStop("open terminal"));
+    let bytes = 0;
+    for (const repository of folder.repositories) {
+      if (!(yield* existsUnlessNotADirectory(repository.worktreePath))) continue;
+      if (hasTerminal(repository.worktreePath))
+        return input.keep(input.waitForStop("open terminal"));
+      if (yield* branchChanged(repository.worktreePath, repository.branch))
+        return input.keep("repository or branch changed");
+      const changes = yield* localChangesReason(repository.worktreePath, settings);
+      if (changes !== null) return input.keep(changes);
+      bytes += (yield* measureWorktree(repository.worktreePath)) ?? 0;
+    }
+    const taskFolderEntry: StorageCleanupReportEntry = {
+      kind: "worktree",
+      outcome: "removed",
+      reason: deleted ? "Thread was deleted" : "Task folder was idle",
+      path: worktreePath,
+      projectPath: null,
+      threadId: thread.id,
+      threadTitle: thread.title,
+      bytes,
+      files: null,
+    };
+    yield* Effect.gen(function* () {
+      for (const repository of folder.repositories) {
+        if (!(yield* existsUnlessNotADirectory(repository.worktreePath))) continue;
+        yield* removeLinkedWorktree({
+          operation: "StorageCleanup.cleanupTaskFolder",
+          cwd: repository.projectPath,
+          worktreePath: repository.worktreePath,
+          force: false,
+          execute: git.execute,
+          run: (args) => cleanupGit(repository.projectPath, [...args], "git worktree remove"),
+        });
+      }
+      const owned = new Set(
+        folder.repositories
+          .map((repository) => path.relative(folder.folderPath, repository.worktreePath))
+          .filter((relative) => relative !== "")
+          .map((relative) => relative.split(path.sep)[0]!),
+      );
+      const names = yield* fs
+        .readDirectory(folder.folderPath)
+        .pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<string>));
+      const extras = names.filter((name) => !owned.has(name));
+      if (extras.length > 0) {
+        entries.push({
+          ...taskFolderEntry,
+          outcome: "kept",
+          reason: `Holds files that exist only in this task folder: ${extras.join(", ")}`,
+        });
+        kept.push(folder.folderPath);
+      } else {
+        yield* fs
+          .remove(folder.folderPath, { recursive: true, force: true })
+          .pipe(Effect.ignoreCause({ log: true }));
+        yield* sql`DELETE FROM houston_task_folders WHERE folder_path = ${folder.folderPath}`;
+        entries.push(taskFolderEntry);
+      }
+    }).pipe(Effect.catchCause((cause) => Effect.sync(() => input.reportFailure(cause))));
+  });
+
   const reportOrphanWorktrees = Effect.fn("StorageCleanup.reportOrphanWorktrees")(function* (
     roots: ReadonlyArray<string>,
     projects: ReadonlyArray<{ readonly workspaceRoot: string }>,
@@ -875,6 +1004,90 @@ const make = Effect.gen(function* () {
       if (!worktreeCleanupEnabled(settings)) continue;
       const worktreePath = path.resolve(thread.worktreePath!);
       const group = groups.get(worktreePath) ?? [];
+      const taskFolder = yield* taskFolderAt(worktreePath);
+      const deletedThread = deletedByPath
+        .get(worktreePath)
+        ?.find((entry) => entry.id === thread.id);
+      if (taskFolder !== null) {
+        const deleted = deletedThread !== undefined;
+        if (deleted && !settings.worktreeOnDelete) continue;
+        const members = [thread, ...group] as ReadonlyArray<OrchestrationV2ThreadShell>;
+        const activityAt = Math.max(...members.map((member) => storageCleanupActivityAt(member)));
+        const old =
+          !deleted &&
+          settings.worktreeAfterDays !== null &&
+          activityAt < now - settings.worktreeAfterDays * DAY_MS;
+        const settledThread = deleted
+          ? undefined
+          : worktreeSettlementChain(
+              thread as OrchestrationV2ThreadShell,
+              threadsById,
+              now,
+              serverSettings,
+            ).at(-1);
+        const settledFor =
+          settledThread?.settledAt == null
+            ? null
+            : now - Math.max(DateTime.toEpochMillis(settledThread.settledAt), activityAt);
+        const settled =
+          settledFor !== null &&
+          settings.worktreeSettledAfterDays !== null &&
+          settledFor >= settings.worktreeSettledAfterDays * DAY_MS;
+        {
+          const entry: StorageCleanupReportEntry = {
+            kind: "worktree",
+            outcome: "kept",
+            reason: "",
+            path: worktreePath,
+            projectPath: null,
+            threadId: thread.id,
+            threadTitle: thread.title,
+            bytes: null,
+            files: null,
+          };
+          const keep = (reason: string) => {
+            if (deleted && settings.worktreeOnDelete) kept.push(worktreePath);
+            entries.push({ ...entry, reason: sentence(reason) });
+          };
+          const waitForStop = (reason: string) => {
+            if (deleted && settings.worktreeOnDelete) waiting = true;
+            return reason;
+          };
+          if (!deleted && !old && !settled) {
+            keep(
+              settings.worktreeAfterDays !== null
+                ? `inactive for ${Math.floor((now - activityAt) / DAY_MS)} of ${settings.worktreeAfterDays} days`
+                : settings.worktreeSettledAfterDays !== null
+                  ? settledFor === null
+                    ? "not settled"
+                    : `settled for ${Math.floor(settledFor / DAY_MS)} of ${settings.worktreeSettledAfterDays} days`
+                  : "no rules apply",
+            );
+            continue;
+          }
+          yield* cleanTaskFolder({
+            folder: taskFolder,
+            thread: thread as OrchestrationV2ThreadShell,
+            group: group as ReadonlyArray<OrchestrationV2ThreadShell>,
+            now,
+            serverSettings,
+            deleted,
+            settings,
+            worktreePath,
+            entries,
+            kept,
+            keep,
+            waitForStop,
+            reportFailure: (error) =>
+              entries.push({
+                ...entry,
+                outcome: "failed",
+                reason: cleanupFailureReason(error as { message: string }),
+              }),
+          });
+        }
+        continue;
+      }
       const activityAt = Math.max(...group.map(storageCleanupActivityAt));
       const deleted = "workspaceRoot" in thread;
       const settlementChain = deleted
