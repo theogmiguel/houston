@@ -56,8 +56,10 @@ export class HoustonBotThreads extends Context.Service<HoustonBotThreads, Housto
 
 /** For assemblies without bots, such as upstream's tests: no thread is a bot's. */
 export const layerNoBotThreads = Layer.succeed(HoustonBotThreads, {
-  // @effect-diagnostics-next-line effectSucceedWithVoid:off - the shape returns undefined, not void.
-  policyOf: () => Effect.succeed(undefined),
+  policyOf: Effect.fn("HoustonBotThreads.none")(() =>
+    // @effect-diagnostics-next-line effectSucceedWithVoid:off - the shape returns undefined, not void.
+    Effect.succeed(undefined),
+  ),
 });
 
 const decodePolicy = Schema.decodeUnknownOption(PolicyJson);
@@ -74,11 +76,7 @@ const storedPolicy = (row: BotRunPolicyRow | undefined): HoustonBotRunPolicy => 
   return Option.isSome(decoded) && decoded.value.kind === row.kind ? decoded.value : UNREADABLE;
 };
 
-const applied = (
-  policy: HoustonBotRunPolicy,
-  botName: string,
-  child: boolean,
-): BotThreadPolicy => {
+const applied = (policy: HoustonBotRunPolicy, botName: string, child: boolean): BotThreadPolicy => {
   const { houstonTools } = policy.rules;
   const provider: HoustonBotProviderPolicy = {
     botName,
@@ -146,10 +144,11 @@ export const layer = Layer.effect(
       readThread: (threadId) =>
         projections.getThread(threadId).pipe(
           Effect.map((thread): BotThreadRead | undefined => thread),
-          Effect.catchTag("ProjectionStoreThreadNotFoundError", () =>
-            // @effect-diagnostics-next-line effectSucceedWithVoid:off - a missing thread is undefined.
-            Effect.succeed(undefined),
-          ),
+          Effect.catchTags({
+            ProjectionStoreThreadNotFoundError: () =>
+              // @effect-diagnostics-next-line effectSucceedWithVoid:off - a missing thread is undefined.
+              Effect.succeed(undefined),
+          }),
         ),
     });
   }),

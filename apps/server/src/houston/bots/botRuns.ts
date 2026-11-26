@@ -1,8 +1,5 @@
 // The bot runs table: one row per bot run, kept after its bot is deleted.
-import {
-  HoustonBotRunPolicy,
-  type HoustonBotRunKind,
-} from "@houston-app/contracts/houston/bots";
+import { HoustonBotRunPolicy, type HoustonBotRunKind } from "@houston-app/contracts/houston/bots";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";

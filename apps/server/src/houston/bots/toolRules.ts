@@ -22,12 +22,21 @@ const WRITE_VERBS: ReadonlySet<string> = new Set(
   ).split(" "),
 );
 
+const CAMEL_BOUNDARY = /([a-z])([A-Z])/g;
+const ACRONYM_BOUNDARY = /([A-Z]+)([A-Z][a-z])/g;
+const NON_LETTERS = /[^A-Za-z]+/;
+const WHITESPACE = /\s/;
+const GH_PATH = /[/\\]gh(\.exe)?$/i;
+const GH_WORD = /\bgh\b/;
+const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+const SHELL_SEPARATORS = /\r?\n|&&|\|\||[;&|]/;
+
 /** Lowercase words of a tool name, split at non-letters and at camel case. */
 const nameTokens = (name: string): ReadonlyArray<string> =>
   name
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
-    .split(/[^A-Za-z]+/)
+    .replace(CAMEL_BOUNDARY, "$1 $2")
+    .replace(ACRONYM_BOUNDARY, "$1 $2")
+    .split(NON_LETTERS)
     .filter((token) => token.length > 0)
     .map((token) => token.toLowerCase());
 
@@ -81,7 +90,7 @@ function shellWords(segment: string): ReadonlyArray<{ word: string; quoted: bool
       quote = char;
       quoted = true;
       started = true;
-    } else if (/\s/.test(char)) {
+    } else if (WHITESPACE.test(char)) {
       if (started) words.push({ word: current, quoted });
       current = "";
       quoted = false;
@@ -96,7 +105,7 @@ function shellWords(segment: string): ReadonlyArray<{ word: string; quoted: bool
   return words;
 }
 
-const isGhWord = (word: string) => word === "gh" || /[/\\]gh(\.exe)?$/i.test(word);
+const isGhWord = (word: string) => word === "gh" || GH_PATH.test(word);
 
 function ghArgumentsRead(args: ReadonlyArray<string>): boolean {
   const positional: Array<string> = [];
@@ -130,12 +139,11 @@ function ghArgumentsRead(args: ReadonlyArray<string>): boolean {
 
 function segmentReads(segment: string, depth: number): boolean {
   const words = shellWords(segment);
-  if (words === undefined) return !/\bgh\b/.test(segment);
+  if (words === undefined) return !GH_WORD.test(segment);
   let start = 0;
   while (
     start < words.length &&
-    (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[start]!.word) ||
-      COMMAND_PREFIXES.has(words[start]!.word))
+    (ENV_ASSIGNMENT.test(words[start]!.word) || COMMAND_PREFIXES.has(words[start]!.word))
   ) {
     start += 1;
   }
@@ -147,14 +155,14 @@ function segmentReads(segment: string, depth: number): boolean {
   return words.every(
     (entry) =>
       !entry.quoted ||
-      !/\bgh\b/.test(entry.word) ||
+      !GH_WORD.test(entry.word) ||
       (depth < MAX_NESTING && ghCommandReadsAt(entry.word, depth + 1)),
   );
 }
 
 function ghCommandReadsAt(command: string, depth: number): boolean {
   return command
-    .split(/\r?\n|&&|\|\||[;&|]/)
+    .split(SHELL_SEPARATORS)
     .every((segment) => segment.trim().length === 0 || segmentReads(segment.trim(), depth));
 }
 

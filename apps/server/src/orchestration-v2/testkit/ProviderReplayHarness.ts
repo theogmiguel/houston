@@ -339,7 +339,9 @@ export function layerWithRegistry<Error>(
   const layerSideThreadRuntime = RuntimePolicy.layerBotThreads.pipe(
     Layer.provide(
       RuntimePolicy.layerReadOnlySideThreads.pipe(
-        Layer.provide(Layer.mergeAll(layerBaseRuntime, layerProvidedRegistry, layerReadOnlyThreads)),
+        Layer.provide(
+          Layer.mergeAll(layerBaseRuntime, layerProvidedRegistry, layerReadOnlyThreads),
+        ),
       ),
     ),
     Layer.provide(Layer.merge(layerProvidedRegistry, options.botThreads ?? layerNoBotThreads)),

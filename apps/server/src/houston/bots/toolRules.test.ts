@@ -120,7 +120,12 @@ describe("Houston's own tools", () => {
     assert.isTrue(
       decide(unattended, "mcp__houston__houston_thread_list", {}, { name: "houston" }).allow,
     );
-    for (const tool of ["delegate_task", "houston_thread_send", "create_issue", "comment_on_issue"]) {
+    for (const tool of [
+      "delegate_task",
+      "houston_thread_send",
+      "create_issue",
+      "comment_on_issue",
+    ]) {
       assert.isFalse(decide(unattended, `mcp__houston__${tool}`).allow, tool);
       assert.isFalse(decide(unattended, `mcp__houston__${tool}`, {}, { name: "houston" }).allow);
     }
@@ -139,7 +144,13 @@ describe("Houston's own tools", () => {
 describe("built-in tools", () => {
   it("refuses timers in both kinds", () => {
     for (const policy of [asked, unattended]) {
-      for (const tool of ["CronCreate", "CronDelete", "CronList", "ScheduleWakeup", "RemoteTrigger"]) {
+      for (const tool of [
+        "CronCreate",
+        "CronDelete",
+        "CronList",
+        "ScheduleWakeup",
+        "RemoteTrigger",
+      ]) {
         assert.isFalse(decide(policy, tool).allow, tool);
       }
     }

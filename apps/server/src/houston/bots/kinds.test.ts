@@ -8,7 +8,11 @@ import {
   UNATTENDED_HOUSTON_TOOLS,
 } from "./kinds.ts";
 
-const bot = { askedMode: "approval-required", unattendedFullAccess: false, maxMinutes: 20 } as const;
+const bot = {
+  askedMode: "approval-required",
+  unattendedFullAccess: false,
+  maxMinutes: 20,
+} as const;
 const TIMERS = ["CronCreate", "CronDelete", "CronList", "ScheduleWakeup", "RemoteTrigger"];
 const SCHEDULING = [
   "mcp__houston__schedule_task",

@@ -188,13 +188,9 @@ const adapterWith = (
     getCapabilities: () => Effect.succeed(capabilities),
   }) as unknown as ProviderAdapter.ProviderAdapterV2["Service"];
 
-const { houstonBotRuns: _claudeKinds, ...undeclared } =
-  ClaudeProviderCapabilitiesV2.runtimePolicy;
+const { houstonBotRuns: _claudeKinds, ...undeclared } = ClaudeProviderCapabilitiesV2.runtimePolicy;
 
-const botPolicy = (
-  kind: "asked" | "unattended",
-  runtimeMode?: RuntimeMode,
-): BotThreadPolicy => {
+const botPolicy = (kind: "asked" | "unattended", runtimeMode?: RuntimeMode): BotThreadPolicy => {
   const stored = policyFor({
     kind,
     bot: {
@@ -294,9 +290,12 @@ describe("bot threads", () => {
         lockedSettings: [],
         limits: { maxRuntimeMode: "auto" },
       };
-      const refused = yield* resolveWith(layerBots(botPolicy("unattended", "full-access"), ceiling), {
-        runtimeMode: "approval-required",
-      }).pipe(Effect.flip);
+      const refused = yield* resolveWith(
+        layerBots(botPolicy("unattended", "full-access"), ceiling),
+        {
+          runtimeMode: "approval-required",
+        },
+      ).pipe(Effect.flip);
       assert.equal(refused._tag, "RuntimePolicyAboveCeilingError");
       // The thread's own full access is not what runs, so the ceiling does not refuse it.
       const allowed = yield* resolveWith(layerBots(botPolicy("unattended"), ceiling), {
