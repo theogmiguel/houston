@@ -20,7 +20,7 @@ const fixtures = vi.hoisted(() => ({
   },
   threads: [] as unknown[],
   actions: {
-    settleThread: vi.fn(),
+    closeThread: vi.fn(),
     unsettleThread: vi.fn(),
     snoozeThread: vi.fn(),
     unsnoozeThread: vi.fn(),
@@ -179,7 +179,7 @@ describe("ThreadSidebar shelf rows", () => {
     await userEvent.click(shelfRow(screen.container, HELD_ID), { button: "right" });
     await userEvent.click(page.getByRole("menuitem", { name: "Close thread" }).element());
 
-    await vi.waitFor(() => expect(fixtures.actions.settleThread).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(fixtures.actions.closeThread).toHaveBeenCalledTimes(1));
   });
 
   it("holds a closed thread from its context menu", async () => {

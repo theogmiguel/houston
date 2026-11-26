@@ -90,6 +90,7 @@ import {
   RpcClientId,
   EnvironmentAuthorizationError,
   type ProjectId,
+  type RunId,
   type ProviderDriverKind,
   type ProviderInstanceId,
   ThreadId,
@@ -938,6 +939,21 @@ function dispatchBlockingBackgroundWork(
   return undefined;
 }
 
+const isOrchestratorDispatchError = Schema.is(Orchestrator.OrchestratorDispatchError);
+
+function dispatchBlockingQueuedRunIds(error: unknown): ReadonlyArray<RunId> | undefined {
+  const seen = new Set<unknown>();
+  let value = error;
+  while (typeof value === "object" && value !== null && !seen.has(value)) {
+    seen.add(value);
+    if (isOrchestratorDispatchError(value) && value.blockingQueuedRunIds !== undefined) {
+      return value.blockingQueuedRunIds;
+    }
+    value = "cause" in value ? value.cause : undefined;
+  }
+  return undefined;
+}
+
 function isProjectionThreadNotFound(error: unknown): boolean {
   const seen = new Set<unknown>();
   let value = error;
@@ -948,6 +964,27 @@ function isProjectionThreadNotFound(error: unknown): boolean {
   }
   return false;
 }
+
+/** What a client learns about a command the server did not take. */
+export function dispatchCommandError(
+  command: Pick<OrchestrationV2Command, "commandId" | "type">,
+  cause: unknown,
+) {
+  const detail = userFacingDispatchErrorMessage(cause);
+  const blockingBackgroundWork = dispatchBlockingBackgroundWork(cause);
+  const blockingQueuedRunIds = dispatchBlockingQueuedRunIds(cause);
+  return new OrchestrationV2DispatchCommandError({
+    commandId: command.commandId,
+    commandType: command.type,
+    message: detail ?? "Failed to dispatch orchestration V2 command",
+    ...(detail === undefined ? {} : { detail }),
+    ...(isProjectionThreadNotFound(cause) ? { reason: "thread_not_found" as const } : {}),
+    ...(blockingBackgroundWork === undefined ? {} : { blockingBackgroundWork }),
+    ...(blockingQueuedRunIds === undefined ? {} : { blockingQueuedRunIds }),
+    cause,
+  });
+}
+
 // The thread a dispatched command acts on, as its spans name it.
 const dispatchTargetThreadId = (command: OrchestrationV2Command) =>
   command.type === "thread.fork" || command.type === "thread.merge_back"
@@ -2206,21 +2243,7 @@ export const layerWsRpc = (
                 )
                 .pipe(
                   Effect.map((result) => ({ sequence: result.sequence })),
-                  Effect.mapError((cause) => {
-                    const detail = userFacingDispatchErrorMessage(cause);
-                    const blockingBackgroundWork = dispatchBlockingBackgroundWork(cause);
-                    return new OrchestrationV2DispatchCommandError({
-                      commandId: command.commandId,
-                      commandType: command.type,
-                      message: detail ?? "Failed to dispatch orchestration V2 command",
-                      ...(detail === undefined ? {} : { detail }),
-                      ...(isProjectionThreadNotFound(cause)
-                        ? { reason: "thread_not_found" as const }
-                        : {}),
-                      ...(blockingBackgroundWork === undefined ? {} : { blockingBackgroundWork }),
-                      cause,
-                    });
-                  }),
+                  Effect.mapError((cause) => dispatchCommandError(command, cause)),
                 ),
             ),
             TraceContext.withTraceContext({
