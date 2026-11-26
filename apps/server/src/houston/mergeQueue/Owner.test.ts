@@ -42,6 +42,7 @@ import { HoustonMergeQueueRunner } from "./Runner.ts";
 import { failureNote } from "./rules.ts";
 import { HoustonMergeQueueService } from "./Service.ts";
 import { HoustonMergeQueueThreads, layer as layerThreads } from "./Threads.ts";
+import { ThreadRepositoryResolver } from "../../project/threadRepositories.ts";
 
 const withQueue = <A, E>(
   github: FakeGitHub,
@@ -313,6 +314,41 @@ describe("a failure goes to the owner thread once and parks without one", () => 
         },
       ]);
     }).pipe(Effect.provide(adapter));
+  });
+});
+
+describe("the merge queue stays single-repository", () => {
+  it.live("refuses to hand a failed entry to a new thread in a multi-repository project", () => {
+    const github = makeGitHub(makeRepos());
+    const threads = makeThreads();
+    const severalRepositories = {
+      list: (project: { readonly workspaceRoot: string }) =>
+        Effect.succeed([
+          { key: ".", root: project.workspaceRoot, branch: null, baseBranch: null },
+          { key: "web", root: `${project.workspaceRoot}/web`, branch: null, baseBranch: null },
+        ]),
+    };
+    return Effect.gen(function* () {
+      const queue = yield* HoustonMergeQueueService;
+      const runner = yield* HoustonMergeQueueRunner;
+      const projectId = yield* queueScenario(github, [7], {
+        name: "single-repository",
+        command: "git --version",
+        mainMoves: false,
+      });
+      yield* conflicting(github, projectId);
+      yield* runner.step(projectId);
+      const refused = yield* refusal(
+        queue.handToThread({ projectId, number: 7, modelSelection: selection() }),
+      );
+      assert.strictEqual(refused.kind, "unsupported");
+      assert.include(refused.message, "covers 2 repositories");
+      assert.include(refused.message, "merge-queue-");
+      assert.deepEqual(threads.launched, []);
+    }).pipe(
+      Effect.provide(Layer.fresh(layerMergeQueueTest({ github, threads, loops: false }))),
+      Effect.provideService(ThreadRepositoryResolver, severalRepositories),
+    );
   });
 });
 
