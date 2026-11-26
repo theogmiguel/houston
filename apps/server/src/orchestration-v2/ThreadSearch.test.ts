@@ -630,6 +630,73 @@ it.layer(layerTest)("ThreadSearch filters before it ranks", (it) => {
     }),
   );
 
+  it.effect("matches a quoted phrase only as that exact wording", () =>
+    Effect.gen(function* () {
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const search = yield* ThreadSearch.ThreadSearch;
+      const project = ProjectId.make("project:phrases");
+      const exact = ThreadId.make("thread:phrase-exact");
+      const reordered = ThreadId.make("thread:phrase-reordered");
+      const scattered = ThreadId.make("thread:phrase-scattered");
+      yield* createProject(project);
+      yield* Effect.forEach(
+        [
+          thread(exact, project),
+          message(exact, "phrase-exact", "user", "Please Fix Sidebar lag before the release"),
+          thread(reordered, project),
+          message(reordered, "phrase-reordered", "user", "The sidebar needs a fix, lag too"),
+          thread(scattered, project),
+          message(scattered, "phrase-scattered", "user", "Fix the sidebar and the lag"),
+        ],
+        projections.apply,
+        { discard: true },
+      );
+      const hits = (query: string) =>
+        search
+          .search({ query })
+          .pipe(Effect.map(({ matches }) => matches.map((match) => match.threadId).toSorted()));
+
+      // Unquoted, the same words match all three threads in any order.
+      assert.deepEqual(yield* hits("fix sidebar"), [exact, reordered, scattered].toSorted());
+      assert.deepEqual(yield* hits('"fix sidebar"'), [exact]);
+      assert.deepEqual(yield* hits('"sidebar fix"'), []);
+      // Words and phrases combine: both must hold.
+      assert.deepEqual(yield* hits('lag "fix sidebar"'), [exact]);
+      assert.deepEqual(yield* hits('release "fix sidebar"'), [exact]);
+      assert.deepEqual(yield* hits('slowness "fix sidebar"'), []);
+      assert.deepEqual(yield* hits('"fix sidebar" "the release"'), [exact]);
+    }),
+  );
+
+  it.effect("searches a short or unbalanced quoted phrase without a SQL error", () =>
+    Effect.gen(function* () {
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const search = yield* ThreadSearch.ThreadSearch;
+      const project = ProjectId.make("project:short-phrases");
+      const first = ThreadId.make("thread:short-phrase-first");
+      yield* createProject(project);
+      yield* Effect.forEach(
+        [
+          thread(first, project),
+          message(first, "short-phrase-first", "user", 'He said "fix gizmo about it'),
+        ],
+        projections.apply,
+        { discard: true },
+      );
+      const hits = (query: string) =>
+        search.search({ query }).pipe(Effect.map(({ matches }) => matches.length));
+
+      // Too short for the trigram index: alone it searches nothing, beside a word it narrows.
+      assert.strictEqual(yield* hits('"ab"'), 0);
+      assert.strictEqual(yield* hits('gizmo "ab"'), 1);
+      assert.strictEqual(yield* hits('gizmo "zz"'), 0);
+      assert.strictEqual(yield* hits('"" gizmo'), 1);
+      // An unbalanced quote is a literal character of the first word.
+      assert.strictEqual(yield* hits('"fix gizmo'), 1);
+      assert.strictEqual(yield* hits('"gizmo fix'), 0);
+    }),
+  );
+
   it.effect("finds a curly apostrophe for a straight one and back", () =>
     Effect.gen(function* () {
       const projections = yield* ProjectionStore.ProjectionStoreV2;
@@ -652,6 +719,8 @@ it.layer(layerTest)("ThreadSearch filters before it ranks", (it) => {
         search.search({ query }).pipe(Effect.map(({ matches }) => matches.map((m) => m.threadId)));
       assert.deepEqual(yield* threadIds("gannet's"), [curly]);
       assert.deepEqual(yield* threadIds("kittiwake\u2019s"), [straight]);
+      assert.deepEqual(yield* threadIds('"gannet\'s nest"'), [curly]);
+      assert.deepEqual(yield* threadIds('"kittiwake\u2019s nest"'), [straight]);
     }),
   );
 
