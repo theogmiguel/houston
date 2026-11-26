@@ -17,7 +17,7 @@ import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.
 import { HoustonReadOnlyThreads, hasReadOnlyRun, readOnlyPolicy } from "../houston/sideThreads.ts";
 import * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
-import { ThreadProjectNotFoundError, repositoriesOf } from "../project/threadRepositories.ts";
+import { isThreadProjectNotFoundError, repositoriesOf } from "../project/threadRepositories.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 
@@ -170,7 +170,7 @@ export const layerFromProjectStore: Layer.Layer<
               new RuntimePolicyResolveError({
                 projectId: input.thread.projectId,
                 providerInstanceId: input.modelSelection.instanceId,
-                cause: cause instanceof ThreadProjectNotFoundError ? "Project not found." : cause,
+                cause: isThreadProjectNotFoundError(cause) ? "Project not found." : cause,
               }),
           ),
         );
