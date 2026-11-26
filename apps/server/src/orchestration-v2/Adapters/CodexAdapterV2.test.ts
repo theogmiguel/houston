@@ -10,6 +10,7 @@ import {
   CheckpointId,
   CodexSettings,
   EnvironmentId,
+  HoustonMcpSignInError,
   MessageId,
   type ModelSelection,
   NodeId,
@@ -1183,6 +1184,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     onUsageLimits?: CodexAdapterV2.CodexAdapterV2Options["onUsageLimits"],
     promptSuggestions: Effect.Effect<boolean> = Effect.succeed(false),
     onNotification: (method: string, params: unknown) => Effect.Effect<void> = () => Effect.void,
+    hitLoopbackCallback?: CodexAdapterV2.CodexAdapterV2Options["hitLoopbackCallback"],
   ) =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -1245,6 +1247,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         environment: {},
         clientFactory,
         ...(onUsageLimits ? { onUsageLimits } : {}),
+        ...(hitLoopbackCallback === undefined ? {} : { hitLoopbackCallback }),
         digest: yield* Digest.Digest,
         fileSystem,
         idAllocator,
@@ -9998,6 +10001,326 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             NodeCrypto.layer,
           ),
         ),
+      ),
+    );
+  });
+
+  describe("MCP sign-in", () => {
+    type Harness = Effect.Success<ReturnType<typeof makeCodexReplayHarness>>;
+
+    const SIGN_IN_SERVER = "notion";
+    const SIGN_IN_NATIVE_THREAD = "mcp-sign-in-thread";
+    const SIGN_IN_CODE = "SECRET-AUTH-CODE-9f3a";
+    const SIGN_IN_AUTH_URL =
+      "https://auth.example.com/authorize?client_id=c&redirect_uri=http%3A%2F%2F127.0.0.1%3A54213%2Fcallback&state=expected-state-0123456789";
+    const signInCallback = (state: string) =>
+      `http://127.0.0.1:54213/callback?code=${SIGN_IN_CODE}&state=${state}`;
+
+    const signInOf = (harness: Harness) => {
+      const signIn = harness.runtime.mcpSignIn;
+      if (signIn === undefined) throw new Error("Codex must offer MCP sign-in.");
+      return signIn;
+    };
+
+    const status = (
+      runtimeStatus: CodexSchema.V2ListMcpServerStatusResponse__McpServerConnectionStatus,
+    ): CodexSchema.V2ListMcpServerStatusResponse__McpServerStatus => ({
+      authStatus: runtimeStatus === "connected" ? "oAuth" : "notLoggedIn",
+      name: SIGN_IN_SERVER,
+      resourceTemplates: [],
+      resources: [],
+      tools: {},
+      runtimeStatus,
+    });
+
+    // Composed fixture: Codex is not installed here, so no recorded transcript of this exists.
+    const signInTranscript = (scenario: string, includeLogin: boolean) => {
+      const preamble = codexReplayPreamble({
+        nativeThreadId: SIGN_IN_NATIVE_THREAD,
+        nativeTurnId: "unused",
+        prompt: "unused",
+      }).slice(0, 5);
+      const statusEntries: ReadonlyArray<CodexReplay.CodexAppServerReplayEntry> = [
+        {
+          type: "expect_outbound",
+          label: "mcpServerStatus/list",
+          frame: {
+            id: 3,
+            method: "mcpServerStatus/list",
+            params: {
+              threadId: SIGN_IN_NATIVE_THREAD,
+              serverName: SIGN_IN_SERVER,
+              detail: "toolsAndAuthOnly",
+            },
+          },
+        },
+        {
+          type: "emit_inbound",
+          label: "mcpServerStatus/list",
+          frame: {
+            id: 3,
+            result: { data: [status(includeLogin ? "authenticationRequired" : "connected")] },
+          },
+        },
+      ];
+      const loginEntries: ReadonlyArray<CodexReplay.CodexAppServerReplayEntry> = includeLogin
+        ? [
+            {
+              type: "expect_outbound",
+              label: "mcpServer/oauth/login",
+              frame: {
+                id: 4,
+                method: "mcpServer/oauth/login",
+                params: { name: SIGN_IN_SERVER, threadId: SIGN_IN_NATIVE_THREAD },
+              },
+            },
+            {
+              type: "emit_inbound",
+              label: "mcpServer/oauth/login",
+              frame: { id: 4, result: { authorizationUrl: SIGN_IN_AUTH_URL } },
+            },
+            {
+              type: "emit_inbound",
+              label: "mcpServer/oauthLogin/completed",
+              frame: {
+                method: "mcpServer/oauthLogin/completed",
+                params: { threadId: SIGN_IN_NATIVE_THREAD, name: SIGN_IN_SERVER, success: true },
+              },
+            },
+          ]
+        : [];
+      return makeCodexReplayTranscript({
+        scenario,
+        entries: [...preamble, ...statusEntries, ...loginEntries],
+      });
+    };
+
+    const gatedCompletion =
+      (release: Deferred.Deferred<void>) =>
+      (entry: Extract<CodexReplay.CodexAppServerReplayEntry, { readonly type: "emit_inbound" }>) =>
+        entry.label === "mcpServer/oauthLogin/completed" ? Deferred.await(release) : Effect.void;
+
+    const layers = Layer.mergeAll(
+      IdAllocator.layer,
+      McpProviderSessions.layer,
+      NodeServices.layer,
+      NodeCrypto.layer,
+    );
+
+    it.effect("start returns the page to approve, or none when the server is connected", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const release = yield* Deferred.make<void>();
+          const harness = yield* makeCodexReplayHarness(
+            signInTranscript("codex-mcp-sign-in-start", true),
+            undefined,
+            undefined,
+            undefined,
+            gatedCompletion(release),
+          );
+          assert.deepEqual(
+            yield* signInOf(harness).start({
+              providerThread: harness.providerThread,
+              server: SIGN_IN_SERVER,
+            }),
+            { authorizationUrl: SIGN_IN_AUTH_URL },
+          );
+          yield* Deferred.succeed(release, undefined);
+
+          const connected = yield* makeCodexReplayHarness(
+            signInTranscript("codex-mcp-sign-in-connected", false),
+          );
+          assert.deepEqual(
+            yield* signInOf(connected).start({
+              providerThread: connected.providerThread,
+              server: SIGN_IN_SERVER,
+            }),
+            { authorizationUrl: null },
+          );
+        }).pipe(Effect.provide(layers)),
+      ),
+    );
+
+    it.effect("complete validates the pasted address, hits the callback, and waits", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const release = yield* Deferred.make<void>();
+          const hits: Array<string> = [];
+          const harness = yield* makeCodexReplayHarness(
+            signInTranscript("codex-mcp-sign-in-complete", true),
+            undefined,
+            undefined,
+            undefined,
+            gatedCompletion(release),
+            undefined,
+            undefined,
+            undefined,
+            (callback) =>
+              Effect.sync(() => hits.push(callback.toString())).pipe(
+                Effect.andThen(Deferred.succeed(release, undefined)),
+              ),
+          );
+          const signIn = signInOf(harness);
+          yield* signIn.start({ providerThread: harness.providerThread, server: SIGN_IN_SERVER });
+          yield* signIn.complete({
+            providerThread: harness.providerThread,
+            server: SIGN_IN_SERVER,
+            // A browser can hide the scheme, so the pasted address may lack it.
+            callbackUrl: signInCallback("expected-state-0123456789").slice("http://".length),
+          });
+          assert.deepEqual(hits, [signInCallback("expected-state-0123456789")]);
+        }).pipe(Effect.provide(layers)),
+      ),
+    );
+
+    it.effect("complete refuses another sign-in's state without echoing the code or state", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const release = yield* Deferred.make<void>();
+          const harness = yield* makeCodexReplayHarness(
+            signInTranscript("codex-mcp-sign-in-wrong-state", true),
+            undefined,
+            undefined,
+            undefined,
+            gatedCompletion(release),
+            undefined,
+            undefined,
+            undefined,
+            () => Effect.die("a rejected address must not open the callback"),
+          );
+          const signIn = signInOf(harness);
+          yield* signIn.start({ providerThread: harness.providerThread, server: SIGN_IN_SERVER });
+          const error = yield* signIn
+            .complete({
+              providerThread: harness.providerThread,
+              server: SIGN_IN_SERVER,
+              callbackUrl: signInCallback("attacker-state-0123456789"),
+            })
+            .pipe(Effect.flip);
+          assert.instanceOf(error, HoustonMcpSignInError);
+          if (!Schema.is(HoustonMcpSignInError)(error)) return;
+          assert.equal(error.kind, "callback-rejected");
+          for (const text of [error.message, JSON.stringify(error)]) {
+            assert.notInclude(text, SIGN_IN_CODE);
+            assert.notInclude(text, "attacker-state");
+            assert.notInclude(text, "expected-state");
+          }
+          yield* Deferred.succeed(release, undefined);
+        }).pipe(Effect.provide(layers)),
+      ),
+    );
+
+    it.effect("complete drops a failed callback's cause instead of echoing the address", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const release = yield* Deferred.make<void>();
+          const harness = yield* makeCodexReplayHarness(
+            signInTranscript("codex-mcp-sign-in-callback-failed", true),
+            undefined,
+            undefined,
+            undefined,
+            gatedCompletion(release),
+            undefined,
+            undefined,
+            undefined,
+            (callback) =>
+              Effect.fail(
+                new HoustonMcpSignInError({
+                  kind: "failed",
+                  server: SIGN_IN_SERVER,
+                  message: `refused ${callback}`,
+                }),
+              ),
+          );
+          const signIn = signInOf(harness);
+          yield* signIn.start({ providerThread: harness.providerThread, server: SIGN_IN_SERVER });
+          const error = yield* signIn
+            .complete({
+              providerThread: harness.providerThread,
+              server: SIGN_IN_SERVER,
+              callbackUrl: signInCallback("expected-state-0123456789"),
+            })
+            .pipe(Effect.flip);
+          assert.instanceOf(error, HoustonMcpSignInError);
+          if (!Schema.is(HoustonMcpSignInError)(error)) return;
+          assert.equal(error.kind, "failed");
+          assert.notInclude(error.message, SIGN_IN_CODE);
+          assert.notInclude(JSON.stringify(error), SIGN_IN_CODE);
+          assert.isUndefined((error as { cause?: unknown }).cause);
+          yield* Deferred.succeed(release, undefined);
+        }).pipe(Effect.provide(layers)),
+      ),
+    );
+
+    const noticeTranscript = (scenario: string, params: Record<string, unknown>) => {
+      const nativeTurnId = "mcp-sign-in-turn";
+      return makeCodexReplayTranscript({
+        scenario,
+        entries: [
+          ...codexReplayPreamble({
+            nativeThreadId: SIGN_IN_NATIVE_THREAD,
+            nativeTurnId,
+            prompt: "work",
+          }),
+          {
+            type: "emit_inbound",
+            label: "mcpServer/startupStatus/updated",
+            frame: {
+              method: "mcpServer/startupStatus/updated",
+              params: {
+                threadId: SIGN_IN_NATIVE_THREAD,
+                name: SIGN_IN_SERVER,
+                status: "failed",
+                ...params,
+              },
+            },
+          },
+          {
+            type: "emit_inbound",
+            label: "turn/completed",
+            frame: {
+              method: "turn/completed",
+              params: {
+                threadId: SIGN_IN_NATIVE_THREAD,
+                turn: makeCodexReplayTurn({ id: nativeTurnId, status: "completed" }),
+              },
+            },
+          },
+        ],
+      });
+    };
+
+    it.effect.each([
+      { label: "reauth", params: { failureReason: "reauthenticationRequired" } },
+      { label: "login text", params: { error: "Sign in first: run codex mcp login notion." } },
+    ] as const)("a startup failure needing sign-in shows a notice ($label)", ({ label, params }) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const harness = yield* makeCodexReplayHarness(
+            noticeTranscript(`codex-mcp-sign-in-notice-${label}`, params),
+          );
+          yield* harness.runtime.startTurn(
+            makeCodexTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now: yield* DateTime.now,
+              attemptId: RunAttemptId.make(`attempt-codex-mcp-sign-in-${label}`),
+              text: "work",
+            }),
+          );
+          yield* harness.firstTerminal;
+          const notices = harness.events.filter(
+            (event) =>
+              event.type === "turn_item.updated" && event.turnItem.type === "system_notice",
+          );
+          assert.lengthOf(notices, 1);
+          const notice = notices[0]!;
+          if (notice.type !== "turn_item.updated" || notice.turnItem.type !== "system_notice") {
+            return;
+          }
+          assert.deepEqual(notice.turnItem.mcpSignIn, { server: SIGN_IN_SERVER });
+          assert.include(notice.turnItem.message, SIGN_IN_SERVER);
+        }).pipe(Effect.provide(layers)),
       ),
     );
   });
