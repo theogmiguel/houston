@@ -15,14 +15,14 @@ import {
 import type { EnvironmentId, ThreadId } from "@houston-app/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
-import { CheckIcon, MessageSquareIcon } from "lucide-react";
+import { MessageSquareIcon } from "lucide-react";
 import { squashAtomCommandFailure } from "@houston-app/client-runtime/state/runtime";
 import { connectPairing as connectPairingAtom } from "../connection/onboarding";
 import { dispatchCommandPalette } from "../commandPaletteStore";
 import { peerLinkEnvironment } from "../state/peerLinks";
 import { openThreadInLayout } from "../threads/openThreadInLayout";
 import { useState } from "react";
-import { Spinner } from "./ui/spinner";
+import { CommandResultConnected, CommandResultConnecting } from "./ui/command-result-meta";
 
 import {
   applyProviderInstanceSettings,
@@ -345,23 +345,13 @@ export function useCommandPaletteThreadItems(input: {
     if (linkedRow.kind === "connecting") {
       return {
         ...item,
-        titleTrailingContent: (
-          <span className="flex items-center gap-1.5 text-muted-foreground text-xs">
-            <Spinner size="sm" />
-            Connecting
-          </span>
-        ),
+        titleTrailingContent: <CommandResultConnecting />,
       };
     }
     if (linkedRow.kind === "connected") {
       return {
         ...item,
-        titleTrailingContent: (
-          <span className="flex items-center gap-1.5 text-ok-ink text-xs">
-            <CheckIcon className="size-3.5" />
-            Connected
-          </span>
-        ),
+        titleTrailingContent: <CommandResultConnected />,
       };
     }
     const { threadContentMatch: _match, ...rest } = item;
