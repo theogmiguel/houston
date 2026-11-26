@@ -69,6 +69,7 @@ import * as Keybindings from "../../keybindings.ts";
 import * as KnownWorkspaces from "../../workspace/KnownWorkspaces.ts";
 import * as ManagedProjectFolders from "../../project/ManagedProjectFolders.ts";
 import * as McpAppRequests from "../../mcpApps/McpAppRequests.ts";
+import * as McpSignIn from "../mcpSignIn.ts";
 import * as ModelManifest from "../../provider/ModelManifest.ts";
 import * as OrchestrationEventStore from "../../persistence/OrchestrationEventStore.ts";
 import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
@@ -186,6 +187,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(HoustonMergeQueueService.HoustonMergeQueueService)({}),
   Layer.mock(KnownWorkspaces.KnownWorkspaces)({}),
   Layer.mock(McpAppRequests.McpAppRequests)({}),
+  Layer.mock(McpSignIn.McpSignIn)({}),
   Layer.mock(OrchestrationEventStore.OrchestrationEventStore)({}),
   Layer.mock(Orchestrator.OrchestratorV2)({}),
   Layer.mock(OtlpEndpointCheck.OtlpEndpointCheck)({}),

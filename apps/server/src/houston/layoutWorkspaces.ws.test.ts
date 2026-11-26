@@ -47,6 +47,7 @@ import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as NpmRelease from "../cloud/npmRelease.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as McpAppRequests from "../mcpApps/McpAppRequests.ts";
+import * as McpSignIn from "./mcpSignIn.ts";
 import * as ModelManifest from "../provider/ModelManifest.ts";
 import * as OtlpEndpointCheck from "../observability/OtlpEndpointCheck.ts";
 import * as PairingGrantStore from "../auth/PairingGrantStore.ts";
@@ -166,6 +167,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(HoustonIssueV1Import.HoustonIssueV1Import)({}),
   Layer.mock(HoustonMergeQueueService.HoustonMergeQueueService)({}),
   Layer.mock(McpAppRequests.McpAppRequests)({}),
+  Layer.mock(McpSignIn.McpSignIn)({}),
   Layer.mock(OtlpEndpointCheck.OtlpEndpointCheck)({}),
   Layer.mock(PairingGrantStore.PairingGrantStore)({}),
   Layer.mock(PeerLinks.PeerLinks)({}),
