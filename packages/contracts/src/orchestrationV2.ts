@@ -711,6 +711,11 @@ export const OrchestrationV2ThreadLaunchWorkspaceStrategy = Schema.Union([
     baseRef: TrimmedNonEmptyString,
     branch: Schema.optional(TrimmedNonEmptyString),
     startFromOrigin: Schema.optional(Schema.Boolean),
+    /**
+     * The project's repositories to check out in a multi-repository task folder, by key. Absent
+     * selects every repository; a single-repository project ignores it and keeps one worktree.
+     */
+    repositoryKeys: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
   }),
 ]);
 export type OrchestrationV2ThreadLaunchWorkspaceStrategy =

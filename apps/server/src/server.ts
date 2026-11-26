@@ -112,6 +112,8 @@ import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as HoustonProjectFileLoader from "./project/HoustonProjectFileLoader.ts";
 import * as HoustonProjectRepositories from "./houston/projects/ProjectRepositoriesService.ts";
+import * as HoustonTaskFolders from "./houston/worktrees/TaskFolders.ts";
+import * as HoustonTaskFolderStore from "./houston/worktrees/TaskFolderStore.ts";
 import * as HoustonProjectRepositoriesStore from "./houston/projects/ProjectRepositoriesStore.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
@@ -468,6 +470,12 @@ const layerGitWorkflow = GitWorkflowService.layer.pipe(
   Layer.provideMerge(layerKnownWorkspaces),
 );
 
+const layerHoustonTaskFolders = HoustonTaskFolders.layer.pipe(
+  Layer.provideMerge(HoustonTaskFolderStore.layer),
+  Layer.provide(layerGitWorkflow),
+  Layer.provide(layerServerSettings),
+);
+
 const layerSourceControlRepositoryService = SourceControlRepositoryService.layer.pipe(
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(layerSourceControlProviderRegistry),
@@ -746,6 +754,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
     Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
     Layer.provideMerge(layerProjectRepositories),
+    Layer.provideMerge(layerHoustonTaskFolders),
     // Above the settings the theme service writes when an agent applies a theme.
     Layer.provideMerge(Layer.merge(SecretResolver.layer, EnvironmentTheme.layer)),
     Layer.provideMerge(layerServerSettings),
