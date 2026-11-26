@@ -53,11 +53,7 @@ const withProject = <A, E>(
   body: (paths: {
     readonly root: string;
     readonly join: (...parts: ReadonlyArray<string>) => string;
-  }) => Effect.Effect<
-    A,
-    E,
-    FileSystem.FileSystem | Path.Path | GitVcsDriver.GitVcsDriver
-  >,
+  }) => Effect.Effect<A, E, FileSystem.FileSystem | Path.Path | GitVcsDriver.GitVcsDriver>,
 ) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;

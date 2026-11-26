@@ -19,11 +19,7 @@ export const HOUSTON_PROJECT_REPOSITORY_LIMITS = {
   ignorePatterns: 200,
 } as const;
 
-export const HoustonProjectRepositoryKind = Schema.Literals([
-  "discovered",
-  "submodule",
-  "tracked",
-]);
+export const HoustonProjectRepositoryKind = Schema.Literals(["discovered", "submodule", "tracked"]);
 export type HoustonProjectRepositoryKind = typeof HoustonProjectRepositoryKind.Type;
 
 export const HoustonProjectRepositoryNoticeLimit = Schema.Literals([

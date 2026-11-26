@@ -80,11 +80,7 @@ export const discoverRepositories = (input: {
   readonly projectRoot: string;
   readonly ignorePatterns?: ReadonlyArray<string>;
   readonly limits?: Limits;
-}): Effect.Effect<
-  RepositoryDiscoveryResult,
-  never,
-  FileSystem.FileSystem | Path.Path
-> =>
+}): Effect.Effect<RepositoryDiscoveryResult, never, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -120,78 +116,75 @@ export const discoverRepositories = (input: {
     const readDirectory = (target: string) =>
       fs.readDirectory(target).pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
 
-    const addRepository = Effect.fn("discoverRepositories.addRepository")(
-      function* (repository: DiscoveredRepository) {
-        if (matchesIgnore(patterns, repository.key)) return false;
-        if (seen.has(repository.root)) return false;
-        if (repositories.length >= limits.repositories) {
-          notices.push({
-            limit: "repositories",
-            limitValue: limits.repositories,
-            actual: repositories.length,
-            requested: repository.key,
-          });
-          return false;
-        }
-        seen.add(repository.root);
-        repositories.push(repository);
-        return true;
-      },
-    );
+    const addRepository = Effect.fn("discoverRepositories.addRepository")(function* (
+      repository: DiscoveredRepository,
+    ) {
+      if (matchesIgnore(patterns, repository.key)) return false;
+      if (seen.has(repository.root)) return false;
+      if (repositories.length >= limits.repositories) {
+        notices.push({
+          limit: "repositories",
+          limitValue: limits.repositories,
+          actual: repositories.length,
+          requested: repository.key,
+        });
+        return false;
+      }
+      seen.add(repository.root);
+      repositories.push(repository);
+      return true;
+    });
 
-    const scanEntries = Effect.fn("discoverRepositories.scanEntries")(
-      function* (directory: string) {
-        const names = (yield* readDirectory(directory)).toSorted();
-        const kept: Array<string> = [];
-        for (const name of names) {
-          scannedEntries += 1;
-          if (scannedEntries > limits.scannedEntries) {
-            if (!scannedEntriesReported) {
-              scannedEntriesReported = true;
-              notices.push({
-                limit: "scannedEntries",
-                limitValue: limits.scannedEntries,
-                actual: scannedEntries,
-                requested: path.join(directory, name),
-              });
-            }
-            break;
-          }
-          if (shouldSkipName(name)) continue;
-          if (!(yield* isDirectory(path.join(directory, name)))) continue;
-          kept.push(name);
-        }
-        return kept;
-      },
-    );
-
-    const addSubmodules = Effect.fn("discoverRepositories.addSubmodules")(
-      function* (repository: DiscoveredRepository) {
-        const modulesPath = path.join(repository.root, ".gitmodules");
-        const contents = yield* fs
-          .readFileString(modulesPath)
-          .pipe(Effect.orElseSucceed(() => ""));
-        if (contents.length === 0) return;
-        let submodules = 0;
-        for (const submodulePath of parseSubmodulePaths(contents)) {
-          const key =
-            repository.key === "." ? submodulePath : `${repository.key}/${submodulePath}`;
-          submodules += 1;
-          if (submodules > limits.submodulesPerRepository) {
+    const scanEntries = Effect.fn("discoverRepositories.scanEntries")(function* (
+      directory: string,
+    ) {
+      const names = (yield* readDirectory(directory)).toSorted();
+      const kept: Array<string> = [];
+      for (const name of names) {
+        scannedEntries += 1;
+        if (scannedEntries > limits.scannedEntries) {
+          if (!scannedEntriesReported) {
+            scannedEntriesReported = true;
             notices.push({
-              limit: "submodulesPerRepository",
-              limitValue: limits.submodulesPerRepository,
-              actual: submodules - 1,
-              requested: key,
+              limit: "scannedEntries",
+              limitValue: limits.scannedEntries,
+              actual: scannedEntries,
+              requested: path.join(directory, name),
             });
-            break;
           }
-          const root = path.join(repository.root, submodulePath);
-          if (!(yield* isDirectory(root))) continue;
-          yield* addRepository({ key, root, kind: "submodule" });
+          break;
         }
-      },
-    );
+        if (shouldSkipName(name)) continue;
+        if (!(yield* isDirectory(path.join(directory, name)))) continue;
+        kept.push(name);
+      }
+      return kept;
+    });
+
+    const addSubmodules = Effect.fn("discoverRepositories.addSubmodules")(function* (
+      repository: DiscoveredRepository,
+    ) {
+      const modulesPath = path.join(repository.root, ".gitmodules");
+      const contents = yield* fs.readFileString(modulesPath).pipe(Effect.orElseSucceed(() => ""));
+      if (contents.length === 0) return;
+      let submodules = 0;
+      for (const submodulePath of parseSubmodulePaths(contents)) {
+        const key = repository.key === "." ? submodulePath : `${repository.key}/${submodulePath}`;
+        submodules += 1;
+        if (submodules > limits.submodulesPerRepository) {
+          notices.push({
+            limit: "submodulesPerRepository",
+            limitValue: limits.submodulesPerRepository,
+            actual: submodules - 1,
+            requested: key,
+          });
+          break;
+        }
+        const root = path.join(repository.root, submodulePath);
+        if (!(yield* isDirectory(root))) continue;
+        yield* addRepository({ key, root, kind: "submodule" });
+      }
+    });
 
     if (yield* isRepository(projectRoot)) {
       yield* addRepository({ key: ".", root: projectRoot, kind: "discovered" });

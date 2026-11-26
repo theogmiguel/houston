@@ -52,7 +52,9 @@ const layerFor = (workspaceRoot: string) =>
       }),
     ),
     Layer.provideMerge(GitVcsDriver.layer),
-    Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "houston-project-repositories-" })),
+    Layer.provide(
+      ServerConfig.layerTest(process.cwd(), { prefix: "houston-project-repositories-" }),
+    ),
     Layer.provideMerge(SqlitePersistence.layerMemory),
     Layer.provideMerge(NodeServices.layer),
     Layer.provideMerge(NodeCrypto.layer),
@@ -205,7 +207,9 @@ it.effect("tracks and untracks a folder outside the project", () =>
 
       const tracked = yield* repositories.track({ projectId, path: outside });
       assert.deepEqual(
-        tracked.repositories.filter((repository) => repository.kind === "tracked").map((r) => r.root),
+        tracked.repositories
+          .filter((repository) => repository.kind === "tracked")
+          .map((r) => r.root),
         [outside],
       );
 
@@ -227,9 +231,7 @@ it.effect("refuses folders that do not exist, are not repositories, or are alrea
       yield* initRepository(outside);
       const plain = yield* fs.makeTempDirectoryScoped({ prefix: "houston-project-plain-" });
 
-      const missing = yield* failureOf(
-        repositories.track({ projectId, path: join("missing") }),
-      );
+      const missing = yield* failureOf(repositories.track({ projectId, path: join("missing") }));
       assert.equal((missing as HoustonProjectRepositoryError | null)?.kind, "invalid");
       assert.include((missing as HoustonProjectRepositoryError).message, "missing");
 
@@ -239,16 +241,17 @@ it.effect("refuses folders that do not exist, are not repositories, or are alrea
 
       const inside = yield* failureOf(repositories.track({ projectId, path: root }));
       assert.equal((inside as HoustonProjectRepositoryError | null)?.kind, "conflict");
-      assert.include((inside as HoustonProjectRepositoryError).message, "inside the project folder");
+      assert.include(
+        (inside as HoustonProjectRepositoryError).message,
+        "inside the project folder",
+      );
 
       yield* repositories.track({ projectId, path: outside });
       const duplicate = yield* failureOf(repositories.track({ projectId, path: outside }));
       assert.equal((duplicate as HoustonProjectRepositoryError | null)?.kind, "conflict");
       assert.include((duplicate as HoustonProjectRepositoryError).message, outside);
 
-      const missingUntrack = yield* failureOf(
-        repositories.untrack({ projectId, path: outside }),
-      );
+      const missingUntrack = yield* failureOf(repositories.untrack({ projectId, path: outside }));
       assert.isNull(missingUntrack);
       const again = yield* failureOf(repositories.untrack({ projectId, path: outside }));
       assert.equal((again as HoustonProjectRepositoryError | null)?.kind, "not_found");

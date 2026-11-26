@@ -280,18 +280,19 @@ export const make = Effect.gen(function* () {
     new Map<string, { readonly limit: number; readonly count: number }>(),
   );
 
-  const withPollingLimit = Effect.fn("VcsStatusBroadcaster.withPollingLimit")(
-    function* (cwd: string, local: VcsStatusLocalResult) {
-      const capped = yield* Ref.get(cappedPollersRef);
-      const entry = capped.get(cwd);
-      return entry === undefined
-        ? local
-        : {
-            ...local,
-            remotePollingLimit: { limit: entry.limit, count: entry.count, repository: cwd },
-          };
-    },
-  );
+  const withPollingLimit = Effect.fn("VcsStatusBroadcaster.withPollingLimit")(function* (
+    cwd: string,
+    local: VcsStatusLocalResult,
+  ) {
+    const capped = yield* Ref.get(cappedPollersRef);
+    const entry = capped.get(cwd);
+    return entry === undefined
+      ? local
+      : {
+          ...local,
+          remotePollingLimit: { limit: entry.limit, count: entry.count, repository: cwd },
+        };
+  });
 
   const getCachedStatus = Effect.fn("VcsStatusBroadcaster.getCachedStatus")(function* (
     cwd: string,

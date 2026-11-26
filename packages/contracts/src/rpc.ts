@@ -2110,14 +2110,11 @@ const HoustonProjectRepositoryRpcError = Schema.Union([
   EnvironmentAuthorizationError,
 ]);
 
-const WsHoustonProjectsRepositoriesListRpc = Rpc.make(
-  WS_METHODS.houstonProjectsRepositoriesList,
-  {
-    payload: HoustonProjectRepositoriesInput,
-    success: HoustonProjectRepositoriesResult,
-    error: HoustonProjectRepositoryRpcError,
-  },
-);
+const WsHoustonProjectsRepositoriesListRpc = Rpc.make(WS_METHODS.houstonProjectsRepositoriesList, {
+  payload: HoustonProjectRepositoriesInput,
+  success: HoustonProjectRepositoriesResult,
+  error: HoustonProjectRepositoryRpcError,
+});
 
 const WsHoustonProjectsRepositoriesTrackRpc = Rpc.make(
   WS_METHODS.houstonProjectsRepositoriesTrack,

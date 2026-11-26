@@ -205,10 +205,10 @@ describe("the Houston track applies every id it has not recorded", () => {
               AND name IN ('houston_project_repositories', 'houston_project_repository_ignores')
             ORDER BY name
           `;
-          assert.deepEqual(tables.map((table) => table.name), [
-            "houston_project_repositories",
-            "houston_project_repository_ignores",
-          ]);
+          assert.deepEqual(
+            tables.map((table) => table.name),
+            ["houston_project_repositories", "houston_project_repository_ignores"],
+          );
         }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: file })));
       }),
     ),
