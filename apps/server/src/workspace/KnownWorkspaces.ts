@@ -11,6 +11,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "../config.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import { ThreadRepositoryResolver } from "../project/threadRepositories.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { isFilesystemRoot, managedWorktreesDirectories } from "../worktreesDirectory.ts";
@@ -87,8 +88,18 @@ export const make = Effect.gen(function* () {
       if (managed.some(within)) return true;
 
       const projects = yield* projectStore.listShells().pipe(Effect.orElseSucceed(() => []));
+      const repositoryResolver = yield* ThreadRepositoryResolver;
       for (const project of projects) {
         if (within(yield* resolveRoot(project.workspaceRoot))) return true;
+        // A project that covers repositories outside its folder (tracked folders) accepts a cwd
+        // inside any of them, exactly as it accepts one inside its own folder.
+        const repositories = yield* repositoryResolver.list({
+          projectId: project.id,
+          workspaceRoot: project.workspaceRoot,
+        });
+        for (const repository of repositories) {
+          if (within(yield* resolveRoot(repository.root))) return true;
+        }
       }
 
       const threads = yield* sql<{ readonly worktreePath: string; readonly projectId: string }>`

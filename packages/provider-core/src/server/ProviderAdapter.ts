@@ -757,6 +757,11 @@ export class ProviderAdapterV2 extends Context.Service<
   {
     readonly instanceId: ProviderInstanceId;
     readonly driver: ProviderDriverKind;
+    /**
+     * Whether a turn can read directories outside its `cwd`. Absent means it cannot, so the
+     * runtime refuses a thread whose project spans repositories it would silently lose.
+     */
+    readonly supportsAdditionalDirectories?: boolean;
     readonly getCapabilities: () => Effect.Effect<
       OrchestrationV2ProviderCapabilities,
       ProviderAdapterV2Error

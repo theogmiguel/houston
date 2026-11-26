@@ -11,6 +11,8 @@ import {
 } from "@houston-app/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 
@@ -19,6 +21,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
+import { ThreadRepositoryResolver } from "../project/threadRepositories.ts";
 
 const projectId = ProjectId.make("project:runtime-policy");
 const providerInstanceId = ProviderInstanceId.make("codex");
@@ -63,17 +66,22 @@ function makeThread(input: {
 }
 
 const grokInstanceId = ProviderInstanceId.make("grok");
+const claudeInstanceId = ProviderInstanceId.make("claude");
 const supportedRuntimeModesByInstance = new Map<ProviderInstanceId, ReadonlyArray<RuntimeMode>>([
   [grokInstanceId, ["approval-required", "auto", "full-access"]],
 ]);
 const providerInstanceFor = (instanceId: ProviderInstanceId) =>
   ({
+    driverKind: instanceId,
+    orchestrationAdapter: {
+      supportsAdditionalDirectories: instanceId === claudeInstanceId,
+    },
     snapshot: {
       getSnapshot: Effect.succeed({
         supportedRuntimeModes: supportedRuntimeModesByInstance.get(instanceId),
       } as ServerProvider),
     },
-  }) as ProviderInstance;
+  }) as unknown as ProviderInstance;
 
 const layerWithPolicy = (policy?: ManagedPolicySummary) =>
   RuntimePolicy.layerFromProjectStore.pipe(
@@ -149,6 +157,58 @@ it.layer(layerTest)("RuntimePolicyV2", (it) => {
       });
       assert.equal(fromWorktree.cwd, "/work/wt/feature");
       assert.deepStrictEqual(fromWorktree.directories, ["/work/wt/feature"]);
+    }),
+  );
+});
+
+const multiRepositoryList = {
+  list: () =>
+    Effect.succeed([
+      { key: ".", root: "/project-root", branch: null, baseBranch: null },
+      { key: "sibling", root: "/project-root/sibling", branch: null, baseBranch: null },
+      { key: "../tracked", root: "/tracked", branch: null, baseBranch: null },
+    ]),
+};
+
+it.layer(
+  layerWithPolicy().pipe(
+    Layer.provideMerge(Layer.succeed(ThreadRepositoryResolver, multiRepositoryList)),
+  ),
+)("RuntimePolicyV2 over several repositories", (it) => {
+  it.effect("refuses a provider that cannot read directories outside its cwd", () =>
+    Effect.gen(function* () {
+      const policy = yield* RuntimePolicy.RuntimePolicyV2;
+      const now = yield* DateTime.now;
+      const exit = yield* Effect.exit(
+        policy.resolve({
+          thread: makeThread({ now, worktreePath: null }),
+          modelSelection,
+        }),
+      );
+      assert.isTrue(exit._tag === "Failure");
+      const error = exit._tag === "Failure" ? Exit.findErrorOption(exit) : Option.none();
+      assert.isTrue(Option.isSome(error));
+      const failure = Option.getOrThrow(error);
+      assert.equal(failure._tag, "RuntimePolicyUnreachableRepositoriesError");
+      assert.include(failure.message, "codex");
+      assert.include(failure.message, "/tracked");
+    }),
+  );
+
+  it.effect("lets a provider that reads additional directories see every repository", () =>
+    Effect.gen(function* () {
+      const policy = yield* RuntimePolicy.RuntimePolicyV2;
+      const now = yield* DateTime.now;
+      const resolved = yield* policy.resolve({
+        thread: makeThread({ now, worktreePath: null }),
+        modelSelection: { instanceId: claudeInstanceId, model: "claude-test" },
+      });
+      assert.equal(resolved.cwd, "/project-root");
+      assert.deepStrictEqual(resolved.directories, [
+        "/project-root",
+        "/project-root/sibling",
+        "/tracked",
+      ]);
     }),
   );
 });

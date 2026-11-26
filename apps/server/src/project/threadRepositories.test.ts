@@ -4,7 +4,11 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 
-import { ThreadProjectNotFoundError, repositoriesOf } from "./threadRepositories.ts";
+import {
+  ThreadProjectNotFoundError,
+  ThreadRepositoryResolver,
+  repositoriesOf,
+} from "./threadRepositories.ts";
 
 const threadId = ThreadId.make("thread-1");
 const projectId = ProjectId.make("project-1");
@@ -30,6 +34,29 @@ it.effect("a thread with a worktree works in the worktree without reading the pr
     );
     assert.deepStrictEqual(repositories, [
       { key: ".", root: "/work/wt/feature", branch: "feature", baseBranch: null },
+    ]);
+  }),
+);
+
+it.effect("a thread in a multi-repository project works in every repository", () =>
+  Effect.gen(function* () {
+    const repositories = yield* repositoriesOf(
+      { id: threadId, projectId, worktreePath: null, branch: "main" },
+      project,
+    ).pipe(
+      Effect.provideService(ThreadRepositoryResolver, {
+        list: () =>
+          Effect.succeed([
+            { key: ".", root: "/work/app", branch: null, baseBranch: null },
+            { key: "sibling", root: "/work/app/sibling", branch: null, baseBranch: null },
+            { key: "../tracked", root: "/work/tracked", branch: null, baseBranch: null },
+          ]),
+      }),
+    );
+    assert.deepStrictEqual(repositories, [
+      { key: ".", root: "/work/app", branch: "main", baseBranch: null },
+      { key: "sibling", root: "/work/app/sibling", branch: null, baseBranch: null },
+      { key: "../tracked", root: "/work/tracked", branch: null, baseBranch: null },
     ]);
   }),
 );

@@ -451,6 +451,7 @@ const layerProjectRepositories = HoustonProjectRepositories.layer.pipe(
   Layer.provideMerge(HoustonProjectRepositoriesStore.layer),
   Layer.provide(HoustonProjectFileLoader.layer),
   Layer.provide(ProjectStore.layer),
+  Layer.provideMerge(HoustonProjectRepositories.layerThreadRepositoryResolver),
 );
 
 const layerGitWorkflow = GitWorkflowService.layer.pipe(

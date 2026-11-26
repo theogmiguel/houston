@@ -25,7 +25,10 @@ import { isWithinRoot } from "../../workspace/KnownWorkspaces.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import * as HoustonProjectFileLoader from "../../project/HoustonProjectFileLoader.ts";
 import { discoverRepositories, type DiscoveredRepository } from "../../project/repositoryDiscovery.ts";
-import type { ThreadRepository } from "../../project/threadRepositories.ts";
+import {
+  ThreadRepositoryResolver,
+  type ThreadRepository,
+} from "../../project/threadRepositories.ts";
 import * as HoustonProjectRepositoriesStore from "./ProjectRepositoriesStore.ts";
 
 const MAX_REPOSITORY_ERROR_LENGTH = 512;
@@ -434,3 +437,16 @@ const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(HoustonProjectRepositories, make);
+
+/** Makes the runtime see every repository a project covers instead of its project folder alone. */
+export const layerThreadRepositoryResolver = Layer.effect(
+  ThreadRepositoryResolver,
+  Effect.gen(function* () {
+    const repositories = yield* HoustonProjectRepositories;
+    return {
+      list: Effect.fn("ThreadRepositoryResolver.list")((project) =>
+        repositories.repositoriesForThread(project),
+      ),
+    };
+  }),
+);
