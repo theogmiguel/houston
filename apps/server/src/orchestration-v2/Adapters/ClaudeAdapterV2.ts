@@ -9362,6 +9362,22 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           }
           yield* trackClaudeGoal({ nativeThreadId: liveQuery.nativeThreadId, context, message });
 
+          if (message.type === "system" && message.subtype === "local_command_output") {
+            // A command the CLI ran itself reports its output here, not as an assistant message.
+            // A compaction's output is carried by its compaction item instead.
+            if (
+              message.content.trim().length > 0 &&
+              !isCompactionCommandMessage({ role: "user", ...context.input.message })
+            ) {
+              yield* emitAssistantTextArtifacts({
+                context,
+                nativeItemId: message.uuid,
+                text: message.content,
+              });
+            }
+            return;
+          }
+
           if (message.type === "stream_event" && !message.parent_tool_use_id) {
             const event = message.event;
             const reasoning = context.reasoning;

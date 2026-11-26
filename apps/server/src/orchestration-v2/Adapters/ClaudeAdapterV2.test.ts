@@ -6920,6 +6920,63 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
+  it.effect("shows the output a locally run command returns in the thread", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeWakeHarness;
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("local-command-output-attempt"),
+          text: "/context",
+          attachments: [],
+        }),
+      );
+      const output = "Context usage: 12% of 200k tokens.";
+      yield* harness.offerAndWait(
+        claudeSdkFrame({
+          type: "system",
+          subtype: "local_command_output",
+          content: output,
+          uuid: "local-command-output",
+          session_id: WAKE_NATIVE_SESSION,
+        }),
+      );
+      yield* Queue.offer(
+        harness.sdkMessages,
+        claudeSdkFrame({
+          // A locally run command produces no model reply; only its output frame has the text.
+          ...makeResultFrame({ uuid: "local-command-result", result: "" }),
+          local_command: "context",
+        }),
+      );
+      const terminal = yield* Queue.take(harness.terminalReceipts);
+      assert.equal(terminal.status, "completed");
+      assert.deepEqual(
+        assistantTurnItems(harness.events).map((item) => [
+          item.type === "assistant_message" ? item.text : "",
+          item.status,
+        ]),
+        [[output, "completed"]],
+      );
+      assert.deepEqual(
+        assistantMessages(harness.events).map((message) => message.text),
+        [output],
+      );
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
   it.effect.each(["completed", "interrupted"] as const)(
     "reconciles streamed Claude text blocks with their snapshots when %s",
     (status) =>
