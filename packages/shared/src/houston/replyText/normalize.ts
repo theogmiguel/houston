@@ -177,6 +177,38 @@ const doubledRole = (token: Delimiter, previous: string, next: string) => {
   return open && close ? "both" : open ? "open" : close ? "close" : null;
 };
 
+/** Pairs the marks a heading drops: Slack's bold and the other notations of it. */
+const boldRole = (token: Delimiter, previous: string, next: string) => {
+  if (token.character === "~") return null;
+  if (token.character !== "*" || token.count !== 1) return doubledRole(token, previous, next);
+  const open = canOpen(previous, next);
+  const close = canClose(previous, next);
+  return open && close ? "both" : open ? "open" : close ? "close" : null;
+};
+
+/** A heading's text as one bold line: its own bold marks are dropped, `***` keeps the italic. */
+const headingLine = (text: string): string => {
+  const tokens = lexInline(text);
+  const pairs = pairDelimiters(text, tokens, boldRole);
+  const inner = tokens
+    .map((token, position) => {
+      const raw = text.slice(token.start, token.end);
+      if (token.kind !== "delimiter" || !pairs.has(position)) return raw;
+      return token.character === "*" && token.count === 3 ? "_" : "";
+    })
+    .join("");
+  return `*${inner}*`;
+};
+
+const isBoldLine = (line: string) => {
+  const [block, ...rest] = parseReply(line).structure[0].elements;
+  return (
+    rest.length === 0 &&
+    block?.type === "rich_text_section" &&
+    block.elements.every((element) => element.style?.bold === true)
+  );
+};
+
 const normalizeInline = (line: string, lineNumber: number, pass: Pass): string => {
   const tokens = lexInline(line);
   const pairs = pairDelimiters(line, tokens, doubledRole);
@@ -375,7 +407,7 @@ const normalizePass = (text: string, pass: Pass): string => {
     if (current !== line) change(pass, "trailing_spaces", lineNumber);
     const heading = HEADING.exec(current);
     if (heading !== null) {
-      current = `*${heading[1] as string}*`;
+      current = headingLine(heading[1] as string);
       change(pass, "heading", lineNumber);
     }
     const otherBullet = OTHER_BULLET.exec(current);
@@ -404,7 +436,16 @@ const normalizePass = (text: string, pass: Pass): string => {
         );
       }
     }
-    out.push(normalizeInline(current, lineNumber, pass));
+    const written = normalizeInline(current, lineNumber, pass);
+    if (heading !== null && !isBoldLine(written)) {
+      refuse(
+        pass,
+        "heading",
+        lineNumber,
+        "A heading whose `*` or `_` marks do not pair cannot become a bold line; remove them or put `\\` before each",
+      );
+    }
+    out.push(written);
   }
   if (fence !== null) {
     change(pass, "fence_closed", lines.length);

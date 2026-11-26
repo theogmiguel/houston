@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 
 import { normalizeReplyText } from "./normalize.ts";
+import { parseReply } from "./parse.ts";
 import { SLACK_SAMPLES } from "./slackSamples.testkit.ts";
 
 const normalized = (raw: string) => {
@@ -78,6 +79,27 @@ describe("normalizeReplyText: rewritten marks, each listed as a change", () => {
     }
   });
 
+  it.each([
+    ["## **Summary**", "*Summary*", "Summary"],
+    ["# *Bold* title", "*Bold title*", "Bold title"],
+    ["# __Title__ here", "*Title here*", "Title here"],
+    ["# ***x*** y", "*_x_ y*", "x y"],
+    ["# a _b_ c", "*a _b_ c*", "a b c"],
+    ["# 2*3 = 6", "*2*3 = 6*", "2*3 = 6"],
+    ["# `**kwargs**`", "*`**kwargs**`*", "**kwargs**"],
+  ] as const)("heading %j becomes %j, bold throughout", (raw, text, shown) => {
+    const result = normalized(raw);
+    expect(result.text).toBe(text);
+    expect(result.changes.map((change) => change.kind)).toEqual(["heading"]);
+    const [block, ...rest] = parseReply(result.text).structure[0].elements;
+    expect(rest).toEqual([]);
+    if (block?.type !== "rich_text_section") throw new Error(`not one section: ${text}`);
+    expect(block.elements.every((element) => element.style?.bold === true)).toBe(true);
+    expect(
+      block.elements.map((element) => (element.type === "text" ? element.text : "")).join(""),
+    ).toBe(shown);
+  });
+
   it("keeps a backslash before a mark character as written", () => {
     for (const raw of ["\\*\\*x\\*\\*", "\\# not a heading", "\\* not a list", "\\<br>"]) {
       expect(normalized(raw).text).toBe(raw);
@@ -117,6 +139,9 @@ describe("normalizeReplyText: refusals name the mark and the line", () => {
     ["ok\nab‮cd", "bidirectional override", 2],
     ["- a\n  ```\n  x\n  ```", "code block in a list", 2],
     ["[https://good.test](https://evil.test/x)", "link label", 1],
+    ["ok\n# *Bold title", "heading", 2],
+    ["# a *b c", "heading", 1],
+    ["# **x", "heading", 1],
     ["", "empty", 1],
     ["  \n\n", "empty", 1],
   ] as const)("%j is refused as %s on line %i", (raw, mark, line) => {
