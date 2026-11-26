@@ -236,6 +236,7 @@ import * as InferenceStops from "./houston/inference/InferenceStops.ts";
 import * as HoustonTerminalShells from "./houston/terminalShells.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
+import { repositoriesOf } from "./project/threadRepositories.ts";
 import { threadWorkspaceRoot } from "./project/threadWorkspaceRoot.ts";
 import * as ManagedProjectFolders from "./project/ManagedProjectFolders.ts";
 import * as ScratchThreadPromotion from "./project/ScratchThreadPromotion.ts";
@@ -3288,9 +3289,13 @@ export const layerWsRpc = (
                 resource: input.resource,
               });
             }
+            const [repository] = yield* repositoriesOf(
+              thread.thread,
+              Effect.succeedSome(project.value),
+            ).pipe(Effect.orDie);
             return yield* issueAssetUrl({
               resource: input.resource,
-              workspaceRoot: thread.thread.worktreePath ?? project.value.workspaceRoot,
+              workspaceRoot: repository.root,
             });
           }),
         [WS_METHODS.assetsPersistChatAttachments]: (input) =>

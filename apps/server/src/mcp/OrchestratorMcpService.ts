@@ -111,6 +111,7 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { isSnoozed } from "../orchestration-v2/ThreadSettlementService.ts";
 import { userFacingDispatchErrorMessage } from "../orchestration-v2/UserFacingErrors.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import { repositoriesOf } from "../project/threadRepositories.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -2513,12 +2514,15 @@ const make = Effect.gen(function* () {
       if (input.isolation === "worktree" && !isRetryOfAcceptedDelegation) {
         const project = otherProject ?? (yield* requireProject(parent.thread.projectId));
         // Another project's repository lacks the parent's commit, so its child starts from its HEAD.
+        const baseCwd =
+          otherProject === undefined
+            ? (yield* repositoriesOf(parent.thread, Effect.succeedSome(project)).pipe(
+                Effect.orDie,
+              ))[0].root
+            : project.workspaceRoot;
         const base = yield* gitDriver
           .resolveCommit({
-            cwd:
-              otherProject === undefined
-                ? (parent.thread.worktreePath ?? project.workspaceRoot)
-                : project.workspaceRoot,
+            cwd: baseCwd,
             revision: "HEAD",
           })
           .pipe(

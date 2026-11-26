@@ -17,6 +17,7 @@ import * as ThreadManagementService from "../orchestration-v2/ThreadManagementSe
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as ManagedProjectFolders from "./ManagedProjectFolders.ts";
 import * as ProjectService from "./ProjectService.ts";
+import { repositoriesOf } from "./threadRepositories.ts";
 
 export class ScratchThreadPromotionError extends Schema.TaggedError<ScratchThreadPromotionError>()(
   "ScratchThreadPromotionError",
@@ -67,7 +68,10 @@ const make = Effect.gen(function* () {
     const project = yield* projects
       .getById(thread.projectId)
       .pipe(Effect.mapError(fail("Could not read the thread's project.")));
-    const folder = thread.worktreePath ?? Option.getOrUndefined(project)?.workspaceRoot;
+    const folder = yield* repositoriesOf(thread, Effect.succeed(project)).pipe(
+      Effect.map(([repository]) => repository.root),
+      Effect.orElseSucceed(() => undefined),
+    );
     const scratchRoot = Option.getOrUndefined(yield* managedFolders.scratchRoot);
     const isScratch = yield* managedFolders.isScratchProject(thread.projectId);
     // A thread already rooted at its folder is a partial earlier promotion; finish it.
