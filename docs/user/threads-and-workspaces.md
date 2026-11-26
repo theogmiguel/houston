@@ -99,8 +99,8 @@ nothing extra.
 
 Several repositories share one branch name, but they are separate histories: there is no commit
 across repositories. The merge queue and tasks stay single-repository and refuse a thread whose
-task folder holds several repositories. Checkpoints still cover one repository at a time, so
-rewind in a task folder is not yet available for the whole folder.
+task folder holds several repositories. A rewind restores every repository in the task folder; if
+one cannot be restored, the others are still restored and the failure names the repository.
 
 ## Creating a thread
 
