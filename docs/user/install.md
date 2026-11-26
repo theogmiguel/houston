@@ -69,6 +69,10 @@ Each row shows whether the provider is installed, turned off, signed out, has re
 credentials or is out of usage, with the action that resolves it. Sign-in belongs to the
 provider; Houston never asks for your provider password.
 
+Antigravity is reached only through its ACP runtime, where Houston identifies itself as
+Houston. The runtime Houston installs offers Claude and GPT models only to editors Google
+allowlists, so Houston lists the Gemini models it offers.
+
 ## First run
 
 With no project added, Houston shows **Add a project to start**:

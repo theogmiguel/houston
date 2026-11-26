@@ -22,8 +22,6 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
 const EXHAUSTED_USAGE_WINDOW_PATTERN = /^(auto|default|grok|composer)/;
-const FAMILY_PATTERN = /^(gemini|claude|gpt)-/;
-const POOL_PATTERN = /^(gemini|claude|gpt|3p)-/;
 
 export function exhaustedUsageWindow(
   provider: ServerProvider | undefined,
@@ -43,18 +41,6 @@ export function exhaustedUsageWindow(
       const api = exhausted.find((window) => window.id === "apiPercentUsed");
       const auto = exhausted.find((window) => window.id === "autoPercentUsed");
       return EXHAUSTED_USAGE_WINDOW_PATTERN.test(model) ? auto && api : api;
-    }
-    case "antigravity": {
-      const family = model.match(FAMILY_PATTERN)?.[1];
-      return exhausted.find((window) => {
-        const pool = window.id.match(POOL_PATTERN)?.[1];
-        return (
-          pool === undefined ||
-          family === undefined ||
-          pool === family ||
-          (pool === "3p" && (family === "claude" || family === "gpt"))
-        );
-      });
     }
     case "opencode":
       return exhausted.find(
@@ -436,19 +422,7 @@ export interface LimitPool {
   readonly windows: readonly LimitPoolWindow[];
 }
 
-const LIMIT_WINDOW_SUFFIX = /-(5h|weekly|quota)$/;
-
 export function displayLimitWindows(pool: LimitPool) {
-  if (pool.driver === "antigravity") {
-    return [...pool.windows].sort(
-      (left, right) =>
-        Number(!left.id.startsWith("gemini-")) - Number(!right.id.startsWith("gemini-")) ||
-        left.id
-          .replace(LIMIT_WINDOW_SUFFIX, "")
-          .localeCompare(right.id.replace(LIMIT_WINDOW_SUFFIX, "")) ||
-        WINDOW_KIND_ORDER[left.kind] - WINDOW_KIND_ORDER[right.kind],
-    );
-  }
   if (pool.driver !== "cursor") return pool.windows;
   const hasAuto = pool.windows.some((window) => window.id === "autoPercentUsed");
   const hasApi = pool.windows.some((window) => window.id === "apiPercentUsed");

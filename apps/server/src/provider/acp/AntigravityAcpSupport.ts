@@ -17,6 +17,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/compat";
 
+import packageJson from "../../../package.json" with { type: "json" };
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import {
   makeAntigravityStderrHandler,
@@ -57,8 +58,8 @@ export const makeAntigravityAcpRuntime = Effect.fn("makeAntigravityAcpRuntime")(
       authenticateEagerly: true,
       resumeMethod: "resume",
       cancelBehavior: "wait-for-prompt",
-      // The agent offers non-Gemini models only to allowlisted clients such as Zed.
-      clientInfo: { name: "zed", version: "0.0.0" },
+      // Google permits external clients over ACP only as themselves.
+      clientInfo: { name: "houston", version: packageJson.version },
       clientCapabilities: {
         // Advertising writes swaps the agent's diff edits for whole-file client_edit_file.
         fs: { readTextFile: input.clientFileReads === true, writeTextFile: false },

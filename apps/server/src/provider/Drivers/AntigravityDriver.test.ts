@@ -42,6 +42,8 @@ const decodeRequest = Schema.decodeEffect(
     }),
   ),
 );
+// Antigravity is reached only over ACP; any HTTP request from the driver is a regression.
+const outboundRequests: Array<string> = [];
 const blockedCredentialKeys = new Set([
   "GEMINI_API_KEY",
   "GOOGLE_API_KEY",
@@ -250,7 +252,10 @@ const layerDeps = ServerConfig.layerTest(process.cwd(), {
   Layer.provideMerge(
     Layer.succeed(
       HttpClient.HttpClient,
-      HttpClient.make(() => Effect.die("Unexpected quota request")),
+      HttpClient.make((request) => {
+        outboundRequests.push(request.url);
+        return Effect.die(`Unexpected request to ${request.url}`);
+      }),
     ),
   ),
   Layer.provideMerge(ServerSettings.layerTest()),
@@ -280,9 +285,24 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
     () =>
       Effect.gen(function* () {
         const h = yield* makeHarness();
+        // The signed-in agent's own OAuth token file; Houston must not use it itself.
+        yield* h.fs.makeDirectory(h.path.join(h.profileDirectory, "antigravity-acp"), {
+          recursive: true,
+        });
+        yield* h.fs.writeFileString(
+          h.path.join(h.profileDirectory, "antigravity-acp", "acp_token.json"),
+          JSON.stringify({
+            client_id: "fixture-client",
+            client_secret: "fixture-secret",
+            refresh_token: "fixture-refresh",
+            project_id: "fixture-project",
+          }),
+        );
+        outboundRequests.length = 0;
         yield* h.refresh();
         const snapshot = yield* h.instance.snapshot.getSnapshot;
         expect(snapshot.status).toBe("ready");
+        expect(snapshot.usageLimits).toBeUndefined();
         expect(snapshot.auth.status).toBe("authenticated");
         expect(snapshot.models.map((model) => model.slug)).toEqual([
           "gemini-test-low",
@@ -330,6 +350,12 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
             .filter((request) => request.method === "auth/login")
             .map((request) => request.params?.methodId),
         ).toEqual(["oauth-personal", "oauth-personal"]);
+        expect(
+          requests
+            .filter((request) => request.method === "initialize")
+            .map((request) => (request.params?.clientInfo as { name?: unknown } | undefined)?.name),
+        ).toEqual(["houston", "houston"]);
+        expect(outboundRequests).toEqual([]);
         expect(
           requests
             .filter((request) => request.method === "session/new")
