@@ -1459,6 +1459,25 @@ const ProjectRepositories = Effect.gen(function* () {
   `;
 });
 
+// The folder a worktree thread of a multi-repository project works in, keyed by folder path
+// because subagents, forks and reused worktrees share one path across threads. repositories_json
+// holds each repository's key, project and worktree path and branch; keyed by upstream ProjectId
+// without a foreign key, so a deleted project's rows go with its deletion hook.
+const TaskFolders = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_task_folders (
+      folder_path TEXT PRIMARY KEY,
+      real_path TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      project_root TEXT NOT NULL,
+      repositories_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    ) WITHOUT ROWID
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_task_folders_real_path ON houston_task_folders(real_path)`;
+});
+
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
@@ -1491,6 +1510,7 @@ const houstonMigrationEntries = [
   [31, "InferenceImageVerdicts", InferenceImageVerdicts],
   [32, "ProviderNativeSessions", createNativeSessionHistory],
   [33, "ProjectRepositories", ProjectRepositories],
+  [34, "TaskFolders", TaskFolders],
 ] as const;
 
 /** Every Houston migration id this build knows, for callers that must not run beside an older schema. */

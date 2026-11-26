@@ -90,6 +90,10 @@
     "./houston/inference": {
       "types": "./src/houston/inference.ts",
       "import": "./src/houston/inference.ts"
+    },
+    "./houston/taskFolders": {
+      "types": "./src/houston/taskFolders.ts",
+      "import": "./src/houston/taskFolders.ts"
     }
   },
   "scripts": {

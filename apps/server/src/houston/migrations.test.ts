@@ -48,6 +48,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [31, "InferenceImageVerdicts"],
   [32, "ProviderNativeSessions"],
   [33, "ProjectRepositories"],
+  [34, "TaskFolders"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -55,6 +56,7 @@ const TASK_TABLES = [
   "houston_task_comments",
   "houston_task_counter",
   "houston_task_domain",
+  "houston_task_folders",
   "houston_task_history",
   "houston_task_import",
   "houston_task_initiatives",
@@ -233,6 +235,40 @@ describe("the Houston track applies every id it has not recorded", () => {
           assert.deepEqual(yield* runHoustonMigrations(), []);
         }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: file })));
       }),
+    ),
+  );
+});
+
+describe("the task folder migration runs on the Houston track", () => {
+  it.effect("stores task folders keyed by folder path, with their repositories", () =>
+    withDatabaseFile((file) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const columns = yield* sql<{ readonly name: string; readonly pk: number }>`
+          SELECT name, pk FROM pragma_table_info('houston_task_folders')
+        `;
+        assert.deepEqual(
+          columns
+            .filter((column) => column.pk > 0)
+            .toSorted((left, right) => left.pk - right.pk)
+            .map((column) => column.name),
+          ["folder_path"],
+        );
+        assert.deepEqual(
+          columns
+            .map((column) => column.name)
+            .filter((name) =>
+              [
+                "real_path",
+                "project_id",
+                "project_root",
+                "repositories_json",
+                "created_at",
+              ].includes(name),
+            ),
+          ["real_path", "project_id", "project_root", "repositories_json", "created_at"],
+        );
+      }).pipe(Effect.provide(openThroughSqlite(file))),
     ),
   );
 });
@@ -1112,7 +1148,7 @@ describe("the grids removal migration", () => {
   );
 
   it.effect(
-    "a file database at the main track's head applies 18 to 33 and ends without the table",
+    "a file database at the main track's head applies 18 to 34 and ends without the table",
     () =>
       withDatabaseFile((file) =>
         Effect.gen(function* () {
@@ -1136,6 +1172,7 @@ describe("the grids removal migration", () => {
               [31, "InferenceImageVerdicts"],
               [32, "ProviderNativeSessions"],
               [33, "ProjectRepositories"],
+              [34, "TaskFolders"],
             ],
           );
           assert.deepEqual(yield* gridObjects, []);
