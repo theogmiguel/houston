@@ -3,6 +3,7 @@ import { type ScopedThreadRef } from "@houston-app/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { resolveStorage } from "./lib/storage";
+import { cycleTerminalId, type TerminalCycleDirection } from "./lib/terminalCycle";
 import {
   DEFAULT_THREAD_TERMINAL_HEIGHT,
   DEFAULT_THREAD_TERMINAL_ID,
@@ -398,6 +399,24 @@ function setThreadActiveTerminal(
   };
 }
 
+/** Moves the active terminal to its neighbour in the active group, wrapping at either end. */
+function cycleThreadActiveTerminal(
+  state: ThreadTerminalUiState,
+  direction: TerminalCycleDirection,
+): ThreadTerminalUiState {
+  const normalized = normalizeThreadTerminalUiState(state);
+  const group =
+    normalized.terminalGroups.find(
+      (candidate) => candidate.id === normalized.activeTerminalGroupId,
+    ) ??
+    normalized.terminalGroups.find((candidate) =>
+      candidate.terminalIds.includes(normalized.activeTerminalId),
+    );
+  if (!group) return normalized;
+  const nextTerminalId = cycleTerminalId(group.terminalIds, normalized.activeTerminalId, direction);
+  return nextTerminalId === null ? normalized : setThreadActiveTerminal(normalized, nextTerminalId);
+}
+
 function closeThreadTerminal(
   state: ThreadTerminalUiState,
   terminalId: string,
@@ -572,6 +591,7 @@ interface TerminalUiStateStoreState {
     options?: { open?: boolean; active?: boolean },
   ) => void;
   setActiveTerminal: (threadRef: ScopedThreadRef, terminalId: string) => void;
+  cycleActiveTerminal: (threadRef: ScopedThreadRef, direction: TerminalCycleDirection) => void;
   closeTerminal: (threadRef: ScopedThreadRef, terminalId: string) => void;
   reconcileTerminalIds: (threadRef: ScopedThreadRef, nextIds: string[]) => void;
   clearTerminalUiState: (threadRef: ScopedThreadRef) => void;
@@ -679,6 +699,8 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
           ),
         setActiveTerminal: (threadRef, terminalId) =>
           updateTerminal(threadRef, (state) => setThreadActiveTerminal(state, terminalId)),
+        cycleActiveTerminal: (threadRef, direction) =>
+          updateTerminal(threadRef, (state) => cycleThreadActiveTerminal(state, direction)),
         closeTerminal: (threadRef, terminalId) =>
           updateTerminal(threadRef, (state) => closeThreadTerminal(state, terminalId), {
             terminalId,

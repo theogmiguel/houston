@@ -9,6 +9,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 import { useClosedViewStore } from "./closedViewStore";
 import { resolveStorage } from "./lib/storage";
+import { cycleTerminalId, type TerminalCycleDirection } from "./lib/terminalCycle";
 import type { ThreadPanelPresentation } from "./rightPanelLayout";
 import type { ChatFileAttachment } from "./types";
 
@@ -210,6 +211,11 @@ interface RightPanelStoreState {
     direction?: "horizontal" | "vertical",
   ) => void;
   activateTerminal: (ref: ScopedThreadRef, surfaceId: string, terminalId: string) => void;
+  cycleTerminal: (
+    ref: ScopedThreadRef,
+    surfaceId: string,
+    direction: TerminalCycleDirection,
+  ) => void;
   closeTerminal: (ref: ScopedThreadRef, surfaceId: string, terminalId: string) => void;
   activateSurface: (ref: ScopedThreadRef, surfaceId: string) => void;
   closeSurface: (ref: ScopedThreadRef, surfaceId: string) => void;
@@ -1055,6 +1061,26 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
                 : surface,
             ),
           })),
+        ),
+      cycleTerminal: (ref, surfaceId, direction) =>
+        set((state) =>
+          userAction(state, scopedThreadKey(ref), (current) => {
+            const surface = current.surfaces.find((entry) => entry.id === surfaceId);
+            if (surface?.kind !== "terminal") return current;
+            const nextTerminalId = cycleTerminalId(
+              surface.terminalIds,
+              surface.activeTerminalId,
+              direction,
+            );
+            if (nextTerminalId === null) return current;
+            return {
+              ...current,
+              activeSurfaceId: surfaceId,
+              surfaces: current.surfaces.map((entry) =>
+                entry === surface ? { ...surface, activeTerminalId: nextTerminalId } : entry,
+              ),
+            };
+          }),
         ),
       closeTerminal: (ref, surfaceId, terminalId) =>
         set((state) =>

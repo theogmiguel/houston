@@ -73,6 +73,8 @@ import {
   isDiffToggleShortcut,
   isTerminalClearShortcut,
   isTerminalNewShortcut,
+  isTerminalNextShortcut,
+  isTerminalPreviousShortcut,
   isTerminalSplitShortcut,
   isTerminalSplitVerticalShortcut,
   isTerminalToggleShortcut,
@@ -969,6 +971,8 @@ function TerminalSessionViewport({
           isTerminalSplitShortcut(event, currentKeybindings, options) ||
           isTerminalSplitVerticalShortcut(event, currentKeybindings, options) ||
           isTerminalNewShortcut(event, currentKeybindings, options) ||
+          isTerminalNextShortcut(event, currentKeybindings, options) ||
+          isTerminalPreviousShortcut(event, currentKeybindings, options) ||
           isDiffToggleShortcut(event, currentKeybindings, options)
         ) {
           return false;
