@@ -199,6 +199,7 @@ import {
 import { PeerLinkPairClientInput, PeerLinkPairClientResult } from "./houston/peerLinkPairing.ts";
 import { PeerLinkSearchEvent, PeerLinkSearchInput } from "./houston/peerLinkSearch.ts";
 import { TerminalShells } from "./houston/terminalShells.ts";
+import { HoustonThreadMemoryInput, HoustonThreadMemorySample } from "./houston/threadMemory.ts";
 import { HoustonPreviewBrowserHost } from "./houston/previewBrowserHost.ts";
 import {
   HoustonMcpSignInCompleteInput,
@@ -702,6 +703,7 @@ export const WS_METHODS = {
   houstonTasksSettingsSet: "houston.tasks.settings.set",
   houstonDatabaseReclaim: "houston.database.reclaim",
   houstonTerminalShells: "houston.terminal.shells",
+  houstonThreadMemorySubscribe: "houston.threadMemory.subscribe",
   houstonPreviewBrowserHost: "houston.preview.browserHost",
   houstonMcpSignInStart: "houston.mcpSignIn.start",
   houstonMcpSignInComplete: "houston.mcpSignIn.complete",
@@ -1122,6 +1124,13 @@ const WsHoustonTerminalShellsRpc = Rpc.make(WS_METHODS.houstonTerminalShells, {
   payload: Schema.Struct({}),
   success: TerminalShells,
   error: EnvironmentAuthorizationError,
+});
+
+export const WsHoustonThreadMemorySubscribeRpc = Rpc.make(WS_METHODS.houstonThreadMemorySubscribe, {
+  payload: HoustonThreadMemoryInput,
+  success: HoustonThreadMemorySample,
+  error: EnvironmentAuthorizationError,
+  stream: true,
 });
 
 const WsHoustonPreviewBrowserHostRpc = Rpc.make(WS_METHODS.houstonPreviewBrowserHost, {
@@ -3288,6 +3297,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonTasksSettingsSetRpc,
   WsHoustonDatabaseReclaimRpc,
   WsHoustonTerminalShellsRpc,
+  WsHoustonThreadMemorySubscribeRpc,
   WsHoustonPreviewBrowserHostRpc,
   WsHoustonMcpSignInStartRpc,
   WsHoustonMcpSignInCompleteRpc,

@@ -13,6 +13,7 @@ export const THREAD_DETAILS_ITEMS = [
   { id: "lineage", label: "Lineage", defaultVisible: true },
   { id: "sideChats", label: "Side chats", defaultVisible: true },
   { id: "usage", label: "Usage", defaultVisible: false },
+  { id: "memory", label: "Memory", defaultVisible: false },
 ] as const;
 
 export type ThreadDetailsItemId = (typeof THREAD_DETAILS_ITEMS)[number]["id"];

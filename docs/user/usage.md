@@ -90,6 +90,26 @@ no limit windows cannot be held this way and are named in the setting's descript
 is one. One provider account used from two channels, or from the Windows Subsystem for Linux
 backend, is tracked separately by each server, so a limit seen in one is not known to the other.
 
+## Memory
+
+Turn on **Memory** in the thread details checklist to see the machine's memory left in the
+thread details card. The row reads like every other usage row: the bar and percentage are the
+share of machine memory still available, and a low value takes the same emphasis as a low usage
+limit. The tooltip shows the used and total memory and, when the server can attribute it, the
+memory held by this thread's agent and its sub-agents.
+
+The server samples memory only while the row is visible, about every five seconds, and stops
+when the thread details card closes. On Linux the machine figures come from `/proc/meminfo` and
+honour the agents' slice limit when it is readable; a cgroup limit is never treated as swap
+pressure. Agent memory is the resident memory of the thread's agent process tree, including its
+sub-agents. A process shared by several threads is counted once, never as a separate figure for
+each.
+
+Windows reports available physical memory from the operating system, so there is no memory
+pressure signal there and the thread's own share is not shown. The WSL backend is a separate
+machine: its figures describe only its own virtual machine, not Windows or another Houston
+server on the same computer. Nothing about processes, paths or prompts leaves the machine.
+
 ## Breakdowns
 
 The breakdown groups usage by model or by time, with tokens, cost and share. The year view

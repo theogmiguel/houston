@@ -19,6 +19,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
@@ -269,6 +270,7 @@ import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as HostResources from "./resourceTelemetry/HostResources.ts";
+import * as ThreadMemory from "./houston/memory/ThreadMemory.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as TriageService from "./triage/TriageService.ts";
@@ -1519,6 +1521,36 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
     );
   },
 );
+
+/** The requested thread and every subagent below it, but never a fork or its children. */
+const threadMemoryThreadIds = Effect.fn("ws.threadMemoryThreadIds")(function* (
+  orchestrator: Orchestrator.OrchestratorV2["Service"],
+  threadId: ThreadId,
+) {
+  const snapshot = yield* orchestrator.getShellSnapshot({ familyOf: threadId });
+  const shells = [...snapshot.threads, ...snapshot.archivedThreads];
+  const byId = new Map(shells.map((shell) => [shell.id, shell]));
+  const isSubagentDescendant = (id: ThreadId) => {
+    const seen = new Set<ThreadId>();
+    let current = byId.get(id);
+    while (current !== undefined && !seen.has(current.id)) {
+      if (current.id === threadId) return true;
+      if (current.lineage.relationshipToParent !== "subagent") return false;
+      seen.add(current.id);
+      const parent = current.lineage.parentThreadId;
+      if (parent === null) return false;
+      current = byId.get(parent);
+    }
+    return false;
+  };
+  const ids: Array<ThreadId> = [threadId];
+  for (const shell of shells) {
+    if (shell.id === threadId) continue;
+    if (shell.lineage.relationshipToParent !== "subagent") continue;
+    if (isSubagentDescendant(shell.id)) ids.push(shell.id);
+  }
+  return ids;
+});
 
 export const layerWsRpc = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
@@ -2851,6 +2883,25 @@ export const layerWsRpc = (
             env: yield* HostProcess.Environment,
           });
         }),
+        [WS_METHODS.houstonThreadMemorySubscribe]: (input) =>
+          Stream.unwrap(
+            Effect.gen(function* () {
+              const threadMemory = yield* Effect.serviceOption(ThreadMemory.ThreadMemory);
+              const read: ThreadMemory.ThreadMemory["Service"]["read"] = Option.isSome(threadMemory)
+                ? threadMemory.value.read
+                : () => Effect.die("Thread memory service is unavailable.");
+              return Stream.fromEffectSchedule(
+                Effect.gen(function* () {
+                  const threadIds = yield* threadMemoryThreadIds(
+                    orchestrationEngine,
+                    input.threadId,
+                  ).pipe(Effect.catchCause(() => Effect.succeed([input.threadId])));
+                  return yield* read(threadIds);
+                }),
+                Schedule.spaced("5 seconds"),
+              );
+            }),
+          ),
         [WS_METHODS.houstonPreviewBrowserHost]: () => HoustonPreviewBrowserHost.hostSetup,
         [WS_METHODS.peerLinksList]: (_input) =>
           peerLinks.list.pipe(Effect.map((links) => ({ links }))),
