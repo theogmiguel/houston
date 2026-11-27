@@ -1155,6 +1155,40 @@ describe("rightPanelStore", () => {
     });
   });
 
+  it("cycles a terminal surface's panes in both directions and wraps", () => {
+    const store = useRightPanelStore.getState();
+    store.openTerminal(refA, "term-1");
+    store.splitTerminal(refA, "terminal:term-1", "term-2");
+    store.splitTerminal(refA, "terminal:term-1", "term-3");
+    const activePane = () => {
+      const surface = selectActiveRightPanelSurface(
+        useRightPanelStore.getState().byThreadKey,
+        refA,
+      );
+      return surface?.kind === "terminal" ? surface.activeTerminalId : null;
+    };
+
+    expect(activePane()).toBe("term-3");
+    store.cycleTerminal(refA, "terminal:term-1", "next");
+    expect(activePane()).toBe("term-1");
+    store.cycleTerminal(refA, "terminal:term-1", "previous");
+    expect(activePane()).toBe("term-3");
+    store.cycleTerminal(refA, "terminal:term-1", "previous");
+    expect(activePane()).toBe("term-2");
+  });
+
+  it("leaves a single-pane terminal surface and other surfaces unchanged when cycling", () => {
+    const store = useRightPanelStore.getState();
+    store.openTerminal(refA, "term-1");
+    const before = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    store.cycleTerminal(refA, "terminal:term-1", "next");
+    store.cycleTerminal(refA, "missing-surface", "next");
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual(
+      before,
+    );
+  });
+
   it("closing the final terminal pane removes its surface and closes the panel", () => {
     useRightPanelStore.getState().openTerminal(refA, "term-1");
     useRightPanelStore.getState().closeTerminal(refA, "terminal:term-1", "term-1");

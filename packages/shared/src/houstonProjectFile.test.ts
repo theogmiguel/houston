@@ -18,6 +18,14 @@ describe("HoustonProjectFileFromJson", () => {
     expect(decoded.iconPath).toBe("assets/logo.svg");
     expect(decoded.scripts?.[0]).toEqual({ name: "Dev", command: "pnpm dev", stopOnSettle: true });
   });
+
+  it("decodes repository ignore patterns", () => {
+    const decoded = decodeJson(`{
+      "ignoreRepositories": ["legacy", "vendor/**"],
+    }`);
+
+    expect(decoded.ignoreRepositories).toEqual(["legacy", "vendor/**"]);
+  });
 });
 
 describe("parseHoustonProjectFile", () => {

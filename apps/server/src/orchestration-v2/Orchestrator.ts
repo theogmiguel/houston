@@ -187,6 +187,7 @@ import {
 } from "./ThreadForkService.ts";
 import { planThreadDeletion } from "./ThreadDeletion.ts";
 import type * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
+import { repositoriesOf } from "../project/threadRepositories.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import {
   acceptedDelivery,
@@ -5018,7 +5019,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       return yield* reject(`cannot move to missing project ${command.projectId}.`);
     }
     // The thread always lands in the project root, so the move must not change its cwd.
-    const cwd = thread.worktreePath ?? Option.getOrUndefined(current)?.workspaceRoot;
+    const cwd = yield* repositoriesOf(thread, Effect.succeed(current)).pipe(
+      Effect.map(([repository]) => repository.root),
+      Effect.orElseSucceed(() => undefined),
+    );
     if (cwd !== target.value.workspaceRoot) {
       return yield* reject(`does not work in ${target.value.workspaceRoot}.`);
     }

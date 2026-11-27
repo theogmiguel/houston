@@ -27,6 +27,7 @@ import * as McpProviderSessions from "@houston-app/provider-core/server/McpProvi
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { ThreadRepositoryResolver } from "../../project/threadRepositories.ts";
 import { TestClock } from "effect/testing";
 
 import * as GitWorkflow from "../../git/GitWorkflowService.ts";
@@ -185,6 +186,8 @@ export interface RunsOptions {
   readonly restarted?: boolean;
   /** What the tracker answers; the tasks testkit's stand-in when absent. */
   readonly issueService?: Layer.Layer<IssueService.IssueService>;
+  /** The project resolves this many repositories, for the single-repository refusal. */
+  readonly repositoryCount?: number;
 }
 
 const databaseOf = (options: RunsOptions) =>
@@ -387,7 +390,22 @@ export const runWith = <A, E, R>(
       setSettings,
       send,
     });
-  }).pipe(Effect.provide(layerRuns(harness, options)));
+  }).pipe(
+    Effect.provide(layerRuns(harness, options)),
+    options.repositoryCount === undefined
+      ? (effect) => effect
+      : Effect.provideService(ThreadRepositoryResolver, {
+          list: ({ workspaceRoot }: { readonly workspaceRoot: string }) =>
+            Effect.succeed(
+              Array.from({ length: options.repositoryCount! }, (_, index) => ({
+                key: index === 0 ? "." : `repo-${index}`,
+                root: index === 0 ? workspaceRoot : `${workspaceRoot}/repo-${index}`,
+                branch: null,
+                baseBranch: null,
+              })),
+            ),
+        }),
+  );
 
 /** The thread a task run runs as; fails when it has none. */
 export const threadOf = (run: { readonly threadId: ThreadId | null }) =>

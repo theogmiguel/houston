@@ -7,8 +7,14 @@ import {
   ServerSettings,
   ServerSettingsPatch,
 } from "@houston-app/contracts";
+import {
+  PEER_LINK_CLIENT_PAIRING_TOOL,
+  PeerLinkClientPairingToolInput,
+  PeerLinkClientPairingToolResult,
+} from "@houston-app/contracts/houston/peerLinkPairing";
 import * as Schema from "effect/Schema";
-import { Tool, Toolkit } from "effect/ai";
+import { McpSchema, Tool, Toolkit } from "effect/ai";
+import * as EnvironmentAuth from "../../../auth/EnvironmentAuth.ts";
 import * as ServerEnvironment from "../../../environment/ServerEnvironment.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
@@ -31,6 +37,7 @@ const shared = {
   failure: OrchestratorMcpFailure,
   failureMode: "return" as const,
   dependencies: [
+    EnvironmentAuth.EnvironmentAuth,
     McpInvocationContext.McpInvocationContext,
     ThreadManagementService.ThreadManagementService,
     ServerEnvironment.ServerEnvironment,
@@ -67,4 +74,22 @@ const EnvironmentPreferencesTool = Tool.make("houston_environment_preferences_up
   }),
   success: Schema.Struct(PreferenceFields),
 }).annotate(Tool.Destructive, true);
-export const EnvironmentToolkit = Toolkit.make(EnvironmentReadTool, EnvironmentPreferencesTool);
+const PeerLinkClientPairingTool = Tool.make(PEER_LINK_CLIENT_PAIRING_TOOL, {
+  ...shared,
+  description:
+    "Mint a one-time pairing credential for a client of the environment that links here, restricted to the scopes that client already holds. Full-access link sessions only.",
+  parameters: Schema.Struct({
+    environmentId: OrchestratorMcpEnvironmentTarget,
+    ...PeerLinkClientPairingToolInput.fields,
+  }),
+  success: PeerLinkClientPairingToolResult,
+})
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, false)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenUnlessLinkedSession);
+
+export const EnvironmentToolkit = Toolkit.make(
+  EnvironmentReadTool,
+  EnvironmentPreferencesTool,
+  PeerLinkClientPairingTool,
+);

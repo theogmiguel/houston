@@ -89,3 +89,38 @@ it.effect("keeps the probe subprocess alive while gateway model discovery can fi
     assert.equal(abortSignal?.aborted, true);
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
+
+it.effect("keeps the aliases the SDK reports for a command", () =>
+  Effect.gen(function* () {
+    const query = vi.spyOn(ClaudeSdk, "query").mockImplementation(
+      () =>
+        ({
+          initializationResult: async () => ({
+            account: { email: "dev@example.com", subscriptionType: "pro", tokenSource: "oauth" },
+            commands: [
+              {
+                name: "usage",
+                description: "Show usage",
+                argumentHint: "",
+                aliases: ["cost", " stats ", ""],
+              },
+              { name: "review", description: "Review changes", argumentHint: "[path]" },
+            ],
+            models: [{ value: "claude-sonnet-4-5", displayName: "Sonnet", description: "" }],
+          }),
+          usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: () =>
+            new Promise((_, reject) => reject(new Error("usage unavailable"))),
+        }) as ReturnType<typeof ClaudeSdk.query>,
+    );
+    yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));
+    const fileSystem = yield* FileSystem.FileSystem;
+    const configDir = yield* fileSystem.makeTempDirectoryScoped();
+    const capabilities = yield* probeClaudeCapabilities(
+      yield* decodeClaudeSettings({ binaryPath: "claude" }),
+      { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: configDir },
+    );
+    const byName = new Map(capabilities.slashCommands.map((command) => [command.name, command]));
+    assert.deepEqual(byName.get("usage")?.aliases, ["cost", "stats"]);
+    assert.equal(byName.get("review")?.aliases, undefined);
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);

@@ -35,6 +35,7 @@ import {
   ThreadId,
   TurnItemId,
 } from "@houston-app/contracts";
+import type { HoustonMcpSignInError } from "@houston-app/contracts/houston/mcpSignIn";
 import { MessageDeliveryReportEvidence } from "@houston-app/contracts/houston/messageDelivery";
 import * as Context from "effect/Context";
 import * as Schema from "effect/Schema";
@@ -51,6 +52,11 @@ export const ProviderAdapterV2RuntimePolicy = Schema.Struct({
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   cwd: Schema.NullOr(Schema.String),
+  /**
+   * The repository roots the thread works in, `cwd` first. Absent when the caller has no
+   * resolved list; adapters then use `cwd` alone.
+   */
+  directories: Schema.optional(Schema.Array(Schema.String)),
   approvalPolicy: Schema.optional(Schema.Unknown),
   sandboxPolicy: Schema.optional(Schema.Unknown),
   /** Houston: the one Houston tool a read-only task planner or reviewer may call. */
@@ -650,6 +656,27 @@ export interface ProviderAdapterV2McpApps {
   }) => Effect.Effect<{ readonly contents: ReadonlyArray<unknown> }, ProviderAdapterV2Error>;
 }
 
+/**
+ * Signs one of the session's MCP servers in. `start` returns the page to approve on, or null when
+ * the server needs no sign-in any more; `complete` takes the address the browser ended on
+ * afterwards, usually a dead localhost page that belongs to the agent's machine, and finishes the
+ * sign-in there. Failures are `HoustonMcpSignInError`s, which never carry the address.
+ */
+export interface ProviderAdapterV2McpSignIn {
+  readonly start: (input: {
+    readonly providerThread: OrchestrationV2ProviderThread;
+    readonly server: string;
+  }) => Effect.Effect<
+    { readonly authorizationUrl: string | null },
+    HoustonMcpSignInError | ProviderAdapterV2Error
+  >;
+  readonly complete: (input: {
+    readonly providerThread: OrchestrationV2ProviderThread;
+    readonly server: string;
+    readonly callbackUrl: string;
+  }) => Effect.Effect<void, HoustonMcpSignInError | ProviderAdapterV2Error>;
+}
+
 export type ProviderAdapterV2SubagentOutcome = {
   readonly status: "completed" | "failed" | "cancelled";
   readonly completedAt: NonNullable<OrchestrationV2Subagent["completedAt"]>;
@@ -739,6 +766,8 @@ export interface ProviderAdapterV2SessionRuntime {
   }) => Effect.Effect<{ readonly feedbackId: string }, ProviderAdapterV2Error>;
   /** Absent means non-interactive apps with plain tool rows. */
   readonly mcpApps?: ProviderAdapterV2McpApps;
+  /** Absent when the agent has no way to sign an MCP server in. */
+  readonly mcpSignIn?: ProviderAdapterV2McpSignIn;
   readonly rollbackThread: (
     input: ProviderAdapterV2RollbackThreadInput,
   ) => Effect.Effect<ProviderAdapterV2ThreadSnapshot, ProviderAdapterV2Error>;
@@ -752,6 +781,11 @@ export class ProviderAdapterV2 extends Context.Service<
   {
     readonly instanceId: ProviderInstanceId;
     readonly driver: ProviderDriverKind;
+    /**
+     * Whether a turn can read directories outside its `cwd`. Absent means it cannot, so the
+     * runtime refuses a thread whose project spans repositories it would silently lose.
+     */
+    readonly supportsAdditionalDirectories?: boolean;
     readonly getCapabilities: () => Effect.Effect<
       OrchestrationV2ProviderCapabilities,
       ProviderAdapterV2Error

@@ -34,7 +34,12 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import { confirmTerminalClose } from "../../lib/terminalCloseConfirm";
 import { findReusableProjectScriptTerminal } from "../../lib/projectScriptTerminal";
 import { type TerminalContextSelection } from "../../lib/terminalContext";
-import { focusActiveDrawerTerminal, focusTerminal } from "../../lib/terminalFocus";
+import type { TerminalCycleDirection } from "../../lib/terminalCycle";
+import {
+  focusActiveDrawerTerminal,
+  focusTerminal,
+  type TerminalFocusOwner,
+} from "../../lib/terminalFocus";
 import { useTerminalUiStateStore } from "../../terminalUiStateStore";
 import {
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
@@ -115,6 +120,7 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
   const storeSplitTerminal = useTerminalUiStateStore((s) => s.splitTerminal);
   const storeSplitTerminalVertical = useTerminalUiStateStore((s) => s.splitTerminalVertical);
   const storeNewTerminal = useTerminalUiStateStore((s) => s.newTerminal);
+  const storeCycleActiveTerminal = useTerminalUiStateStore((s) => s.cycleActiveTerminal);
   const storeCloseTerminal = useTerminalUiStateStore((s) => s.closeTerminal);
   const terminalActions = useThreadTerminalActions(activeThreadRef);
   const layoutPane = useLayoutPane();
@@ -335,11 +341,16 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
     );
   };
   const runShellCommandStable = useStableCallback(runShellCommand);
-  const { addTerminalSurface, addTerminalSurfaceStable, splitPanelTerminal, closePanelTerminal } =
-    useRightPanelTerminalActions({
-      threadRef: activeThreadRef,
-      surface: activeRightPanelSurface,
-    });
+  const {
+    addTerminalSurface,
+    addTerminalSurfaceStable,
+    splitPanelTerminal,
+    cyclePanelTerminal,
+    closePanelTerminal,
+  } = useRightPanelTerminalActions({
+    threadRef: activeThreadRef,
+    surface: activeRightPanelSurface,
+  });
   const requestCloseTerminal = (terminalId: string) => {
     if (!hasTerminalWriteAccess()) return;
     const label = activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId);
@@ -362,6 +373,16 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
   const requestClosePanelTerminalStable = useStableCallback(requestClosePanelTerminal);
   const openTerminalIfClosed = () => {
     if (!terminalUiState.terminalOpen) setTerminalOpen(true);
+  };
+  const cycleTerminals = (
+    direction: TerminalCycleDirection,
+    terminalFocusOwner: TerminalFocusOwner | null,
+  ) => {
+    if (hostTerminalOwnsShortcuts) return false;
+    if (terminalFocusOwner === "right-panel") return void cyclePanelTerminal(direction);
+    if (!activeThreadRef || !terminalUiState.terminalOpen) return;
+    storeCycleActiveTerminal(activeThreadRef, direction);
+    focusActiveDrawerTerminal(activeThreadRef);
   };
   // A focused right-panel terminal takes the split/new/close chords; otherwise they act on the drawer.
   const shortcuts = {
@@ -401,6 +422,8 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
       }
       if (terminalUiState.terminalOpen) requestCloseTerminal(terminalUiState.activeTerminalId);
     },
+    "terminal.next": ({ terminalFocusOwner }) => cycleTerminals("next", terminalFocusOwner),
+    "terminal.previous": ({ terminalFocusOwner }) => cycleTerminals("previous", terminalFocusOwner),
     "terminal.new": ({ terminalFocusOwner }) => {
       if (hostTerminalOwnsShortcuts) return false;
       if (!hasTerminalWriteAccess()) return false;

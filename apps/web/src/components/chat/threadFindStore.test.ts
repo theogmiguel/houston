@@ -96,4 +96,14 @@ describe("findForMessageMatch", () => {
       query: "Vp  run dev",
     });
   });
+
+  it("opens find on a quoted phrase as the snippet writes it, never on one of its words", () => {
+    expect(
+      findForMessageMatch({ snippet: "Then Fix Sidebar lag, fix the sidebar" }, '"fix sidebar"'),
+    ).toEqual({ query: "Fix Sidebar" });
+    // The longest term wins, and a phrase is longer than any word beside it.
+    expect(findForMessageMatch({ snippet: "lag: fix sidebar" }, 'lag "fix sidebar"')).toEqual({
+      query: "fix sidebar",
+    });
+  });
 });

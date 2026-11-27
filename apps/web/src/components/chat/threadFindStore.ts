@@ -170,10 +170,9 @@ const TOGETHER_PATTERN = /[\u2018\u2019]/g;
 const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
 
 /**
- * The find a message search result opens, at the matched message: the whole
+ * The find a message search result opens at the matched message: the whole
  * query when the snippet holds it as typed ("vp run dev"), else its longest
- * word, as the most telling ("sidebar" in "fix sidebar"), written as the
- * snippet writes it ("Café" for "cafe", since find matches accents).
+ * word or quoted phrase, written as the snippet writes it ("Café" for "cafe").
  */
 export function findForMessageMatch(
   match: Pick<OrchestrationThreadSearchMatch, "snippet" | "messageId">,
@@ -188,12 +187,11 @@ export function findForMessageMatch(
       ...start,
     };
   }
+  const { long, phrases } = messageSearchTokens(query);
   const word =
-    messageSearchTokens(query).long.reduce(
-      (longest, token) => (token.length > longest.length ? token : longest),
-      "",
-    ) || query;
-  const ranges = findSearchTokenRanges(match.snippet, word);
+    long.reduce((longest, token) => (token.length > longest.length ? token : longest), "") || query;
+  // Quoted again, so the ranges treat it as the exact phrase it is.
+  const ranges = findSearchTokenRanges(match.snippet, phrases.includes(word) ? `"${word}"` : word);
   // A whole word first, as search ranked it: "Café", not "Cafe" in "Cafeteria".
   const shown =
     ranges.find((range) => !LETTER_OR_DIGIT.test(match.snippet[range.end] ?? "")) ?? ranges[0];

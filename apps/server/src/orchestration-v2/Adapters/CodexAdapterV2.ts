@@ -36,6 +36,7 @@ import {
   isCompactCommandText,
   isOrchestrationV2WorkActive,
   type OrchestrationV2GoalCommand,
+  HoustonMcpSignInError,
   OrchestrationV2ProviderGoal,
   parseGoalCommand,
   ProviderDriverKind,
@@ -43,6 +44,7 @@ import {
   type ServerProviderCompatibilityAdvisory,
   isDelegatedAppThread,
 } from "@houston-app/contracts";
+import { oauthCallbackUrl } from "@houston-app/shared/oauthCallback";
 import { SKILL_MENTION_PATTERN } from "@houston-app/shared/composerInlineTokens";
 import { AgentScope } from "@houston-app/shared/AgentScope";
 import * as HostProcess from "@houston-app/shared/HostProcess";
@@ -141,6 +143,7 @@ import {
   MCP_APP_RESOURCE_SCHEME,
 } from "@houston-app/shared/mcpApp";
 import { snapshotMcpApp } from "../../mcpApps/McpAppSnapshot.ts";
+import { mcpSignInNoticeText, mcpSignInServerName } from "../../houston/mcpSignInNotice.ts";
 import {
   ProviderAdapterDriverCreateError,
   type ProviderAdapterDriverCreateInput,
@@ -890,6 +893,67 @@ const getNativeThreadId = Effect.fn("CodexAdapterV2.getNativeThreadId")(function
   }
   return nativeThreadId;
 });
+
+// Codex finishes the sign-in as soon as its loopback callback is hit; a stalled app-server
+// must not hold the RPC open indefinitely.
+const CODEX_MCP_SIGN_IN_TIMEOUT = "30 seconds";
+// Only the agent machine's own listener is reachable; anything else would send the code elsewhere.
+const CODEX_LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
+
+/** The redirect and state `start` opened, or undefined when the page names neither. */
+function codexOAuthCallbackExpectation(authorizationUrl: string) {
+  try {
+    const url = new URL(authorizationUrl);
+    const redirectUri = url.searchParams.get("redirect_uri");
+    const state = url.searchParams.get("state");
+    return redirectUri === null || state === null || state === ""
+      ? undefined
+      : { redirectUri, state };
+  } catch {
+    return undefined;
+  }
+}
+
+function isLoopbackOAuthCallback(callback: URL): boolean {
+  return CODEX_LOOPBACK_HOSTS.has(callback.hostname.toLowerCase());
+}
+
+function codexMcpSignInFailure(
+  server: string,
+  kind: "callback-rejected" | "failed",
+  message: string,
+): HoustonMcpSignInError {
+  return new HoustonMcpSignInError({ kind, server, message });
+}
+
+const CODEX_MCP_CALLBACK_REJECTED =
+  "That address doesn't belong to the current sign-in. Start the sign-in again and paste the address your browser went to after you approved.";
+
+class CodexMcpLoopbackCallbackError extends Schema.TaggedError<CodexMcpLoopbackCallbackError>()(
+  "CodexMcpLoopbackCallbackError",
+  {},
+) {
+  override get message(): string {
+    return "Codex loopback callback failed.";
+  }
+}
+
+/** A GET to the provider's own loopback listener; its response body is never read. */
+function hitCodexLoopbackCallback(
+  callback: URL,
+): Effect.Effect<void, CodexMcpLoopbackCallbackError> {
+  return Effect.tryPromise({
+    try: async () => {
+      // @effect-diagnostics-next-line globalFetchInEffect:off - the validated address is this machine's loopback listener.
+      await fetch(callback, {
+        redirect: "error",
+        signal: AbortSignal.timeout(10_000),
+      });
+    },
+    // The caller drops the cause: a rejected fetch can quote the address, which carries a code.
+    catch: () => new CodexMcpLoopbackCallbackError({}),
+  });
+}
 
 function providerThreadFromCodexThread(input: {
   readonly appThreadId: ThreadId | null;
@@ -1758,6 +1822,8 @@ export interface CodexAdapterV2Options {
       request: ProviderContinuationRequests.ProviderContinuationRequest,
     ) => Effect.Effect<void>;
   };
+  /** Opens the validated loopback callback address; tests replace it with a recorder. */
+  readonly hitLoopbackCallback?: (callback: URL) => Effect.Effect<void, HoustonMcpSignInError>;
 }
 
 /**
@@ -1955,6 +2021,15 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           new Map<ProviderThreadId, Extract<OrchestrationV2TurnItem, { type: "error" }>>(),
         );
         const activeTurns = yield* Ref.make(new Map<string, ActiveCodexTurnContext>());
+        const mcpSignInKey = (nativeThreadId: string, server: string) =>
+          `${nativeThreadId}\u0000${server}`;
+        // What the pasted address must match, from the page `start` returned.
+        const pendingMcpSignIns = new Map<string, { redirectUri: string; state: string }>();
+        const mcpSignInWaiters = new Map<string, Deferred.Deferred<boolean>>();
+        // A sign-in can finish in a browser before the user pastes; keep that outcome for the RPC.
+        const mcpSignInCompletions = new Map<string, boolean>();
+        const announcedMcpSignIns = new Set<string>();
+        const pendingMcpSignInNotices = new Map<string, Set<string>>();
         const turnTokenUsageByThread = new Map<string, CodexTurnTokenUsageState>();
         const usageStateForThread = (nativeThreadId: string) => {
           let state = turnTokenUsageByThread.get(nativeThreadId);
@@ -2293,6 +2368,15 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             },
           });
           yield* rememberRootProviderThread(input.turnInput.providerThread);
+          const pendingNotices =
+            nativeThreadId == null ? undefined : pendingMcpSignInNotices.get(nativeThreadId);
+          if (nativeThreadId != null && pendingNotices !== undefined) {
+            pendingMcpSignInNotices.delete(nativeThreadId);
+            const now = yield* DateTime.now;
+            for (const server of pendingNotices) {
+              yield* announceMcpSignInNotice(context, server, now);
+            }
+          }
           return context;
         });
 
@@ -2678,6 +2762,51 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           resolveItemPosition(context, nativeItemId).pipe(
             Effect.map((position) => position.ordinal),
           );
+
+        // One notice per server for as long as the session runs; a startup failure can arrive
+        // before the thread's first turn, so it is also held until that turn registers.
+        const announceMcpSignInNotice = Effect.fn("CodexAdapterV2.announceMcpSignInNotice")(
+          function* (context: ActiveCodexTurnContext, server: string, now: DateTime.Utc) {
+            const nativeThreadId = context.providerThread.nativeThreadRef?.nativeId;
+            if (nativeThreadId == null) return;
+            const key = mcpSignInKey(nativeThreadId, server);
+            if (announcedMcpSignIns.has(key)) return;
+            announcedMcpSignIns.add(key);
+            const nativeItemId = `mcp-sign-in:${context.providerTurnId}:${server}`;
+            const { ordinal, startedAt } = yield* resolveItemPosition(context, nativeItemId, now);
+            const text = mcpSignInNoticeText(server, "Codex");
+            yield* emitProviderEvent({
+              type: "turn_item.updated",
+              driver: CODEX_PROVIDER,
+              turnItem: {
+                id: idAllocator.derive.turnItemFromProviderItem({
+                  driver: CODEX_PROVIDER,
+                  nativeItemId,
+                }),
+                threadId: context.projectionThreadId,
+                runId: context.projectionRunId,
+                nodeId: context.providerNodeId,
+                providerThreadId: context.providerThread.id,
+                providerTurnId: context.providerTurnId,
+                nativeItemRef: {
+                  driver: CODEX_PROVIDER,
+                  nativeId: nativeItemId,
+                  strength: "weak",
+                },
+                parentItemId: null,
+                ordinal,
+                type: "system_notice",
+                status: "completed",
+                title: text.title,
+                message: text.message,
+                mcpSignIn: { server },
+                startedAt,
+                completedAt: now,
+                updatedAt: now,
+              },
+            });
+          },
+        );
 
         const nextProviderTurnOrdinal = (
           providerThreadId: OrchestrationV2ProviderThread["id"],
@@ -4546,6 +4675,46 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             ...(input.responseMode === undefined ? {} : { responseMode: input.responseMode }),
           };
           return { node, request, turnItem };
+        });
+
+        yield* client.handleServerNotification("mcpServer/startupStatus/updated", (payload) =>
+          Effect.gen(function* () {
+            if (payload.status !== "failed") return;
+            const failedToSignIn =
+              (payload.failureReason ?? null) === "reauthenticationRequired" ||
+              (payload.error ?? "").includes("codex mcp login");
+            if (!failedToSignIn) return;
+            const server = mcpSignInServerName(payload.name);
+            if (server === undefined || payload.threadId == null) return;
+            if (announcedMcpSignIns.has(mcpSignInKey(payload.threadId, server))) return;
+            const context = yield* findActiveTurnByNativeThreadId(payload.threadId);
+            if (context === undefined) {
+              const pending = pendingMcpSignInNotices.get(payload.threadId) ?? new Set<string>();
+              pending.add(server);
+              pendingMcpSignInNotices.set(payload.threadId, pending);
+              return;
+            }
+            yield* announceMcpSignInNotice(context, server, yield* DateTime.now);
+          }),
+        );
+
+        yield* client.handleServerNotification("mcpServer/oauthLogin/completed", (payload) => {
+          const key =
+            payload.threadId == null ? undefined : mcpSignInKey(payload.threadId, payload.name);
+          const waiter = key === undefined ? undefined : mcpSignInWaiters.get(key);
+          if (key !== undefined && waiter !== undefined) {
+            mcpSignInWaiters.delete(key);
+            return Deferred.succeed(waiter, payload.success);
+          }
+          // Codex echoes the thread id it was asked to sign in; a missing one still settles by name.
+          const suffix = `\u0000${payload.name}`;
+          for (const [candidate, pending] of mcpSignInWaiters) {
+            if (!candidate.endsWith(suffix)) continue;
+            mcpSignInWaiters.delete(candidate);
+            return Deferred.succeed(pending, payload.success);
+          }
+          if (key !== undefined) mcpSignInCompletions.set(key, payload.success);
+          return Effect.void;
         });
 
         yield* client.handleServerNotification("item/agentMessage/delta", (payload) =>
@@ -7213,6 +7382,114 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           ),
         };
 
+        const mcpSignInFailure = (server: string, message: string) =>
+          codexMcpSignInFailure(server, "failed", message);
+        const mcpSignIn: ProviderAdapter.ProviderAdapterV2McpSignIn = {
+          start: Effect.fn("CodexAdapterV2.mcpSignIn.start")(function* ({
+            providerThread,
+            server,
+          }) {
+            const nativeThreadId = yield* getNativeThreadId(providerThread);
+            const key = mcpSignInKey(nativeThreadId, server);
+            const statuses = yield* ensureInitialized.pipe(
+              Effect.andThen(
+                client.request("mcpServerStatus/list", {
+                  threadId: nativeThreadId,
+                  serverName: server,
+                  detail: "toolsAndAuthOnly",
+                }),
+              ),
+              Effect.mapError(() =>
+                mcpSignInFailure(server, `Codex couldn't check whether ${server} needs a sign-in.`),
+              ),
+            );
+            const status = statuses.data.find((entry) => entry.name === server);
+            // A server that is already connected needs no page, even if it reports needs-auth.
+            if (status?.runtimeStatus === "connected") {
+              pendingMcpSignIns.delete(key);
+              mcpSignInCompletions.delete(key);
+              return { authorizationUrl: null };
+            }
+            const login = yield* ensureInitialized.pipe(
+              Effect.andThen(
+                client.request("mcpServer/oauth/login", {
+                  name: server,
+                  threadId: nativeThreadId,
+                }),
+              ),
+              Effect.mapError(() =>
+                mcpSignInFailure(server, `Codex couldn't start the sign-in to ${server}.`),
+              ),
+            );
+            const expected = codexOAuthCallbackExpectation(login.authorizationUrl);
+            if (expected === undefined) pendingMcpSignIns.delete(key);
+            else pendingMcpSignIns.set(key, expected);
+            return { authorizationUrl: login.authorizationUrl };
+          }),
+          complete: Effect.fn("CodexAdapterV2.mcpSignIn.complete")(function* ({
+            providerThread,
+            server,
+            callbackUrl,
+          }) {
+            const nativeThreadId = yield* getNativeThreadId(providerThread);
+            const key = mcpSignInKey(nativeThreadId, server);
+            const expected = pendingMcpSignIns.get(key);
+            if (expected === undefined) {
+              return yield* codexMcpSignInFailure(
+                server,
+                "callback-rejected",
+                CODEX_MCP_CALLBACK_REJECTED,
+              );
+            }
+            const callback = yield* Effect.try({
+              try: () => oauthCallbackUrl(callbackUrl, expected.redirectUri, expected.state),
+              // The parser's message can repeat the pasted address, which carries a code.
+              catch: () =>
+                codexMcpSignInFailure(server, "callback-rejected", CODEX_MCP_CALLBACK_REJECTED),
+            });
+            if (!isLoopbackOAuthCallback(callback)) {
+              return yield* codexMcpSignInFailure(
+                server,
+                "callback-rejected",
+                CODEX_MCP_CALLBACK_REJECTED,
+              );
+            }
+            const recorded = mcpSignInCompletions.get(key);
+            if (recorded !== undefined) {
+              mcpSignInCompletions.delete(key);
+              pendingMcpSignIns.delete(key);
+              if (recorded) return;
+              return yield* mcpSignInFailure(server, `Codex declined the sign-in to ${server}.`);
+            }
+            const waiter = yield* Deferred.make<boolean>();
+            mcpSignInWaiters.set(key, waiter);
+            const hit: (
+              callback: URL,
+            ) => Effect.Effect<void, HoustonMcpSignInError | CodexMcpLoopbackCallbackError> =
+              adapterOptions.hitLoopbackCallback ?? hitCodexLoopbackCallback;
+            const success = yield* Effect.gen(function* () {
+              yield* hit(callback).pipe(
+                Effect.mapError(() =>
+                  mcpSignInFailure(server, `Codex couldn't finish the sign-in to ${server}.`),
+                ),
+              );
+              return yield* Deferred.await(waiter).pipe(
+                Effect.timeout(CODEX_MCP_SIGN_IN_TIMEOUT),
+                Effect.mapError(() =>
+                  mcpSignInFailure(
+                    server,
+                    `Codex didn't confirm the sign-in to ${server} in time.`,
+                  ),
+                ),
+              );
+            }).pipe(Effect.ensuring(Effect.sync(() => void mcpSignInWaiters.delete(key))));
+            pendingMcpSignIns.delete(key);
+            if (!success) {
+              return yield* mcpSignInFailure(server, `Codex declined the sign-in to ${server}.`);
+            }
+          }),
+        };
+
         const runtime: ProviderAdapter.ProviderAdapterV2SessionRuntime = {
           instanceId: adapterOptions.instanceId,
           driver: CODEX_PROVIDER,
@@ -8033,6 +8310,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             ),
           ),
           mcpApps,
+          mcpSignIn,
           readThreadSnapshot: Effect.fn("CodexAdapterV2.readThreadSnapshot")(
             function* (threadInput) {
               const threadId = yield* getNativeThreadId(threadInput.providerThread);

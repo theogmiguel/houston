@@ -110,6 +110,8 @@ export const ServerProviderSlashCommand = Schema.Struct({
   name: TrimmedNonEmptyString,
   description: Schema.optional(TrimmedNonEmptyString),
   input: Schema.optional(ServerProviderSlashCommandInput),
+  /** Alternate names that run the same command (Claude reports `/cost` and `/stats` for `/usage`). */
+  aliases: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
 });
 export type ServerProviderSlashCommand = typeof ServerProviderSlashCommand.Type;
 

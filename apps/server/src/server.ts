@@ -111,6 +111,11 @@ import * as ProviderUsageLimitsIngestion from "./provider/ProviderUsageLimitsIng
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as HoustonProjectFileLoader from "./project/HoustonProjectFileLoader.ts";
+import * as HoustonProjectRepositories from "./houston/projects/ProjectRepositoriesService.ts";
+import * as HoustonTaskFolders from "./houston/worktrees/TaskFolders.ts";
+import * as HoustonTaskFolderStore from "./houston/worktrees/TaskFolderStore.ts";
+import * as HoustonProjectRepositoriesStore from "./houston/projects/ProjectRepositoriesStore.ts";
+import * as HoustonProjectRepositoriesSweep from "./houston/projects/ProjectRepositoriesSweep.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
@@ -445,10 +450,31 @@ const layerKnownWorkspaces = KnownWorkspaces.layer.pipe(
   Layer.provide(GitVcsDriver.layer),
 );
 
+const layerHoustonProjectRepositories = HoustonProjectRepositories.layer.pipe(
+  Layer.provideMerge(HoustonProjectRepositoriesStore.layer),
+  Layer.provide(HoustonProjectFileLoader.layer),
+  Layer.provide(ProjectStore.layer),
+);
+
+// The resolver reads the same service, so provide that instance rather than leaving the
+// resolver's requirement on the merged layer.
+const layerProjectRepositories = Layer.merge(
+  layerHoustonProjectRepositories,
+  HoustonProjectRepositories.layerThreadRepositoryResolver.pipe(
+    Layer.provide(layerHoustonProjectRepositories),
+  ),
+);
+
 const layerGitWorkflow = GitWorkflowService.layer.pipe(
   Layer.provideMerge(layerVcsDriverRegistry),
   Layer.provideMerge(layerGit),
   Layer.provideMerge(layerKnownWorkspaces),
+);
+
+const layerHoustonTaskFolders = HoustonTaskFolders.layer.pipe(
+  Layer.provideMerge(HoustonTaskFolderStore.layer),
+  Layer.provide(layerGitWorkflow),
+  Layer.provide(layerServerSettings),
 );
 
 const layerSourceControlRepositoryService = SourceControlRepositoryService.layer.pipe(
@@ -674,6 +700,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
   Layer.effectDiscard(HoustonTaskProjectSweep.sweep),
   Layer.effectDiscard(HoustonSlackStore.sweep),
+  Layer.effectDiscard(HoustonProjectRepositoriesSweep.sweep),
   Layer.effectDiscard(HoustonNativeSessionHistory.startNativeSessionBackfill),
   HoustonLayoutWorkspaces.layer,
   // Model servers registered in Settings: periodic probes, discovery and the image check.
@@ -728,6 +755,8 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     Layer.provideMerge(layerOrchestrationApplication),
     Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
     Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
+    Layer.provideMerge(layerProjectRepositories),
+    Layer.provideMerge(layerHoustonTaskFolders),
     // Above the settings the theme service writes when an agent applies a theme.
     Layer.provideMerge(Layer.merge(SecretResolver.layer, EnvironmentTheme.layer)),
     Layer.provideMerge(layerServerSettings),
@@ -740,6 +769,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
     // Below the orchestration runtime so its ProjectService sees the store on project deletion.
     Layer.provideMerge(HoustonMergeQueueStore.layer),
+    Layer.provideMerge(HoustonProjectRepositoriesStore.layer),
     Layer.provideMerge(HoustonSlackStore.layer),
     Layer.provideMerge(layerHoustonSecrets),
     Layer.provideMerge(layerHoustonTaskPersistence),

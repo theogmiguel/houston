@@ -73,6 +73,10 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+alt+v", command: "composer.dictation", when: "!terminalFocus" },
   { key: "mod+n", command: "terminal.new", when: "terminalFocus" },
   { key: "mod+w", command: "terminal.close", when: "terminalFocus" },
+  // Ctrl+PageDown/PageUp is not a shell or readline key; Ctrl+Tab is claimed by browsers and
+  // Alt+Left/Right by word movement.
+  { key: "mod+pagedown", command: "terminal.next", when: "terminalFocus" },
+  { key: "mod+pageup", command: "terminal.previous", when: "terminalFocus" },
   { key: "mod+w", command: "rightPanel.close", when: "!terminalFocus" },
   { key: "mod+shift+t", command: "view.reopenClosed" },
   { key: "mod+d", command: "diff.toggle", when: "!terminalFocus" },

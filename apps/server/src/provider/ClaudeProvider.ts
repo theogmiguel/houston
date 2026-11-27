@@ -343,6 +343,21 @@ function parseClaudeEffortCapSources(
   return sources.length > 0 ? sources : undefined;
 }
 
+function parseClaudeCommandAliases(
+  name: string,
+  aliases: ReadonlyArray<string> | undefined,
+): ReadonlyArray<string> {
+  const seen = new Set([name.toLowerCase()]);
+  return (aliases ?? []).flatMap((alias) => {
+    const trimmed = nonEmptyProbeString(alias);
+    if (!trimmed || seen.has(trimmed.toLowerCase())) {
+      return [];
+    }
+    seen.add(trimmed.toLowerCase());
+    return [trimmed];
+  });
+}
+
 function parseClaudeInitializationCommands(
   commands: ReadonlyArray<ClaudeSlashCommand> | undefined,
 ): ReadonlyArray<ServerProviderSlashCommand> {
@@ -355,12 +370,14 @@ function parseClaudeInitializationCommands(
 
       const description = nonEmptyProbeString(command.description);
       const argumentHint = nonEmptyProbeString(command.argumentHint);
+      const aliases = parseClaudeCommandAliases(name, command.aliases);
 
       return [
         {
           name,
           ...(description ? { description } : {}),
           ...(argumentHint ? { input: { hint: argumentHint } } : {}),
+          ...(aliases.length > 0 ? { aliases } : {}),
         } satisfies ServerProviderSlashCommand,
       ];
     }),
@@ -399,6 +416,11 @@ function dedupeSlashCommands(
         ? {}
         : command.input?.hint
           ? { input: { hint: command.input.hint } }
+          : {}),
+      ...(existing.aliases?.length
+        ? {}
+        : command.aliases?.length
+          ? { aliases: command.aliases }
           : {}),
     });
   }

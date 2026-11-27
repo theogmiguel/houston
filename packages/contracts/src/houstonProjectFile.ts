@@ -11,6 +11,7 @@ export const HOUSTON_PROJECT_FILE_SCHEMA_URL = "https://example.com/schema/houst
 
 const HOUSTON_PROJECT_FILE_PATH_MAX_LENGTH = 512;
 const HOUSTON_PROJECT_FILE_MAX_SCRIPTS = 50;
+const HOUSTON_PROJECT_FILE_MAX_IGNORE_REPOSITORIES = 200;
 
 // Encoded-side annotations survive into JSON Schema; decoding still trims and rejects empty strings.
 const trimmedNonEmpty = (annotations: { readonly description: string }, maxLength?: number) => {
@@ -108,6 +109,19 @@ export const HoustonProjectFile = Schema.Struct({
         description: "Project scripts shared with everyone who opens this repository in Houston.",
       })
       .check(Schema.isMaxLength(HOUSTON_PROJECT_FILE_MAX_SCRIPTS)),
+  ),
+  ignoreRepositories: Schema.optionalKey(
+    Schema.Array(
+      trimmedNonEmpty({
+        description:
+          "Glob matched against a repository's path relative to the project folder, and against its folder name.",
+      }),
+    )
+      .annotate({
+        description:
+          "Repositories Houston leaves out when it discovers a project's repositories. A project's stored list adds to these.",
+      })
+      .check(Schema.isMaxLength(HOUSTON_PROJECT_FILE_MAX_IGNORE_REPOSITORIES)),
   ),
 }).annotate({
   title: "Houston project file",

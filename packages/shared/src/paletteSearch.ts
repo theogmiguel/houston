@@ -137,12 +137,16 @@ function prepareSearchField(source: string): SearchField {
 
 // Quotes around a pasted query: "fix sidebar".
 const WRAPPING_QUOTES = /^\s*["'`“”‘’]+|["'`“”‘’]+\s*$/g;
+// A quoted phrase is exact in messages; titles, branches, and pull requests read its words.
+const QUOTE_CHARACTERS = /["\u201c\u201d]/g;
 
 const WHITESPACE_RUN = /\s+/;
 
 /** Folded, whitespace-collapsed query; empty when there is nothing to match. */
 export function foldSearchQuery(query: string): string {
-  return foldInPlace(query.replace(WRAPPING_QUOTES, "").normalize("NFC"))
+  return foldInPlace(
+    query.replace(WRAPPING_QUOTES, "").replace(QUOTE_CHARACTERS, " ").normalize("NFC"),
+  )
     .split(WHITESPACE_RUN)
     .filter((token) => token.length > 0)
     .join(" ");
@@ -455,33 +459,55 @@ function matchSearchFields(
 // A two-letter Latin substring of a message is noise rather than a match.
 const MESSAGE_TOKEN_MIN_LENGTH = 3;
 
-/**
- * Keep accents: the server index folds Latin accents, and stripping marks breaks Korean/Japanese.
- * Every `long` token must match; `short` tokens only narrow hits. No long tokens means no search.
- * Two CJK characters count as long.
- */
-export function messageSearchTokens(query: string): {
-  readonly long: ReadonlyArray<string>;
-  readonly short: ReadonlyArray<string>;
-  /** Every token, in the order typed. */
-  readonly words: ReadonlyArray<string>;
-} {
-  const tokens = query
-    .replace(WRAPPING_QUOTES, "")
-    // The index stores apostrophes straight, as `indexedMessageText` writes them.
+// A quoted phrase: the first double quote opens it and the next one closes it. Curly quotes are
+// accepted since pasted queries carry them. A quote with no partner stays a literal character.
+const QUOTED_PHRASE = /["\u201c\u201d]([^"\u201c\u201d]*)["\u201c\u201d]/g;
+// Single-quote wrappers around a pasted query; double quotes make phrases instead.
+const WRAPPING_SINGLE_QUOTES = /^\s*['`\u2018\u2019]+|['`\u2018\u2019]+\s*$/g;
+
+/** Folded for the index: straight apostrophes, NFC, lowercase, single spaces. */
+function normalizeMessageText(text: string): string {
+  return text
     .replace(CURLY_APOSTROPHES, "'")
     .normalize("NFC")
     .toLowerCase()
     .split(WHITESPACE_RUN)
-    .filter((token) => token.length > 0);
+    .filter((word) => word.length > 0)
+    .join(" ");
+}
+
+/**
+ * Keep accents: the server index folds Latin accents, and stripping marks breaks Korean/Japanese.
+ * A `"quoted segment"` is one phrase that must appear exactly, as written; the rest is split
+ * into words. Every `long` term, word or phrase, must match; `short` ones only narrow hits. No
+ * long terms means no search. Two CJK characters count as long.
+ */
+export function messageSearchTokens(query: string): {
+  readonly long: ReadonlyArray<string>;
+  readonly short: ReadonlyArray<string>;
+  /** Every plain word, in the order typed; phrases are not among them. */
+  readonly words: ReadonlyArray<string>;
+  /** Every quoted phrase, in the order typed. Each also sits in `long` or `short`. */
+  readonly phrases: ReadonlyArray<string>;
+} {
+  const phrases: string[] = [];
+  const rest = query.replace(QUOTED_PHRASE, (_, quoted: string) => {
+    const phrase = normalizeMessageText(quoted);
+    if (phrase.length > 0) phrases.push(phrase);
+    return " ";
+  });
+  const words = normalizeMessageText(rest.replace(WRAPPING_SINGLE_QUOTES, "")).split(" ");
+  const tokens = words.filter((token) => token.length > 0);
   const searchable = (token: string) => {
     const length = Array.from(token).length;
     return length >= MESSAGE_TOKEN_MIN_LENGTH || (length === 2 && hasCjkWord(token));
   };
+  const terms = [...tokens, ...phrases];
   return {
-    long: tokens.filter(searchable),
-    short: tokens.filter((token) => !searchable(token)),
+    long: terms.filter(searchable),
+    short: terms.filter((term) => !searchable(term)),
     words: tokens,
+    phrases,
   };
 }
 
@@ -489,11 +515,13 @@ const REGEX_SPECIAL_CHARACTER = /[.*+?^${}()|[\]\\]/g;
 
 /**
  * Matches the query's words side by side as whole words, as typed, whatever
- * whitespace is between them and ignoring case; null for a single word.
+ * whitespace is between them and ignoring case; null for a single word or a
+ * query with quoted phrases.
  */
 export function messagePhrase(query: string): RegExp | null {
-  const { words } = messageSearchTokens(query);
-  return words.length > 1
+  const { words, phrases } = messageSearchTokens(query);
+  // Words around a quoted phrase are not side by side; the phrase itself is exact.
+  return words.length > 1 && phrases.length === 0
     ? new RegExp(
         `(?<![\\p{L}\\p{N}])${words
           .map((word) => word.replace(REGEX_SPECIAL_CHARACTER, "\\$&"))
@@ -593,23 +621,32 @@ export interface MessageMatch {
  * query is prepared once, since the server grades thousands of hits for it.
  */
 export function messageMatcher(query: string): (text: string) => MessageMatch | null {
-  const { long, short, words } = messageSearchTokens(query);
-  const tokens = [...long, ...short].map((token) => ({
-    token,
-    // Marks go from the folded token: lowercasing "İ" adds one.
-    folded: foldInPlace(token).replace(COMBINING_MARKS, ""),
-    nonAscii: NON_ASCII.test(token),
-    mustStartWord: Array.from(token).length < MESSAGE_WORD_START_LENGTH,
-    // Too short to search, so it only narrows: grading by it would reorder
-    // results on each keystroke while the next word is typed ("nvme s").
-    grades: long.includes(token),
-  }));
+  const { long, short, words, phrases } = messageSearchTokens(query);
+  const phraseSet = new Set(phrases);
+  const tokens = [...long, ...short]
+    .filter((token) => !phraseSet.has(token))
+    .map((token) => ({
+      token,
+      // Marks go from the folded token: lowercasing "İ" adds one.
+      folded: foldInPlace(token).replace(COMBINING_MARKS, ""),
+      nonAscii: NON_ASCII.test(token),
+      mustStartWord: Array.from(token).length < MESSAGE_WORD_START_LENGTH,
+      // Too short to search, so it only narrows: grading by it would reorder
+      // results on each keystroke while the next word is typed ("nvme s").
+      grades: long.includes(token),
+    }));
   const phrase = messagePhrase(query);
   // Accents typed or left out still read as written together: "cafe open"
   // in "Café open".
-  const foldedPhrase = messagePhrase(
-    words.map((word) => foldInPlace(word).replace(COMBINING_MARKS, "")).join(" "),
-  );
+  const foldedPhrase =
+    phrases.length === 0
+      ? messagePhrase(words.map((word) => foldInPlace(word).replace(COMBINING_MARKS, "")).join(" "))
+      : null;
+  const exactPhrases = phrases.map((exact) => ({
+    exact,
+    folded: foldInPlace(exact).replace(COMBINING_MARKS, ""),
+    nonAscii: NON_ASCII.test(exact),
+  }));
   const queryNonAscii = NON_ASCII.test(query);
   return (text) => {
     const lower = text.toLowerCase();
@@ -618,6 +655,17 @@ export function messageMatcher(query: string): (text: string) => MessageMatch | 
     let folded: string | null = null;
     let quality = 1;
     const positions: Array<ReadonlyArray<number>> = [];
+    // Apostrophes are straight in the query, and straightening keeps offsets.
+    const straight = (value: string) => value.replace(CURLY_APOSTROPHES, "'");
+    // A quoted phrase is the exact text, so it needs no word boundaries.
+    for (const { exact, folded: foldedExact, nonAscii } of exactPhrases) {
+      let at = indexesOf(straight(plain), exact);
+      if (at.length === 0 && foldedExact.length > 0 && (nonAscii || NON_ASCII.test(text))) {
+        at = indexesOf(straight((folded ??= foldInPlace(text))), foldedExact);
+      }
+      if (at.length === 0) return null;
+      positions.push(at);
+    }
     for (const { token, folded: foldedToken, nonAscii, mustStartWord, grades } of tokens) {
       let found = findMessageToken(text, plain, token);
       // Accents typed or left out: "cafe" finds "Café", also after "cafeteria".
@@ -629,9 +677,7 @@ export function messageMatcher(query: string): (text: string) => MessageMatch | 
       if (grades) quality = Math.min(quality, found.quality);
       positions.push(found.at);
     }
-    // Written together as typed: the snippet starts there. Apostrophes are
-    // straight in the query, and straightening keeps offsets.
-    const straight = (value: string) => value.replace(CURLY_APOSTROPHES, "'");
+    // Written together as typed: the snippet starts there.
     const together =
       phrase?.exec(straight(plain)) ??
       (queryNonAscii || NON_ASCII.test(text)
@@ -650,6 +696,14 @@ export function messageMatcher(query: string): (text: string) => MessageMatch | 
       offset: near.start,
     };
   };
+}
+
+function indexesOf(text: string, part: string): number[] {
+  const at: number[] = [];
+  for (let index = text.indexOf(part); index !== -1; index = text.indexOf(part, index + 1)) {
+    at.push(index);
+  }
+  return at;
 }
 
 // The shortest stretch of text holding one place of each word, from each
@@ -688,18 +742,32 @@ function shortestSpan(places: ReadonlyArray<ReadonlyArray<number>>): {
  * Snippets vary per query, so they skip the field cache.
  */
 export function findSearchTokenRanges(text: string, query: string): SearchRange[] {
+  const { long, phrases } = messageSearchTokens(query);
+  const phraseSet = new Set(phrases);
   const tokens = new Map(
-    messageSearchTokens(query)
-      .long.map(
+    long
+      .filter((token) => !phraseSet.has(token))
+      .map(
         (token) =>
           [foldSearchQuery(token), Array.from(token).length < MESSAGE_WORD_START_LENGTH] as const,
       )
       // Some tokens fold to nothing ("´´´"), which would match everywhere.
       .filter(([token]) => token.length > 0),
   );
-  if (tokens.size === 0) return [];
+  // A quoted phrase lights up as one adjacent range, wherever it stands in a word.
+  const exact = phrases
+    .filter((phrase) => long.includes(phrase))
+    .map((phrase) => foldInPlace(phrase))
+    .filter((phrase) => phrase.length > 0);
+  if (tokens.size === 0 && exact.length === 0) return [];
   const field = foldSearchField(text);
   const ranges: SearchRange[] = [];
+  const straightText = field.text.replace(CURLY_APOSTROPHES, "'");
+  for (const phrase of exact) {
+    for (const index of indexesOf(straightText, phrase)) {
+      ranges.push({ start: index, end: index + phrase.length });
+    }
+  }
   for (const [token, needsWordStart] of tokens) {
     // A token that opens with punctuation brings its own boundary, as in scoring.
     const ownBoundary = !ALPHANUMERIC.test(token[0]!) && !SYMBOL.test(token[0]!);

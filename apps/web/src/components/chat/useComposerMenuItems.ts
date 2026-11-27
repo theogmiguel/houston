@@ -44,6 +44,7 @@ import {
   matchesPullRequestQuery,
   rankPullRequestMatches,
 } from "../pullRequest/pullRequestList.logic";
+import type { TerminalCommandEntry } from "../../composerTerminalCommands";
 import type { ComposerCommandItem } from "./ComposerCommandMenu";
 import { matchComposerModelItems } from "./composerModelMentions";
 import type { ModelEsque } from "./providerIconUtils";
@@ -52,6 +53,7 @@ import {
   builtInSlashCommandItems,
   searchSlashCommandItems,
   slashCommandItemsForPromptPosition,
+  terminalCommandSlashItems,
 } from "./composerSlashCommandSearch";
 
 const COMPOSER_PULL_REQUEST_LIST_LIMIT = 99;
@@ -78,6 +80,7 @@ export function useComposerMenuItems({
   selectedProvider,
   selectedProviderSkills,
   selectedProviderSlashCommands,
+  terminalCommandEntries,
   showSkillsInSlashMenu,
   workspaceSkillsScanning,
   questionAttachmentTarget,
@@ -100,6 +103,7 @@ export function useComposerMenuItems({
   readonly selectedProvider: ProviderDriverKind;
   readonly selectedProviderSkills: ServerProvider["skills"];
   readonly selectedProviderSlashCommands: ServerProvider["slashCommands"];
+  readonly terminalCommandEntries: ReadonlyArray<TerminalCommandEntry>;
   readonly showSkillsInSlashMenu: boolean;
   readonly workspaceSkillsScanning: boolean;
   readonly questionAttachmentTarget: DraftId | null;
@@ -245,6 +249,12 @@ export function useComposerMenuItems({
         resumeAvailable: activeProjectId !== null,
         freshSessionAvailable,
       }).map((item) => ({ ...item, description: t(item.description) }));
+      const terminalCommandItems = terminalCommandSlashItems(terminalCommandEntries).map(
+        (item) => ({
+          ...item,
+          description: t(item.description),
+        }),
+      );
       const slashMenuSkills = getProviderSkillsForSlashMenu(
         selectedProviderSkills,
         showSkillsInSlashMenu,
@@ -279,7 +289,12 @@ export function useComposerMenuItems({
           (item.command.name !== "clear" || !freshSessionAvailable),
       );
       const slashCommandItems = slashCommandItemsForPromptPosition(
-        [...builtInCommands, ...visibleProviderSlashCommandItems, ...skillItems],
+        [
+          ...builtInCommands,
+          ...terminalCommandItems,
+          ...visibleProviderSlashCommandItems,
+          ...skillItems,
+        ],
         composerTrigger.rangeStart === 0,
       );
       return searchSlashCommandItems(slashCommandItems, query);

@@ -739,7 +739,9 @@ it.effect.each(["on a branch", "detached", "unborn"] as const)(
         }
 
         const general = yield* driver.getReviewDiffPreview({ cwd });
-        assert.equal(discoveries(), 3);
+        // The base lookup reads the common directory because no status read warmed the root;
+        // a detached head has no base to resolve.
+        assert.equal(discoveries(), state === "detached" ? 3 : 4);
         assert.equal(
           general.sources.find((source) => source.kind === "branch-range")!.headRef,
           state === "detached" ? "HEAD" : yield* git(cwd, ["branch", "--show-current"]),
@@ -2880,10 +2882,18 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           }
 
           const preview = yield* driver.getReviewDiffPreview({ cwd, ignoreWhitespace: false });
-          const diff = preview.sources.find((source) => source.kind === "working-tree")?.diff ?? "";
+          const source = preview.sources.find((candidate) => candidate.kind === "working-tree")!;
+          const [file] = source.files ?? [];
+          const single = yield* driver.getReviewDiffPreview({
+            cwd,
+            sourceKind: "working-tree",
+            file: { path: file!.path, previousPath: file!.previousPath, sourceKind: source.kind },
+          });
 
-          for (const text of expected) assert.include(diff, text);
-          assert.notInclude(diff, "new file mode");
+          for (const diff of [source.diff, single.sources[0]!.diff]) {
+            for (const text of expected) assert.include(diff, text);
+            assert.notInclude(diff, "new file mode");
+          }
         }),
     );
 
@@ -3119,6 +3129,13 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         ]);
         assert.include(dirty.diff, "b/staged.txt");
         assert.include(dirty.diff, "b/untracked.txt");
+        const single = yield* driver.getReviewDiffPreview({
+          cwd,
+          sourceKind: "working-tree",
+          file: { path: "untracked.txt", previousPath: null, sourceKind: "working-tree" },
+        });
+        assert.deepStrictEqual(single.sources[0]!.files, dirty.files!.slice(1));
+        assert.include(single.sources[0]!.diff, "b/untracked.txt");
       }),
     );
 
