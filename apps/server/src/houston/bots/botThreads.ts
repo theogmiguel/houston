@@ -59,10 +59,11 @@ export class HoustonBotThreads extends Context.Service<HoustonBotThreads, Housto
 
 /** For assemblies without bots, such as upstream's tests: no thread is a bot's. */
 export const layerNoBotThreads = Layer.succeed(HoustonBotThreads, {
-  policyOf: Effect.fn("HoustonBotThreads.none")(() =>
-    // @effect-diagnostics-next-line effectSucceedWithVoid:off - the shape returns undefined, not void.
-    Effect.succeed(undefined),
-  ),
+  // Untraced: every thread's turn asks, so a span here would cost threads that are no bot's.
+  // oxlint-disable-next-line require-yield -- no thread is a bot's, so there is nothing to read
+  policyOf: Effect.fnUntraced(function* () {
+    return undefined;
+  }),
 });
 
 const decodePolicy = Schema.decodeUnknownOption(PolicyJson);
@@ -132,7 +133,8 @@ export function makeBotThreads(input: {
   ) => Effect.Effect<BotThreadRead | undefined, ProjectionStore.ProjectionStoreV2Error>;
 }): HoustonBotThreadsShape {
   return {
-    policyOf: Effect.fn("HoustonBotThreads.policyOf")(function* (start: BotThreadRead) {
+    // Untraced: every thread's turn asks, so a span here would cost threads that are no bot's.
+    policyOf: Effect.fnUntraced(function* (start: BotThreadRead) {
       const failed = (cause: unknown) =>
         new HoustonBotThreadLookupError({ threadId: start.id, cause });
       let current: BotThreadRead = start;

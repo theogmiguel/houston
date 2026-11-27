@@ -300,7 +300,8 @@ export const layerBotThreads: Layer.Layer<
     const adapters = yield* ProviderAdapterRegistry.ProviderAdapterRegistryV2;
     const botThreads = yield* HoustonBotThreads;
     return RuntimePolicyV2.of({
-      resolve: Effect.fn("RuntimePolicyV2.resolveBotThread")(function* (input) {
+      // Untraced: every thread's turn passes here, so a span would cost threads that are no bot's.
+      resolve: Effect.fnUntraced(function* (input) {
         const refuse = (cause: unknown, detail?: string) =>
           new RuntimePolicyResolveError({
             projectId: input.thread.projectId,
