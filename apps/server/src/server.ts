@@ -139,6 +139,7 @@ import * as HoustonTaskIssueWriteback from "./houston/tasks/TaskIssueWriteback.t
 import * as SlackConnection from "./houston/slack/Connection.ts";
 import * as HoustonBotThreads from "./houston/bots/botThreads.ts";
 import { layerBots } from "./houston/bots/layer.ts";
+import * as HoustonBotRuns from "./houston/bots/Runs.ts";
 import * as HoustonLayoutWorkspaces from "./houston/layoutWorkspaces.ts";
 import * as HoustonThreadMembership from "./houston/threadMembership.ts";
 import { layerSlack } from "./houston/slack/layer.ts";
@@ -204,6 +205,7 @@ import * as CursorKeychain from "@houston-app/provider-cursor/server/CursorKeych
 import * as CursorUsageAccounts from "@houston-app/provider-cursor/server/CursorUsageAccounts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as CodexUsageHistory from "./usage/CodexUsageHistory.ts";
+import * as EffectOutbox from "./orchestration-v2/EffectOutbox.ts";
 import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
@@ -678,7 +680,11 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(HoustonSlackStore.sweep),
   Layer.effectDiscard(HoustonNativeSessionHistory.startNativeSessionBackfill),
   HoustonLayoutWorkspaces.layer,
-  layerBots,
+  // Bot runs follow thread events through the same event sink task runs read.
+  HoustonBotRuns.layer.pipe(
+    Layer.provideMerge(layerBots),
+    Layer.provide(Layer.merge(RuntimeLayer.layerEventSink, EffectOutbox.layer)),
+  ),
   // Model servers registered in Settings: periodic probes, discovery and the image check.
   layerInferenceServices,
   // The gateway's own accounting and stops; the queue layers sit with the route below.

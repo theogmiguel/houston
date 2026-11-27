@@ -49,6 +49,7 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [32, "ProviderNativeSessions"],
   [35, "Bots"],
   [36, "BotRuns"],
+  [37, "BotTurns"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -1075,7 +1076,7 @@ describe("the grids removal migration", () => {
   );
 
   it.effect(
-    "a file database at the main track's head applies 18 to 36 and ends without the table",
+    "a file database at the main track's head applies 18 to 37 and ends without the table",
     () =>
       withDatabaseFile((file) =>
         Effect.gen(function* () {
@@ -1100,11 +1101,38 @@ describe("the grids removal migration", () => {
               [32, "ProviderNativeSessions"],
               [35, "Bots"],
               [36, "BotRuns"],
+              [37, "BotTurns"],
             ],
           );
           assert.deepEqual(yield* gridObjects, []);
         }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: file }))),
       ),
+  );
+});
+
+describe("the bot turns migration", () => {
+  it.effect("keeps one row per thread run, one cursor, and a launch on the bot run", () =>
+    Effect.gen(function* () {
+      yield* runHoustonMigrations();
+      const sql = yield* SqlClient.SqlClient;
+      const turn = sql`
+        INSERT INTO houston_bot_turns (
+          run_id, bot_run_id, thread_id, started_by, local_date, started_at
+        ) VALUES ('run-1', 'bot-run', 'thread', 'owner', '2026-11-26', '2026-11-26T09:00:00.000Z')
+      `;
+      yield* turn;
+      assert.isTrue((yield* Effect.exit(turn))._tag === "Failure");
+      yield* sql`INSERT INTO houston_bot_cursor (id, sequence) VALUES (1, 4)`;
+      const second = yield* Effect.exit(
+        sql`INSERT INTO houston_bot_cursor (id, sequence) VALUES (2, 4)`,
+      );
+      assert.isTrue(second._tag === "Failure");
+      const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(houston_bot_runs)`;
+      assert.include(
+        columns.map((column) => column.name),
+        "launch_json",
+      );
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
   );
 });
 

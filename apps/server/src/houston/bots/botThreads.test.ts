@@ -287,3 +287,59 @@ describe("the Houston credential of a bot thread", () => {
     ),
   );
 });
+
+describe("the system append of a bot thread", () => {
+  const storeBot = (deleted: boolean) =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`
+        INSERT INTO houston_bots (
+          id, slug, name, mark, job, default_project_id, other_project_ids_json,
+          model_selection_json, asked_mode, row_revision, created_at, updated_at, deleted_at
+        ) VALUES (
+          'bot', 'digest-writer', 'Digest writer', '📰', 'Writes the morning digest', 'project',
+          '[]', '{}', 'auto', 1, '2026-11-25T09:00:00.000Z', '2026-11-25T09:00:00.000Z',
+          ${deleted ? "2026-11-25T10:00:00.000Z" : null}
+        )
+      `;
+      for (const [n, text] of [
+        [1, "List the work."],
+        [2, "List the work, one line per item."],
+      ] as const) {
+        yield* sql`
+          INSERT INTO houston_bot_revisions (
+            bot_id, n, text, sha256, accepted_at, accepted_by_session, accepted_by_label
+          ) VALUES ('bot', ${n}, ${text}, 'sha', '2026-11-25T09:00:00.000Z', 's', 'Laptop')
+        `;
+      }
+    });
+
+  it.effect("carries the name, the job and the pinned revision, never the current one", () =>
+    withThreads([thread("bot-thread"), child("child", "bot-thread")], (botThreads) =>
+      Effect.gen(function* () {
+        yield* storeBot(false);
+        yield* run("bot-thread", "asked");
+        const found = yield* botThreads.policyOf(thread("bot-thread"));
+        assert.strictEqual(
+          found?.provider.instructionsAppend,
+          "You are Digest writer, a Houston bot: Writes the morning digest.\n## Instructions (revision 1)\nList the work.",
+        );
+        // A delegated child does the bot's work, not its job: it gets no append.
+        const below = yield* botThreads.policyOf(child("child", "bot-thread"));
+        assert.isUndefined(below?.provider.instructionsAppend);
+      }),
+    ),
+  );
+
+  it.effect("is gone once the bot is deleted, while the stored policy stays", () =>
+    withThreads([thread("bot-thread")], (botThreads) =>
+      Effect.gen(function* () {
+        yield* storeBot(true);
+        yield* run("bot-thread", "unattended");
+        const found = yield* botThreads.policyOf(thread("bot-thread"));
+        assert.isUndefined(found?.provider.instructionsAppend);
+        assert.strictEqual(found?.provider.kind, "unattended");
+      }),
+    ),
+  );
+});

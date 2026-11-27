@@ -1541,6 +1541,32 @@ const BotRuns = Effect.gen(function* () {
   yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_bot_runs_bot ON houston_bot_runs(bot_id, started_at)`;
 });
 
+// Bots, followed: each provider turn of a bot's threads, who started it and on which local day; the
+// last thread event the follower applied; a launch kept until it is accepted, so a restart repeats it.
+const BotTurns = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_bot_turns (
+      run_id TEXT PRIMARY KEY,
+      bot_run_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      started_by TEXT NOT NULL,
+      local_date TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      stopped_by_client INTEGER NOT NULL DEFAULT 0
+    )
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_bot_turns_bot_run ON houston_bot_turns(bot_run_id)`;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_bot_cursor (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      sequence INTEGER NOT NULL
+    )
+  `;
+  yield* sql`ALTER TABLE houston_bot_runs ADD COLUMN launch_json TEXT`;
+});
+
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
@@ -1574,6 +1600,7 @@ const houstonMigrationEntries = [
   [32, "ProviderNativeSessions", createNativeSessionHistory],
   [35, "Bots", Bots],
   [36, "BotRuns", BotRuns],
+  [37, "BotTurns", BotTurns],
 ] as const;
 
 /** Every Houston migration id this build knows, for callers that must not run beside an older schema. */

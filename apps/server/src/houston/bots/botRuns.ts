@@ -50,9 +50,17 @@ export interface BotRunPolicyRow {
   readonly bot_name: string;
   readonly kind: string;
   readonly policy_json: string;
+  readonly revision_n: number;
+  /** The pinned revision's text with the bot's job; null once the bot is deleted. */
+  readonly instructions: string | null;
+  readonly job: string | null;
 }
 
 export const botRunPolicyOfThread = (sql: SqlClient.SqlClient, threadId: string) =>
   sql<BotRunPolicyRow>`
-    SELECT id, bot_name, kind, policy_json FROM houston_bot_runs WHERE thread_id = ${threadId} LIMIT 1
+    SELECT r.id, r.bot_name, r.kind, r.policy_json, r.revision_n, v.text AS instructions, b.job
+    FROM houston_bot_runs r
+    LEFT JOIN houston_bots b ON b.id = r.bot_id AND b.deleted_at IS NULL
+    LEFT JOIN houston_bot_revisions v ON v.bot_id = b.id AND v.n = r.revision_n
+    WHERE r.thread_id = ${threadId} LIMIT 1
   `.pipe(Effect.map((rows) => rows[0]));

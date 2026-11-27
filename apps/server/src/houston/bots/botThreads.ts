@@ -15,6 +15,7 @@ import type { McpBotCaller } from "../../mcp/McpInvocationContext.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import { botRunPolicyOfThread, PolicyJson, type BotRunPolicyRow } from "./botRuns.ts";
 import { policyFor } from "./kinds.ts";
+import { botSystemAppend } from "./openingBlock.ts";
 
 /** Delegation links followed up to the bot thread; deeper work fails instead of guessing. */
 export const BOT_THREAD_WALK_LIMIT = 8;
@@ -80,11 +81,23 @@ const storedPolicy = (row: BotRunPolicyRow | undefined): HoustonBotRunPolicy => 
   return Option.isSome(decoded) && decoded.value.kind === row.kind ? decoded.value : UNREADABLE;
 };
 
+/** The bot thread itself, while its bot exists, is told who it is; a child does only the work. */
+const appendOf = (row: BotRunPolicyRow | undefined, child: boolean) =>
+  child || row === undefined || row.instructions === null || row.job === null
+    ? undefined
+    : botSystemAppend({
+        name: row.bot_name,
+        job: row.job,
+        revisionN: row.revision_n,
+        instructions: row.instructions,
+      });
+
 const applied = (
   policy: HoustonBotRunPolicy,
   botRunId: string,
   botName: string,
   child: boolean,
+  instructionsAppend: string | undefined,
 ): BotThreadPolicy => {
   const { houstonTools } = policy.rules;
   const provider: HoustonBotProviderPolicy = {
@@ -101,6 +114,7 @@ const applied = (
         ? { ...policy.rules, houstonTools: houstonTools.filter((name) => name !== RESULT_TOOL) }
         : policy.rules,
     neverAsk: policy.neverAsk,
+    ...(instructionsAppend === undefined ? {} : { instructionsAppend }),
   };
   return policy.runtimeMode === undefined
     ? { botRunId, provider }
@@ -148,6 +162,7 @@ export function makeBotThreads(input: {
             row?.id ?? current.houstonBot?.botRunId ?? "",
             row?.bot_name ?? UNNAMED_BOT,
             steps > 0,
+            appendOf(row, steps > 0),
           );
         }
         // Only delegation carries a bot's rules down; a fork or a side chat is the owner's own.

@@ -24,6 +24,10 @@ export const HOUSTON_BOT_LIMITS = {
   /** How long a change stays on the bot's record of recent changes, and how many it lists. */
   recentChangeDays: 7,
   recentChanges: 20,
+  /** What the owner types when asking a bot. */
+  ownerTextChars: 16_000,
+  /** Bot runs one read returns, newest first. */
+  runsPage: 20,
 } as const;
 
 const KNOWN_CHANGE_FIELDS: ReadonlySet<string> = new Set([
@@ -255,3 +259,78 @@ export const HoustonBotThreadMark = Schema.Struct({
   kind: HoustonBotRunKindOrOther,
 });
 export type HoustonBotThreadMark = typeof HoustonBotThreadMark.Type;
+
+const RUN_STATES = [
+  "running",
+  "waiting",
+  "finished",
+  "quiet",
+  "failed",
+  "stopped",
+  "skipped",
+  "missed",
+] as const;
+export const HoustonBotRunState = Schema.Literals(RUN_STATES);
+export type HoustonBotRunState = typeof HoustonBotRunState.Type;
+
+const KNOWN_RUN_STATES: ReadonlySet<string> = new Set(RUN_STATES);
+
+/** For display: a state this build does not know, from a newer server, decodes to `other`. */
+export const HoustonBotRunStateOrOther = Schema.String.pipe(
+  Schema.decodeTo(
+    Schema.Literals([...RUN_STATES, "other"]),
+    SchemaTransformation.transform({
+      decode: (state) =>
+        KNOWN_RUN_STATES.has(state) ? (state as HoustonBotRunState) : ("other" as const),
+      encode: (state): string => state,
+    }),
+  ),
+);
+
+/** One bot run, as its state and reason were last derived from its thread. */
+export const HoustonBotRunSummary = Schema.Struct({
+  id: Schema.String,
+  botId: Schema.String,
+  botName: Schema.String,
+  kind: HoustonBotRunKindOrOther,
+  projectId: ProjectId,
+  threadId: Schema.NullOr(Schema.String),
+  revisionN: PositiveInt,
+  state: HoustonBotRunStateOrOther,
+  reason: Schema.NullOr(Schema.String),
+  startedAt: IsoDateTime,
+  endedAt: Schema.NullOr(IsoDateTime),
+});
+export type HoustonBotRunSummary = typeof HoustonBotRunSummary.Type;
+
+export const HoustonBotAskInput = Schema.Struct({
+  /** Made by the client, one per click: the same id gives the same bot run. */
+  requestId: Schema.String,
+  botId: Schema.String,
+  /** The bot's default project when absent. */
+  projectId: Schema.optional(ProjectId),
+  ownerText: Schema.String,
+});
+export type HoustonBotAskInput = typeof HoustonBotAskInput.Type;
+
+export const HoustonBotAskResult = Schema.Struct({
+  botRunId: Schema.String,
+  threadId: Schema.String,
+});
+export type HoustonBotAskResult = typeof HoustonBotAskResult.Type;
+
+export const HoustonBotStopInput = Schema.Struct({ botRunId: Schema.String });
+export type HoustonBotStopInput = typeof HoustonBotStopInput.Type;
+
+export const HoustonBotRunsListInput = Schema.Struct({
+  botId: Schema.String,
+  /** The `startedAt` of the last bot run already read; absent reads the newest. */
+  before: Schema.optional(IsoDateTime),
+});
+export type HoustonBotRunsListInput = typeof HoustonBotRunsListInput.Type;
+
+export const HoustonBotRunsListResult = Schema.Struct({
+  runs: Schema.Array(HoustonBotRunSummary),
+  hasMore: Schema.Boolean,
+});
+export type HoustonBotRunsListResult = typeof HoustonBotRunsListResult.Type;

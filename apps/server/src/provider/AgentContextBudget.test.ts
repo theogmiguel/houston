@@ -54,6 +54,8 @@ import { DocumentText } from "./DocumentText.ts";
 import { EnvironmentThemeService } from "../environmentTheme.ts";
 import { ProviderRegistry } from "./ProviderRegistry.ts";
 import budget from "./agentContextBudget.json" with { type: "json" };
+import { HOUSTON_BOT_LIMITS } from "@houston-app/contracts/houston/bots";
+import { botSystemAppend } from "../houston/bots/openingBlock.ts";
 import { layerNoWorkspaces } from "../houston/workspaceToolkit/workspaceToolkit.testkit.ts";
 
 // Registration only stores tool definitions, so the handlers' services are never called.
@@ -118,6 +120,15 @@ const claudeSystemAppend = () => {
   return typeof systemPrompt === "object" && "append" in systemPrompt ? systemPrompt.append : "";
 };
 
+// A bot thread's append at the largest name, job and instructions a bot may have.
+const botSystemAppendAtLimits = () =>
+  botSystemAppend({
+    name: "n".repeat(HOUSTON_BOT_LIMITS.nameChars),
+    job: "j".repeat(HOUSTON_BOT_LIMITS.jobChars),
+    revisionN: 9_999,
+    instructions: "i".repeat(HOUSTON_BOT_LIMITS.instructionsChars),
+  });
+
 const codexAdditionalContext = () =>
   Object.values(
     buildCodexAdditionalContext(
@@ -151,6 +162,7 @@ it.effect("agent context matches the committed budget", () =>
     const mcp = yield* McpServer.McpServer;
     const measured = {
       claudeSystemAppendBytes: utf8Bytes(claudeSystemAppend()),
+      botSystemAppendBytes: utf8Bytes(botSystemAppendAtLimits()),
       codexAdditionalContextBytes: utf8Bytes(codexAdditionalContext()),
       // The model sees these fields. outputSchema and annotations are protocol metadata.
       mcpToolListJsonBytes: utf8Bytes(

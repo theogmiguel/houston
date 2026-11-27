@@ -155,7 +155,8 @@ import {
   storedBots,
 } from "./bots.testkit.ts";
 import { layerBots } from "./layer.ts";
-import { BOTS_OFF_MESSAGE } from "./rules.ts";
+import { BOTS_OFF_MESSAGE, refuse } from "./rules.ts";
+import { HoustonBotRuns } from "./Runs.ts";
 import { HoustonBotStore } from "./Store.ts";
 
 // Build the production RPC layer; unrelated capabilities fail if these tests call them.
@@ -377,8 +378,32 @@ const saveBot = (client: Client, payload: object = botInput()) =>
     return reply as HoustonBot;
   });
 
+// The socket's side of bot runs: the switch and the scopes. Runs.test.ts follows real threads.
+const layerSocketRuns = Layer.effect(
+  HoustonBotRuns,
+  Effect.gen(function* () {
+    const store = yield* HoustonBotStore;
+    return HoustonBotRuns.of({
+      ask: (input) =>
+        Effect.as(store.requireOn("houston.bots.ask"), {
+          botRunId: `run-${input.requestId}`,
+          threadId: `bot-run-${input.requestId}`,
+        }),
+      stop: (input) =>
+        Effect.andThen(
+          store.requireOn("houston.bots.stop"),
+          Effect.fail(refuse("not_found", "houston.bots.stop", `no bot run ${input.botRunId}`)),
+        ),
+      list: () =>
+        Effect.as(store.requireOn("houston.bots.runs.list"), { runs: [], hasMore: false }),
+      catchUp: Effect.void,
+    });
+  }),
+);
+
 const layerServer = (file?: string) =>
-  layerBots.pipe(
+  layerSocketRuns.pipe(
+    Layer.provideMerge(layerBots),
     Layer.provideMerge(
       Layer.mergeAll(layerUnusedRpcServices, layerTestProjects, layerTestAccounts),
     ),
@@ -616,6 +641,9 @@ describe("with Labs ▸ Bots off", () => {
       [WS_METHODS.houstonBotsSetEnabled, { botId, enabled: true }],
       [WS_METHODS.houstonBotsSetEnabled, { botId, enabled: false }],
       [WS_METHODS.houstonBotsDelete, { botId }],
+      [WS_METHODS.houstonBotsAsk, { requestId: "click-1", botId, ownerText: "Go" }],
+      [WS_METHODS.houstonBotsStop, { botRunId: "run-1" }],
+      [WS_METHODS.houstonBotsRunsList, { botId }],
     ] as const;
 
   it.effect("it is off by default, every request names the switch and nothing is stored", () =>
@@ -669,6 +697,13 @@ describe("who may call the bots requests", () => {
           ],
           [WS_METHODS.houstonBotsSetEnabled, AuthSettingsWriteScope, { botId, enabled: true }],
           [WS_METHODS.houstonBotsDelete, AuthSettingsWriteScope, { botId }],
+          [
+            WS_METHODS.houstonBotsAsk,
+            AuthOrchestrationOperateScope,
+            { requestId: "click-1", botId, ownerText: "Go" },
+          ],
+          [WS_METHODS.houstonBotsStop, AuthOrchestrationOperateScope, { botRunId: "run-1" }],
+          [WS_METHODS.houstonBotsRunsList, AuthOrchestrationReadScope, { botId }],
         ];
         for (const [method, scope, payload] of methods) {
           const before = yield* storedBots;
@@ -779,6 +814,7 @@ describe("a bot's text reaches no log or trace", () => {
   it.effect("a bot's text reaches no log or trace", () => {
     const SECRET = "zebra-instructions-9c41e7";
     const JOB = "zebra-job-5f2c9d";
+    const OWNER = "zebra-owner-text-3b7a01";
     const logs: Array<string> = [];
     const logger = Logger.make((options) => {
       logs.push(`${JSON.stringify(options.message)} ${Cause.pretty(options.cause)}`);
@@ -826,6 +862,19 @@ describe("a bot's text reaches no log or trace", () => {
                 });
                 assert.isNotEmpty(malformed);
                 assert.notInclude(malformed, SECRET);
+                // What the owner types to a bot, well formed and not.
+                yield* client.call(WS_METHODS.houstonBotsAsk, {
+                  requestId: "click-1",
+                  botId: bot.id,
+                  ownerText: OWNER,
+                });
+                const malformedAsk = yield* raw(WS_METHODS.houstonBotsAsk, {
+                  requestId: "click-2",
+                  botId: bot.id,
+                  ownerText: { OWNER, text: OWNER },
+                });
+                assert.isNotEmpty(malformedAsk);
+                assert.notInclude(malformedAsk, OWNER);
                 yield* Effect.logWarning("bots leak test done");
               }).pipe(Effect.withTracer(tracer));
             }),
@@ -834,8 +883,9 @@ describe("a bot's text reaches no log or trace", () => {
         }),
       );
       assert.include(traces, "houston.bots.save");
+      assert.include(traces, "houston.bots.ask");
       assert.include(logs.join("\n"), "bots leak test done");
-      for (const text of [SECRET, JOB]) {
+      for (const text of [SECRET, JOB, OWNER]) {
         assert.notInclude(traces, text);
         assert.notInclude(logs.join("\n"), text);
       }

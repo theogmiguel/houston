@@ -225,6 +225,7 @@ import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
 import * as HoustonTaskRuns from "./houston/tasks/TaskRuns.ts";
 import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
 import * as HoustonBotService from "./houston/bots/Service.ts";
+import * as HoustonBotRuns from "./houston/bots/Runs.ts";
 import type { BotActor } from "./houston/bots/rules.ts";
 import * as HoustonLayoutWorkspaces from "./houston/layoutWorkspaces.ts";
 import * as HoustonSlackService from "./houston/slack/Service.ts";
@@ -741,6 +742,8 @@ const SPLIT_WS_RPC_PREFIXES = [
   "issueTrackers",
   "provider",
   "orchestration",
+  // Bots, with the requests later slices add, keep the other group under the limit.
+  "houston.bots",
 ] as const;
 type SplitWsRpc = Extract<
   ServerWsRpc,
@@ -1600,6 +1603,7 @@ export const layerWsRpc = (
       const houstonTaskRuns = yield* HoustonTaskRuns.HoustonTaskRuns;
       const houstonLayoutWorkspaces = yield* HoustonLayoutWorkspaces.HoustonLayoutWorkspaceService;
       const houstonBots = yield* HoustonBotService.HoustonBotService;
+      const houstonBotRuns = yield* HoustonBotRuns.HoustonBotRuns;
       const botActor: BotActor = {
         sessionId: currentSessionId,
         label: SessionStore.deviceDisplayName(currentSession.client ?? { deviceType: "unknown" }),
@@ -3455,6 +3459,9 @@ export const layerWsRpc = (
           houstonBots.restoreRevision(input, botActor),
         [WS_METHODS.houstonBotsSetEnabled]: (input) => houstonBots.setEnabled(input),
         [WS_METHODS.houstonBotsDelete]: (input) => houstonBots.delete(input),
+        [WS_METHODS.houstonBotsAsk]: (input) => houstonBotRuns.ask(input),
+        [WS_METHODS.houstonBotsStop]: (input) => houstonBotRuns.stop(input),
+        [WS_METHODS.houstonBotsRunsList]: (input) => houstonBotRuns.list(input),
         [WS_METHODS.houstonSlackGet]: () => houstonSlack.get,
         [WS_METHODS.houstonSlackConnect]: (input) => houstonSlack.connect(input),
         [WS_METHODS.houstonSlackDisconnect]: () => houstonSlack.disconnect,

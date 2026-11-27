@@ -246,6 +246,8 @@ import {
 } from "./houston/tasks.ts";
 import {
   HoustonBot,
+  HoustonBotAskInput,
+  HoustonBotAskResult,
   HoustonBotDeleteInput,
   HoustonBotDeleteResult,
   HoustonBotEmptyInput,
@@ -253,8 +255,12 @@ import {
   HoustonBotRestoreRevisionInput,
   HoustonBotRevisionsInput,
   HoustonBotRevisionsResult,
+  HoustonBotRunsListInput,
+  HoustonBotRunsListResult,
+  HoustonBotRunSummary,
   HoustonBotSaveInput,
   HoustonBotSetEnabledInput,
+  HoustonBotStopInput,
   HoustonBotStreamEvent,
 } from "./houston/bots.ts";
 import {
@@ -724,6 +730,9 @@ export const WS_METHODS = {
   houstonBotsRestoreRevision: "houston.bots.restoreRevision",
   houstonBotsSetEnabled: "houston.bots.setEnabled",
   houstonBotsDelete: "houston.bots.delete",
+  houstonBotsAsk: "houston.bots.ask",
+  houstonBotsStop: "houston.bots.stop",
+  houstonBotsRunsList: "houston.bots.runs.list",
   houstonSlackGet: "houston.slack.get",
   houstonSlackConnect: "houston.slack.connect",
   houstonSlackDisconnect: "houston.slack.disconnect",
@@ -2358,6 +2367,24 @@ const WsHoustonBotsDeleteRpc = Rpc.make(WS_METHODS.houstonBotsDelete, {
   error: HoustonBotsRpcError,
 });
 
+const WsHoustonBotsAskRpc = Rpc.make(WS_METHODS.houstonBotsAsk, {
+  payload: HoustonBotAskInput,
+  success: HoustonBotAskResult,
+  error: HoustonBotsRpcError,
+});
+
+const WsHoustonBotsStopRpc = Rpc.make(WS_METHODS.houstonBotsStop, {
+  payload: HoustonBotStopInput,
+  success: HoustonBotRunSummary,
+  error: HoustonBotsRpcError,
+});
+
+const WsHoustonBotsRunsListRpc = Rpc.make(WS_METHODS.houstonBotsRunsList, {
+  payload: HoustonBotRunsListInput,
+  success: HoustonBotRunsListResult,
+  error: HoustonBotsRpcError,
+});
+
 const HoustonSlackRpcError = Schema.Union([HoustonSlackError, EnvironmentAuthorizationError]);
 
 const WsHoustonSlackGetRpc = Rpc.make(WS_METHODS.houstonSlackGet, {
@@ -3277,6 +3304,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonBotsRestoreRevisionRpc,
   WsHoustonBotsSetEnabledRpc,
   WsHoustonBotsDeleteRpc,
+  WsHoustonBotsAskRpc,
+  WsHoustonBotsStopRpc,
+  WsHoustonBotsRunsListRpc,
   WsHoustonSlackGetRpc,
   WsHoustonSlackConnectRpc,
   WsHoustonSlackDisconnectRpc,
