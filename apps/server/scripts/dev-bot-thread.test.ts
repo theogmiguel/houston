@@ -1,3 +1,6 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off - the expected path uses the host's separators.
+import * as NodePath from "node:path";
+
 import { assert, describe, it } from "@effect/vitest";
 import { ThreadId } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
@@ -34,7 +37,8 @@ const bot = (overrides: Partial<ProofBot> = {}): ProofBot => ({
 describe("the channel the script works in", () => {
   it("is a named development channel's state, from a source build", () => {
     assert.deepEqual(devChannelBaseDir({ channel: "proof-f2a", home: HOME, build: "dev" }), {
-      baseDir: "/home/someone/.houston-proof-f2a/v2",
+      // The host's own separators: the script joins the path the way the server does.
+      baseDir: NodePath.join(HOME, ".houston-proof-f2a", "v2"),
     });
   });
 
