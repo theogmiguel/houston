@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import { runHoustonMigrations } from "../migrations.ts";
 import {
@@ -82,7 +83,7 @@ describe("a thread recorded as a bot run", () => {
           child: false,
           neverAsk: true,
         });
-        assert.include(found?.provider.rules.houstonTools, "houston_bot_result");
+        assert.include(found?.provider.rules.houstonTools ?? [], "houston_bot_result");
       }),
     ),
   );
@@ -162,7 +163,7 @@ describe("the walk from a delegated child to its bot thread", () => {
           for (const id of ["child", "grandchild"]) {
             const found = yield* botThreads.policyOf(tree.find((entry) => entry.id === id)!);
             assert.deepInclude(found?.provider, { kind: "unattended", child: true }, id);
-            assert.notInclude(found?.provider.rules.houstonTools, "houston_bot_result", id);
+            assert.notInclude(found?.provider.rules.houstonTools ?? [], "houston_bot_result", id);
             assert.strictEqual(found?.runtimeMode, "full-access", id);
           }
         }),
@@ -174,7 +175,7 @@ describe("the walk from a delegated child to its bot thread", () => {
       Effect.gen(function* () {
         yield* run("root", "asked");
         const found = yield* botThreads.policyOf(child("child", "root"));
-        assert.include(found?.provider.refusedTools, "mcp__houston__houston_bot_result");
+        assert.include(found?.provider.refusedTools ?? [], "mcp__houston__houston_bot_result");
         assert.isTrue(found?.provider.child);
       }),
     ),
@@ -231,7 +232,10 @@ describe("threads that are not a bot's", () => {
       const sql = yield* SqlClient.SqlClient;
       const broken = makeBotThreads({
         sql,
-        readThread: () => Effect.fail(new Error("disk")),
+        readThread: (threadId) =>
+          Effect.fail(
+            new ProjectionStore.ProjectionStoreReadError({ threadId, cause: new Error("disk") }),
+          ),
       });
       const parentError = yield* Effect.flip(broken.policyOf(child("delegate", "parent")));
       assert.strictEqual(

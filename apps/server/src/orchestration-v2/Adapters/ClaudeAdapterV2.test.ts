@@ -3993,7 +3993,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             requestId: request.runtimeRequest.id,
             decision: "decline",
           });
-          assert.equal((yield* Fiber.join(decision)).behavior, "deny");
+          assert.equal((yield* Fiber.join(decision))?.behavior, "deny");
         }).pipe(Effect.provide(botTestLayer)),
       ),
     );
@@ -4005,7 +4005,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           Effect.gen(function* () {
             const { harness, ask, runtimeRequests } = yield* startBotTurn(kind);
             const decision = yield* ask("Bash", "unchecked-call", { command: "echo hi" });
-            assert.equal(decision.behavior, "deny");
+            assert.equal(decision?.behavior, "deny");
             const terminal = yield* Queue.take(harness.terminalReceipts);
             assert.equal(terminal.status, "failed");
             assert.equal(
@@ -4126,7 +4126,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             ) {
               const harness = yield* makeWakeHarnessWithOptions({
                 onMessage: (message) =>
-                  "uuid" in message && message.uuid === "refused-initialize"
+                  message.type === "tool_progress" && message.tool_use_id === "never-read"
                     ? Effect.die(refusal)
                     : Effect.void,
               });

@@ -1131,7 +1131,7 @@ describe("the bot runs migration", () => {
           'running', ${fields.dueAt ?? null}, 'now'
         )
       `;
-      const fails = (effect: Effect.Effect<unknown, unknown>) =>
+      const fails = <A, E>(effect: Effect.Effect<A, E>) =>
         Effect.map(Effect.exit(effect), (exit) => exit._tag === "Failure");
       yield* insert("a", { requestId: "r1", threadId: "t1" });
       assert.isTrue(yield* fails(insert("b", { requestId: "r1" })));

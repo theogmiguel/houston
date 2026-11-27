@@ -112,7 +112,7 @@ describe("a bot thread's Claude options", () => {
     const policy = providerPolicy("unattended", { instructionsAppend: "BOT APPEND" });
     const options = botOptions(policy);
     for (const name of ["CronCreate", "ScheduleWakeup", "Monitor", "Agent", "Task"]) {
-      assert.include(options.disallowedTools, name);
+      assert.include(options.disallowedTools ?? [], name);
     }
     const preToolUseHooks = options.hooks?.PreToolUse ?? [];
     assert.lengthOf(preToolUseHooks, 1);
@@ -136,9 +136,9 @@ describe("a bot thread's Claude options", () => {
       "ScheduleWakeup",
       "mcp__houston__schedule_task",
     ]) {
-      assert.include(options.disallowedTools, name);
+      assert.include(options.disallowedTools ?? [], name);
     }
-    assert.notInclude(options.disallowedTools, "Agent");
+    assert.notInclude(options.disallowedTools ?? [], "Agent");
     assert.strictEqual(options.hooks?.PreToolUse?.[0]?.onFailure, "block");
     assert.isDefined(options.hooks?.SubagentStart);
     assert.isFalse((options.settings as Record<string, unknown>)["autoMemoryEnabled"]);

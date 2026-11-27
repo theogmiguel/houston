@@ -42,8 +42,8 @@ describe("the channel the script works in", () => {
     for (const channel of ["release", "", "../houston", "Proof", "-x"]) {
       assert.property(devChannelBaseDir({ channel, home: HOME, build: "dev" }), "refusal", channel);
     }
-    const built = devChannelBaseDir({ channel: "proof-f2a", home: HOME, build: "latest" });
-    assert.include("refusal" in built ? built.refusal : "", "latest");
+    const built = devChannelBaseDir({ channel: "proof-f2a", home: HOME, build: "stable" });
+    assert.include("refusal" in built ? built.refusal : "", "stable");
   });
 });
 
@@ -61,7 +61,11 @@ describe("the bot run the script records", () => {
           kind: "asked",
         }),
       );
-      const botThreads = makeBotThreads({ sql, readThread: () => Effect.succeed(undefined) });
+      const botThreads = makeBotThreads({
+        sql,
+        // @effect-diagnostics-next-line effectSucceedWithVoid:off - no thread is read here.
+        readThread: () => Effect.succeed(undefined),
+      });
       const thread = (id: string) => ({
         id: ThreadId.make(id),
         lineage: {

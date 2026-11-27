@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// @effect-diagnostics nodeBuiltinImport:off globalFetch:off globalConsole:off globalDate:off - A development tool that talks to a running dev server.
+// @effect-diagnostics nodeBuiltinImport:off globalFetchInEffect:off globalConsole:off globalConsoleInEffect:off globalDateInEffect:off preferSchemaOverJson:off - A development tool that talks to a running dev server.
 // Records a bot and one bot run, then launches its thread as a client would, so bot-thread rules
 // can be tried on a real provider in a named development channel. See USAGE.
 import * as NodeCrypto from "node:crypto";
@@ -7,6 +7,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeUtil from "node:util";
 
+import * as EffectNodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   AuthOrchestrationOperateScope,
@@ -21,6 +22,7 @@ import {
   WsRpcGroup,
 } from "@houston-app/contracts";
 import type { HoustonBotRunKind } from "@houston-app/contracts/houston/bots";
+import * as NetService from "@houston-app/shared/Net";
 import * as NodeSqliteClient from "@houston-app/shared/nodeSqliteClient";
 import type { ReleaseChannel } from "@houston-app/shared/releaseResource";
 import * as Effect from "effect/Effect";
@@ -283,6 +285,7 @@ const resume = Effect.fn("devBotThread.resume")(function* (
       messageId: MessageId.make(NodeCrypto.randomUUID()),
       text: prompt,
       attachments: [],
+      dispatchMode: { type: "queue_after_active" },
     });
   }).pipe(Effect.scoped, Effect.provide(protocol));
   console.log(JSON.stringify({ botRunId, threadId, resumed: true }));
@@ -315,13 +318,16 @@ if (import.meta.main) {
     process.exit(1);
   }
   const command = positionals[0];
-  const program =
-    command === "start"
-      ? start(target.baseDir, values)
-      : command === "resume"
-        ? resume(target.baseDir, values)
-        : Effect.die(new Error(`Unknown command "${command ?? ""}".\n${USAGE}`));
-  Effect.runPromise(program.pipe(Effect.provide(NodeServices.layer))).catch((error: unknown) => {
+  const program = Effect.gen(function* () {
+    if (command === "start") return yield* start(target.baseDir, values);
+    if (command === "resume") return yield* resume(target.baseDir, values);
+    return yield* Effect.die(new Error(`Unknown command "${command ?? ""}".\n${USAGE}`));
+  });
+  Effect.runPromise(
+    program.pipe(
+      Effect.provide(Layer.mergeAll(NodeServices.layer, EffectNodeCrypto.layer, NetService.layer)),
+    ),
+  ).catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   });

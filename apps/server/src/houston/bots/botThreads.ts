@@ -101,7 +101,9 @@ const applied = (policy: HoustonBotRunPolicy, botName: string, child: boolean): 
 export function makeBotThreads(input: {
   readonly sql: SqlClient.SqlClient;
   /** Undefined when the thread does not exist. */
-  readonly readThread: (threadId: ThreadId) => Effect.Effect<BotThreadRead | undefined, unknown>;
+  readonly readThread: (
+    threadId: ThreadId,
+  ) => Effect.Effect<BotThreadRead | undefined, ProjectionStore.ProjectionStoreV2Error>;
 }): HoustonBotThreadsShape {
   return {
     policyOf: Effect.fn("HoustonBotThreads.policyOf")(function* (start: BotThreadRead) {
