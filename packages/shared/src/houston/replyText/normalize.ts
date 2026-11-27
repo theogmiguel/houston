@@ -68,16 +68,31 @@ export type ReplyNormalized =
 
 const MAX_PASSES = 4;
 const MAILTO = /^mailto:/i;
-// A dot or one of the full stops a browser reads as a dot.
-const HOST_NAME = String.raw`[\p{L}\p{N}\p{M}-]+(?:[.\u3002\uff0e\uff61][\p{L}\p{N}\p{M}-]+)+`;
+const HOST_NAME = String.raw`[\p{L}\p{N}\p{M}-]+(?:\.[\p{L}\p{N}\p{M}-]+)+`;
 const LABEL_HOST = new RegExp(
   String.raw`^(?:[a-z][a-z0-9+.-]*:\/\/)?(${HOST_NAME})(?::\d+)?([/?#].*)?$`,
   "iu",
 );
 const LABEL_EMAIL = new RegExp(String.raw`^(?:mailto:)?[^\s@]+@(${HOST_NAME})$`, "iu");
-const ADDRESS_TLD = /[.\u3002\uff0e\uff61](?:\p{L}{2,}|xn--[a-z0-9-]+)$/iu;
+const ADDRESS_TLD = /\.(?:\p{L}{2,}|xn--[a-z0-9-]+)$/iu;
 const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
-const EXPLICIT_ADDRESS = /^(?:[a-z][a-z0-9+.-]*:\/\/|www[.\u3002\uff0e\uff61])/iu;
+const EXPLICIT_ADDRESS = /^(?:[a-z][a-z0-9+.-]*:\/\/|www\.)/iu;
+// Characters a reader does not see, removed before a label is compared with its address.
+const INVISIBLE = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/gu;
+// Characters that read as a dot and are left after NFKC: the full stops a browser reads as a
+// dot, and other scripts' full stops and dots set on the line.
+const DOT_LOOKALIKE =
+  /[\u0589\u06d4\u0701\u0702\u2024\u2e3c\u3002\ua4f8\ua60e\ua6f3\ufe52\uff0e\uff61]/gu;
+// A bare label word ending in one of these is a file name, not an address. Some of them are
+// also country domains (md, py, rs, sh, ...) or new top-level domains (zip): a coding agent
+// names files far more often than sites there, and a label shows the name as it is.
+const FILE_EXTENSIONS: ReadonlySet<string> = new Set(
+  (
+    "js mjs cjs ts mts cts tsx jsx json jsonc yaml yml toml ini env md mdx txt csv log " +
+    "html css scss py rb go rs java kt swift php c h cpp sh sql lock xml svg png jpg jpeg " +
+    "gif webp pdf zip gz tar tgz vue svelte wasm"
+  ).split(" "),
+);
 const LABEL_WORD_SEPARATOR = /[\s,;!?()[\]<>"'|]+/u;
 const WORD_EDGE = /^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu;
 const WWW = /^www\./;
@@ -161,21 +176,25 @@ const canonicalHost = (host: string): string | null => {
   }
 };
 
-const lastPathPart = (url: string): string | null => {
-  try {
-    const part = new URL(url).pathname.split("/").findLast((segment) => segment !== "");
-    return part === undefined ? null : decodeURIComponent(part).toLowerCase();
-  } catch {
-    return null;
-  }
+/** A label as a reader sees it: compatibility forms folded, invisible characters gone. */
+const comparisonForm = (label: string) =>
+  label.normalize("NFKC").replace(INVISIBLE, "").replace(DOT_LOOKALIKE, ".");
+
+const isFileName = (name: string) =>
+  FILE_EXTENSIONS.has(name.slice(name.lastIndexOf(".") + 1).toLowerCase());
+
+/** True when `name` is the host a link opens or a parent domain of it. */
+const namesHost = (name: string, opens: string | null) => {
+  const host = canonicalHost(name);
+  return host !== null && opens !== null && (opens === host || opens.endsWith(`.${host}`));
 };
 
-// The first label word shaped as an address that is not the link's host or mailto domain,
-// nor, for a bare word, the link's last path part.
+// The first label word shaped as an address that is not the link's host, a parent domain of
+// it or the mailto domain. A bare word that ends in a file extension is a file name.
 const misleadingLabelWord = (label: string, url: string): string | null => {
   const mailto = MAILTO.test(url);
   const opens = canonicalHost(hostOf(url) ?? "");
-  for (const word of label.normalize("NFC").split(LABEL_WORD_SEPARATOR)) {
+  for (const word of comparisonForm(label).split(LABEL_WORD_SEPARATOR)) {
     const trimmed = word.replace(WORD_EDGE, "");
     const email = LABEL_EMAIL.exec(trimmed);
     if (email !== null) {
@@ -186,9 +205,9 @@ const misleadingLabelWord = (label: string, url: string): string | null => {
     if (host === null) continue;
     const name = host[1] as string;
     if (!ADDRESS_TLD.test(name) && !IPV4.test(name)) continue;
-    if (canonicalHost(name) === opens) continue;
+    if (namesHost(name, opens)) continue;
     const bare = !EXPLICIT_ADDRESS.test(trimmed) && host[2] === undefined;
-    if (bare && !mailto && trimmed.toLowerCase() === lastPathPart(url)) continue;
+    if (bare && isFileName(name)) continue;
     return trimmed;
   }
   return null;
