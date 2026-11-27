@@ -23,6 +23,7 @@ import * as Layer from "effect/Layer";
 
 import * as EventSink from "../orchestration-v2/EventSink.ts";
 import * as RuntimePolicy from "../orchestration-v2/RuntimePolicy.ts";
+import { layerNoBotThreads } from "./bots/botThreads.ts";
 import { layerNoReadOnlyThreads } from "./sideThreads.ts";
 import { SLACK_ANSWER_ALREADY_SENT } from "./slackAnswer.ts";
 import { userFacingDispatchErrorMessage } from "../orchestration-v2/UserFacingErrors.ts";
@@ -1086,6 +1087,7 @@ describe("a side thread's limits", () => {
                   Layer.provide(harness.registry),
                   Layer.provide(McpProviderSessions.layer),
                   Layer.provide(layerNoReadOnlyThreads),
+                  Layer.provide(layerNoBotThreads),
                 ),
               ),
             );

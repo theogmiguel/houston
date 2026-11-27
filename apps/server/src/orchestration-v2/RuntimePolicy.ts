@@ -15,6 +15,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
+import { HoustonBotThreads } from "../houston/bots/botThreads.ts";
 import { HoustonReadOnlyThreads, hasReadOnlyRun, readOnlyPolicy } from "../houston/sideThreads.ts";
 import * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
@@ -27,10 +28,15 @@ export class RuntimePolicyResolveError extends Schema.TaggedError<RuntimePolicyR
     projectId: ProjectId,
     providerInstanceId: ProviderInstanceId,
     cause: Schema.optional(Schema.Defect()),
+    /** Houston: a refusal the user can act on, shown instead of the generic message. */
+    detail: Schema.optional(Schema.String),
   },
 ) {
   override get message(): string {
-    return `Failed to resolve runtime policy for provider instance ${this.providerInstanceId} in project ${this.projectId}.`;
+    return (
+      this.detail ??
+      `Failed to resolve runtime policy for provider instance ${this.providerInstanceId} in project ${this.projectId}.`
+    );
   }
 }
 
@@ -274,6 +280,64 @@ export const layerReadOnlySideThreads: Layer.Layer<
         return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
           ...readOnlyPolicy(policy),
           ...(submitTool === undefined ? {} : { houstonTaskSubmitTool: submitTool }),
+        });
+      }),
+    });
+  }),
+);
+
+/** Houston: a bot thread runs under its bot run's rules, or fails on a driver that cannot apply
+ * them. The kind's mode is set before the base resolves, so the ceiling and the provider's
+ * supported modes see the mode that runs. */
+export const layerBotThreads: Layer.Layer<
+  RuntimePolicyV2,
+  never,
+  RuntimePolicyV2 | ProviderAdapterRegistry.ProviderAdapterRegistryV2 | HoustonBotThreads
+> = Layer.effect(
+  RuntimePolicyV2,
+  Effect.gen(function* () {
+    const base = yield* RuntimePolicyV2;
+    const adapters = yield* ProviderAdapterRegistry.ProviderAdapterRegistryV2;
+    const botThreads = yield* HoustonBotThreads;
+    return RuntimePolicyV2.of({
+      resolve: Effect.fn("RuntimePolicyV2.resolveBotThread")(function* (input) {
+        const refuse = (cause: unknown, detail?: string) =>
+          new RuntimePolicyResolveError({
+            projectId: input.thread.projectId,
+            providerInstanceId: input.modelSelection.instanceId,
+            cause,
+            ...(detail === undefined ? {} : { detail }),
+          });
+        const found = yield* botThreads
+          .policyOf(input.thread)
+          .pipe(Effect.mapError((error) => refuse(error, error.message)));
+        if (found === undefined) return yield* base.resolve(input);
+        const { botName, kind } = found.provider;
+        const capabilities = yield* adapters.get(input.modelSelection.instanceId).pipe(
+          Effect.flatMap((adapter) => adapter.getCapabilities()),
+          Effect.mapError((cause) => refuse(cause)),
+        );
+        if (capabilities.runtimePolicy.houstonBotRuns?.includes(kind) !== true) {
+          return yield* refuse(
+            "undeclared bot run kind",
+            `${botName} runs here as an ${kind} bot run, and ${input.modelSelection.instanceId} cannot apply the rules of an ${kind} bot run. Choose a Claude account for this thread.`,
+          );
+        }
+        const policy = yield* base.resolve(
+          found.runtimeMode === undefined
+            ? input
+            : {
+                ...input,
+                thread: {
+                  ...input.thread,
+                  runtimeMode: found.runtimeMode,
+                  interactionMode: "default",
+                },
+              },
+        );
+        return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          ...policy,
+          houstonBot: found.provider,
         });
       }),
     });

@@ -37,6 +37,7 @@ import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { userFacingDispatchErrorMessage } from "../orchestration-v2/UserFacingErrors.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
+import { layerNoBotThreads } from "./bots/botThreads.ts";
 import { layerNoReadOnlyThreads, mayHoldHoustonTools, reviewPrompt } from "./sideThreads.ts";
 import {
   makeHarness,
@@ -228,6 +229,7 @@ const resolveWith = (
           Layer.provide(base),
           Layer.provide(layerRegistry),
           Layer.provide(layerNoReadOnlyThreads),
+          Layer.provide(layerNoBotThreads),
         ),
       ),
     );
@@ -345,6 +347,7 @@ const layerServerRuntimePolicy = RuntimeLayer.layerRuntimePolicyProvided.pipe(
   ),
   Layer.provide(SqlitePersistence.layerMemory),
   Layer.provide(layerNoReadOnlyThreads),
+  Layer.provide(layerNoBotThreads),
   Layer.provide(ServerSettings.layerTest()),
 );
 

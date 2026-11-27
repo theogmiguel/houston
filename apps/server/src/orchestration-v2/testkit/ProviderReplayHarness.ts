@@ -50,6 +50,7 @@ import * as ProviderContinuationRequests from "@houston-app/provider-core/server
 import * as ProviderContinuationService from "../ProviderContinuationService.ts";
 import * as ProviderEventIngestor from "../ProviderEventIngestor.ts";
 import * as MessageDelivery from "../../houston/messageDelivery.ts";
+import { HoustonBotThreads, layerNoBotThreads } from "../../houston/bots/botThreads.ts";
 import { HoustonReadOnlyThreads, layerNoReadOnlyThreads } from "../../houston/sideThreads.ts";
 import * as ProviderInstanceRegistry from "../../provider/ProviderInstanceRegistry.ts";
 import * as ProviderRuntimeRecoveryService from "../ProviderRuntimeRecoveryService.ts";
@@ -300,6 +301,8 @@ export function layerWithRegistry<Error>(
     readonly mcpSessionRegistry?: Layer.Layer<McpSessionRegistry.McpSessionRegistry>;
     /** Houston: the planners and reviewers that run read-only; none when absent. */
     readonly readOnlyThreads?: Layer.Layer<HoustonReadOnlyThreads>;
+    /** Houston: the bot runs whose threads run under their rules; none when absent. */
+    readonly botThreads?: Layer.Layer<HoustonBotThreads>;
     readonly managedPolicy?: ManagedPolicyDocument;
   } = {},
 ): Layer.Layer<
@@ -333,8 +336,15 @@ export function layerWithRegistry<Error>(
   );
   // Houston: side threads resolve read-only last, so no scenario override reaches them.
   const layerReadOnlyThreads = options.readOnlyThreads ?? layerNoReadOnlyThreads;
-  const layerSideThreadRuntime = RuntimePolicy.layerReadOnlySideThreads.pipe(
-    Layer.provide(Layer.mergeAll(layerBaseRuntime, layerProvidedRegistry, layerReadOnlyThreads)),
+  const layerSideThreadRuntime = RuntimePolicy.layerBotThreads.pipe(
+    Layer.provide(
+      RuntimePolicy.layerReadOnlySideThreads.pipe(
+        Layer.provide(
+          Layer.mergeAll(layerBaseRuntime, layerProvidedRegistry, layerReadOnlyThreads),
+        ),
+      ),
+    ),
+    Layer.provide(Layer.merge(layerProvidedRegistry, options.botThreads ?? layerNoBotThreads)),
   );
   const layerServerSettings = Layer.unwrap(
     Effect.map(ManagedPolicy.fromDocument("/test/policy.json", options.managedPolicy), (policy) =>

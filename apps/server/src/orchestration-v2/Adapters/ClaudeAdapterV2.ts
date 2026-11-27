@@ -156,7 +156,19 @@ import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
+import type { HoustonBotProviderPolicy } from "@houston-app/contracts/houston/bots";
 import { CHECK_TIMEOUT, checkWorkingDirectory } from "../../houston/nonBlockingSpawner.ts";
+import {
+  botRulesChangedMessage,
+  claudeBotLaunchRefusal,
+  claudeBotToolCheckUnsupportedMessage,
+  claudeStartedToolCalls,
+  ClaudeBotToolDecisions,
+  makeClaudeBotToolCheck,
+  NOBODY_WATCHING_MESSAGE,
+  toolCheckDidNotRunMessage,
+  withBotMemoryOff,
+} from "./claudeBotRules.ts";
 import * as TraceContext from "../../houston/observability/TraceContext.ts";
 import { snapshotMcpApp } from "../../mcpApps/McpAppSnapshot.ts";
 import { resolveClaudeSdkExecutablePath } from "../../provider/Drivers/ClaudeExecutable.ts";
@@ -555,6 +567,8 @@ export const ClaudeProviderCapabilitiesV2 = {
     enforcement: "native",
     // Houston: a read-only policy maps to dontAsk with only the read tools (sideThreads families).
     readOnlyRun: "permissionMode",
+    // Houston: refused tools, the tool check, memory off and no one asked (houston/bots).
+    houstonBotRuns: ["asked", "unattended"],
   },
 } satisfies OrchestrationV2ProviderCapabilities;
 
@@ -1829,6 +1843,9 @@ export function makeClaudeQueryOptions(input: {
   readonly appendSystemPromptFileText?: string;
   // Flag settings, because a user's settings.json env beats the process env in Claude Code.
   readonly toolSearchOverride?: "true";
+  /** Houston: a bot thread's rules, and the blocking check that applies them to every call. */
+  readonly houstonBot?: HoustonBotProviderPolicy;
+  readonly botToolCheck?: HookCallback;
 }): ClaudeAgentSdkQueryOptions {
   const compiledSelection = compileClaudeModelSelection(input.modelSelection, input.modelCatalog);
   const {
@@ -1846,9 +1863,11 @@ export function makeClaudeQueryOptions(input: {
     delete extraArgs["mcp-config"];
     delete extraArgs["strict-mcp-config"];
   }
+  const unattendedBot = input.houstonBot?.kind === "unattended";
   // Launch arguments win: `--chrome` is already there, and `--no-chrome` is an explicit opt-out.
   if (
     input.claudeInChrome === true &&
+    !unattendedBot &&
     extraArgs["chrome"] === undefined &&
     extraArgs["no-chrome"] === undefined
   ) {
@@ -1922,7 +1941,20 @@ export function makeClaudeQueryOptions(input: {
               : { ENABLE_TOOL_SEARCH: input.toolSearchOverride }),
           },
         } as ClaudeSdkSettings);
-  const deviceInstructions = input.mcpServers !== undefined && input.deviceToolsAvailable === true;
+  // Houston: an unattended bot run is told nothing about delegating, linking or waiting, which it
+  // may not do.
+  const deviceInstructions =
+    input.mcpServers !== undefined && input.deviceToolsAvailable === true && !unattendedBot;
+  const disallowedTools =
+    input.houstonBot === undefined
+      ? input.disallowedTools
+      : [...new Set([...(input.disallowedTools ?? []), ...input.houstonBot.refusedTools])];
+  const hooks: NonNullable<ClaudeQueryOptions["hooks"]> = {
+    ...(deviceInstructions ? { SubagentStart: [{ hooks: [subagentDeviceInstructions] }] } : {}),
+    ...(input.botToolCheck === undefined
+      ? {}
+      : { PreToolUse: [{ hooks: [input.botToolCheck], onFailure: "block" as const }] }),
+  };
   const options: ClaudeAgentSdkQueryOptions = {
     model: compiledSelection.apiModelId,
     tools: claudeAgentSdkQueryToolsForSdk(selectedTools),
@@ -1941,7 +1973,7 @@ export function makeClaudeQueryOptions(input: {
     ...threadIdentity,
     ...(input.resumeSessionAt === undefined ? {} : { resumeSessionAt: input.resumeSessionAt }),
     ...(input.allowedTools === undefined ? {} : { allowedTools: [...input.allowedTools] }),
-    ...(input.disallowedTools === undefined ? {} : { disallowedTools: [...input.disallowedTools] }),
+    ...(disallowedTools === undefined ? {} : { disallowedTools: [...disallowedTools] }),
     ...(input.canUseTool === undefined ? {} : { canUseTool: input.canUseTool }),
     ...(input.allowDangerouslySkipPermissions === true
       ? { allowDangerouslySkipPermissions: true }
@@ -1976,28 +2008,35 @@ export function makeClaudeQueryOptions(input: {
       preset: "claude_code" as const,
       append: [
         buildRuntimeInstructions({ harness: "Claude Code" }) +
-          (input.mcpServers === undefined
+          (input.mcpServers === undefined || unattendedBot
             ? ""
             : HOUSTON_ORCHESTRATION_INSTRUCTIONS +
               CLAUDE_BACKGROUND_WAIT_INSTRUCTIONS +
               (deviceInstructions
                 ? `\n${HOUSTON_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH}\n`
                 : "")),
+        ...(input.houstonBot?.instructionsAppend === undefined
+          ? []
+          : [input.houstonBot.instructionsAppend]),
         ...launchAppendSystemPrompt,
       ].join("\n\n"),
     },
-    ...(deviceInstructions
-      ? { hooks: { SubagentStart: [{ hooks: [subagentDeviceInstructions] }] } }
-      : {}),
+    ...(Object.keys(hooks).length === 0 ? {} : { hooks }),
     ...(Object.keys(extraArgs).length === 0 ? {} : { extraArgs }),
   };
+  // Houston: memory is off in a bot thread, merged last so no launch setting turns it back on. A
+  // settings file path is refused before the query opens (claudeBotLaunchRefusal).
+  const botOptions =
+    input.houstonBot === undefined || typeof options.settings === "string"
+      ? options
+      : { ...options, settings: withBotMemoryOff(options.settings) };
   const additionalDirectories = [
     ...(input.cwd === null ? [] : [input.cwd]),
     ...(input.attachmentsDir === undefined ? [] : [input.attachmentsDir]),
     ...claudeLaunchArgDirectories(input.settings?.launchArgs),
   ];
   const withDirectories =
-    additionalDirectories.length === 0 ? options : { ...options, additionalDirectories };
+    additionalDirectories.length === 0 ? botOptions : { ...botOptions, additionalDirectories };
   return input.cwd === null ? withDirectories : { ...withDirectories, cwd: input.cwd };
 }
 
@@ -2107,6 +2146,8 @@ export function claudeMcpQueryOverrides(input: {
   readonly allowedTools?: ReadonlyArray<string>;
   /** Houston: a task planner's or reviewer's submit, the one write tool its read-only run may call. */
   readonly houstonTaskSubmitTool?: string;
+  /** Houston: a bot thread's Houston tools, pre-approved by name instead of the wildcard. */
+  readonly houstonBotTools?: ReadonlyArray<string>;
 }): {
   readonly allowedTools?: ReadonlyArray<string>;
   readonly mcpServers?: ClaudeQueryOptions["mcpServers"];
@@ -2122,7 +2163,9 @@ export function claudeMcpQueryOverrides(input: {
           ? []
           : [`mcp__houston__${input.houstonTaskSubmitTool}`]),
       ]
-    : [CLAUDE_HOUSTON_MCP_TOOL_WILDCARD];
+    : input.houstonBotTools !== undefined
+      ? input.houstonBotTools.map((name) => `mcp__houston__${name}`)
+      : [CLAUDE_HOUSTON_MCP_TOOL_WILDCARD];
   return {
     allowedTools: Array.from(new Set([...(input.allowedTools ?? []), ...mcpAllowedTools])),
     mcpServers: {
@@ -3135,7 +3178,15 @@ export function claudeEffectiveQueryPolicyKey(
     readonly allowedTools?: ReadonlyArray<string>;
     readonly mcpServers?: ClaudeQueryOptions["mcpServers"];
   },
+  // Houston: a bot thread's rules, without its name or instructions, which may change while its
+  // background work runs.
+  houstonBot?: HoustonBotProviderPolicy,
 ): string {
+  const {
+    botName: _botName,
+    instructionsAppend: _instructionsAppend,
+    ...botRules
+  } = houstonBot ?? {};
   return JSON.stringify({
     runtimePolicy: claudeRuntimeQueryPolicyKey({
       ...queryPolicy,
@@ -3144,6 +3195,7 @@ export function claudeEffectiveQueryPolicyKey(
         : { allowedTools: mcpOverrides.allowedTools }),
     }),
     mcpServers: mcpOverrides.mcpServers,
+    ...(houstonBot === undefined ? {} : { houstonBot: botRules }),
   });
 }
 
@@ -5312,6 +5364,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         );
         const interruptedTurns = yield* Ref.make(new Set<OrchestrationV2ProviderTurn["id"]>());
         const steeredTurns = yield* Ref.make(new Set<OrchestrationV2ProviderTurn["id"]>());
+        // Houston: the calls a bot thread's tool check decided, so one that starts undecided is
+        // noticed (claudeBotRules.ts).
+        const botToolDecisions = new ClaudeBotToolDecisions();
         // Houston: steers offered with a uuid, until Claude acknowledges or echoes that uuid.
         const pendingSteers = new Map<
           string,
@@ -8716,6 +8771,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           // Finalization can yield to a replacement process; capture ownership and outcomes first.
           const subagents = yield* Ref.get(sessionSubagentsByTaskId);
           const buffered = (yield* Ref.get(wakeBuffers)).get(closedQuery.nativeThreadId)?.messages;
+          const squashed = cause === undefined ? undefined : Cause.squash(cause);
+          const botCheckUnsupported =
+            context.input.runtimePolicy.houstonBot === undefined
+              ? undefined
+              : claudeBotToolCheckUnsupportedMessage(adapterOptions.instanceId, squashed);
           if (current === context) {
             yield* finalizeActiveTurn({
               context,
@@ -8725,8 +8785,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 ? {}
                 : {
                     failure: makeProviderFailure({
-                      cause: cause === undefined ? undefined : Cause.squash(cause),
+                      cause: squashed,
                       class: "transport_error",
+                      // Houston: a bot thread's check that Claude Code cannot run, said by name.
+                      ...(botCheckUnsupported === undefined
+                        ? {}
+                        : { message: botCheckUnsupported, code: "houston_bot_tool_check_missing" }),
                     }),
                   }),
             });
@@ -9337,6 +9401,16 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               yield* bufferWakeMessage({ nativeThreadId: liveQuery.nativeThreadId, message });
             }
             return;
+          }
+          const frameBot = context.input.runtimePolicy.houstonBot;
+          if (frameBot !== undefined) {
+            const unchecked = claudeStartedToolCalls(message).some(
+              (call) => !call.unrun && !botToolDecisions.has(call.toolUseId),
+            );
+            if (unchecked) {
+              yield* stopForUncheckedBotCall(context, frameBot.botName);
+              return;
+            }
           }
           const focusedPlugin = claudeFocusRequestedPanePlugin(message);
           if (focusedPlugin !== null && context === (yield* Ref.get(activeTurn))) {
@@ -10792,6 +10866,33 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           yield* handleRoutedSdkMessage(input);
         });
 
+        // Houston: a bot thread's call that started without a decision from its tool check. One
+        // call may have run; the bot run fails instead of carrying on unchecked.
+        const stopForUncheckedBotCall = Effect.fnUntraced(function* (
+          context: ActiveClaudeTurnContext,
+          botName: string,
+        ) {
+          const liveQuery = yield* Ref.get(queryContext);
+          if (liveQuery !== null) liveQuery.stopping = true;
+          if (context === (yield* Ref.get(activeTurn))) {
+            yield* finalizeActiveTurn({
+              context,
+              status: "failed",
+              completedAt: yield* DateTime.now,
+              failure: makeProviderFailure({
+                class: "provider_error",
+                code: "houston_bot_tool_check_missing",
+                message: toolCheckDidNotRunMessage(botName),
+              }),
+            });
+          } else {
+            yield* Effect.logWarning("orchestration-v2.claude-bot-tool-check-missing", {
+              providerTurnId: context.providerTurnId,
+            });
+          }
+          if (liveQuery !== null) yield* liveQuery.query.close.pipe(Effect.ignore);
+        });
+
         const canUseToolEffect = Effect.fn("ClaudeAdapterV2.canUseTool")(function* (
           toolName: Parameters<CanUseTool>[0],
           toolInput: Parameters<CanUseTool>[1],
@@ -10803,6 +10904,14 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             return {
               behavior: "deny",
               message: "Claude V2 adapter has no active turn for this tool request.",
+              toolUseID: callbackOptions.toolUseID,
+            } satisfies PermissionResult;
+          }
+          // Houston: nobody answers in an unattended bot run, so nothing waits for a person.
+          if (context.input.runtimePolicy.houstonBot?.neverAsk === true) {
+            return {
+              behavior: "deny",
+              message: NOBODY_WATCHING_MESSAGE,
               toolUseID: callbackOptions.toolUseID,
             } satisfies PermissionResult;
           }
@@ -11060,7 +11169,27 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         });
 
         const canUseTool: CanUseTool = (toolName, toolInput, callbackOptions) =>
-          runPromise(canUseToolEffect(toolName, toolInput, callbackOptions));
+          runPromise(
+            Effect.gen(function* () {
+              // Houston: the tool check runs before this callback, so a bot thread's call that
+              // reaches it undecided was never checked.
+              const context = yield* Ref.get(activeTurn);
+              const houstonBot = context?.input.runtimePolicy.houstonBot;
+              if (
+                context !== null &&
+                houstonBot !== undefined &&
+                !botToolDecisions.has(callbackOptions.toolUseID)
+              ) {
+                yield* stopForUncheckedBotCall(context, houstonBot.botName);
+                return {
+                  behavior: "deny",
+                  message: toolCheckDidNotRunMessage(houstonBot.botName),
+                  toolUseID: callbackOptions.toolUseID,
+                } satisfies PermissionResult;
+              }
+              return yield* canUseToolEffect(toolName, toolInput, callbackOptions);
+            }),
+          );
 
         const onElicitationEffect = Effect.fn("ClaudeAdapterV2.onElicitation")(function* (
           request: ElicitationRequest,
@@ -11068,6 +11197,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         ) {
           if (callbackOptions.signal.aborted)
             return { action: "cancel" } satisfies ElicitationResult;
+          // Houston: no request opens in an unattended bot run.
+          if ((yield* Ref.get(activeTurn))?.input.runtimePolicy.houstonBot?.neverAsk === true) {
+            return { action: "decline" } satisfies ElicitationResult;
+          }
           const acceptance = claudeMcpElicitationAcceptance(request);
           const context = yield* Ref.get(activeTurn);
           if (acceptance === undefined || context === null) {
@@ -11191,6 +11324,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               if (request.dialogKind !== "resume_return") {
                 return { behavior: "cancelled" as const };
               }
+              // Houston: an unattended bot run resumes with its history; nobody would answer.
+              if ((yield* Ref.get(activeTurn))?.input.runtimePolicy.houstonBot?.neverAsk === true) {
+                return { behavior: "completed" as const, result: "continue" as const };
+              }
               const idleCompaction = Option.isSome(serverSettings)
                 ? yield* serverSettings.value.getSettings.pipe(
                     Effect.map((settings) =>
@@ -11309,6 +11446,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           nativeThreadId: string,
         ) {
           const queryPolicy = yield* queryPolicyForTurn(turnInput);
+          const houstonBot = turnInput.runtimePolicy.houstonBot;
           const mcpSession = yield* mcpSessions.read(turnInput.threadId);
           const gateway =
             adapterOptions.gateway === undefined
@@ -11332,13 +11470,35 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ...(turnInput.runtimePolicy.houstonTaskSubmitTool === undefined
               ? {}
               : { houstonTaskSubmitTool: turnInput.runtimePolicy.houstonTaskSubmitTool }),
+            ...(houstonBot?.rules.houstonTools === undefined
+              ? {}
+              : { houstonBotTools: houstonBot.rules.houstonTools }),
             ...(queryPolicy.allowedTools === undefined
               ? {}
               : { allowedTools: queryPolicy.allowedTools }),
           });
-          const queryPolicyKey = claudeEffectiveQueryPolicyKey(queryPolicy, mcpOverrides);
+          const queryPolicyKey = claudeEffectiveQueryPolicyKey(
+            queryPolicy,
+            mcpOverrides,
+            houstonBot,
+          );
           const resumeSessionAt = yield* getNativeConversationHeadId(turnInput.providerThread);
           const existing = yield* Ref.get(queryContext);
+          // Houston: a bot thread's live process keeps the rules it opened with, so a continuation
+          // under other rules is refused instead of running under the old ones.
+          if (
+            houstonBot !== undefined &&
+            existing !== null &&
+            existing.nativeThreadId === nativeThreadId &&
+            !existing.stopping &&
+            existing.queryPolicyKey !== queryPolicyKey &&
+            isClaudeProviderContinuationTurn(turnInput)
+          ) {
+            return yield* new ProviderAdapter.ProviderAdapterProtocolError({
+              driver: CLAUDE_PROVIDER,
+              detail: botRulesChangedMessage(houstonBot.botName),
+            });
+          }
           // Continuations drain existing output without prompting; retain the live process regardless of selection.
           if (
             existing !== null &&
@@ -11445,6 +11605,21 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             compiledSelection = compileClaudeModelSelection(turnInput.modelSelection, catalog);
           }
 
+          const botLaunchRefusal =
+            houstonBot === undefined
+              ? undefined
+              : claudeBotLaunchRefusal({
+                  policy: houstonBot,
+                  account: adapterOptions.instanceId,
+                  launchArgs: adapterOptions.settings.launchArgs,
+                  sdkSettings: launchArgSettings,
+                });
+          if (botLaunchRefusal !== undefined) {
+            return yield* new ProviderAdapter.ProviderAdapterProtocolError({
+              driver: CLAUDE_PROVIDER,
+              detail: botLaunchRefusal,
+            });
+          }
           // Read before closing the live process so a bad path leaves it running.
           const appendSystemPromptFileText = yield* readClaudeAppendSystemPromptFile({
             settings: adapterOptions.settings,
@@ -11475,7 +11650,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           );
           const queryOptions = makeClaudeQueryOptions({
             modelSelection: turnInput.modelSelection,
-            claudeInChrome: adapterOptions.settings.claudeInChrome,
+            claudeInChrome:
+              houstonBot?.kind === "unattended" ? false : adapterOptions.settings.claudeInChrome,
             modelCatalog: catalog,
             nativeThreadId,
             resume: shouldResume,
@@ -11523,6 +11699,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             supportedDialogKinds: ["resume_return"],
             ...(appendSystemPromptFileText === undefined ? {} : { appendSystemPromptFileText }),
             ...(toolSearchOverride === undefined ? {} : { toolSearchOverride }),
+            ...(houstonBot === undefined
+              ? {}
+              : {
+                  houstonBot,
+                  botToolCheck: makeClaudeBotToolCheck(houstonBot, botToolDecisions),
+                }),
           });
           const resolvedTurnCwd = yield* fileSystem
             .realPath(turnInput.runtimePolicy.cwd ?? ".")

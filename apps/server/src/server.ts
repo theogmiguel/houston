@@ -137,6 +137,7 @@ import * as LegacyKeychain from "./houston/secrets/LegacyKeychain.ts";
 import * as SecretStoreImport from "./houston/secrets/SecretStoreImport.ts";
 import * as HoustonTaskIssueWriteback from "./houston/tasks/TaskIssueWriteback.ts";
 import * as SlackConnection from "./houston/slack/Connection.ts";
+import * as HoustonBotThreads from "./houston/bots/botThreads.ts";
 import { layerBots } from "./houston/bots/layer.ts";
 import * as HoustonLayoutWorkspaces from "./houston/layoutWorkspaces.ts";
 import * as HoustonThreadMembership from "./houston/threadMembership.ts";
@@ -745,6 +746,8 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     Layer.provideMerge(HoustonSlackStore.layer),
     Layer.provideMerge(layerHoustonSecrets),
     Layer.provideMerge(layerHoustonTaskPersistence),
+    // The runtime policy reads which threads are a bot's.
+    Layer.provideMerge(HoustonBotThreads.layer),
     Layer.provideMerge(layerPersistence),
     Layer.provideMerge(Layer.mergeAll(Keybindings.layer, UsageLimitSources.layer)),
     Layer.provideMerge(ProviderRegistry.layer),

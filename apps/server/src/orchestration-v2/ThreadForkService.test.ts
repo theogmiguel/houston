@@ -134,6 +134,24 @@ const planFork = (
     });
   }).pipe(Effect.provide(ThreadForkService.layer));
 
+it.effect("a fork and a side chat of a bot thread are the owner's own: no bot mark", () =>
+  Effect.gen(function* () {
+    const sourceRun = makeSourceRun("completed");
+    const projection = {
+      ...makeSourceProjection(sourceRun),
+      thread: {
+        ...makeSourceThread(),
+        houstonBot: { botId: "bot", botRunId: "bot-run", kind: "unattended" as const },
+      },
+    };
+    const fork = yield* planFork(sourceRun, projection);
+    assert.notProperty(fork.targetThread, "houstonBot");
+    const sideChat = yield* planFork(sourceRun, projection, { sideChat: true });
+    assert.notProperty(sideChat.targetThread, "houstonBot");
+    assert.equal(sideChat.targetThread.runtimeMode, "approval-required");
+  }),
+);
+
 it.effect("resets a fork's pin, snooze, settle and delegation state but keeps its origin", () =>
   Effect.gen(function* () {
     const linkOrigin = { sessionId: "mcp-session:fork-source", label: "Linked laptop" };
