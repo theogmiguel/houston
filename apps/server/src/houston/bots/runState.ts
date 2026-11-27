@@ -72,7 +72,7 @@ const stopReason = (read: BotRunRead, latest: RunRead): string => {
   if (interrupt.message === USER_STOP_REASON) {
     return interrupt.byClient ? "you stopped it" : "interrupted";
   }
-  return `interrupted: ${interrupt.message}`;
+  return `interrupted: ${applyCredentialRules(interrupt.message, MASK)}`;
 };
 
 /** The first row of the state table that the thread matches. Results come with the result tool. */

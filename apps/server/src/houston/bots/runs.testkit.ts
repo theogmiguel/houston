@@ -5,6 +5,7 @@ import {
   type ProjectId,
   ProviderInstanceId,
   type ServerSettings as ServerSettingsValue,
+  type ThreadId,
 } from "@houston-app/contracts";
 import type { HoustonBot } from "@houston-app/contracts/houston/bots";
 import * as Effect from "effect/Effect";
@@ -16,6 +17,7 @@ import { TestClock } from "effect/testing";
 import * as EffectOutbox from "../../orchestration-v2/EffectOutbox.ts";
 import * as EffectWorker from "../../orchestration-v2/EffectWorker.ts";
 import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
+import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ProviderInstanceRegistry from "../../provider/ProviderInstanceRegistry.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as TaskRunsKit from "../tasks/taskRuns.testkit.ts";
@@ -44,16 +46,39 @@ const layerAccounts = Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegist
 /** Every command the follower sends, in order. */
 export const dispatched: Array<OrchestrationV2ServerCommand> = [];
 
-const layerRecordedOrchestrator = Layer.effect(
-  Orchestrator.OrchestratorV2,
-  Effect.map(Orchestrator.OrchestratorV2, (orchestrator) => ({
-    ...orchestrator,
-    dispatch: (command: OrchestrationV2ServerCommand) => {
-      dispatched.push(command);
-      return orchestrator.dispatch(command);
-    },
-  })),
-);
+/** Counts what the follower looks up, so a test can prove an ordinary thread costs nothing. */
+export interface BotObserve {
+  readonly onShell?: (threadId: ThreadId) => void;
+  readonly onPolicy?: (threadId: ThreadId) => void;
+}
+
+const layerRecordedOrchestrator = (observe: BotObserve | undefined) =>
+  Layer.effect(
+    Orchestrator.OrchestratorV2,
+    Effect.map(Orchestrator.OrchestratorV2, (orchestrator) => ({
+      ...orchestrator,
+      dispatch: (command: OrchestrationV2ServerCommand) => {
+        dispatched.push(command);
+        return orchestrator.dispatch(command);
+      },
+      getThreadShell: (threadId: ThreadId) =>
+        Effect.tap(orchestrator.getThreadShell(threadId), () =>
+          Effect.sync(() => observe?.onShell?.(threadId)),
+        ),
+    })),
+  );
+
+const layerObservedBotThreads = (observe: BotObserve | undefined) =>
+  Layer.effect(
+    BotThreads.HoustonBotThreads,
+    Effect.map(BotThreads.HoustonBotThreads, (threads) => ({
+      ...threads,
+      policyOf: (thread) =>
+        Effect.tap(threads.policyOf(thread), () =>
+          Effect.sync(() => observe?.onPolicy?.(thread.id)),
+        ),
+    })),
+  ).pipe(Layer.provide(BotThreads.layer));
 
 // The harness's settings publish no changes; the follower must see the switch move, as in the server.
 // The switch is as a restarted server finds it stored, before the follower recovers.
@@ -74,15 +99,21 @@ const layerPublishedSettings = (on: boolean) =>
     }),
   );
 
-const layerBotRuns = (
-  harness: BotHarness,
-  options: TaskRunsKit.RunsOptions & { readonly on?: boolean },
-) => {
+export interface BotHarnessOptions extends TaskRunsKit.RunsOptions {
+  readonly on?: boolean;
+  readonly observe?: BotObserve;
+  /** Replaces the real store, for a test that needs a stale read. */
+  readonly store?: Layer.Layer<Store.HoustonBotStore>;
+}
+
+const layerBotRuns = (harness: BotHarness, options: BotHarnessOptions) => {
   const base = TaskRunsKit.layerRuns(harness, options);
   const runs = Runs.layer.pipe(
-    Layer.provide(Layer.mergeAll(layerAccounts, layerRecordedOrchestrator, EffectOutbox.layer)),
-    Layer.provideMerge(Store.layer),
-    Layer.provide(BotThreads.layer),
+    Layer.provide(
+      Layer.mergeAll(layerAccounts, layerRecordedOrchestrator(options.observe), EffectOutbox.layer),
+    ),
+    Layer.provideMerge(options.store ?? Store.layer),
+    Layer.provide(layerObservedBotThreads(options.observe)),
     Layer.provideMerge(layerPublishedSettings(options.on !== false)),
     Layer.provideMerge(base),
   );
@@ -113,7 +144,11 @@ export interface BotContext {
 export const runBots = <A, E, R>(
   harness: BotHarness,
   body: (context: BotContext) => Effect.Effect<A, E, R>,
-  options: TaskRunsKit.RunsOptions & { readonly projectId?: ProjectId; readonly on?: boolean } = {},
+  options: BotHarnessOptions & {
+    readonly projectId?: ProjectId;
+    /** Replaces the launcher for a test of a launch that fails. */
+    readonly launcher?: Layer.Layer<ThreadLaunch.ThreadLaunchService>;
+  } = {},
 ) =>
   Effect.gen(function* () {
     if (options.on !== false) yield* setSwitch(true);
@@ -121,7 +156,13 @@ export const runBots = <A, E, R>(
     const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
     const runs = yield* Runs.HoustonBotRuns;
     const store = yield* Store.HoustonBotStore;
-    const launch = yield* makeLaunch.pipe(Effect.provide(layerAccounts));
+    const launch = yield* makeLaunch.pipe(
+      Effect.provide(
+        options.launcher === undefined
+          ? layerAccounts
+          : Layer.merge(layerAccounts, options.launcher),
+      ),
+    );
     const projectId =
       options.projectId ?? (yield* createProject(`bots-${harness.name}`, harness.repo));
     const settle = Effect.gen(function* () {

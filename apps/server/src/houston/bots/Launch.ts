@@ -127,7 +127,13 @@ export const makeLaunch = Effect.gen(function* () {
         Effect.catch((error) =>
           Effect.andThen(
             fail(row.id, error.message),
-            Effect.fail(refuse("invalid", OPERATION, `the thread did not start: ${error.message}`)),
+            Effect.fail(
+              refuse(
+                "invalid",
+                OPERATION,
+                `the thread did not start: ${applyCredentialRules(error.message, MASK)}`,
+              ),
+            ),
           ),
         ),
       );
@@ -244,6 +250,15 @@ export const makeLaunch = Effect.gen(function* () {
       .withTransaction(
         Effect.gen(function* () {
           yield* store.requireOn(OPERATION);
+          // Another window may have switched the bot off after the read above.
+          const [current] = yield* sql<{ readonly enabled: number }>`
+            SELECT enabled FROM houston_bots WHERE id = ${bot.id}
+          `;
+          if (current?.enabled !== 1) {
+            return yield* refuse("invalid", OPERATION, `${bot.name} is switched off`, {
+              field: "botId",
+            });
+          }
           yield* insertBotRun({
             id,
             requestId: input.requestId,

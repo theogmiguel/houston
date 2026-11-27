@@ -147,12 +147,19 @@ const make = Effect.gen(function* () {
   const eventSink = yield* EventSink.EventSinkV2;
   const outbox = yield* EffectOutbox.EffectOutboxV2;
   const management = yield* ThreadManagement.ThreadManagementService;
-  const botThreads = yield* HoustonBotThreads;
+  const botThreadPolicies = yield* HoustonBotThreads;
   const settings = yield* ServerSettings.ServerSettingsService;
   const launch = yield* makeLaunch;
   const scope = yield* Effect.scope;
   const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.orDie(effect);
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
+  // Every thread a bot run owns, so an ordinary thread's first event needs no lookup. Seeded
+  // once; a thread created while this server runs arrives with its mark or its `bot-run:` message.
+  const botThreads = new Set(
+    (yield* run(sql<{ readonly thread_id: string }>`
+      SELECT thread_id FROM houston_bot_runs WHERE thread_id IS NOT NULL
+    `)).map((row) => row.thread_id),
+  );
 
   const rowById = (id: string) =>
     run(sql<BotRunRow>`SELECT * FROM houston_bot_runs WHERE id = ${id}`).pipe(
@@ -326,35 +333,66 @@ const make = Effect.gen(function* () {
       );
       yield* run(sql`
         INSERT INTO houston_bot_turns (
-          run_id, bot_run_id, thread_id, started_by, local_date, started_at, ended_at
+          run_id, bot_run_id, thread_id, started_by, local_date, started_at, ended_at,
+          stopped_by_client
         ) VALUES (
           ${current.id}, ${row.id}, ${threadId}, ${startedBy}, ${localDate},
-          ${DateTime.formatIso(current.startedAt)}, ${endedAt}
+          ${DateTime.formatIso(current.startedAt)}, ${endedAt},
+          ${clientStoppedRuns.has(current.id) ? 1 : 0}
         )
         ON CONFLICT (run_id) DO NOTHING
       `);
+      clientStoppedRuns.delete(current.id);
     }
   });
 
   // A hot path: this and the batch below run for every thread, so they open no span; the steps
   // of a bot run's own thread do.
   const notBots = new Set<string>();
-  const botRunOfThread = Effect.fnUntraced(function* (threadId: ThreadId) {
-    if (notBots.has(threadId)) return undefined;
+  // A client's stop can arrive before the turn row exists; the flag is written when it does.
+  const clientStoppedRuns = new Set<string>();
+  const rememberNotBot = (threadId: string) => {
+    if (notBots.size >= THREAD_CACHE) notBots.clear();
+    notBots.add(threadId);
+  };
+  interface ThreadHint {
+    /** The event itself says this is a bot run's thread. */
+    readonly bot: boolean;
+    /** A sub-agent thread's parent, from its created event. */
+    readonly parent: string | null;
+  }
+  const NO_HINT: ThreadHint = { bot: false, parent: null };
+  const botRunOfThread = Effect.fnUntraced(function* (threadId: ThreadId, hint: ThreadHint) {
+    if (!hint.bot && notBots.has(threadId)) return undefined;
     const [own] = yield* run(sql<BotRunRow>`
       SELECT * FROM houston_bot_runs WHERE thread_id = ${threadId}
     `);
-    if (own !== undefined) return { row: own, child: false };
+    if (own !== undefined) {
+      botThreads.add(threadId);
+      return { row: own, child: false };
+    }
+    // An ordinary thread was already recognised by its created event; a child of one is too.
+    if (
+      !hint.bot &&
+      !botThreads.has(threadId) &&
+      hint.parent !== null &&
+      notBots.has(hint.parent)
+    ) {
+      rememberNotBot(threadId);
+      return undefined;
+    }
     const shell = yield* run(orchestrator.getThreadShell(threadId));
     if (shell === null) return undefined;
     const thread: Pick<OrchestrationV2AppThread, "id" | "lineage" | "houstonBot"> = shell;
-    const policy = yield* botThreads.policyOf(thread).pipe(Effect.orElseSucceed(() => undefined));
+    const policy = yield* botThreadPolicies
+      .policyOf(thread)
+      .pipe(Effect.orElseSucceed(() => undefined));
     const above = policy === undefined ? undefined : yield* rowById(policy.botRunId);
     if (above === undefined) {
-      if (notBots.size >= THREAD_CACHE) notBots.clear();
-      notBots.add(threadId);
+      rememberNotBot(threadId);
       return undefined;
     }
+    botThreads.add(threadId);
     return { row: above, child: true };
   });
 
@@ -366,10 +404,41 @@ const make = Effect.gen(function* () {
   ) {
     const threads = new Set<ThreadId>();
     const clientStops: Array<string> = [];
+    const hints = new Map<ThreadId, ThreadHint>();
+    const hintOf = (threadId: ThreadId) => hints.get(threadId) ?? NO_HINT;
     for (const entry of stored) {
-      if (!followed(entry)) continue;
-      threads.add(entry.event.threadId);
       const { event } = entry;
+      const payload = event.payload as Partial<OrchestrationV2AppThread>;
+      const threadPayload =
+        (event.type === "thread.created" || event.type.startsWith("thread.")) &&
+        "lineage" in payload
+          ? payload
+          : undefined;
+      if (threadPayload !== undefined) {
+        if (threadPayload.houstonBot !== undefined) {
+          notBots.delete(event.threadId);
+          botThreads.add(event.threadId);
+          hints.set(event.threadId, { bot: true, parent: null });
+        } else if (threadPayload.lineage?.relationshipToParent === "subagent") {
+          const parent = threadPayload.lineage.parentThreadId;
+          hints.set(event.threadId, { bot: false, parent });
+          if (parent !== null && notBots.has(parent)) rememberNotBot(event.threadId);
+        } else {
+          // A bot run's dev thread has no mark but carries `bot-run:` in its run event.
+          rememberNotBot(event.threadId);
+        }
+      }
+      if (
+        (event.type === "run.created" || event.type === "run.updated") &&
+        (event.payload.userMessageId.startsWith("bot-run:") ||
+          event.payload.userMessageId.startsWith("bot-owner:"))
+      ) {
+        notBots.delete(event.threadId);
+        botThreads.add(event.threadId);
+        hints.set(event.threadId, { ...hintOf(event.threadId), bot: true });
+      }
+      if (!followed(entry)) continue;
+      threads.add(event.threadId);
       if (
         event.type === "turn-item.updated" &&
         event.payload.type === "run_interrupt_request" &&
@@ -381,12 +450,14 @@ const make = Effect.gen(function* () {
     }
     const touched = new Map<string, BotRunRow>();
     for (const threadId of threads) {
-      const found = yield* botRunOfThread(threadId);
+      const found = yield* botRunOfThread(threadId, hintOf(threadId));
       if (found === undefined) continue;
       yield* recordTurns(threadId, found.row, found.child);
       touched.set(found.row.id, found.row);
     }
     for (const runId of clientStops) {
+      if (clientStoppedRuns.size >= THREAD_CACHE) clientStoppedRuns.clear();
+      clientStoppedRuns.add(runId);
       yield* run(sql`UPDATE houston_bot_turns SET stopped_by_client = 1 WHERE run_id = ${runId}`);
     }
     for (const row of touched.values()) {
@@ -472,7 +543,8 @@ const make = Effect.gen(function* () {
     for (const row of open) {
       if (row.launch_json !== null) {
         const age = DateTime.toEpochMillis(now) - Date.parse(row.started_at);
-        if (on && row.kind === "asked" && age <= ASKED_RELAUNCH_MS) {
+        const bot = yield* store.find(row.bot_id);
+        if (on && bot?.enabled === true && row.kind === "asked" && age <= ASKED_RELAUNCH_MS) {
           yield* launch.launchRow(row).pipe(Effect.ignore);
         } else {
           yield* run(sql`
