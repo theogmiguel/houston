@@ -200,6 +200,7 @@ const botPolicy = (kind: "asked" | "unattended", runtimeMode?: RuntimeMode): Bot
     },
   });
   return {
+    botRunId: `bot-run-${kind}`,
     ...(stored.runtimeMode === undefined ? {} : { runtimeMode: stored.runtimeMode }),
     provider: {
       botName: "Digest writer",

@@ -11,6 +11,7 @@ import {
   BOT_THREAD_WALK_LIMIT,
   HoustonBotThreadLookupError,
   makeBotThreads,
+  mcpBotCallerOf,
   type BotThreadRead,
 } from "./botThreads.ts";
 import { insertBotRun } from "./botRuns.ts";
@@ -246,5 +247,43 @@ describe("threads that are not a bot's", () => {
       const rowError = yield* Effect.flip(broken.policyOf(thread("ordinary")));
       assert.instanceOf(rowError, HoustonBotThreadLookupError);
     }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+});
+
+describe("the Houston credential of a bot thread", () => {
+  const tree = [thread("root"), child("child", "root")];
+
+  it.effect("carries its bot run and only the Houston tools its stored rules allow", () =>
+    withThreads(tree, (botThreads) =>
+      Effect.gen(function* () {
+        yield* run("root", "unattended");
+        const root = mcpBotCallerOf((yield* botThreads.policyOf(tree[0]!))!);
+        assert.deepEqual(root, {
+          kind: "unattended",
+          child: false,
+          botRunId: "run-root",
+          botName: "Digest writer",
+          tools: { allow: policyFor({ kind: "unattended", bot: BOT }).rules.houstonTools! },
+        });
+        const below = mcpBotCallerOf((yield* botThreads.policyOf(tree[1]!))!);
+        assert.deepInclude(below, { kind: "unattended", child: true, botRunId: "run-root" });
+        assert.notInclude("allow" in below.tools ? below.tools.allow : [], "houston_bot_result");
+      }),
+    ),
+  );
+
+  it.effect("an asked bot run and its child are refused scheduling, the child the result too", () =>
+    withThreads(tree, (botThreads) =>
+      Effect.gen(function* () {
+        yield* run("root", "asked");
+        const scheduling = ["schedule_task", "delete_scheduled_task", "run_scheduled_task_now"];
+        assert.deepEqual(mcpBotCallerOf((yield* botThreads.policyOf(tree[0]!))!).tools, {
+          deny: scheduling,
+        });
+        assert.deepEqual(mcpBotCallerOf((yield* botThreads.policyOf(tree[1]!))!).tools, {
+          deny: [...scheduling, "houston_bot_result"],
+        });
+      }),
+    ),
   );
 });

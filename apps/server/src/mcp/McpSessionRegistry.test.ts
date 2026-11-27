@@ -225,3 +225,54 @@ it.effect.each(["provider-session", "thread", "all"] as const)(
       expect(yield* registry.resolve(token)).toBeUndefined();
     }),
 );
+
+// Houston: an unattended bot run's credential carries only what its allowed reads need.
+it.effect("narrows an unattended bot thread's credential and keeps an asked one's", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const resolveIssued = (issued: McpSessionRegistry.McpIssuedCredential) =>
+      registry.resolve(issued.config.authorizationHeader.replace(/^Bearer\s+/, ""));
+    const unattendedBot = {
+      kind: "unattended",
+      child: false,
+      botRunId: "bot-run-1",
+      botName: "Night digest",
+      tools: { allow: ["houston_thread_read"] },
+    } as const;
+    const unattended = yield* registry.issue({
+      threadId: ThreadId.make("thread-unattended"),
+      providerInstanceId: ProviderInstanceId.make("claude"),
+      capabilities: new Set(["preview", "device"]),
+      bot: unattendedBot,
+    });
+    expect(unattended.config.capabilities).toEqual(
+      new Set(["orchestration", "pull-requests", "issues"]),
+    );
+    expect(unattended.config.browserToolsAvailable).toBe(false);
+    expect((yield* resolveIssued(unattended))?.thread.bot).toEqual(unattendedBot);
+
+    const askedBot = {
+      kind: "asked",
+      child: false,
+      botRunId: "bot-run-2",
+      botName: "Night digest",
+      tools: { deny: ["schedule_task"] },
+    } as const;
+    const asked = yield* registry.issue({
+      threadId: ThreadId.make("thread-asked"),
+      providerInstanceId: ProviderInstanceId.make("claude"),
+      capabilities: new Set(["preview"]),
+      bot: askedBot,
+    });
+    expect(asked.config.capabilities).toEqual(
+      new Set(["preview", "orchestration", "worktree", "pull-requests", "issues"]),
+    );
+    expect((yield* resolveIssued(asked))?.thread.bot).toEqual(askedBot);
+
+    const ordinary = yield* registry.issue({
+      threadId: ThreadId.make("thread-ordinary"),
+      providerInstanceId: ProviderInstanceId.make("claude"),
+    });
+    expect((yield* resolveIssued(ordinary))?.thread.bot).toBeUndefined();
+  }),
+);

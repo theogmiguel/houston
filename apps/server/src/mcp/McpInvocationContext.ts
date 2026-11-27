@@ -9,6 +9,7 @@ import {
   type RuntimeMode,
   type ThreadId,
 } from "@houston-app/contracts";
+import type { HoustonBotRunKind } from "@houston-app/contracts/houston/bots";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -32,7 +33,89 @@ export interface McpThreadCaller {
   readonly providerInstanceId: ProviderInstanceId;
   /** A delegated child task; its parent owns the work it hands back. */
   readonly subagent?: boolean;
+  /** Houston: the bot run this thread works for, which fixes the Houston tools it may call. */
+  readonly bot?: McpBotCaller;
 }
+
+/** Houston tools a credential may call: only the listed ones, or every one but them. */
+export type McpToolScope =
+  | { readonly allow: ReadonlyArray<string> }
+  | { readonly deny: ReadonlyArray<string> };
+
+export interface McpBotCaller {
+  readonly kind: HoustonBotRunKind;
+  readonly child: boolean;
+  readonly botRunId: string;
+  readonly botName: string;
+  readonly tools: McpToolScope;
+}
+
+/** Houston: the only tools a task's planner or reviewer credential may call. */
+export const HOUSTON_TASK_SUBMIT_TOOLS: ReadonlyArray<string> = [
+  "houston_task_plan_submit",
+  "houston_task_review_submit",
+];
+
+export const toolScopeOf = (scope: McpInvocationScope): McpToolScope | undefined =>
+  scope.capabilities.has("houston-task-submit")
+    ? { allow: HOUSTON_TASK_SUBMIT_TOOLS }
+    : scope.thread?.bot?.tools;
+
+const inToolScope = (tools: McpToolScope | undefined, name: string): boolean =>
+  tools === undefined ||
+  ("allow" in tools ? tools.allow.includes(name) : !tools.deny.includes(name));
+
+const sameNames = (a: ReadonlyArray<string>, b: ReadonlyArray<string>) =>
+  a.length === b.length && a.every((name, index) => name === b[index]);
+
+/** Whether a credential issued for `a` may stand in for one issued now for `b`. */
+export const sameBotCaller = (a: McpBotCaller | undefined, b: McpBotCaller | undefined): boolean =>
+  a === undefined || b === undefined
+    ? a === b
+    : a.kind === b.kind &&
+      a.child === b.child &&
+      a.botRunId === b.botRunId &&
+      a.botName === b.botName &&
+      ("allow" in a.tools
+        ? "allow" in b.tools && sameNames(a.tools.allow, b.tools.allow)
+        : "deny" in b.tools && sameNames(a.tools.deny, b.tools.deny));
+
+const otherEnvironmentOf = (scope: McpInvocationScope, args: unknown): boolean => {
+  const named = args as
+    | { readonly environmentId?: unknown; readonly target?: { readonly environmentId?: unknown } }
+    | undefined;
+  return [named?.environmentId, named?.target?.environmentId].some(
+    (environmentId) => environmentId !== undefined && environmentId !== scope.environmentId,
+  );
+};
+
+/**
+ * Why a call is refused by the credential's tool scope, or undefined. A bot thread also acts on
+ * this machine only: no bot record would exist on another.
+ */
+export const toolScopeRefusal = (
+  scope: McpInvocationScope,
+  tool: string,
+  args: unknown,
+): string | undefined => {
+  if (scope.capabilities.has("houston-task-submit")) {
+    return inToolScope(toolScopeOf(scope), tool)
+      ? undefined
+      : `capability_denied: thread ${scope.thread?.threadId ?? "unknown"} plans or reviews a Houston task, so its credential may call only ${HOUSTON_TASK_SUBMIT_TOOLS.join(" and ")}, not ${tool}.`;
+  }
+  const bot = scope.thread?.bot;
+  if (bot === undefined) return undefined;
+  if (!inToolScope(bot.tools, tool))
+    return `Houston's ${tool} is not available in this bot thread.`;
+  return otherEnvironmentOf(scope, args) ? `${bot.botName} works on this machine only.` : undefined;
+};
+
+/** `McpSchema.EnabledWhen` beside a tool's own: a bot thread lists only the tools it may call. */
+export const listedForBots = (tool: string) => (): boolean => {
+  const fiber = Fiber.getCurrent();
+  const scope = fiber && Context.getOrUndefined(fiber.context, McpInvocationContext);
+  return inToolScope(scope?.thread?.bot?.tools, tool);
+};
 
 export interface McpClientCaller {
   readonly sessionId: string;
