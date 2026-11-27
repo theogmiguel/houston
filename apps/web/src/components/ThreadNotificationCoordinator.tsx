@@ -41,9 +41,14 @@ import { resolveSidebarThreadStatus, type SidebarThreadStatus } from "./Sidebar.
 import { useLayoutStore } from "../layout/layoutStore";
 import { openThreadInLayout } from "../threads/openThreadInLayout";
 import {
+  boundedWaitNoticeText,
   createThreadNotificationGate,
+  createWaitingNoticeTracker,
   type ThreadNotificationKind,
   type ThreadNotificationObservation,
+  type WaitingNotice,
+  type WaitingNoticeExistingOutcome,
+  waitingRequestKind,
 } from "./ThreadNotificationCoordinator.logic";
 import { toastManager } from "./ui/toast";
 
@@ -54,11 +59,19 @@ interface NotificationState extends ThreadNotificationObservation {
   readonly status: SidebarThreadStatus;
 }
 
+interface WaitedThread {
+  readonly threadId: ThreadId;
+  readonly projectId: ProjectId;
+}
+
 interface WatchedEnvironment {
   unsubscribe: () => void;
   previous: Map<ThreadId, NotificationState>;
   reconnecting: boolean;
   readonly gate: ReturnType<typeof createThreadNotificationGate<ThreadId>>;
+  readonly waiting: ReturnType<typeof createWaitingNoticeTracker<string>>;
+  readonly waitedThreads: Map<string, WaitedThread>;
+  readonly inputNoticeOutcomes: Map<string, WaitingNoticeExistingOutcome>;
 }
 
 /**
@@ -157,7 +170,7 @@ export function startThreadNotifications(
     environmentId: EnvironmentId,
     state: NotificationState,
     kind: ThreadNotificationKind,
-  ) => {
+  ): WaitingNoticeExistingOutcome => {
     const { thread, status } = state;
     const { notificationMode: mode, inAppNotificationsEnabled } = getClientSettings();
     const active = (router.state.matches.at(-1)?.params ?? {}) as {
@@ -181,7 +194,9 @@ export function startThreadNotifications(
             : status === "failed"
               ? t("Thread failed")
               : t("Input needed");
+    let playedSound = false;
     if (hasNotificationSound(mode)) {
+      playedSound = true;
       void playNotificationSound(kind, () =>
         hasNotificationSound(getClientSettings().notificationMode),
       );
@@ -219,13 +234,13 @@ export function startThreadNotifications(
           },
         },
       });
-      return;
+      return "announced";
     }
     if (
       !hasDesktopNotifications(mode) ||
       (document.visibilityState === "visible" && document.hasFocus())
     )
-      return;
+      return playedSound ? "sound" : "none";
     const requireInteraction = kind === "completion" && isWindowsPlatform(navigator.platform);
     const bridge = window.hostBridge;
     // Some webviews do not wire the web Notification API; the host's native notifier
@@ -249,7 +264,7 @@ export function startThreadNotifications(
           requireInteraction,
         );
       });
-      return;
+      return "announced";
     }
     showWebNotification(
       environmentId,
@@ -259,6 +274,56 @@ export function startThreadNotifications(
       thread.id,
       requireInteraction,
     );
+    return "announced";
+  };
+
+  const waitingRequestKey = (environmentId: EnvironmentId, threadId: ThreadId, requestId: string) =>
+    `${environmentId}:${threadId}:${requestId}`;
+
+  // The waiting setting notices whatever the mode is, so it does not read the mode's gate.
+  const presentWaiting = (
+    environmentId: EnvironmentId,
+    target: WaitedThread,
+    notice: WaitingNotice,
+  ) => {
+    const { notificationMode: mode } = getClientSettings();
+    const t = (source: string) => translate(resolveLocale(getClientSettings().language), source);
+    const title = notice.kind === "approval" ? t("Approval needed") : t("Input needed");
+    if (notice.playSound && hasNotificationSound(mode)) {
+      void playNotificationSound("input", () =>
+        hasNotificationSound(getClientSettings().notificationMode),
+      );
+    }
+    const key = notice.key;
+    const bridge = window.hostBridge;
+    if (bridge?.notifyThread && nativeSupported !== false) {
+      trackNative(key, environmentId, target.projectId, target.threadId);
+      void bridge.notifyThread({ id: key, title, body: notice.title }).catch(() => {
+        const tracked = pending.get(key);
+        if (tracked?.notification == null) {
+          pending.delete(key);
+          nativeTargets.delete(key);
+          setNotificationBadge(pending.size);
+        }
+        showWebNotification(
+          environmentId,
+          title,
+          notice.title,
+          target.projectId,
+          target.threadId,
+          false,
+        );
+      });
+      return;
+    }
+    showWebNotification(
+      environmentId,
+      title,
+      notice.title,
+      target.projectId,
+      target.threadId,
+      false,
+    );
   };
 
   const observeThreads = (
@@ -267,7 +332,28 @@ export function startThreadNotifications(
     threads: ReadonlyArray<OrchestrationV2ThreadShell>,
   ) => {
     const previous = entry.previous;
+    entry.inputNoticeOutcomes.clear();
     const next = new Map<ThreadId, NotificationState>();
+    const byId = new Map(threads.map((thread) => [thread.id, thread] as const));
+    // A subagent's coordinator answers its questions while that run is live.
+    const coordinatorRunning = (rawThread: OrchestrationV2ThreadShell): boolean => {
+      const parentId =
+        rawThread.lineage.parentThreadId ?? rawThread.delegatedFrom?.threadId ?? null;
+      const parent = parentId === null ? undefined : byId.get(parentId);
+      if (parent === undefined) return false;
+      return parent.activityRunStatus !== undefined
+        ? parent.activityRunStatus !== null
+        : parent.status === "preparing" ||
+            parent.status === "starting" ||
+            parent.status === "running" ||
+            parent.status === "waiting";
+    };
+    const waitingCandidates: Array<{
+      key: string;
+      kind: ReturnType<typeof waitingRequestKind> & ("question" | "approval");
+      title: string;
+      thread: WaitedThread;
+    }> = [];
     // A parent here also hears of what its tasks on linked environments ask.
     const subagentRequests = registry.get(
       environmentThreadShells.pendingSubagentRequestsAtom(environmentId),
@@ -275,6 +361,23 @@ export function startThreadNotifications(
     const delegatedUnderParent = registry.get(environmentThreadShells.delegatedUnderParentAtom);
     const changed: Array<[NotificationState | undefined, NotificationState]> = [];
     for (const rawThread of threads) {
+      const request = rawThread.pendingRuntimeRequest;
+      const kind = waitingRequestKind(request);
+      if (kind !== null && request !== null && rawThread.archivedAt === null) {
+        const lineage = rawThread.lineage;
+        const eligible =
+          lineage.relationshipToParent === "subagent" || rawThread.delegatedFrom !== undefined
+            ? kind === "question" && !coordinatorRunning(rawThread)
+            : lineage.sideChat !== true;
+        if (eligible) {
+          waitingCandidates.push({
+            key: waitingRequestKey(environmentId, rawThread.id, request.id),
+            kind,
+            title: boundedWaitNoticeText(rawThread.title),
+            thread: { threadId: rawThread.id, projectId: rawThread.projectId },
+          });
+        }
+      }
       if (
         isShownUnderParent(
           { environmentId, threadId: rawThread.id },
@@ -324,6 +427,21 @@ export function startThreadNotifications(
         quiet: state.raw.latestRunStopRequested === true,
       });
     }
+    const waitedKeys = new Set(waitingCandidates.map((candidate) => candidate.key));
+    for (const key of entry.waitedThreads.keys()) {
+      if (!waitedKeys.has(key)) entry.waitedThreads.delete(key);
+    }
+    for (const candidate of waitingCandidates) {
+      entry.waitedThreads.set(candidate.key, candidate.thread);
+    }
+    entry.waiting.sync(
+      waitingCandidates.map((candidate) => ({
+        key: candidate.key,
+        kind: candidate.kind,
+        title: candidate.title,
+        existingOutcome: entry.inputNoticeOutcomes.get(candidate.key) ?? "none",
+      })),
+    );
   };
 
   const watchEnvironment = (environmentId: EnvironmentId): WatchedEnvironment => {
@@ -331,9 +449,27 @@ export function startThreadNotifications(
       previous: new Map(),
       reconnecting: false,
       unsubscribe: () => {},
+      waitedThreads: new Map(),
+      inputNoticeOutcomes: new Map(),
       gate: createThreadNotificationGate<ThreadId>((threadId, kind) => {
         const state = entry.previous.get(threadId);
-        if (state) present(environmentId, state, kind);
+        if (!state) return;
+        const outcome = present(environmentId, state, kind);
+        const request = state.raw.pendingRuntimeRequest;
+        if (
+          kind === "input" &&
+          request !== null &&
+          (state.status === "input" || state.status === "approval")
+        ) {
+          entry.inputNoticeOutcomes.set(
+            waitingRequestKey(environmentId, state.thread.id, request.id),
+            outcome,
+          );
+        }
+      }),
+      waiting: createWaitingNoticeTracker<string>((notice) => {
+        const target = entry.waitedThreads.get(notice.key);
+        if (target) presentWaiting(environmentId, target, notice);
       }),
     };
     let threads: ReadonlyArray<OrchestrationV2ThreadShell> | null = null;
@@ -369,13 +505,17 @@ export function startThreadNotifications(
       unsubscribeRequests();
       unsubscribeDelegated();
       entry.gate.clear();
+      entry.waiting.clear();
+      entry.waitedThreads.clear();
     };
     return entry;
   };
 
   const syncEnvironments = () => {
-    const { notificationMode, inAppNotificationsEnabled } = getClientSettings();
-    const enabled = notificationMode !== "off" || inAppNotificationsEnabled;
+    const { notificationMode, inAppNotificationsEnabled, notifyWhenThreadWaits } =
+      getClientSettings();
+    const enabled =
+      notificationMode !== "off" || inAppNotificationsEnabled || notifyWhenThreadWaits;
     const environmentIds = enabled ? registry.get(environmentSummaries.environmentIdsAtom) : [];
     const activeIds = new Set(environmentIds);
     for (const [environmentId, entry] of watched) {

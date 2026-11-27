@@ -17,7 +17,7 @@ Search Settings by feature or setting name. `Esc` clears an active search.
 
 - **Sidebar** — group matching repositories across environments, and order projects.
 - **Notifications** — thread notifications with a style (notifications, sound, both or
-  off), and in-app notifications.
+  off), in-app notifications, and a notice when a thread waits for you.
 - **Confirmations** — ask before unpinning, archiving or deleting a thread, and, in the
   desktop app, whether the quit shortcut quits directly or waits for a second press.
 - **Background** — **Keep in tray**, shown when the desktop has a working tray.

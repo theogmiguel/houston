@@ -269,6 +269,7 @@ export function settingsRestoreDefaultsPatch() {
     showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
     composerRichTextEnabled: DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled,
     showCommentButtonOnSelection: DEFAULT_UNIFIED_SETTINGS.showCommentButtonOnSelection,
+    notifyWhenThreadWaits: DEFAULT_UNIFIED_SETTINGS.notifyWhenThreadWaits,
     sendShortcut: DEFAULT_UNIFIED_SETTINGS.sendShortcut,
     followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
     contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
@@ -379,6 +380,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       : []),
     ...(settings.inAppNotificationsEnabled !== DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled
       ? ["In-app notifications"]
+      : []),
+    ...(settings.notifyWhenThreadWaits !== DEFAULT_UNIFIED_SETTINGS.notifyWhenThreadWaits
+      ? ["Notify when a thread waits"]
       : []),
     ...(settings.sidebarProjectGroupingMode !== DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode
       ? ["Project Grouping"]
@@ -941,7 +945,8 @@ export function ChatSettingsPanel() {
                 onClick={() =>
                   updateSettings({
                     composerRichTextEnabled: DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled,
-      showCommentButtonOnSelection: DEFAULT_UNIFIED_SETTINGS.showCommentButtonOnSelection,
+                    showCommentButtonOnSelection:
+                      DEFAULT_UNIFIED_SETTINGS.showCommentButtonOnSelection,
                   })
                 }
               />

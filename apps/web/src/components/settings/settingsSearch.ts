@@ -595,6 +595,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["notification toast popup completion input approval failure"],
   },
   {
+    id: "waiting-notifications",
+    title: "Notify me when a thread waits for me",
+    to: "/settings/general",
+    searchTerms: ["waiting question approval blocked reminder system notice 30 minutes"],
+  },
+  {
     id: "language",
     title: "Language",
     to: "/settings/general",
