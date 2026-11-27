@@ -1,8 +1,12 @@
+// @effect-diagnostics nodeBuiltinImport:off - builds a repository with no base ref to start from.
 // The follower of bot runs: the state table read from a thread, who started each turn, and the
 // start, stop, switch and restart paths over the real orchestrator and launcher.
+import * as NodePath from "node:path";
+
 import { assert, describe, it } from "@effect/vitest";
 import {
   CommandId,
+  DEFAULT_SERVER_SETTINGS,
   EventId,
   MessageId,
   ProjectId,
@@ -13,6 +17,7 @@ import {
   type OrchestrationV2Run,
 } from "@houston-app/contracts";
 import type { HoustonBotAskInput } from "@houston-app/contracts/houston/bots";
+import { resolveProjectSettings } from "@houston-app/shared/projectSettings";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -21,6 +26,9 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as EventSink from "../../orchestration-v2/EventSink.ts";
 import { USER_STOP_REASON } from "../../orchestration-v2/RunExecutionService.ts";
 import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
+import * as ServerSettings from "../../serverSettings.ts";
+import { commitLines, git } from "../tasks/taskRuns.testkit.ts";
+import { createProject } from "../tasks/tasks.testkit.ts";
 import { editOf, LAPTOP, setSwitch } from "./bots.testkit.ts";
 import { BOTS_OFF_MESSAGE } from "./rules.ts";
 import * as Store from "./Store.ts";
@@ -28,6 +36,7 @@ import {
   type BotContext,
   CLAUDE_ACCOUNT,
   dispatched,
+  launched,
   makeBotHarness,
   runBots,
 } from "./runs.testkit.ts";
@@ -39,6 +48,7 @@ import {
   type BotRunRead,
   type RunRead,
 } from "./runState.ts";
+import { type BotWorkspaceGit, resolveBotWorkspace } from "./workspace.ts";
 
 const at = (minute: number) => DateTime.makeUnsafe(Date.UTC(2026, 10, 26, 9, minute));
 
@@ -324,6 +334,109 @@ const rowOf = (botRunId: string) =>
     ),
   );
 
+describe("an asked run's workspace, from the project's settings", () => {
+  const projectId = ProjectId.make("project-workspace");
+  const settingsFor = (defaultThreadEnvMode: "local" | "worktree", startFromOrigin = false) =>
+    resolveProjectSettings(
+      {
+        ...DEFAULT_SERVER_SETTINGS,
+        projectSettingsOverrides: {
+          [projectId]: { defaultThreadEnvMode, newWorktreesStartFromOrigin: startFromOrigin },
+        },
+      },
+      projectId,
+      null,
+      null,
+    );
+  const workspaceOf = (
+    git: BotWorkspaceGit,
+    projectSettings: ReturnType<typeof settingsFor>,
+    workspaceRoot = "/work/repo",
+  ) =>
+    resolveBotWorkspace(git, {
+      projectSettings,
+      workspaceRoot,
+      newProjectsRoot: null,
+      projectHasThreads: true,
+    });
+  const gitOf = (state: {
+    readonly isRepo?: boolean;
+    readonly branch?: string | null;
+    readonly remote?: string | null;
+    readonly defaultBranch?: string | null;
+    readonly refs?: ReadonlyArray<string>;
+  }): BotWorkspaceGit => ({
+    isRepository: () => Effect.succeed(state.isRepo ?? true),
+    currentBranch: () => Effect.succeed(state.branch ?? null),
+    primaryRemote: () => Effect.succeed(state.remote ?? null),
+    defaultBranch: () => Effect.succeed(state.defaultBranch ?? null),
+    hasRef: (_cwd, ref) => Effect.succeed((state.refs ?? []).includes(ref)),
+  });
+  const baseRefOf = (state: Parameters<typeof gitOf>[0], startFromOrigin = false) =>
+    Effect.map(workspaceOf(gitOf(state), settingsFor("worktree", startFromOrigin)), (strategy) =>
+      strategy.type === "worktree" ? strategy.baseRef : null,
+    );
+
+  it.effect("a local project, and a project without Git, start in its root", () =>
+    Effect.gen(function* () {
+      assert.deepEqual(yield* workspaceOf(gitOf({}), settingsFor("local")), { type: "root" });
+      assert.deepEqual(yield* workspaceOf(gitOf({ isRepo: false }), settingsFor("worktree")), {
+        type: "root",
+      });
+    }),
+  );
+
+  it.effect(
+    "worktree: the remote default as a local branch, else its tracking ref, else the checkout, else main",
+    () =>
+      Effect.gen(function* () {
+        assert.strictEqual(
+          yield* baseRefOf({
+            remote: "origin",
+            defaultBranch: "main",
+            refs: ["refs/heads/main", "refs/remotes/origin/main"],
+            branch: "topic",
+          }),
+          "main",
+        );
+        assert.strictEqual(
+          yield* baseRefOf({
+            remote: "origin",
+            defaultBranch: "main",
+            refs: ["refs/remotes/origin/main"],
+            branch: "topic",
+          }),
+          "origin/main",
+        );
+        assert.strictEqual(
+          yield* baseRefOf({ remote: "origin", defaultBranch: null, branch: "topic" }),
+          "topic",
+        );
+        assert.strictEqual(yield* baseRefOf({ remote: null, branch: null }), "main");
+      }),
+  );
+
+  it.effect("worktree: the project's resolved start-from-origin flag, on and off", () =>
+    Effect.gen(function* () {
+      const strategy = (startFromOrigin: boolean) =>
+        workspaceOf(
+          gitOf({ remote: null, branch: "main" }),
+          settingsFor("worktree", startFromOrigin),
+        );
+      assert.deepEqual(yield* strategy(true), {
+        type: "worktree",
+        baseRef: "main",
+        startFromOrigin: true,
+      });
+      assert.deepEqual(yield* strategy(false), {
+        type: "worktree",
+        baseRef: "main",
+        startFromOrigin: false,
+      });
+    }),
+  );
+});
+
 describe("bot runs over real threads", () => {
   const harnessed = <A, E, R>(
     name: string,
@@ -347,6 +460,20 @@ describe("bot runs over real threads", () => {
     requestId: string,
     ownerText = "What changed?",
   ) => context.runs.ask({ requestId, botId, ownerText });
+
+  const setProjectSettings = (
+    projectId: ProjectId,
+    overrides: {
+      readonly defaultThreadEnvMode: "local" | "worktree";
+      readonly newWorktreesStartFromOrigin?: boolean;
+    },
+  ) =>
+    Effect.gen(function* () {
+      const settings = yield* ServerSettings.ServerSettingsService;
+      yield* settings
+        .updateSettings({ projectSettingsOverrides: { [projectId]: overrides } })
+        .pipe(Effect.orDie);
+    });
 
   it.effect(
     "asking starts one marked thread with the pinned revision; the same click never starts two",
@@ -818,6 +945,106 @@ describe("bot runs over real threads", () => {
         const sql = yield* SqlClient.SqlClient;
         assert.deepEqual(yield* sql`SELECT * FROM houston_bot_turns`.pipe(Effect.orDie), []);
         assert.deepEqual(yield* sql`SELECT * FROM houston_bot_runs`.pipe(Effect.orDie), []);
+      }),
+    ),
+  );
+
+  it.effect(
+    "a local Git project starts the asked run in its root, as its next new thread would",
+    () =>
+      harnessed("workspace-local", (context) =>
+        Effect.gen(function* () {
+          yield* setProjectSettings(context.projectId, { defaultThreadEnvMode: "local" });
+          const bot = yield* context.makeBot();
+          launched.length = 0;
+          const asked = yield* ask(context, bot.id, "workspace-local");
+          assert.deepEqual(launched.at(-1)?.workspaceStrategy, { type: "root" });
+          yield* context.until(
+            "the bot run to finish",
+            Effect.map(rowOf(asked.botRunId), (row) => row?.state === "finished"),
+          );
+          const shell = yield* context.orchestrator.getThreadShell(ThreadId.make(asked.threadId));
+          assert.isNull(shell?.worktreePath);
+        }),
+      ),
+  );
+
+  it.effect(
+    "a worktree project starts from the remote default's local branch, with its start flag",
+    () =>
+      harnessed("workspace-worktree", (context) =>
+        Effect.gen(function* () {
+          const bot = yield* context.makeBot();
+          const start = (startFromOrigin: boolean, requestId: string) =>
+            Effect.gen(function* () {
+              yield* setProjectSettings(context.projectId, {
+                defaultThreadEnvMode: "worktree",
+                newWorktreesStartFromOrigin: startFromOrigin,
+              });
+              launched.length = 0;
+              const asked = yield* ask(context, bot.id, requestId);
+              assert.deepEqual(launched.at(-1)?.workspaceStrategy, {
+                type: "worktree",
+                baseRef: "main",
+                startFromOrigin,
+              });
+              return asked;
+            });
+          const on = yield* start(true, "workspace-on");
+          const off = yield* start(false, "workspace-off");
+          for (const asked of [on, off]) {
+            yield* context.until(
+              `the bot run ${asked.botRunId} to finish`,
+              Effect.map(rowOf(asked.botRunId), (row) => row?.state === "finished"),
+            );
+            const shell = yield* context.orchestrator.getThreadShell(ThreadId.make(asked.threadId));
+            assert.isNotNull(shell?.worktreePath);
+          }
+        }),
+      ),
+  );
+
+  it.effect("a project without Git starts the asked run in its root", () =>
+    harnessed("workspace-nongit", (context) =>
+      Effect.gen(function* () {
+        const projectId = yield* createProject("workspace-nongit-repo", context.harness.root);
+        yield* setProjectSettings(projectId, { defaultThreadEnvMode: "worktree" });
+        const bot = yield* context.makeBot({ defaultProjectId: projectId });
+        launched.length = 0;
+        const asked = yield* ask(context, bot.id, "workspace-nongit");
+        assert.deepEqual(launched.at(-1)?.workspaceStrategy, { type: "root" });
+        yield* context.until(
+          "the bot run to finish",
+          Effect.map(rowOf(asked.botRunId), (row) => row?.state === "finished"),
+        );
+        const shell = yield* context.orchestrator.getThreadShell(ThreadId.make(asked.threadId));
+        assert.isNull(shell?.worktreePath);
+      }),
+    ),
+  );
+
+  it.effect("a base ref that does not resolve is refused by name and starts nothing", () =>
+    harnessed("workspace-none", (context) =>
+      Effect.gen(function* () {
+        const repo = NodePath.join(context.harness.root, "detached-repo");
+        git(context.harness.root, "init", "-q", "-b", "trunk", repo);
+        commitLines(repo, "README.md", 1, "readme");
+        git(repo, "checkout", "-q", "--detach");
+        const projectId = yield* createProject("workspace-none-repo", repo);
+        yield* setProjectSettings(projectId, {
+          defaultThreadEnvMode: "worktree",
+          newWorktreesStartFromOrigin: false,
+        });
+        const bot = yield* context.makeBot({ defaultProjectId: projectId });
+        launched.length = 0;
+        const refusal = yield* Effect.flip(
+          context.runs.ask({ requestId: "workspace-none", botId: bot.id, ownerText: "Go" }),
+        );
+        assert.strictEqual(refusal.kind, "invalid");
+        assert.include(refusal.message, 'Base ref "main" does not resolve');
+        assert.strictEqual(launched.length, 0);
+        const sql = yield* SqlClient.SqlClient;
+        assert.deepEqual(yield* sql`SELECT id FROM houston_bot_runs`.pipe(Effect.orDie), []);
       }),
     ),
   );

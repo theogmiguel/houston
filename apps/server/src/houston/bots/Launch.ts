@@ -5,6 +5,7 @@ import {
   CommandId,
   MessageId,
   ModelSelection,
+  OrchestrationV2ThreadLaunchWorkspaceStrategy,
   ProjectId,
   RuntimeMode,
   ThreadId,
@@ -15,6 +16,7 @@ import {
   type HoustonBotAskResult,
 } from "@houston-app/contracts/houston/bots";
 import { randomUuidV4 } from "@houston-app/provider-core/server/randomUuid";
+import { resolveProjectSettings } from "@houston-app/shared/projectSettings";
 import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -25,13 +27,18 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
+import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
 import * as ProviderInstanceRegistry from "../../provider/ProviderInstanceRegistry.ts";
+import * as ManagedProjectFolders from "../../project/ManagedProjectFolders.ts";
+import * as ServerSettings from "../../serverSettings.ts";
+import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
 import { applyCredentialRules, credentialRules } from "../redact.ts";
 import { insertBotRun } from "./botRuns.ts";
 import { policyFor } from "./kinds.ts";
 import { OPENING_TEMPLATE, openingMessage, revisionMatches } from "./openingBlock.ts";
 import { checkAccount, refuse, refuseUnknownBot } from "./rules.ts";
 import { HoustonBotStore } from "./Store.ts";
+import { type BotWorkspaceGit, resolveBotWorkspace } from "./workspace.ts";
 
 const OPERATION = "houston.bots.ask";
 const TITLE_CHARS = 80;
@@ -43,6 +50,7 @@ const PendingLaunch = Schema.Struct({
   title: Schema.String,
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
+  workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy,
   text: Schema.String,
 });
 type PendingLaunch = typeof PendingLaunch.Type;
@@ -73,9 +81,52 @@ export const makeLaunch = Effect.gen(function* () {
   const projects = yield* ProjectStore.ProjectStoreV2;
   const accounts = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
   const launcher = yield* ThreadLaunch.ThreadLaunchService;
+  const management = yield* ThreadManagement.ThreadManagementService;
+  const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
+  const settings = yield* ServerSettings.ServerSettingsService;
+  const driver = yield* GitVcsDriver.GitVcsDriver;
   const digest = yield* Digest.Digest;
   const lock = yield* Semaphore.make(1);
   const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.orDie(effect);
+
+  const git: BotWorkspaceGit = {
+    isRepository: (cwd) =>
+      driver.statusDetails(cwd).pipe(
+        Effect.map((details) => details.isRepo),
+        Effect.orElseSucceed(() => false),
+      ),
+    currentBranch: (cwd) =>
+      driver.resolveBranchName(cwd, "HEAD").pipe(Effect.orElseSucceed(() => null)),
+    primaryRemote: (cwd) =>
+      driver.resolvePrimaryRemoteName(cwd).pipe(Effect.orElseSucceed(() => null)),
+    defaultBranch: (cwd, remoteName) =>
+      driver.resolveDefaultBranchName(cwd, remoteName).pipe(Effect.orElseSucceed(() => null)),
+    hasRef: (cwd, refName) =>
+      driver.resolveCommit({ cwd, revision: refName }).pipe(
+        Effect.as(true),
+        Effect.orElseSucceed(() => false),
+      ),
+  };
+
+  /** The mode and base the project's next new thread would use; `ask` carries no branch. */
+  const workspaceFor = Effect.fn("HoustonBotLaunch.workspace")(function* (
+    projectId: ProjectId,
+    project: ProjectStore.ProjectRow,
+  ) {
+    const projectSettings = resolveProjectSettings(
+      yield* run(settings.getSettings),
+      projectId,
+      project,
+      null,
+    );
+    const shells = yield* run(management.getShellSnapshot({ projectId }));
+    return yield* resolveBotWorkspace(git, {
+      projectSettings,
+      workspaceRoot: project.workspaceRoot,
+      newProjectsRoot: folders.namedProjectsRoot,
+      projectHasThreads: shells.threads.length > 0 || shells.archivedThreads.length > 0,
+    });
+  });
 
   const liveProject = (projectId: ProjectId) =>
     projects
@@ -110,7 +161,7 @@ export const makeLaunch = Effect.gen(function* () {
         modelSelection: launch.modelSelection,
         runtimeMode: launch.runtimeMode,
         interactionMode: "default",
-        workspaceStrategy: { type: "root" },
+        workspaceStrategy: launch.workspaceStrategy,
         initialMessage: {
           messageId: MessageId.make(`bot-run:${row.id}`),
           text: launch.text,
@@ -220,6 +271,16 @@ export const makeLaunch = Effect.gen(function* () {
       const other = yield* liveProject(otherId);
       if (Option.isSome(other)) others.push(other.value.title);
     }
+    const workspaceStrategy = yield* workspaceFor(projectId, project.value);
+    if (workspaceStrategy.type === "worktree") {
+      // A base that does not resolve is refused by name before anything is recorded.
+      yield* launcher.checkWorktreeBase({ projectId, workspaceStrategy }).pipe(
+        Effect.catchTags({
+          ThreadLaunchBaseRefError: (error) =>
+            Effect.fail(refuse("invalid", OPERATION, error.message)),
+        }),
+      );
+    }
     const id = yield* randomUuidV4;
     const threadId = threadIdOf(id);
     const launch: PendingLaunch = {
@@ -227,6 +288,7 @@ export const makeLaunch = Effect.gen(function* () {
       title: titleOf(bot.name, ownerText),
       modelSelection: bot.modelSelection,
       runtimeMode: bot.askedMode,
+      workspaceStrategy,
       text: openingMessage({
         botRunId: id,
         slug: bot.slug,

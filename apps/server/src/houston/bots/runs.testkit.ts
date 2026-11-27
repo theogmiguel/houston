@@ -1,6 +1,7 @@
 // Bot runs over the real orchestrator, launcher and effect worker of the task runs' harness, with
 // its provider doubles: no CLI and no network. Commands the follower dispatches are recorded.
 import {
+  GitCommandError,
   type OrchestrationV2ServerCommand,
   type ProjectId,
   ProviderInstanceId,
@@ -19,7 +20,9 @@ import * as EffectWorker from "../../orchestration-v2/EffectWorker.ts";
 import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ProviderInstanceRegistry from "../../provider/ProviderInstanceRegistry.ts";
+import * as ManagedProjectFolders from "../../project/ManagedProjectFolders.ts";
 import * as ServerSettings from "../../serverSettings.ts";
+import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
 import * as TaskRunsKit from "../tasks/taskRuns.testkit.ts";
 import { createProject } from "../tasks/tasks.testkit.ts";
 import { botInput, LAPTOP, setSwitch } from "./bots.testkit.ts";
@@ -46,6 +49,9 @@ const layerAccounts = Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegist
 /** Every command the follower sends, in order. */
 export const dispatched: Array<OrchestrationV2ServerCommand> = [];
 
+/** Every launch the ask hands the launcher, in order. */
+export const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
+
 /** Counts what the follower looks up, so a test can prove an ordinary thread costs nothing. */
 export interface BotObserve {
   readonly onShell?: (threadId: ThreadId) => void;
@@ -67,6 +73,73 @@ const layerRecordedOrchestrator = (observe: BotObserve | undefined) =>
         ),
     })),
   );
+
+const layerRecordedLauncher = Layer.effect(
+  ThreadLaunch.ThreadLaunchService,
+  Effect.map(ThreadLaunch.ThreadLaunchService, (service) => ({
+    ...service,
+    launch: (input: ThreadLaunch.ThreadLaunchInput) => {
+      launched.push(input);
+      return service.launch(input);
+    },
+  })),
+);
+
+// The workspace choice's Git facts, read from the harness's real temporary repositories.
+const gitFailure = (operation: string, cwd: string) =>
+  new GitCommandError({ operation, command: "git", cwd, detail: "test double" });
+
+const layerWorkspaceGit = Layer.mock(GitVcsDriver.GitVcsDriver)({
+  statusDetails: (cwd) =>
+    Effect.sync(() => {
+      try {
+        TaskRunsKit.git(cwd, "rev-parse", "--is-inside-work-tree");
+        return { isRepo: true } as never;
+      } catch {
+        return { isRepo: false } as never;
+      }
+    }),
+  resolvePrimaryRemoteName: (cwd) =>
+    Effect.try(() => {
+      const remotes = TaskRunsKit.git(cwd, "remote")
+        .split("\n")
+        .filter((name) => name.length > 0);
+      const remote = remotes.includes("origin") ? "origin" : remotes[0];
+      if (remote === undefined) throw new Error("no remote is configured");
+      return remote;
+    }).pipe(Effect.mapError(() => gitFailure("resolvePrimaryRemoteName", cwd))),
+  resolveDefaultBranchName: (cwd, remoteName) =>
+    Effect.sync(() => {
+      try {
+        const ref = TaskRunsKit.git(cwd, "symbolic-ref", `refs/remotes/${remoteName}/HEAD`);
+        const prefix = `refs/remotes/${remoteName}/`;
+        return ref.startsWith(prefix) ? ref.slice(prefix.length) : null;
+      } catch {
+        return null;
+      }
+    }),
+  resolveCommit: (input) =>
+    Effect.try(() => {
+      TaskRunsKit.git(input.cwd, "rev-parse", "--verify", "--quiet", `${input.revision}^{commit}`);
+      return {} as never;
+    }).pipe(Effect.mapError(() => gitFailure("resolveCommit", input.cwd))),
+  resolveBranchName: (cwd, refName) =>
+    Effect.sync(() => {
+      try {
+        const ref = TaskRunsKit.git(cwd, "rev-parse", "--symbolic-full-name", "--verify", refName);
+        return ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : null;
+      } catch {
+        return null;
+      }
+    }),
+});
+
+const layerWorkspaceFolders = (harness: BotHarness) =>
+  Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+    namedProjectsRoot: `${harness.root}/projects`,
+    isScratchProject: () => Effect.succeed(false),
+    folderForThread: () => Effect.succeedNone,
+  });
 
 const layerObservedBotThreads = (observe: BotObserve | undefined) =>
   Layer.effect(
@@ -107,10 +180,18 @@ export interface BotHarnessOptions extends TaskRunsKit.RunsOptions {
 }
 
 const layerBotRuns = (harness: BotHarness, options: BotHarnessOptions) => {
-  const base = TaskRunsKit.layerRuns(harness, options);
+  const base = Layer.merge(
+    TaskRunsKit.layerRuns(harness, options),
+    Layer.merge(layerWorkspaceGit, layerWorkspaceFolders(harness)),
+  );
   const runs = Runs.layer.pipe(
     Layer.provide(
-      Layer.mergeAll(layerAccounts, layerRecordedOrchestrator(options.observe), EffectOutbox.layer),
+      Layer.mergeAll(
+        layerAccounts,
+        layerRecordedOrchestrator(options.observe),
+        EffectOutbox.layer,
+        layerRecordedLauncher,
+      ),
     ),
     Layer.provideMerge(options.store ?? Store.layer),
     Layer.provide(layerObservedBotThreads(options.observe)),
