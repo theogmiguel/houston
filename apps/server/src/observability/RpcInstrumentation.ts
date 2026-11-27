@@ -64,6 +64,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.serverGetDatabaseStorage]: "server",
   [WS_METHODS.houstonDatabaseReclaim]: "server",
   [WS_METHODS.houstonTerminalShells]: "terminal",
+  [WS_METHODS.houstonPreviewBrowserHost]: "preview",
   [WS_METHODS.houstonMcpSignInStart]: "provider",
   [WS_METHODS.houstonMcpSignInComplete]: "provider",
   [WS_METHODS.peerLinksList]: "peerLinks",

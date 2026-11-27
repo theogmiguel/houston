@@ -49,6 +49,7 @@
   "What your agent sessions would cost at API prices, read locally.": "Quanto suas sessões de agente custariam nos preços da API, calculado localmente.",
   "Default model, permissions and what happens when limits hit.": "Modelo padrão, permissões e o que acontece quando um limite é atingido.",
   "Agent browser access, profiles and recording.": "Acesso do agente ao navegador, perfis e gravação.",
+  "Run this once on the host machine. An agent cannot run it because it needs sudo.": "Execute isto uma vez na máquina host. Um agente não pode executá-lo porque precisa de sudo.",
   "Devices that agents can drive.": "Dispositivos que os agentes podem controlar.",
   "Prompts that run on a schedule.": "Prompts executados em um horário agendado.",
   "Pull, merge and writing defaults for source control.": "Padrões de pull, merge e escrita para o controle de versão.",

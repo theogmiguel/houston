@@ -26,6 +26,10 @@ export function createPreviewEnvironmentAtoms<R, E>(
       tag: WS_METHODS.previewList,
       staleTimeMs: 5_000,
     }),
+    hostSetup: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:preview:browser-host",
+      tag: WS_METHODS.houstonPreviewBrowserHost,
+    }),
     events: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:preview:events",
       tag: WS_METHODS.subscribePreviewEvents,

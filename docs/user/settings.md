@@ -146,6 +146,11 @@ picker.
 Browser profiles, default viewport, zoom, appearance, link target, search engine, agent
 browser access, automatic floating preview, and recording options.
 
+On a Linux host where AppArmor blocks the browser sandbox, this page shows the required
+`sudo houston browser setup` command with a copy button. Run it once on the host; an agent
+cannot run it because it needs sudo. The notice leaves after the host stops blocking the
+sandbox.
+
 ## Devices
 
 Device sources, whether agents may use devices, and device hub settings. Platform support

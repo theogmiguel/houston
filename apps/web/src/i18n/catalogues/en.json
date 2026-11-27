@@ -49,6 +49,7 @@
   "What your agent sessions would cost at API prices, read locally.": "What your agent sessions would cost at API prices, read locally.",
   "Default model, permissions and what happens when limits hit.": "Default model, permissions and what happens when limits hit.",
   "Agent browser access, profiles and recording.": "Agent browser access, profiles and recording.",
+  "Run this once on the host machine. An agent cannot run it because it needs sudo.": "Run this once on the host machine. An agent cannot run it because it needs sudo.",
   "Devices that agents can drive.": "Devices that agents can drive.",
   "Prompts that run on a schedule.": "Prompts that run on a schedule.",
   "Pull, merge and writing defaults for source control.": "Pull, merge and writing defaults for source control.",

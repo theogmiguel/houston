@@ -15,6 +15,7 @@ import * as AcpRegistrySupport from "@houston-app/provider-acp-registry/server/A
 import * as ProviderLatestVersions from "@houston-app/provider-core/server/ProviderLatestVersions";
 import * as SecretResolver from "@houston-app/secret-provider-core/server/SecretResolver";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
@@ -329,20 +330,36 @@ const layerServices = HoustonLayoutWorkspaces.layer.pipe(
   ),
 );
 
-const withWs = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  effect.pipe(
+const withWs = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+  fileSystemOverrides?: (fileSystem: FileSystem.FileSystem) => FileSystem.FileSystem,
+) => {
+  const nodeLayers =
+    fileSystemOverrides === undefined
+      ? Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)
+      : Layer.mergeAll(
+          NodeServices.layer,
+          NodeCrypto.layer,
+          // The override wraps the real file system so unrelated reads keep working.
+          Layer.effect(
+            FileSystem.FileSystem,
+            Effect.map(FileSystem.FileSystem, fileSystemOverrides),
+          ).pipe(Layer.provide(NodeServices.layer)),
+        );
+  return effect.pipe(
     Effect.provide(
       layerServices.pipe(
         Layer.provideMerge(layerConfigSources),
         Layer.provideMerge(
           ServerConfig.layerTest(process.cwd(), { prefix: "houston-layout-ws-" }).pipe(
-            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+            Layer.provideMerge(nodeLayers),
           ),
         ),
       ),
     ),
     Effect.scoped,
   );
+};
 
 const tab = (threadId: string) => ({
   id: `tab-${threadId}`,
@@ -374,6 +391,32 @@ const workspace = (overrides: Record<string, unknown> = {}) => ({
 type Listed = ReadonlyArray<{ id: string; name: string }>;
 
 describe("layout workspaces over /ws", () => {
+  it.effect("reports the browser host sandbox setup over /ws", () =>
+    withWs(
+      Effect.gen(function* () {
+        const client = yield* makeWsClient();
+        yield* client.request("browser-host", WS_METHODS.houstonPreviewBrowserHost, {});
+        const status = (yield* Queue.take(client.responses)) as {
+          blocked: boolean;
+          setupCommand: string;
+        };
+        assert.isTrue(status.blocked, JSON.stringify(status));
+        assert.include(status.setupCommand, "houston browser setup");
+      }),
+      (fileSystem) => ({
+        ...fileSystem,
+        readFileString: (path, options) =>
+          path === "/proc/sys/kernel/apparmor_restrict_unprivileged_userns"
+            ? Effect.succeed("1\n")
+            : fileSystem.readFileString(path, options),
+        exists: (path) =>
+          path === "/etc/apparmor.d/houston-chrome-headless-shell"
+            ? Effect.succeed(false)
+            : fileSystem.exists(path),
+      }),
+    ),
+  );
+
   it.effect("put, list, reorder, conflict and delete round-trip through the handlers", () =>
     withWs(
       Effect.gen(function* () {
