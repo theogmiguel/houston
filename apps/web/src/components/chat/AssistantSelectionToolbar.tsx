@@ -17,6 +17,7 @@ import {
   resolveSelectionActionPosition,
   type SelectionActionPoint,
 } from "~/lib/selectionActions";
+import { useClientSettings } from "../../hooks/useSettings";
 import { Button } from "../ui/button";
 import { BackgroundThreadContext } from "./backgroundThread";
 
@@ -37,6 +38,7 @@ export function AssistantSelectionToolbar({
   const toolbarRef = useRef<HTMLButtonElement>(null);
   const actionsRef = useRef<ReturnType<typeof observeSelectionActions> | null>(null);
   const backgroundThread = use(BackgroundThreadContext);
+  const showCommentButton = useClientSettings((settings) => settings.showCommentButtonOnSelection);
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- measures the toolbar DOM node and clamps its position inside the window before paint
   useLayoutEffect(() => {
@@ -49,7 +51,11 @@ export function AssistantSelectionToolbar({
 
   // oxlint-disable-next-line houston/no-unreasoned-state-sync -- subscribes to document selectionchange and keydown to track text selections in the viewport
   useEffect(() => {
-    if (!viewport) return;
+    if (!viewport || !showCommentButton) {
+      // oxlint-disable-next-line react/set-state-in-effect -- clears a selection the setting hides
+      setSelection(null);
+      return;
+    }
     const clear = () => setSelection(null);
     const update = (pointer: SelectionActionPoint | null) => {
       const nativeSelection = window.getSelection();
@@ -174,9 +180,9 @@ export function AssistantSelectionToolbar({
       actions.dispose();
       actionsRef.current = null;
     };
-  }, [backgroundThread, threadRef, viewport]);
+  }, [backgroundThread, showCommentButton, threadRef, viewport]);
 
-  if (!selection) return null;
+  if (!showCommentButton || !selection) return null;
   const tooLong = selection.citation.text.length > ASSISTANT_CITATION_MAX_TEXT_LENGTH;
   const dismiss = () => {
     actionsRef.current?.cancel();

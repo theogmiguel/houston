@@ -268,6 +268,7 @@ export function settingsRestoreDefaultsPatch() {
     proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
     showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
     composerRichTextEnabled: DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled,
+    showCommentButtonOnSelection: DEFAULT_UNIFIED_SETTINGS.showCommentButtonOnSelection,
     sendShortcut: DEFAULT_UNIFIED_SETTINGS.sendShortcut,
     followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
     contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
@@ -432,6 +433,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       : []),
     ...(settings.composerRichTextEnabled !== DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled
       ? ["Rich text composer"]
+      : []),
+    ...(settings.showCommentButtonOnSelection !==
+    DEFAULT_UNIFIED_SETTINGS.showCommentButtonOnSelection
+      ? ["Comment button on selection"]
       : []),
     ...(settings.sendShortcut !== DEFAULT_UNIFIED_SETTINGS.sendShortcut ? ["Send shortcut"] : []),
     ...(settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior
@@ -936,6 +941,7 @@ export function ChatSettingsPanel() {
                 onClick={() =>
                   updateSettings({
                     composerRichTextEnabled: DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled,
+      showCommentButtonOnSelection: DEFAULT_UNIFIED_SETTINGS.showCommentButtonOnSelection,
                   })
                 }
               />
@@ -995,6 +1001,33 @@ export function ChatSettingsPanel() {
                 ))}
               </SelectPopup>
             </Select>
+          }
+        />
+        <SettingsRow
+          {...searchableSetting("comment-button-selection")}
+          description="Show a floating comment button when you select text in a response."
+          resetAction={
+            settings.showCommentButtonOnSelection !==
+            DEFAULT_UNIFIED_SETTINGS.showCommentButtonOnSelection ? (
+              <SettingResetButton
+                label="comment button on selection"
+                onClick={() =>
+                  updateSettings({
+                    showCommentButtonOnSelection:
+                      DEFAULT_UNIFIED_SETTINGS.showCommentButtonOnSelection,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.showCommentButtonOnSelection}
+              onCheckedChange={(checked) =>
+                updateSettings({ showCommentButtonOnSelection: Boolean(checked) })
+              }
+              aria-label="Comment button on selection"
+            />
           }
         />
         <SettingsRow

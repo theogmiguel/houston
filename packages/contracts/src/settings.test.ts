@@ -438,6 +438,16 @@ describe("ClientSettings notifications", () => {
   });
 });
 
+describe("ClientSettings text selection", () => {
+  it("shows the comment button unless the device turns it off", () => {
+    expect(decodeClientSettings({}).showCommentButtonOnSelection).toBe(true);
+    expect(decodeClientSettings({ showCommentButtonOnSelection: false })).toMatchObject({
+      showCommentButtonOnSelection: false,
+    });
+    expect(decodeClientSettingsPatch({})).not.toHaveProperty("showCommentButtonOnSelection");
+  });
+});
+
 describe("ClientSettings quit confirmation", () => {
   it.each([
     [true, "hold"],

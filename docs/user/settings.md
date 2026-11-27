@@ -67,6 +67,11 @@ imported; VS Code theme files can be imported. See [Appearance](appearance.md).
 The rich-text composer, the send shortcut, whether skills appear in the `/` menu, and
 **Follow-up behavior** for a message sent while an agent is working.
 
+**Comment button on selection** (on by default) shows the floating comment button when you
+select text in a response. Turn it off to make a selection ordinary: no button appears, and
+Tab does not move focus to it. Commenting on a selection is then unavailable from the
+selection itself; there is no other comment action to bind.
+
 ## Voice
 
 How speech is transcribed (an environment or a cloud provider with its API key; this device only, Off by
