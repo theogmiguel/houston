@@ -2371,10 +2371,28 @@ code {
   font-variant-numeric: tabular-nums;
 }
 
+/* A user message's time sits at the end of its line, over the room its invisible buttons reserve
+   (`--actions-shift`), and slides back as they appear. Touch and phones show no such gap. */
+[data-actions-time] {
+  translate: var(--actions-shift, 0px) 0;
+  transition: translate var(--motion-feedback) var(--ease-standard);
+}
+
+:where(.group):hover [data-actions-time],
+:where(.group):has([data-actions-buttons]:focus-within) [data-actions-time] {
+  translate: 0 0;
+}
+
+@media (pointer: coarse), (width < 40rem) {
+  [data-actions-time] {
+    translate: 0 0;
+  }
+}
+
 /* A time that shows only while its message row is hovered or holds focus (always on touch). */
 [data-reveal-on-hover] {
   opacity: 0;
-  /* `translate` too: a user message's time slides over its buttons' room as it appears. */
+  /* `translate` too: a folded message's time also slides as it appears (`data-actions-time`). */
   transition:
     opacity var(--motion-feedback) var(--ease-standard),
     translate var(--motion-feedback) var(--ease-standard);

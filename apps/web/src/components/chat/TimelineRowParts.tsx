@@ -32,17 +32,21 @@ export function TimelineRowTimestamp({
   timestampFormat,
   className,
   alwaysVisible = false,
+  slidesOverActions = false,
 }: {
   createdAt: string;
   timestampFormat: TimestampFormat;
   className?: string;
   alwaysVisible?: boolean;
+  /** Sits at the line's end until the buttons beside it appear (index.css, `data-actions-time`). */
+  slidesOverActions?: boolean;
 }) {
   return (
     <Tooltip>
       <TooltipTrigger
         render={
           <span
+            {...(slidesOverActions ? { "data-actions-time": "" } : {})}
             className={cn(
               "pointer-events-none absolute shrink-0 whitespace-nowrap rounded-md text-muted-foreground text-xs tabular-nums opacity-0 group-hover/timeline-row:pointer-events-auto group-hover/timeline-row:static group-hover/timeline-row:opacity-100 group-focus-within/timeline-row:pointer-events-auto group-focus-within/timeline-row:static group-focus-within/timeline-row:opacity-100",
               alwaysVisible && "pointer-events-auto static opacity-100",
