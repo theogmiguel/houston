@@ -46,6 +46,7 @@ export const insertBotRun = Effect.fn("HoustonBotRuns.insert")(function* (run: B
 });
 
 export interface BotRunPolicyRow {
+  readonly id: string;
   readonly bot_name: string;
   readonly kind: string;
   readonly policy_json: string;
@@ -53,5 +54,5 @@ export interface BotRunPolicyRow {
 
 export const botRunPolicyOfThread = (sql: SqlClient.SqlClient, threadId: string) =>
   sql<BotRunPolicyRow>`
-    SELECT bot_name, kind, policy_json FROM houston_bot_runs WHERE thread_id = ${threadId} LIMIT 1
+    SELECT id, bot_name, kind, policy_json FROM houston_bot_runs WHERE thread_id = ${threadId} LIMIT 1
   `.pipe(Effect.map((rows) => rows[0]));

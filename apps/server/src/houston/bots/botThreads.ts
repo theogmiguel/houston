@@ -11,6 +11,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import type { McpBotCaller } from "../../mcp/McpInvocationContext.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import { botRunPolicyOfThread, PolicyJson, type BotRunPolicyRow } from "./botRuns.ts";
 import { policyFor } from "./kinds.ts";
@@ -37,6 +38,8 @@ export class HoustonBotThreadLookupError extends Schema.TaggedError<HoustonBotTh
 export type BotThreadRead = Pick<OrchestrationV2AppThread, "id" | "lineage" | "houstonBot">;
 
 export interface BotThreadPolicy {
+  /** Empty for a marked thread whose bot run this build cannot find. */
+  readonly botRunId: string;
   /** The mode the kind fixes, which the runtime policy applies before its ceiling. */
   readonly runtimeMode?: RuntimeMode;
   readonly provider: HoustonBotProviderPolicy;
@@ -76,7 +79,12 @@ const storedPolicy = (row: BotRunPolicyRow | undefined): HoustonBotRunPolicy => 
   return Option.isSome(decoded) && decoded.value.kind === row.kind ? decoded.value : UNREADABLE;
 };
 
-const applied = (policy: HoustonBotRunPolicy, botName: string, child: boolean): BotThreadPolicy => {
+const applied = (
+  policy: HoustonBotRunPolicy,
+  botRunId: string,
+  botName: string,
+  child: boolean,
+): BotThreadPolicy => {
   const { houstonTools } = policy.rules;
   const provider: HoustonBotProviderPolicy = {
     botName,
@@ -94,9 +102,27 @@ const applied = (policy: HoustonBotRunPolicy, botName: string, child: boolean): 
     neverAsk: policy.neverAsk,
   };
   return policy.runtimeMode === undefined
-    ? { provider }
-    : { runtimeMode: policy.runtimeMode, provider };
+    ? { botRunId, provider }
+    : { botRunId, runtimeMode: policy.runtimeMode, provider };
 };
+
+const HOUSTON_TOOL_PREFIX = "mcp__houston__";
+
+/** What the thread's Houston credential carries: the Houston tools the stored rules allow. */
+export const mcpBotCallerOf = ({ botRunId, provider }: BotThreadPolicy): McpBotCaller => ({
+  kind: provider.kind,
+  child: provider.child,
+  botRunId,
+  botName: provider.botName,
+  tools:
+    provider.rules.houstonTools === undefined
+      ? {
+          deny: provider.refusedTools
+            .filter((name) => name.startsWith(HOUSTON_TOOL_PREFIX))
+            .map((name) => name.slice(HOUSTON_TOOL_PREFIX.length)),
+        }
+      : { allow: provider.rules.houstonTools },
+});
 
 export function makeBotThreads(input: {
   readonly sql: SqlClient.SqlClient;
@@ -115,7 +141,12 @@ export function makeBotThreads(input: {
           Effect.mapError(failed),
         );
         if (row !== undefined || current.houstonBot !== undefined) {
-          return applied(storedPolicy(row), row?.bot_name ?? UNNAMED_BOT, steps > 0);
+          return applied(
+            storedPolicy(row),
+            row?.id ?? current.houstonBot?.botRunId ?? "",
+            row?.bot_name ?? UNNAMED_BOT,
+            steps > 0,
+          );
         }
         // Only delegation carries a bot's rules down; a fork or a side chat is the owner's own.
         const parentId = current.lineage.parentThreadId;

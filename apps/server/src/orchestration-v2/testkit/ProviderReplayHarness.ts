@@ -438,6 +438,7 @@ export function layerWithRegistry<Error>(
         McpProviderSessions.layer,
         options.mcpSessionRegistry ?? McpSessionRegistryTestkit.layer,
         layerReadOnlyThreads,
+        options.botThreads ?? layerNoBotThreads,
         layerProviderEventIngestorProvided,
         layerStores,
       ),
