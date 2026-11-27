@@ -1,11 +1,17 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { HoustonBot, HoustonBotSaveInput, HoustonBotStreamEvent } from "./bots.ts";
+import {
+  HoustonBot,
+  HoustonBotRunSummary,
+  HoustonBotSaveInput,
+  HoustonBotStreamEvent,
+} from "./bots.ts";
 
 const decodeBot = Schema.decodeUnknownSync(HoustonBot);
 const decodeEvent = Schema.decodeUnknownSync(HoustonBotStreamEvent);
 const decodeSave = Schema.decodeUnknownExit(HoustonBotSaveInput);
+const decodeRunSummary = Schema.decodeUnknownSync(HoustonBotRunSummary);
 
 const bot = {
   id: "bot-1",
@@ -83,5 +89,28 @@ describe("bot contracts", () => {
     };
     expect(decodeSave(save)._tag).toBe("Success");
     expect(decodeSave({ ...save, askedMode: "yolo" })._tag).toBe("Failure");
+  });
+
+  it("decodes a bot run's kind and state this build does not know as other", () => {
+    const summary = decodeRunSummary({
+      id: "run-1",
+      botId: "bot-1",
+      botName: "Digest",
+      kind: "scheduled-by-a-newer-server",
+      projectId: "p1",
+      threadId: "bot-run-1",
+      revisionN: 2,
+      state: "paused",
+      reason: null,
+      startedAt: "2026-01-01T00:00:00.000Z",
+      endedAt: null,
+    });
+    expect([summary.kind, summary.state]).toEqual(["other", "other"]);
+    const known = decodeRunSummary({
+      ...summary,
+      kind: "asked",
+      state: "finished",
+    });
+    expect([known.kind, known.state]).toEqual(["asked", "finished"]);
   });
 });

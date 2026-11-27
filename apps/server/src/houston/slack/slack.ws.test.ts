@@ -129,6 +129,7 @@ import { layerWsRpc, WS_RPC_SERVER_OPTIONS } from "../../ws.ts";
 import * as ServerConfig from "../../config.ts";
 import { layerJsonWithoutEcho } from "../rpcSerialization.ts";
 import * as HoustonBotService from "../bots/Service.ts";
+import * as HoustonBotRuns from "../bots/Runs.ts";
 import * as HoustonResumeSessions from "../resumeSessions.ts";
 import * as HoustonReviewState from "../reviewState.ts";
 import * as HoustonLayoutWorkspaces from "../layoutWorkspaces.ts";
@@ -183,6 +184,7 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(HoustonReviewState.HoustonReviewState)({}),
   Layer.mock(HoustonResumeSessions.HoustonResumeSessions)({}),
   Layer.mock(HoustonBotService.HoustonBotService)({}),
+  Layer.mock(HoustonBotRuns.HoustonBotRuns)({}),
   Layer.mock(HoustonIssueV1Import.HoustonIssueV1Import)({}),
   Layer.mock(HoustonLayoutWorkspaces.HoustonLayoutWorkspaceService)({}),
   Layer.mock(HoustonMergeQueueService.HoustonMergeQueueService)({}),
