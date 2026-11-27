@@ -87,6 +87,7 @@ import {
   enterRunStartGate,
   type RunStartAdmission,
 } from "../houston/runStart/RunStartGate.ts";
+import { limitsAdmission } from "../houston/runStart/LimitsAdmission.ts";
 import {
   backgroundWorkHoldsCompletion,
   derivePendingBackgroundWork,
@@ -607,6 +608,11 @@ function drainsQueuedRunsAfterDispatch(command: OrchestrationV2ServerCommand): b
       (command.creationSource === "web" || command.creationSource === "mobile") &&
       command.scheduledTaskId === undefined)
   );
+}
+
+/** Send now and Resume queue are the user's explicit override of an admission hold. */
+function bypassesRunStartAdmission(command: OrchestrationV2ServerCommand): boolean {
+  return command.type === "queue.resume" || command.type === "queued-run.start";
 }
 
 function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
@@ -1166,6 +1172,7 @@ interface RunStartAdmissionInput {
 function usageLimitHoldsQueue(
   projection: Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems" | "providerSessions">,
   providerInstanceId: ModelSelection["instanceId"],
+  nowMs: number,
 ): boolean {
   let latestSession: OrchestrationV2ThreadProjection["providerSessions"][number] | undefined;
   for (const session of projection.providerSessions) {
@@ -1177,14 +1184,19 @@ function usageLimitHoldsQueue(
       latestSession = session;
     }
   }
-  return (
-    usageLimitBlockedRun(
-      projection.runs,
-      projection.turnItems,
-      latestSession?.lastError ?? null,
-      providerInstanceId,
-    )?.providerInstanceId === providerInstanceId
+  const blocked = usageLimitBlockedRun(
+    projection.runs,
+    projection.turnItems,
+    latestSession?.lastError ?? null,
+    providerInstanceId,
   );
+  if (blocked?.providerInstanceId !== providerInstanceId) return false;
+  const failure = latestRootProviderFailure(blocked, projection.turnItems);
+  // The provider did not report a reset, or the reset already passed: the thread is no longer
+  // known to be limited, so the queue may start.
+  if (failure?.class !== "usage_limit" || failure.resetAt == null) return false;
+  const resetMs = Date.parse(failure.resetAt);
+  return Number.isFinite(resetMs) && resetMs > nowMs;
 }
 
 function latestStableRun(
@@ -1462,14 +1474,28 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           maxRuntimeMode: managedPolicy.limits.maxRuntimeMode,
         };
 
-  // The single admission step every run start passes under the thread lock. The limits slice
-  // supplies its decision; with no reason to hold, every start proceeds.
-  const admitRunStart = (input: RunStartAdmissionInput): Effect.Effect<RunStartAdmission> =>
-    enterRunStartGate({
+  // The single admission step every run start passes under the thread lock. Only automatic
+  // work may be held; a typed send and provider output always start.
+  const admitRunStart = (input: RunStartAdmissionInput): Effect.Effect<RunStartAdmission> => {
+    const admission = Effect.fnUntraced(function* () {
+      if (input.origin !== "automatic") return { type: "start" as const };
+      const settings = yield* serverSettings.getSettings.pipe(Effect.orDie);
+      const hold = limitsAdmission({
+        origin: input.origin,
+        providerInstanceId: input.providerInstanceId,
+        runs: input.projection.runs,
+        turnItems: input.projection.turnItems,
+        snoozeLimitedThreads: settings.snoozeLimitedThreads,
+        nowMs: DateTime.toEpochMillis(input.now),
+      });
+      return hold ?? ({ type: "start" } as const);
+    });
+    return enterRunStartGate({
       origin: input.origin,
-      admission: () => Effect.succeed<RunStartAdmission>({ type: "start" }),
+      admission,
       context: () => Effect.void,
     });
+  };
 
   /** The driver when this provider runs `/goal` natively, else undefined. */
   const goalDriverFor = Effect.fn("Orchestrator.goalDriverFor")(function* (
@@ -2218,6 +2244,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         readonly queuedRunId?: RunId;
         /** Starts this run on another selection than the one it was queued with. */
         readonly modelSelection?: ModelSelection;
+        /** Send now or Resume queue: the user asked for this start inside any hold. */
+        readonly bypassAdmission?: boolean;
       },
     ) {
       yield* releaseRuntimeModeCeilingHolds(threadId);
@@ -2251,12 +2279,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         providerInstanceId: modelSelection.instanceId,
       };
       const now = yield* DateTime.now;
-      const admission = yield* admitRunStart({
-        origin: startOriginForMessage(queuedMessage),
-        providerInstanceId: queuedRun.providerInstanceId,
-        projection,
-        now,
-      });
+      const settings = yield* serverSettings.getSettings.pipe(Effect.orDie);
+      const admission =
+        options?.bypassAdmission === true
+          ? ({ type: "start" } as const)
+          : yield* admitRunStart({
+              origin: startOriginForMessage(queuedMessage),
+              providerInstanceId: queuedRun.providerInstanceId,
+              projection,
+              now,
+            });
       if (admission.type === "hold") {
         yield* writeSystemEvents(
           holdRunEvents({
@@ -2269,8 +2301,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         );
         return;
       }
-      // A limited provider would fail and consume every waiting message.
-      if (usageLimitHoldsQueue(projection, queuedRun.providerInstanceId)) {
+      // A limited provider would fail and consume every waiting message. The setting replaces
+      // this whole-queue hold with a per-run hold for automatic work only.
+      if (
+        !settings.snoozeLimitedThreads &&
+        usageLimitHoldsQueue(projection, queuedRun.providerInstanceId, DateTime.toEpochMillis(now))
+      ) {
         yield* writeSystemEvents(
           holdQueueEvents({
             threadId,
@@ -2313,7 +2349,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         failedRun?.id === options?.endedRunId &&
         failedRun?.workspacePreparation?.type === "worktree" &&
         projection.thread.worktreePath === null;
-      const settings = yield* serverSettings.getSettings.pipe(Effect.orDie);
       const projectOverride =
         settings.projectSettingsOverrides[projection.thread.projectId]?.providerInstances?.[
           queuedRun.providerInstanceId
@@ -7279,7 +7314,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const shouldQueue = queueTarget !== undefined && startsOrQueuesRun;
     const heldRunsToRelease =
       sentByUserFromClient && startsOrQueuesRun && !worktreeSetupUnresolved
-        ? projection.runs.filter((run) => run.status === "queued" && run.queueHeld === true)
+        ? projection.runs.filter(
+            (run) =>
+              run.status === "queued" &&
+              run.queueHeld === true &&
+              // A limits hold waits for the reset or an explicit Send now, not any user send.
+              run.queueHeldReason?.kind !== "usage_limit",
+          )
         : [];
     const releasedAt = yield* DateTime.now;
     for (const event of releaseQueueHoldEvents({
@@ -14877,6 +14918,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           selectedRunId === undefined
             ? undefined
             : projection.runs.find((run) => run.id === selectedRunId && run.status === "queued");
+        // Send now is the user's explicit start of a held item, including a sub-agent result
+        // or a notification that normally only starts on its own.
+        const selectedRunHeld = selectedRun?.queueHeld === true;
         if (selectedRunId !== undefined) {
           const selectedMessage = projection.messages.find(
             (message) => message.id === selectedRun?.userMessageId,
@@ -14884,8 +14928,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           if (
             selectedRun === undefined ||
             selectedMessage === undefined ||
-            selectedMessage.delegatedCompletion !== undefined ||
-            selectedMessage.notification !== undefined ||
+            (!selectedRunHeld &&
+              (selectedMessage.delegatedCompletion !== undefined ||
+                selectedMessage.notification !== undefined)) ||
             projection.runs.some(isActiveRun)
           ) {
             return yield* new OrchestratorDispatchError({
@@ -14903,18 +14948,27 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             : nextRun === undefined
               ? projection.thread.providerInstanceId
               : queuedRunModelSelection(projection, nextRun).instanceId;
-        if (usageLimitHoldsQueue(projection, targetInstanceId)) {
+        const now = yield* DateTime.now;
+        // Send now overrides the limit; Resume queue is refused only while the reset is ahead.
+        if (
+          command.type !== "queued-run.start" &&
+          usageLimitHoldsQueue(projection, targetInstanceId, DateTime.toEpochMillis(now))
+        ) {
           return yield* new OrchestratorDispatchError({
             commandId: command.commandId,
             commandType: command.type,
             cause: "Continue the limited thread before resuming its queue.",
           });
         }
-        const now = yield* DateTime.now;
         const queued = projection.runs.filter((run) => run.status === "queued");
+        // Send now releases only its own item; Resume queue releases the whole queue.
+        const releasedHolds =
+          command.type === "queued-run.start" && selectedRun !== undefined
+            ? [selectedRun]
+            : queued;
         for (const event of releaseQueueHoldEvents({
           threadId: command.threadId,
-          runs: queued,
+          runs: releasedHolds,
           messages: projection.messages,
           occurredAt: now,
         })) {
@@ -15080,14 +15134,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       yield* mapDispatchError(command)(
         startNextQueuedRun(
           commandThreadId(command),
-          command.type === "queued-run.start"
-            ? {
-                queuedRunId: command.runId,
-                ...(command.modelSelection === undefined
-                  ? {}
-                  : { modelSelection: command.modelSelection }),
-              }
-            : undefined,
+          {
+            ...(command.type === "queued-run.start"
+              ? {
+                  queuedRunId: command.runId,
+                  ...(command.modelSelection === undefined
+                    ? {}
+                    : { modelSelection: command.modelSelection }),
+                }
+              : {}),
+            ...(bypassesRunStartAdmission(command) ? { bypassAdmission: true } : {}),
+          },
         ),
       );
     }
@@ -15304,14 +15361,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       yield* mapDispatchError(command)(
         startNextQueuedRun(
           commandThreadId(command),
-          command.type === "queued-run.start"
-            ? {
-                queuedRunId: command.runId,
-                ...(command.modelSelection === undefined
-                  ? {}
-                  : { modelSelection: command.modelSelection }),
-              }
-            : undefined,
+          {
+            ...(command.type === "queued-run.start"
+              ? {
+                  queuedRunId: command.runId,
+                  ...(command.modelSelection === undefined
+                    ? {}
+                    : { modelSelection: command.modelSelection }),
+                }
+              : {}),
+            ...(bypassesRunStartAdmission(command) ? { bypassAdmission: true } : {}),
+          },
         ),
       );
     }

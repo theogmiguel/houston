@@ -59,6 +59,18 @@ Limits come from the provider account. Houston does not throttle, stop or extend
 limit; a limited thread is reported and can be held or resumed from **Settings ▸ Threads**
 and the thread's own banner.
 
+With **Hold until limits reset** on, an automatic turn on a thread whose latest run on that
+provider failed with a usage limit and whose reported reset is still ahead waits in the thread's
+queue instead of starting and failing. Automatic turns are sub-agent results, agent messages,
+background and restart notes, pull-request and merge-queue notes, scheduled tasks and limit
+resumes. A message you type, a Slack answer and a task run you start are never held and never
+wait behind a held item. **Send now** starts a held item at once.
+
+At the reported reset, **Resume after usage limits** starts its continuation first and the held
+items follow in queue order; without it, the held items start at the reset. A limit whose reset
+time the provider does not report is not held, and its error says that the provider did not
+report when the limit resets.
+
 ## Breakdowns
 
 The breakdown groups usage by model or by time, with tokens, cost and share. The year view

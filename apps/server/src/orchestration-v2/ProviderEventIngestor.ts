@@ -630,9 +630,19 @@ export const layer: Layer.Layer<
                 return dismissed;
               }
               const occurredAt = yield* DateTime.now;
-              const failure = (yield* agentScope.oomKilled(input.threadId))
+              const terminalFailure = (yield* agentScope.oomKilled(input.threadId))
                 ? { ...input.event.failure, message: "Killed: out of memory.", code: "oom_kill" }
                 : input.event.failure;
+              // A limit with no reset cannot be held; its error must say why the thread will not
+              // resume on its own.
+              const failure =
+                terminalFailure.class === "usage_limit" &&
+                (terminalFailure.resetAt ?? null) === null
+                  ? {
+                      ...terminalFailure,
+                      message: `${terminalFailure.message} The provider did not report when this usage limit resets, so Houston cannot hold automatic starts until then.`,
+                    }
+                  : terminalFailure;
               return [
                 ...dismissed,
                 yield* makeDomainEvent(input, {

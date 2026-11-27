@@ -4138,23 +4138,35 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         const rows = yield* sql<{
           readonly reset_ms: number | null;
           readonly snooze_ms: number | null;
+          readonly held_ms: number | null;
         }>`
           SELECT
             MIN(CASE WHEN julianday(reset_at) > julianday(${nowIso})
               THEN (julianday(reset_at) - 2440587.5) * 86400000 END) AS reset_ms,
             MIN(CASE WHEN julianday(snoozed_until) > julianday(${nowIso})
-              THEN (julianday(snoozed_until) - 2440587.5) * 86400000 END) AS snooze_ms
+              THEN (julianday(snoozed_until) - 2440587.5) * 86400000 END) AS snooze_ms,
+            MIN(held_ms) AS held_ms
           FROM (
             SELECT json_extract(payload_json, '$.limitRecovery.resetAt') AS reset_at,
-              json_extract(payload_json, '$.snoozedUntil') AS snoozed_until
+              json_extract(payload_json, '$.snoozedUntil') AS snoozed_until,
+              NULL AS held_ms
             FROM orchestration_v2_projection_threads
             -- Houston: matches houston_threads_limit_auto_resume_idx (houston/projectionReadModels.ts).
             WHERE deleted_at IS NULL
               AND CASE WHEN json_valid(payload_json)
                 THEN json_extract(payload_json, '$.limitRecovery.autoResume') = 1 ELSE 0 END
+            UNION ALL
+            -- A held automatic run wakes the sweep when its limits hold is due to release.
+            SELECT NULL, NULL,
+              CASE WHEN julianday(json_extract(payload_json, '$.queueHeldReason.releaseAt')) > julianday(${nowIso})
+                THEN (julianday(json_extract(payload_json, '$.queueHeldReason.releaseAt')) - 2440587.5) * 86400000 END
+            FROM orchestration_v2_projection_runs
+            WHERE status = 'queued'
+              AND json_extract(payload_json, '$.queueHeld') IS 1
+              AND json_extract(payload_json, '$.queueHeldReason.kind') IS 'usage_limit'
           )
         `;
-        const wakes = [rows[0]?.reset_ms, rows[0]?.snooze_ms].filter(
+        const wakes = [rows[0]?.reset_ms, rows[0]?.snooze_ms, rows[0]?.held_ms].filter(
           (value): value is number => value != null,
         );
         return wakes.length === 0 ? null : Math.round(Math.min(...wakes));

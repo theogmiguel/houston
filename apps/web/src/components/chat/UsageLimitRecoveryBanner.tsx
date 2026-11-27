@@ -32,6 +32,9 @@ type RecoveryProps = {
   snoozedUntil: string | null;
   recovery: OrchestrationV2LimitRecovery | null;
   timestampFormat: TimestampFormat;
+  /** Automatic starts waiting on this thread's limit, in queue order. */
+  heldStarts?: number;
+  onStartHeld?: () => Promise<void> | void;
   onChange: (recovery: OrchestrationV2LimitRecoveryUpdate) => Promise<void>;
   translate: Translate;
 };
@@ -47,6 +50,8 @@ export function usageLimitRecoveryBannerItem(props: RecoveryProps): ComposerBann
     recovery,
     snoozedUntil,
     timestampFormat,
+    heldStarts = 0,
+    onStartHeld = () => {},
     translate: t,
   } = props;
   // The server refuses recovery changes while a request is pending.
@@ -69,14 +74,30 @@ export function usageLimitRecoveryBannerItem(props: RecoveryProps): ComposerBann
       : t("Resets {time}", { time: formatUpcomingTimestamp(displayAt, timestampFormat) })
     : t("Reset time unavailable; retry manually");
   if (!chatGptLimit) {
+    const holdNote =
+      heldStarts > 0
+        ? heldStarts === 1
+          ? t("1 automatic start waits")
+          : t("{count} automatic starts wait", { count: heldStarts })
+        : null;
     return {
       id: `usage-limit-recovery:${runId}`,
       variant: "warning",
       group: "environment",
       icon: <GaugeIcon />,
       title: t("Usage limit reached"),
-      description: resetDescription,
-      actions: recoveryActions,
+      description: holdNote === null ? resetDescription : `${resetDescription} · ${holdNote}`,
+      actions:
+        heldStarts > 0 ? (
+          <>
+            {recoveryActions}
+            <InlineButton touchTarget="padded" onClick={() => void onStartHeld()}>
+              {t("Start held items")}
+            </InlineButton>
+          </>
+        ) : (
+          recoveryActions
+        ),
     };
   }
   // OpenAI's partner guidelines specify this ChatGPT notice and its actions.

@@ -134,6 +134,10 @@ or new worktree), hold presets, resume and hold behavior at usage limits, auto-c
 merge and after inactivity, the add-project base directory, host-folder clone layout, text
 generation model and instructions, text generation fallback, and response streaming.
 
+**Hold until limits reset** holds automatic turns on a thread that already hit a usage limit
+until its reported reset; **Resume after usage limits** then continues the thread. See
+[Usage](usage.md).
+
 **Text generation fallback** chooses where background writing goes when its model cannot
 run. **Any provider** (the default) tries an instance marked as running local models first,
 then the other providers. **Local models only** never sends it to a cloud instance, even before

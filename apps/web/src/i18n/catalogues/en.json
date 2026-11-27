@@ -1264,5 +1264,8 @@
   "Links to 1 machine": "Links to 1 machine",
   "Links to {count} machines": "Links to {count} machines",
   "No other machines": "No other machines",
-  "Not supported": "Not supported"
+  "Not supported": "Not supported",
+  "1 automatic start waits": "1 automatic start waits",
+  "{count} automatic starts wait": "{count} automatic starts wait",
+  "Start held items": "Start held items"
 }

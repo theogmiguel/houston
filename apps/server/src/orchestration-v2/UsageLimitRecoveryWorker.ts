@@ -140,6 +140,42 @@ const makeSweep = Effect.gen(function* () {
         ),
       );
     }
+    // A reset that passed without auto-resume releasing the queue: start the held automatic
+    // work in its queue order instead of leaving it held forever.
+    if (preferences.snoozeLimitedThreads) {
+      const heldThreadIds = yield* projections.getRecoveryThreadIds("queued-runs");
+      for (const threadId of heldThreadIds) {
+        const held = yield* projections.getHeldQueuedRuns(threadId);
+        if (!held.some((run) => run.queueHeldReason?.kind === "usage_limit")) continue;
+        const shell = yield* projections.getThreadShell(threadId);
+        if (shell === null) continue;
+        const resetAt = shell.usageLimitResetAt;
+        const autoResumeOwns =
+          preferences.autoResumeLimitedThreads && shell.limitRecovery?.autoResume !== false;
+        if (
+          autoResumeOwns ||
+          shell.lastErrorClass !== "usage_limit" ||
+          resetAt == null ||
+          Date.parse(resetAt) > nowMs
+        )
+          continue;
+        acted = true;
+        yield* threads
+          .dispatch({
+            type: "queue.resume",
+            commandId: CommandId.make(`limit-release:${threadId}:${resetAt}`),
+            threadId,
+          })
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("orchestration-v2.limit-recovery.release-held-failed", {
+                threadId,
+                cause,
+              }),
+            ),
+          );
+      }
+    }
     // A sweep that acted, or failed to, re-checks on the next tick.
     if (acted) return;
     const wakeAt = yield* projections.getLimitRecoveryWakeAt(now);

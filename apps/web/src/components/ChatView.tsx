@@ -579,6 +579,9 @@ export default function ChatView(props: ChatViewProps) {
     label: "load earlier thread history",
     reportFailure: false,
   });
+  const resumeThreadQueue = useOrchestrationCommand(threadEnvironment.resumeThreadQueue, {
+    reportFailure: false,
+  });
   const { environments } = useEnvironments();
   const providersByEnvironment = useEnvironmentProviders();
   const primaryEnvironment = usePrimaryEnvironment();
@@ -2787,6 +2790,10 @@ export default function ChatView(props: ChatViewProps) {
     );
     return item ? [item] : [];
   });
+  const heldLimitStarts =
+    serverProjection?.runs.filter(
+      (run) => run.status === "queued" && run.queueHeldReason?.kind === "usage_limit",
+    ) ?? [];
   const limitRecoveryBanner =
     limitRecoveryRun !== null && activeThreadShell !== null
       ? usageLimitRecoveryBannerItem({
@@ -2800,6 +2807,15 @@ export default function ChatView(props: ChatViewProps) {
           snoozedUntil: activeThreadShell.snoozedUntil,
           timestampFormat,
           translate: t,
+          heldStarts: heldLimitStarts.length,
+          onStartHeld: async () => {
+            const firstHeld = heldLimitStarts[0];
+            if (firstHeld === undefined) return;
+            await resumeThreadQueue({
+              environmentId,
+              input: { threadId: activeThreadShell.id, runId: firstHeld.id },
+            });
+          },
           onChange: async (limitRecovery) => {
             const result = await updateThreadMetadata({
               environmentId,
