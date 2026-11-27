@@ -59,6 +59,24 @@ describe("resolveTerminalCommand", () => {
       resolveTerminalCommand("/rewind", { availableActions: ALL, providerCommandNames: ["undo"] }),
     ).toMatchObject({ entry: { action: "rewind" } });
   });
+
+  it("opens provider settings for /mcp so MCP servers can be managed", () => {
+    expect(
+      resolveTerminalCommand("/mcp", { availableActions: ALL, providerCommandNames: [] }),
+    ).toMatchObject({ entry: { action: "settings-providers" }, argument: "" });
+    expect(
+      resolveTerminalCommand("/MCP", { availableActions: ALL, providerCommandNames: [] }),
+    ).toMatchObject({ entry: { action: "settings-providers" }, argument: "" });
+  });
+
+  it("leaves /mcp to a provider that reports its own mcp command", () => {
+    expect(
+      resolveTerminalCommand("/mcp", { availableActions: ALL, providerCommandNames: ["mcp"] }),
+    ).toBeNull();
+    expect(
+      resolveTerminalCommand("/MCP", { availableActions: ALL, providerCommandNames: ["MCP"] }),
+    ).toBeNull();
+  });
 });
 
 describe("availableTerminalCommandEntries", () => {
@@ -86,6 +104,26 @@ describe("availableTerminalCommandEntries", () => {
     const rewind = entries.find((entry) => entry.action === "rewind");
     expect(rewind?.names).toEqual(["rewind", "checkpoint"]);
   });
+
+  it("offers mcp once with its own description and drops it when the provider reports it", () => {
+    const entries = availableTerminalCommandEntries({
+      availableActions: ALL,
+      providerCommandNames: [],
+    });
+    const mcp = entries.filter((entry) => entry.names.includes("mcp"));
+    expect(mcp).toHaveLength(1);
+    expect(mcp[0]).toMatchObject({
+      action: "settings-providers",
+      names: ["mcp"],
+      description: "Open provider settings, where MCP servers are managed",
+    });
+
+    const reported = availableTerminalCommandEntries({
+      availableActions: ALL,
+      providerCommandNames: ["mcp"],
+    });
+    expect(reported.some((entry) => entry.names.includes("mcp"))).toBe(false);
+  });
 });
 
 describe("TERMINAL_COMMAND_ENTRIES", () => {
@@ -110,6 +148,7 @@ describe("TERMINAL_COMMAND_ENTRIES", () => {
       "login",
       "logout",
       "doctor",
+      "mcp",
       "voice",
     ]);
     for (const entry of TERMINAL_COMMAND_ENTRIES) {

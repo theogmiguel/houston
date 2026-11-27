@@ -13,6 +13,8 @@ export function ThreadContextChip(props: {
   record: Pick<ThreadContextRecord, "environmentId" | "threadId" | "title">;
   copyMarkdown?: string;
   unreadable?: boolean;
+  /** The caller resolved the thread outside this client's shells. */
+  available?: boolean;
 }) {
   const { environmentId, threadId } = props.record;
   const shell = useThreadShell({ environmentId, threadId });
@@ -46,7 +48,7 @@ export function ThreadContextChip(props: {
       <TooltipPopup side="top">
         {props.unreadable
           ? "On another machine, so this machine's agent can't read it. Remove it or switch back to send."
-          : shell
+          : shell || props.available
             ? "Open thread"
             : "Thread no longer available"}
       </TooltipPopup>

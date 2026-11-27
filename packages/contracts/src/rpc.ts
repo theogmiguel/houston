@@ -199,6 +199,7 @@ import {
 import { PeerLinkPairClientInput, PeerLinkPairClientResult } from "./houston/peerLinkPairing.ts";
 import { PeerLinkSearchEvent, PeerLinkSearchInput } from "./houston/peerLinkSearch.ts";
 import { TerminalShells } from "./houston/terminalShells.ts";
+import { HoustonPreviewBrowserHost } from "./houston/previewBrowserHost.ts";
 import {
   HoustonMcpSignInCompleteInput,
   HoustonMcpSignInCompleteResult,
@@ -701,6 +702,7 @@ export const WS_METHODS = {
   houstonTasksSettingsSet: "houston.tasks.settings.set",
   houstonDatabaseReclaim: "houston.database.reclaim",
   houstonTerminalShells: "houston.terminal.shells",
+  houstonPreviewBrowserHost: "houston.preview.browserHost",
   houstonMcpSignInStart: "houston.mcpSignIn.start",
   houstonMcpSignInComplete: "houston.mcpSignIn.complete",
   houstonTasksImportV1Status: "houston.tasks.importV1.status",
@@ -1119,6 +1121,12 @@ const WsHoustonDatabaseReclaimRpc = Rpc.make(WS_METHODS.houstonDatabaseReclaim, 
 const WsHoustonTerminalShellsRpc = Rpc.make(WS_METHODS.houstonTerminalShells, {
   payload: Schema.Struct({}),
   success: TerminalShells,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsHoustonPreviewBrowserHostRpc = Rpc.make(WS_METHODS.houstonPreviewBrowserHost, {
+  payload: Schema.Struct({}),
+  success: HoustonPreviewBrowserHost,
   error: EnvironmentAuthorizationError,
 });
 
@@ -3280,6 +3288,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonTasksSettingsSetRpc,
   WsHoustonDatabaseReclaimRpc,
   WsHoustonTerminalShellsRpc,
+  WsHoustonPreviewBrowserHostRpc,
   WsHoustonMcpSignInStartRpc,
   WsHoustonMcpSignInCompleteRpc,
   WsHoustonPeerLinksSearchRpc,

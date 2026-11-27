@@ -14,6 +14,8 @@ import { assertClaudeBackgroundWakeBeforeQueuedPromptNoEchoOutput } from "./clau
 import { assertClaudeBackgroundTaskInterruptOutput } from "./claude_background_task_interrupt/output.ts";
 import { claudeBackgroundMonitorWakeInput } from "./claude_background_monitor_wake/input.ts";
 import { assertClaudeBackgroundMonitorWakeOutput } from "./claude_background_monitor_wake/output.ts";
+import { claudeBackgroundArtifactWatchInput } from "./claude_background_artifact_watch/input.ts";
+import { assertClaudeBackgroundArtifactWatchOutput } from "./claude_background_artifact_watch/output.ts";
 import { claudeBackgroundTaskWakeInput } from "./claude_background_task_wake/input.ts";
 import { assertClaudeBackgroundTaskWakeOutput } from "./claude_background_task_wake/output.ts";
 import {
@@ -412,6 +414,21 @@ export const ORCHESTRATOR_REPLAY_FIXTURES: ReadonlyArray<OrchestratorReplayFixtu
         modelSelection: CLAUDE_MODEL_SELECTION,
         runContinuationWorker: true,
         assertOutput: assertClaudeBackgroundMonitorWakeOutput,
+      },
+    ],
+  },
+  {
+    name: "claude_background_artifact_watch",
+    buildInput: claudeBackgroundArtifactWatchInput,
+    providers: [
+      {
+        driver: ProviderDriverKind.make("claudeAgent"),
+        transcriptFile: new URL(
+          "./claude_background_artifact_watch/claude_transcript.ndjson",
+          import.meta.url,
+        ),
+        modelSelection: CLAUDE_MODEL_SELECTION,
+        assertOutput: assertClaudeBackgroundArtifactWatchOutput,
       },
     ],
   },
