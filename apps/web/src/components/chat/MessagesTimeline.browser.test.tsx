@@ -2844,6 +2844,61 @@ describe("MessagesTimeline rhythm", () => {
     expect(next.getBoundingClientRect().top - buttons.getBoundingClientRect().bottom).toBe(8);
   });
 
+  it.each([
+    { name: "copy only", rollback: false },
+    { name: "edit from here and copy", rollback: true },
+  ])(
+    "sits a user message's time at the line's end at rest and beside its buttons on hover: $name",
+    async ({ rollback }) => {
+      await using _viewport = await desktopViewport();
+      setup();
+      const runId = RunId.make("time-run");
+      await using screen = await renderTimeline(
+        [
+          message("Question", { runId, inputIntent: "turn_start" }, "time-user"),
+          message("Answer", { role: "assistant", runId }, "time-answer"),
+        ],
+        rollback
+          ? {
+              runs: [],
+              supportsConversationRollback: true,
+              threadStartCheckpointReady: true,
+              turnDiffSummaries: [
+                {
+                  runId,
+                  checkpointTurnCount: 1,
+                  checkpointRef: "checkpoint-1" as never,
+                  status: "ready",
+                  files: [],
+                  assistantMessageId: MessageId.make("time-answer"),
+                  completedAt: CREATED_AT,
+                },
+              ],
+            }
+          : { runs: [] },
+      );
+      const time = await vi.waitFor(() => {
+        const found = screen.container.querySelector<HTMLElement>("[data-user-message-timestamp]");
+        if (!found) throw new Error("Missing timestamp");
+        return found;
+      });
+      const line = time.parentElement!.parentElement!;
+      const buttons = [...line.querySelectorAll<HTMLElement>("button")];
+      expect(buttons).toHaveLength(rollback ? 2 : 1);
+      const group = buttons[0]!.parentElement!;
+      const right = (element: Element) => element.getBoundingClientRect().right;
+      // At rest the buttons are invisible and the time is flush with the end of the line.
+      expect(Number(getComputedStyle(group).opacity)).toBe(0);
+      await expect.poll(() => right(time)).toBeCloseTo(right(group), 0);
+      // On hover the time slides 8px clear of the buttons, which sit where the time was.
+      await userEvent.hover(
+        screen.container.querySelector<HTMLElement>('[data-timeline-row-id$="time-user"]')!,
+      );
+      await expect.poll(() => right(time)).toBeCloseTo(group.getBoundingClientRect().left - 8, 0);
+      await expect.poll(() => Number(getComputedStyle(group).opacity)).toBe(1);
+    },
+  );
+
   it("sets the rows of an expanded group flush under the header in 12px muted type", async () => {
     await using _viewport = await desktopViewport();
     setup();

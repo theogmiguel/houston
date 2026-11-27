@@ -2374,7 +2374,10 @@ code {
 /* A time that shows only while its message row is hovered or holds focus (always on touch). */
 [data-reveal-on-hover] {
   opacity: 0;
-  transition: opacity var(--motion-feedback) var(--ease-standard);
+  /* `translate` too: a user message's time slides over its buttons' room as it appears. */
+  transition:
+    opacity var(--motion-feedback) var(--ease-standard),
+    translate var(--motion-feedback) var(--ease-standard);
 }
 
 :where(.group):is(:hover, :focus-within) [data-reveal-on-hover] {

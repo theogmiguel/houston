@@ -115,6 +115,39 @@ const LINE_BREAK = /\r?\n/;
  */
 const BUBBLE_MAX_WIDTH_CLASS = "max-w-[min(82%,36rem)] @max-[30rem]:max-w-full";
 
+/**
+ * The line under a bubble reserves room for its action buttons, which stay invisible until the
+ * row is hovered or focused. At rest the time sits flush right instead, shifted over that room by
+ * `transform`, and slides back to leave the buttons their place. The buttons sit 2px apart and
+ * 8px from the time; the edit button is 26px wide and a copy button 28px. A browser test measures
+ * that the shift lands the time on the line's end.
+ */
+const EDIT_BUTTON_WIDTH_PX = 26;
+const COPY_BUTTON_WIDTH_PX = 28;
+const ACTION_BUTTON_GAP_PX = 2;
+const ACTION_TIME_GAP_PX = 8;
+
+function actionsShiftStyle({
+  edit,
+  copies,
+}: {
+  readonly edit: boolean;
+  readonly copies: number;
+}): CSSProperties {
+  const widths = [...(edit ? [EDIT_BUTTON_WIDTH_PX] : []), ...Array(copies).fill(COPY_BUTTON_WIDTH_PX)];
+  const room =
+    widths.length === 0
+      ? 0
+      : widths.reduce((sum, width) => sum + width, 0) +
+        (widths.length - 1) * ACTION_BUTTON_GAP_PX +
+        ACTION_TIME_GAP_PX;
+  return { "--actions-shift": `${room}px` } as CSSProperties;
+}
+
+/** Slides the time over the buttons' room at rest; hover, focus, touch and phones (no buttons) put it back. */
+const ACTIONS_TIME_SHIFT_CLASS_NAME =
+  "translate-x-(--actions-shift) transition-transform duration-(--motion-feedback) ease-standard group-hover:translate-x-0 group-focus-within/actions:translate-x-0 pointer-coarse:translate-x-0 max-phone:translate-x-0";
+
 const MEDIA_EDGE_CLASS_NAME =
   "relative after:pointer-events-none after:absolute after:inset-0 after:z-10 after:rounded-[inherit] after:ring-1 after:ring-inset after:ring-black/9 dark:after:ring-white/12";
 
@@ -366,7 +399,13 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             BUBBLE_MAX_WIDTH_CLASS,
           )}
         >
-          <div className="flex shrink-0 items-center gap-2">
+          <div
+            className="group/actions flex shrink-0 items-center gap-2"
+            style={actionsShiftStyle({
+              edit: typeof revertTurnCount === "number",
+              copies: 1 + Number(promptLink !== null),
+            })}
+          >
             {scheduledTaskId ? (
               <Link
                 to="/settings/scheduled-tasks"
@@ -379,6 +418,7 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             <TimelineRowTimestamp
               createdAt={row.message.createdAt}
               timestampFormat={ctx.timestampFormat}
+              className={ACTIONS_TIME_SHIFT_CLASS_NAME}
               alwaysVisible
             />
             <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-200 max-phone:hidden max-phone:pointer-coarse:flex pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
@@ -1060,7 +1100,13 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           BUBBLE_MAX_WIDTH_CLASS,
         )}
       >
-        <div className="flex shrink-0 items-center gap-2">
+        <div
+          className="group/actions flex shrink-0 items-center gap-2"
+          style={actionsShiftStyle({
+            edit: typeof revertTurnCount === "number",
+            copies: Number(Boolean(copyText)) + Number(promptLink !== null),
+          })}
+        >
           {folded && senderThreadId ? (
             <InlineButton onClick={() => ctx.onOpenThread(senderThreadId)} tone="muted">
               Open thread
@@ -1072,7 +1118,10 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                 <p
                   data-user-message-timestamp=""
                   data-reveal-on-hover={folded ? "" : undefined}
-                  className="text-(--houston) text-callout tabular-nums"
+                  className={cn(
+                    "text-(--houston) text-callout tabular-nums",
+                    ACTIONS_TIME_SHIFT_CLASS_NAME,
+                  )}
                 />
               }
             >
