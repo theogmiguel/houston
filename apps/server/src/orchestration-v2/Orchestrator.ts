@@ -78,10 +78,15 @@ import {
   TurnItemId,
   TrimmedNonEmptyString,
   managedRuntimeModeCeilingMessage,
+  type RunStartOrigin,
 } from "@houston-app/contracts";
 import { modelSelectionsEqual } from "@houston-app/shared/model";
 import { modelSwitchSince } from "./modelSwitch.ts";
 import { recordThreadOpen } from "@houston-app/shared/paletteSearch";
+import {
+  enterRunStartGate,
+  type RunStartAdmission,
+} from "../houston/runStart/RunStartGate.ts";
 import {
   backgroundWorkHoldsCompletion,
   derivePendingBackgroundWork,
@@ -532,6 +537,19 @@ export class OrchestratorV2 extends Context.Service<OrchestratorV2, Orchestrator
 /** Run ordinals can skip values: a queued run moves past newer runs when it starts. */
 function nextRunOrdinal(projection: Pick<OrchestrationV2ThreadProjection, "runs">): number {
   return projection.runs.reduce((max, run) => Math.max(max, run.ordinal), 0) + 1;
+}
+
+/** The next place a held run takes behind every queued run already waiting. */
+function nextQueuePosition(projection: Pick<OrchestrationV2ThreadProjection, "runs">): number {
+  return (
+    projection.runs.reduce(
+      (max, run) =>
+        run.status === "queued"
+          ? Math.max(max, run.queuePosition ?? run.ordinal)
+          : max,
+      0,
+    ) + 1
+  );
 }
 
 /** Stamp at wake start; queued prompts lack start times and delegated results jump the queue. */
@@ -1029,6 +1047,42 @@ function holdQueueEvents(input: {
   ];
 }
 
+/** Holds one run and its message, leaving every other queued run alone. */
+function holdRunEvents(input: {
+  readonly threadId: ThreadId;
+  readonly run: OrchestrationV2Run;
+  readonly message: OrchestrationV2ConversationMessage | undefined;
+  readonly reason: QueueHoldReason;
+  readonly occurredAt: DateTime.Utc;
+}): ReadonlyArray<Omit<OrchestrationV2DomainEvent, "id">> {
+  const reason = input.reason;
+  return [
+    {
+      type: "run.updated",
+      threadId: input.threadId,
+      runId: input.run.id,
+      providerInstanceId: input.run.providerInstanceId,
+      occurredAt: input.occurredAt,
+      payload: { ...input.run, queueHeld: true, queueHeldReason: reason },
+    },
+    ...(input.message?.delivery === undefined
+      ? []
+      : [
+          {
+            type: "message.updated" as const,
+            threadId: input.threadId,
+            runId: input.message.runId ?? undefined,
+            nodeId: input.message.nodeId ?? undefined,
+            occurredAt: input.occurredAt,
+            payload: {
+              ...input.message,
+              delivery: { ...input.message.delivery, queueHeldReason: reason },
+            },
+          },
+        ]),
+  ];
+}
+
 /** Events that release a hold, clearing both the run and its message's delivery reason. */
 function releaseQueueHoldEvents(input: {
   readonly threadId: ThreadId;
@@ -1079,6 +1133,34 @@ function queuedRunModelSelection(
   return followsCurrentConversation(message)
     ? projection.thread.modelSelection
     : run.modelSelection;
+}
+
+/** A producer that omitted the origin still never lets a typed send be held. */
+export function startOriginForMessage(
+  message:
+    | Pick<OrchestrationV2ConversationMessage, "createdBy" | "creationSource" | "idleCompaction">
+    | undefined,
+): RunStartOrigin {
+  if (message?.idleCompaction !== undefined) return "maintenance";
+  if (message?.createdBy === "user") return "user";
+  if (message?.creationSource === "provider") return "provider";
+  return "automatic";
+}
+
+export function resolveRunStartOrigin(
+  command: Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>,
+): RunStartOrigin {
+  if (command.startOrigin !== undefined) return command.startOrigin;
+  if (command.createdBy === "user") return "user";
+  if (command.creationSource === "provider") return "provider";
+  return "automatic";
+}
+
+interface RunStartAdmissionInput {
+  readonly origin: RunStartOrigin;
+  readonly providerInstanceId: ProviderInstanceId;
+  readonly projection: Pick<OrchestrationV2ThreadProjection, "thread" | "runs" | "turnItems">;
+  readonly now: DateTime.Utc;
 }
 
 function usageLimitHoldsQueue(
@@ -1379,6 +1461,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           organization: managedPolicy.organization,
           maxRuntimeMode: managedPolicy.limits.maxRuntimeMode,
         };
+
+  // The single admission step every run start passes under the thread lock. The limits slice
+  // supplies its decision; with no reason to hold, every start proceeds.
+  const admitRunStart = (input: RunStartAdmissionInput): Effect.Effect<RunStartAdmission> =>
+    enterRunStartGate({
+      origin: input.origin,
+      admission: () => Effect.succeed<RunStartAdmission>({ type: "start" }),
+      context: () => Effect.void,
+    });
 
   /** The driver when this provider runs `/goal` natively, else undefined. */
   const goalDriverFor = Effect.fn("Orchestrator.goalDriverFor")(function* (
@@ -2160,6 +2251,24 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         providerInstanceId: modelSelection.instanceId,
       };
       const now = yield* DateTime.now;
+      const admission = yield* admitRunStart({
+        origin: startOriginForMessage(queuedMessage),
+        providerInstanceId: queuedRun.providerInstanceId,
+        projection,
+        now,
+      });
+      if (admission.type === "hold") {
+        yield* writeSystemEvents(
+          holdRunEvents({
+            threadId,
+            run: queuedRun,
+            message: queuedMessage,
+            reason: admission.reason,
+            occurredAt: now,
+          }),
+        );
+        return;
+      }
       // A limited provider would fail and consume every waiting message.
       if (usageLimitHoldsQueue(projection, queuedRun.providerInstanceId)) {
         yield* writeSystemEvents(
@@ -3705,6 +3814,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           dispatchMode: { type: "queue_after_active" },
           createdBy: "agent",
           creationSource: "server",
+          startOrigin: "automatic",
         },
         events,
         effects,
@@ -5508,6 +5618,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         text: command.text,
         attachments: command.attachments,
         dispatchMode: { type: "start_immediately" },
+        startOrigin: command.createdBy === "user" ? "user" : "automatic",
       },
       events,
       effects,
@@ -5605,6 +5716,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           attachments: [],
           modelSelection: command.modelSelection,
           dispatchMode: { type: "start_immediately" },
+          startOrigin: command.createdBy === "user" ? "user" : "automatic",
         },
         events,
         effects,
@@ -5643,6 +5755,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         text: command.text,
         attachments: [],
         dispatchMode: answerDispatchMode(target.runs),
+        startOrigin: "user",
       },
       events,
       effects,
@@ -5715,6 +5828,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         }),
         attachments: [],
         dispatchMode: active ? { type: "queue_after_active" } : { type: "start_immediately" },
+        startOrigin: "user",
       },
       events,
       effects,
@@ -5757,6 +5871,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           text: command.text,
           attachments: [],
           dispatchMode: noteDispatchMode(owner.runs),
+          startOrigin: "automatic",
         },
         events,
         effects,
@@ -7564,6 +7679,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       (transfer) => transfer.id !== pendingMergeBackTransfer?.id,
     );
     const now = yield* DateTime.now;
+    const admission = yield* admitRunStart({
+      origin: resolveRunStartOrigin(command),
+      providerInstanceId: modelSelection.instanceId,
+      projection,
+      now,
+    });
+    const admissionHold = admission.type === "hold" ? admission : undefined;
     if (
       !modelSelectionsEqual(projection.thread.modelSelection, modelSelection) ||
       projection.thread.providerInstanceId !== modelSelection.instanceId
@@ -7795,8 +7917,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         userMessageId: command.messageId,
         rootNodeId,
         activeAttemptId: attemptId,
-        status: dispatchMode.type === "defer_start" ? "preparing" : "starting",
-        queuePosition: null,
+        status: admissionHold
+          ? "queued"
+          : dispatchMode.type === "defer_start"
+            ? "preparing"
+            : "starting",
+        queuePosition: admissionHold ? nextQueuePosition(projection) : null,
+        ...(admissionHold === undefined
+          ? {}
+          : { queueHeld: true, queueHeldReason: admissionHold.reason }),
         requestedAt: now,
         startedAt: null,
         completedAt: null,
@@ -7809,7 +7938,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...(command.usageLimitContinuationOfRunId === undefined
           ? {}
           : { usageLimitContinuationOfRunId: command.usageLimitContinuationOfRunId }),
-        ...(dispatchMode.type === "defer_start" && dispatchMode.workspaceStrategy !== undefined
+        ...(admissionHold === undefined &&
+        dispatchMode.type === "defer_start" &&
+        dispatchMode.workspaceStrategy !== undefined
           ? { workspacePreparation: dispatchMode.workspaceStrategy }
           : {}),
         ...(continuedTaskId === undefined ? {} : { delegatedTaskId: continuedTaskId }),
@@ -7893,7 +8024,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         type: "user_message",
         messageId: command.messageId,
         inputIntent: "turn_start",
-        ...turnStartDelivery(projection, command.messageId, steerRerouted, now),
+        ...(admissionHold === undefined
+          ? turnStartDelivery(projection, command.messageId, steerRerouted, now)
+          : {
+              delivery: acceptedDelivery({
+                intent: requestedIntent,
+                route: "ownTurn",
+                queueHeldReason: admissionHold.reason,
+                at: now,
+              }),
+            }),
         text: dispatchText,
         ...(command.context ? { context: command.context } : {}),
         attachments: command.attachments,
@@ -7901,7 +8041,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...(run.contextHandoffId === null ? modelSwitchSince(projection, modelSelection) : {}),
       };
       const preparationTurnItem: OrchestrationV2TurnItem | null =
-        dispatchMode.type === "defer_start"
+        admissionHold === undefined && dispatchMode.type === "defer_start"
           ? {
               id: idAllocator.derive.turnItemFromProviderItem({
                 driver: adapter.driver,
@@ -8049,7 +8189,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         threadId: command.threadId,
         request: { type: "provider-turn.start", runId },
       } satisfies PendingOrchestrationEffectV2;
-      if (dispatchMode.type !== "defer_start") {
+      if (admissionHold === undefined && dispatchMode.type !== "defer_start") {
         yield* Ref.update(effects, (existing) => [...existing, pendingEffect]);
       }
       return;
@@ -9307,6 +9447,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           command.workspaceStrategy === undefined
             ? { type: "start_immediately" }
             : { type: "defer_start", workspaceStrategy: command.workspaceStrategy },
+        startOrigin: "automatic",
       } satisfies Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>;
       yield* dispatchMessage(childMessageCommand, events, effects);
 
@@ -10341,6 +10482,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           dispatchMode: { type: "queue_after_active" },
           createdBy: "agent",
           creationSource: "server",
+          startOrigin: "automatic",
         },
         events,
         effects,
@@ -10721,6 +10863,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           attachments: [],
           ...asyncAnswerAuthor(command),
           dispatchMode,
+          startOrigin: "user" as const,
         };
         yield* dispatchMessage(answer, events, effects);
         return yield* recordSubagentFollowup(answer, events).pipe(mapDispatchError(answer));
@@ -11465,6 +11608,34 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         });
       }
       const now = yield* DateTime.now;
+      const admission = yield* admitRunStart({
+        origin:
+          state.run.delegatedTaskId !== undefined ||
+          projection.thread.lineage.relationshipToParent === "subagent"
+            ? "automatic"
+            : "user",
+        providerInstanceId: state.run.providerInstanceId,
+        projection,
+        now,
+      });
+      if (admission.type === "hold") {
+        yield* emit(events, command)({
+          type: "run.updated",
+          threadId: command.threadId,
+          runId: state.run.id,
+          nodeId: state.rootNode.id,
+          providerInstanceId: state.run.providerInstanceId,
+          occurredAt: now,
+          payload: {
+            ...state.run,
+            status: "queued",
+            queuePosition: nextQueuePosition(projection),
+            queueHeld: true,
+            queueHeldReason: admission.reason,
+          },
+        });
+        return;
+      }
       const resolvedRuntimePolicy = yield* runtimePolicy
         .resolve({ thread: projection.thread, modelSelection: state.run.modelSelection })
         .pipe(mapDispatchError(command));

@@ -328,6 +328,7 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
         dispatchMode: { type: "start_immediately" },
         createdBy: "agent",
         creationSource: "server",
+        startOrigin: "automatic",
         restartContinuationOfRunId: input.sourceRunId,
       })
       .pipe(

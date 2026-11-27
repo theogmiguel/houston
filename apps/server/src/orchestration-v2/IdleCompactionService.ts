@@ -118,6 +118,7 @@ const makeSweep = Effect.gen(function* () {
         creationSource: "server",
         idleCompaction: "beforeCacheExpires",
         dispatchMode: { type: "start_immediately" },
+        startOrigin: "maintenance",
       });
       return null;
     },

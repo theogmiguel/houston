@@ -12,6 +12,7 @@ export const MessageDeliveryQueueHoldReasonKind = Schema.Literals([
   "provider_switch_failed",
   "workspace_preparation",
   "background_work",
+  "context_compaction",
 ]);
 export type MessageDeliveryQueueHoldReasonKind = typeof MessageDeliveryQueueHoldReasonKind.Type;
 
@@ -21,6 +22,10 @@ export const MessageDeliveryQueueHoldReason = Schema.Struct({
   message: TrimmedNonEmptyString,
   providerInstanceId: Schema.optionalKey(ProviderInstanceId),
   maxRuntimeMode: Schema.optionalKey(RuntimeMode),
+  /** When a limits hold is expected to release; absent when the provider reported no reset. */
+  releaseAt: Schema.optionalKey(TrimmedNonEmptyString),
+  /** A limits hold that outlived its expected release. */
+  overdue: Schema.optionalKey(Schema.Boolean),
 });
 export type MessageDeliveryQueueHoldReason = typeof MessageDeliveryQueueHoldReason.Type;
 

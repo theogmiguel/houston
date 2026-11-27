@@ -45,6 +45,7 @@ import {
   MessageDeliveryJson,
   MessageDeliveryQueueHoldReason,
 } from "./houston/messageDelivery.ts";
+import { RunStartOrigin } from "./houston/runStart.ts";
 import { HoustonBlockingBackgroundWork } from "./houston/backgroundWork.ts";
 import { HoustonProviderTurnCompaction } from "./houston/contextWindow.ts";
 import { HoustonSideThread, makeHoustonSideThreadCommands } from "./houston/sideThreads.ts";
@@ -3236,6 +3237,8 @@ export const OrchestrationV2Command = Schema.Union([
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
     /** Start a new provider session without the thread's earlier context. Never steers. */
     freshContext: Schema.optional(Schema.Boolean),
+    /** Who asked for this start; only `automatic` work may be held before it reaches the provider. */
+    startOrigin: Schema.optionalKey(RunStartOrigin),
     commandId: CommandId,
     threadId: ThreadId,
     messageId: MessageId,

@@ -3008,6 +3008,7 @@ const make = Effect.gen(function* () {
                     attachments: [],
                     modelSelection: resolvedModelSelection,
                     dispatchMode: { type: "start_immediately" },
+                    startOrigin: "automatic",
                   })
                   .pipe(
                     Effect.mapError((error) =>

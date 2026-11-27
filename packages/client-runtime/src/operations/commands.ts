@@ -761,6 +761,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
         ? {}
         : { backgroundWorkPolicy: input.backgroundWorkPolicy }),
       dispatchMode: { type: "start_immediately" },
+      startOrigin: "user",
     });
   }
 
@@ -790,6 +791,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
       : { backgroundWorkPolicy: input.backgroundWorkPolicy }),
     ...(requestedMode !== "queue" ? { deliveryIntent: requestedMode } : {}),
     dispatchMode,
+    startOrigin: "user",
   });
 });
 

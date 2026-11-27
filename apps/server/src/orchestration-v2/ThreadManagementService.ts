@@ -888,6 +888,7 @@ const make = Effect.gen(function* () {
       dispatchMode,
       createdBy: input.createdBy,
       creationSource: input.creationSource,
+      startOrigin: input.createdBy === "user" ? "user" : "automatic",
     });
     const projection = yield* getProjectThreadRecords(input, ["runs", "messages", "turnItems"], {
       messageIds: [input.messageId],

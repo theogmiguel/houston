@@ -327,6 +327,7 @@ describe("a steer's follow-up turn", () => {
       dispatchMode: { type: "start_immediately" },
       createdBy: "user",
       creationSource: "web",
+      startOrigin: "user",
     });
   });
 

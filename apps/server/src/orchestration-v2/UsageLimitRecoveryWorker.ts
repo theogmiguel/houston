@@ -75,6 +75,7 @@ export function limitRecoveryCommand(
     dispatchMode: { type: "start_immediately" },
     createdBy: "agent",
     creationSource: "server",
+    startOrigin: "automatic",
   };
 }
 
