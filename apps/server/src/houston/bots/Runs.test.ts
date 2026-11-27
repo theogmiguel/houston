@@ -875,11 +875,36 @@ describe("bot runs over real threads", () => {
           yield* context.runs.catchUp;
           yield* context.settle;
           assert.deepEqual(lookups, []);
+          // The child's later events carry no created payload, so only the cache of its own
+          // thread keeps them quiet.
+          const later = yield* DateTime.now;
+          yield* sink.write({
+            events: [
+              {
+                id: EventId.make("event-child-updated"),
+                type: "run.updated",
+                threadId: child,
+                occurredAt: later,
+                payload: {
+                  ...runs[0]!,
+                  id: RunId.make("child-quiet-run"),
+                  threadId: child,
+                  userMessageId: MessageId.make("child-quiet-message"),
+                  status: "completed",
+                  completedAt: later,
+                } as OrchestrationV2Run,
+              },
+            ] as never,
+          });
+          yield* context.runs.catchUp;
+          yield* context.settle;
+          assert.deepEqual(lookups, []);
         }),
       {
         observe: {
           onShell: (threadId) => lookups.push(`shell:${threadId}`),
           onPolicy: (threadId) => lookups.push(`policy:${threadId}`),
+          onRunsSelect: () => lookups.push("runs"),
         },
       },
     );

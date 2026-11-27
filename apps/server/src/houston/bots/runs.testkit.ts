@@ -12,6 +12,7 @@ import type { HoustonBot } from "@houston-app/contracts/houston/bots";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
 
@@ -56,7 +57,39 @@ export const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
 export interface BotObserve {
   readonly onShell?: (threadId: ThreadId) => void;
   readonly onPolicy?: (threadId: ThreadId) => void;
+  /** The follower's own `houston_bot_runs` SELECT, which a known thread must never make. */
+  readonly onRunsSelect?: () => void;
 }
+
+const RUNS_SELECT = /houston_bot_runs/u;
+
+// The follower's statements go through this client; the test's own reads keep the real one.
+const layerObservedSql = (observe: BotObserve | undefined) =>
+  Layer.effect(
+    SqlClient.SqlClient,
+    Effect.map(SqlClient.SqlClient, (sql) => {
+      const count = (strings: unknown) => {
+        if (!Array.isArray(strings)) return;
+        if (RUNS_SELECT.test(strings.join("?"))) observe?.onRunsSelect?.();
+      };
+      return new Proxy(sql, {
+        apply: (target, _thisArg, args) => {
+          count(args[0]);
+          return Reflect.apply(target, target, args);
+        },
+        get: (target, property, receiver) => {
+          if (property === "unsafe") {
+            return (text: string, params?: ReadonlyArray<unknown>) => {
+              if (RUNS_SELECT.test(text)) observe?.onRunsSelect?.();
+              return target.unsafe(text, params);
+            };
+          }
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    }),
+  );
 
 const layerRecordedOrchestrator = (observe: BotObserve | undefined) =>
   Layer.effect(
@@ -196,6 +229,7 @@ const layerBotRuns = (harness: BotHarness, options: BotHarnessOptions) => {
     Layer.provideMerge(options.store ?? Store.layer),
     Layer.provide(layerObservedBotThreads(options.observe)),
     Layer.provideMerge(layerPublishedSettings(options.on !== false)),
+    Layer.provide(layerObservedSql(options.observe)),
     Layer.provideMerge(base),
   );
   return runs;
