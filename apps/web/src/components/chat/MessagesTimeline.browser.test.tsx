@@ -2298,7 +2298,7 @@ describe("turn rhythm", () => {
       completedAt: CREATED_AT,
     }) as const;
 
-  it("puts 32px between turns however a turn ends and smaller fixed steps inside one", async () => {
+  it("puts 48px between an answer and the next turn, 14px below its footer, and smaller fixed steps inside a turn", async () => {
     setup();
     const entries: Entry[] = [];
     const runs: NonNullable<TimelineProps["runs"]>[number][] = [];
@@ -2350,7 +2350,8 @@ describe("turn rhythm", () => {
       top(rowOf("message", "Question 2")) - bottom(answer(1)),
       top(rowOf("message", "Question 3")) - bottom(cards[0]!),
     ];
-    expect(turnGaps).toEqual([32, 32]);
+    // The answer text, then its 30px footer line, then 18px before the bubble.
+    expect(turnGaps).toEqual([48, 48]);
 
     expect(top(attributions[0]!) - bottom(answer(2))).toBe(8);
     expect(top(cards[0]!) - bottom(attributions[0]!)).toBe(12);
@@ -2713,7 +2714,7 @@ describe("MessagesTimeline rhythm", () => {
     return Number.parseFloat(getComputedStyle(padded).paddingBottom);
   };
 
-  it("leaves one 32px gap before every user message and 12px inside a turn at 1440x900", async () => {
+  it("leaves 48px from an answer to the next user message, its footer line included, and 12px inside a turn at 1440x900", async () => {
     await using _viewport = await desktopViewport();
     setup();
     const run1 = RunId.make("rhythm-run-1");
@@ -2748,8 +2749,8 @@ describe("MessagesTimeline rhythm", () => {
       screen.container.querySelector<HTMLElement>(`[data-timeline-row-id="${id}"]`)!;
     const answerText = (id: string) =>
       rowEl(id).querySelector<HTMLElement>("[data-thread-find-text]")!;
-    // Whatever precedes a user message leaves the turn gap, measured from the answer text down to
-    // the next bubble's row.
+    // An answer leaves its footer line (30px) and 18px below it before the next bubble's row,
+    // measured from the answer text down.
     for (const [answerId, n] of [
       ["rhythm-answer-1", 2],
       ["rhythm-answer-2", 3],
@@ -2757,7 +2758,7 @@ describe("MessagesTimeline rhythm", () => {
       const gap =
         rowEl(ids[ofUser(n)]!).getBoundingClientRect().top -
         answerText(ids.find((id) => id.includes(answerId))!).getBoundingClientRect().bottom;
-      expect(gap, `gap before user message ${n}`).toBe(32);
+      expect(gap, `gap before user message ${n}`).toBe(48);
     }
     // A work row followed by more of the same turn leaves the in-turn gap.
     const fold = ids.find((id) => id.startsWith("turn-fold:"))!;
@@ -2791,10 +2792,112 @@ describe("MessagesTimeline rhythm", () => {
     const rows = [...screen.container.querySelectorAll<HTMLElement>("[data-timeline-row-id]")];
     const next = rows[rows.findIndex((row) => row.contains(footer)) + 1];
     if (!next) throw new Error("Missing the row after the answer");
-    expect(next.getBoundingClientRect().top).toBeGreaterThanOrEqual(
-      footer.getBoundingClientRect().bottom,
-    );
+    // The in-turn rhythm is 12px; the footer's buttons leave a little more.
+    expect(next.getBoundingClientRect().top - footer.getBoundingClientRect().bottom).toBe(14);
   });
+
+  it("leaves 18px between an answer's footer and the user message that follows it", async () => {
+    await using _viewport = await desktopViewport();
+    setup();
+    const run1 = RunId.make("footer-turn-run");
+    await using screen = await renderTimeline(
+      [
+        message("Question", { runId: run1 }, "footer-turn-user"),
+        message("Answer", { role: "assistant", runId: run1 }, "footer-turn-answer"),
+        message("Next question", { runId: RunId.make("footer-turn-run-2") }, "footer-turn-next"),
+      ],
+      { runs: [] },
+    );
+    const footer = await vi.waitFor(() => {
+      const found = screen.container.querySelector<HTMLElement>("[data-assistant-meta-footer]");
+      if (!found) throw new Error("Missing footer");
+      return found;
+    });
+    const next = screen.container.querySelector<HTMLElement>(
+      '[data-timeline-row-id$="footer-turn-next"]',
+    )!;
+    expect(next.getBoundingClientRect().top - footer.getBoundingClientRect().bottom).toBe(18);
+  });
+
+  it("keeps a user message's line of time and buttons 8px clear of the row after it", async () => {
+    await using _viewport = await desktopViewport();
+    setup();
+    const run1 = RunId.make("user-line-run");
+    await using screen = await renderTimeline(
+      [
+        message("Question", { runId: run1 }, "user-line-user"),
+        message("Answer", { role: "assistant", runId: run1 }, "user-line-answer"),
+      ],
+      { runs: [] },
+    );
+    const row = await vi.waitFor(() => {
+      const found = screen.container.querySelector<HTMLElement>(
+        '[data-timeline-row-id$="user-line-user"]',
+      );
+      if (!found) throw new Error("Missing user row");
+      return found;
+    });
+    const buttons = row.querySelector<HTMLElement>("button")!.parentElement!;
+    const next = screen.container.querySelector<HTMLElement>(
+      '[data-timeline-row-id$="user-line-answer"]',
+    )!;
+    expect(next.getBoundingClientRect().top - buttons.getBoundingClientRect().bottom).toBe(8);
+  });
+
+  it.each([
+    { name: "copy only", rollback: false },
+    { name: "edit from here and copy", rollback: true },
+  ])(
+    "sits a user message's time at the line's end at rest and beside its buttons on hover: $name",
+    async ({ rollback }) => {
+      await using _viewport = await desktopViewport();
+      setup();
+      const runId = RunId.make("time-run");
+      await using screen = await renderTimeline(
+        [
+          message("Question", { runId, inputIntent: "turn_start" }, "time-user"),
+          message("Answer", { role: "assistant", runId }, "time-answer"),
+        ],
+        rollback
+          ? {
+              runs: [],
+              supportsConversationRollback: true,
+              threadStartCheckpointReady: true,
+              turnDiffSummaries: [
+                {
+                  runId,
+                  checkpointTurnCount: 1,
+                  checkpointRef: "checkpoint-1" as never,
+                  status: "ready",
+                  files: [],
+                  assistantMessageId: MessageId.make("time-answer"),
+                  completedAt: CREATED_AT,
+                },
+              ],
+            }
+          : { runs: [] },
+      );
+      const time = await vi.waitFor(() => {
+        const found = screen.container.querySelector<HTMLElement>("[data-user-message-timestamp]");
+        if (!found) throw new Error("Missing timestamp");
+        return found;
+      });
+      const line = time.parentElement!.parentElement!;
+      const buttons = [...line.querySelectorAll<HTMLElement>("button")];
+      expect(buttons).toHaveLength(rollback ? 2 : 1);
+      const group = buttons[0]!.parentElement!;
+      const right = (element: Element) => element.getBoundingClientRect().right;
+      // At rest the buttons are invisible and the time is flush with the end of the line.
+      expect(Number(getComputedStyle(group).opacity)).toBe(0);
+      await expect.poll(() => right(time)).toBeCloseTo(right(group), 0);
+      // On hover the time slides 8px clear of the buttons, which sit where the time was.
+      await userEvent.hover(
+        screen.container.querySelector<HTMLElement>('[data-timeline-row-id$="time-user"]')!,
+      );
+      await expect.poll(() => right(time)).toBeCloseTo(group.getBoundingClientRect().left - 8, 0);
+      await expect.poll(() => Number(getComputedStyle(group).opacity)).toBe(1);
+    },
+  );
 
   it("sets the rows of an expanded group flush under the header in 12px muted type", async () => {
     await using _viewport = await desktopViewport();
