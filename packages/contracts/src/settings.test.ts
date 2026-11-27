@@ -306,6 +306,11 @@ describe("Claude in Chrome and Artifacts settings", () => {
     expect(decodeClaudeSettings({ claudeArtifacts: false }).claudeArtifacts).toBe(false);
     expect(decodeClaudeSettings({ claudeArtifacts: true }).claudeArtifacts).toBe(true);
   });
+
+  it("keeps leaner delegated children off unless the user turns it on", () => {
+    expect(decodeClaudeSettings({}).leanDelegatedChildren).toBe(false);
+    expect(decodeClaudeSettings({ leanDelegatedChildren: true }).leanDelegatedChildren).toBe(true);
+  });
 });
 
 describe("resolveIdleCompaction", () => {

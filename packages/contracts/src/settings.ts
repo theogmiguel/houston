@@ -838,6 +838,15 @@ export const ClaudeSettings = makeProviderSettingsSchema(
         providerSettingsForm: { control: "switch", clearWhenEmpty: "persist" },
       }),
     ),
+    leanDelegatedChildren: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.annotateKey({
+        title: "Leaner delegated children",
+        description:
+          "Delegated children start without the Artifact, Workflow and ScheduleWakeup tools and without Artifacts turned on. Skills, connectors and browser tools stay available.",
+        providerSettingsForm: { control: "switch", clearWhenEmpty: "persist" },
+      }),
+    ),
     autoCompactWindow: TrimmedString.check(
       Schema.isPattern(CLAUDE_AUTO_COMPACT_WINDOW_PATTERN),
     ).pipe(
@@ -872,6 +881,7 @@ export const ClaudeSettings = makeProviderSettingsSchema(
       "homePath",
       "claudeInChrome",
       "claudeArtifacts",
+      "leanDelegatedChildren",
       "autoCompactWindow",
       "idleCompaction",
       "launchArgs",
