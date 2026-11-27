@@ -5723,10 +5723,28 @@ it.effect(
         const ordinary = tokenOf(yield* mcpSessions.read(threadId));
         expect((yield* registry.resolve(ordinary))?.capabilities.has("worktree")).toBe(true);
 
+        // Asked keeps today's capabilities, so only the bot tells the two credentials apart.
+        yield* Ref.set(current, botThreadPolicy("asked", "bot-run-2"));
+        const asked = tokenOf(yield* reopen);
+        expect(asked).not.toBe(ordinary);
+        expect(yield* registry.resolve(ordinary)).toBeUndefined();
+        expect((yield* registry.resolve(asked))?.thread.bot).toEqual({
+          kind: "asked",
+          child: false,
+          botRunId: "bot-run-2",
+          botName: "Night digest",
+          tools: { deny: ["schedule_task", "delete_scheduled_task", "run_scheduled_task_now"] },
+        });
+        // The same rules keep the credential the live process holds; another bot run does not.
+        expect(tokenOf(yield* reopen)).toBe(asked);
+        yield* Ref.set(current, botThreadPolicy("asked", "bot-run-3"));
+        const nextRun = tokenOf(yield* reopen);
+        expect(nextRun).not.toBe(asked);
+
         yield* Ref.set(current, botThreadPolicy("unattended", "bot-run-1"));
         const unattended = tokenOf(yield* reopen);
-        expect(unattended).not.toBe(ordinary);
-        expect(yield* registry.resolve(ordinary)).toBeUndefined();
+        expect(unattended).not.toBe(nextRun);
+        expect(yield* registry.resolve(nextRun)).toBeUndefined();
         const narrow = yield* registry.resolve(unattended);
         expect(narrow?.capabilities).toEqual(new Set(["orchestration", "issues", "pull-requests"]));
         expect(narrow?.thread.bot).toEqual({
@@ -5736,26 +5754,12 @@ it.effect(
           botName: "Night digest",
           tools: { allow: [...UNATTENDED_HOUSTON_TOOLS] },
         });
-
-        // The same rules keep the credential the live process holds.
         expect(tokenOf(yield* reopen)).toBe(unattended);
-
-        yield* Ref.set(current, botThreadPolicy("asked", "bot-run-2"));
-        const asked = tokenOf(yield* reopen);
-        expect(asked).not.toBe(unattended);
-        expect(yield* registry.resolve(unattended)).toBeUndefined();
-        expect((yield* registry.resolve(asked))?.thread.bot).toEqual({
-          kind: "asked",
-          child: false,
-          botRunId: "bot-run-2",
-          botName: "Night digest",
-          tools: { deny: ["schedule_task", "delete_scheduled_task", "run_scheduled_task_now"] },
-        });
 
         // A lookup that fails leaves the thread no Houston credential at all.
         yield* Ref.set(current, "unreadable");
         yield* reopen;
-        expect(yield* registry.resolve(asked)).toBeUndefined();
+        expect(yield* registry.resolve(unattended)).toBeUndefined();
         expect(yield* mcpSessions.read(threadId)).toBeUndefined();
 
         yield* Ref.set(current, undefined);
