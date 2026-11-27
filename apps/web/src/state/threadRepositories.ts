@@ -1,19 +1,11 @@
-import { createEnvironmentRpcQueryAtomFamily } from "@houston-app/client-runtime/state/runtime";
-import { WS_METHODS, type EnvironmentId, type ProjectId } from "@houston-app/contracts";
+import type { EnvironmentId, ProjectId } from "@houston-app/contracts";
 
 import {
   repositoryChoice,
   type RepositoryChoice,
 } from "../components/diffs/multiRepositoryChanges.logic";
-import { connectionAtomRuntime } from "../connection/runtime";
+import { projectRepositories } from "./projectRepositories";
 import { useEnvironmentQuery } from "./query";
-
-/** The repositories a project covers, with each one's branch or the reason it could not be read. */
-export const projectRepositories = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
-  label: "environment-data:projects:repositories",
-  tag: WS_METHODS.houstonProjectsRepositoriesList,
-  staleTimeMs: 5_000,
-});
 
 export interface ThreadRepositoryTarget {
   readonly environmentId: EnvironmentId;
@@ -30,7 +22,7 @@ export function useThreadRepositories(target: ThreadRepositoryTarget | null): {
   const worktreePath = target?.worktreePath ?? null;
   const query = useEnvironmentQuery(
     target !== null && worktreePath === null
-      ? projectRepositories({
+      ? projectRepositories.list({
           environmentId: target.environmentId,
           input: { projectId: target.projectId },
         })
