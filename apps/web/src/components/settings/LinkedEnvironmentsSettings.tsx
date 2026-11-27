@@ -18,6 +18,7 @@ import { PlusIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { requestConfirmDialog } from "~/confirmDialog";
+import { useEnvironments } from "~/state/environments";
 import { mintPairingCodeOn } from "~/state/peerPairingCode";
 import { peerLinkEnvironment, useLinkableMachines } from "~/state/peerLinks";
 import { useEnvironmentQuery } from "~/state/query";
@@ -42,6 +43,7 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import { ITEM_ROW_CLASSNAME, ITEM_ROW_INNER_CLASSNAME } from "./itemRows";
 import { LinkAccessPicker } from "./LinkAccessPicker";
 import { ANOTHER_ADDRESS, LinkMachineSelect } from "./LinkMachineSelect";
+import { LinkSeveralEnvironmentsAction } from "./LinkSeveralEnvironments";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { searchableSetting } from "./settingsSearch";
@@ -64,11 +66,22 @@ export function LinkedEnvironmentsSettings({
   useEffect(() => refreshLinks(), [refreshLinks]);
   const canLink = useAtomValue(peerLinkEnvironment.link.permissionAtom(environmentId));
   const search = searchableSetting("linked-environments");
+  // A batch needs at least two other machines this app has saved.
+  const otherMachines = useEnvironments().environments.length - 1;
   return (
     <SettingsSection
       {...(isSearchTarget ? { id: search.id } : {})}
       title={environmentLabel === null ? search.title : `${search.title} · ${environmentLabel}`}
-      headerAction={canLink ? <LinkEnvironmentAction environmentId={environmentId} /> : null}
+      headerAction={
+        canLink ? (
+          <div className="flex items-center gap-2">
+            {otherMachines > 1 ? (
+              <LinkSeveralEnvironmentsAction environmentId={environmentId} />
+            ) : null}
+            <LinkEnvironmentAction environmentId={environmentId} />
+          </div>
+        ) : null
+      }
     >
       {links.error ? (
         <SettingsRow title="Could not load linked environments" description={links.error} />

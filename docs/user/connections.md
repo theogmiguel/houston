@@ -62,6 +62,20 @@ control. Its access limits what agents here may do there; **Full access** is req
 this window to that machine from a search result. Nothing is sent to a linked machine while the
 beta is off.
 
+**Link several…** appears once this device has two other environments saved. Tick the machines,
+pick one access level for all of them and confirm once. A machine can be ticked when this app is
+connected to it with a session that may create pairing codes there and has an address another
+machine can reach; the list says why when it cannot. Each machine reports its own result, the
+ones that failed stay ticked so you can retry only those, and machines already linked are left
+as they are.
+
+For machines this app is not connected to, put one `<address> <pairing-code>` per line in a file
+(create each code with `houston pair` on that machine) and run
+`houston environment link --from <file> --access <mode>`, or `--from -` to read standard input.
+It prints one result per line without the pairing codes, leaves machines already linked as they
+are, and exits non-zero when any line failed, so the same file can be run again with new codes
+for the failures.
+
 When you search the command palette, each linked machine receives the text you typed, once per
 search, and answers with its matching thread titles and message excerpts. Nothing else leaves
 this machine: no files, thread contents or credentials. A machine that is slow or does not
