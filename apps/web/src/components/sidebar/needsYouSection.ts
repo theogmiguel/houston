@@ -4,7 +4,6 @@ import { getThreadSortTimestamp } from "@houston-app/client-runtime/state/thread
 
 import { projectKeyOf } from "@houston-app/shared/projectKey";
 import { resolveThreadRowState } from "../../threads/sidebarModel";
-import { threadStatusWord } from "../../threads/statusWord";
 import { isSidebarHiddenThread } from "../Sidebar.logic";
 
 /** The attention families the "Needs you" section collects, in the order it lists them. */
@@ -24,18 +23,19 @@ export interface NeedsYouEntry {
 
 function needsYouGroupOf(thread: EnvironmentThreadShell, nowIso: string): NeedsYouGroup | null {
   const state = resolveThreadRowState(thread, nowIso);
-  switch (threadStatusWord(thread, state)) {
-    case "Input":
-      return "input";
-    case "Approval":
+  if (state === "needs") {
+    // A parent whose child asks carries only the sub-agent flag, so read both.
+    if (thread.hasPendingApprovals || thread.pendingSubagentRequest === "approval") {
       return "approval";
-    case "Failed":
-      return "failed";
-    case "Back":
-      return "back";
-    default:
-      return null;
+    }
+    if (thread.hasPendingUserInput || thread.pendingSubagentRequest === "user_input") {
+      return "input";
+    }
+    return null;
   }
+  if (state === "failed") return "failed";
+  if (state === "back") return "back";
+  return null;
 }
 
 function isExcludedFromNeedsYou(thread: EnvironmentThreadShell, nowIso: string): boolean {

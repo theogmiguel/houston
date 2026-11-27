@@ -225,6 +225,12 @@ and threads that came back. Those threads leave their groups while the rail is n
 on desktop and on by default in a phone-width browser; a saved choice wins on either. The
 section is hidden when nothing is waiting.
 
+Click a row's body to open its answer block under the row; the title still opens the thread.
+A question shows one button per option and **Reply…** for free text, an approval shows the
+command with **Approve** and **Deny**, and a failed run shows why it failed with **Retry**.
+Only one block is open at a time. Answering a sub-agent's request in its parent's row answers
+the sub-agent. Text from agents is shown as plain text.
+
 **Filter by project** in the rail header limits the groups, the shelves, search and the
 older Closed threads Houston loads to the projects you pick. Click a project to choose only
 that one, `Shift`-click to add or remove others, and choose it again to clear the filter.

@@ -75,6 +75,28 @@ describe("buildNeedsYouEntries", () => {
     ]);
   });
 
+  it("collects a parent whose sub-agent asks a question or approval", () => {
+    const entries = buildNeedsYouEntries({
+      nowIso: now,
+      projectKeys,
+      threads: [
+        thread("child-input", {
+          pendingSubagentRequest: "user_input",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+        }),
+        thread("child-approval", {
+          pendingSubagentRequest: "approval",
+          updatedAt: "2026-01-03T00:00:00.000Z",
+        }),
+      ],
+    });
+
+    expect(entries.map((entry) => [entry.thread.id, entry.group])).toEqual([
+      ["child-input", "input"],
+      ["child-approval", "approval"],
+    ]);
+  });
+
   it("leaves out archived, closed, deleted and closed-project threads", () => {
     const entries = buildNeedsYouEntries({
       nowIso: now,
