@@ -224,7 +224,7 @@ const make = Effect.gen(function* () {
   const taskFolders: HoustonTaskFoldersShape = yield* HoustonTaskFolders.HoustonTaskFolders;
   const repositoryResolver = yield* ThreadRepositoryResolver;
   const preparationScope = yield* Scope.make("sequential");
-  const scheduledLaunches = yield* Ref.make<ReadonlySet<CommandId>>(new Set());
+  const scheduledLaunches = yield* Ref.make<ReadonlySet<string>>(new Set());
   yield* Effect.addFinalizer(() => Scope.close(preparationScope, Exit.void));
 
   const mapError =
@@ -876,18 +876,23 @@ const make = Effect.gen(function* () {
             ),
           );
 
-  const reservePreparation = (commandId: CommandId) =>
+  // A run's preparation is reserved by run, so the release worker and an explicit retry cannot
+  // start two worktree setups for the same run.
+  const preparationReservationKey = (commandId: CommandId, runId: RunId | null) =>
+    runId === null ? `command:${commandId}` : `run:${runId}`;
+
+  const reservePreparation = (key: string) =>
     Ref.modify(scheduledLaunches, (scheduled) => {
-      if (scheduled.has(commandId)) return [false, scheduled] as const;
+      if (scheduled.has(key)) return [false, scheduled] as const;
       const next = new Set(scheduled);
-      next.add(commandId);
+      next.add(key);
       return [true, next] as const;
     });
 
-  const releasePreparation = (commandId: CommandId) =>
+  const releasePreparation = (key: string) =>
     Ref.update(scheduledLaunches, (scheduled) => {
       const next = new Set(scheduled);
-      next.delete(commandId);
+      next.delete(key);
       return next;
     });
 
@@ -932,7 +937,7 @@ const make = Effect.gen(function* () {
         ),
       ),
       Effect.ignoreCause,
-      Effect.ensuring(releasePreparation(input.commandId)),
+      Effect.ensuring(releasePreparation(preparationReservationKey(input.commandId, runId))),
       Effect.forkIn(preparationScope),
     );
   });
@@ -1162,7 +1167,8 @@ const make = Effect.gen(function* () {
               }
             : workspaceStrategy;
         if (shouldSchedule) {
-          const ownsPreparation = yield* reservePreparation(input.commandId);
+          const preparationKey = preparationReservationKey(input.commandId, runId);
+          const ownsPreparation = yield* reservePreparation(preparationKey);
           if (ownsPreparation) {
             yield* Effect.gen(function* () {
               const preparationStillRequired =
@@ -1181,9 +1187,9 @@ const make = Effect.gen(function* () {
                   runId,
                 );
               } else {
-                yield* releasePreparation(input.commandId);
+                yield* releasePreparation(preparationKey);
               }
-            }).pipe(Effect.onError(() => releasePreparation(input.commandId)));
+            }).pipe(Effect.onError(() => releasePreparation(preparationKey)));
           }
         }
 
@@ -1212,9 +1218,10 @@ const make = Effect.gen(function* () {
       const run = runs.find((candidate) => candidate.id === input.runId);
       const workspacePreparation = run?.workspacePreparation;
       if (run?.status !== "preparing" || workspacePreparation === undefined) return;
-      if (!(yield* reservePreparation(input.commandId))) return;
+      const preparationKey = preparationReservationKey(input.commandId, input.runId);
+      if (!(yield* reservePreparation(preparationKey))) return;
       yield* scheduleRunPreparation(input, thread, run, workspacePreparation).pipe(
-        Effect.onError(() => releasePreparation(input.commandId)),
+        Effect.onError(() => releasePreparation(preparationKey)),
       );
     }).pipe(Effect.exit);
     if (Exit.isFailure(scheduled)) {

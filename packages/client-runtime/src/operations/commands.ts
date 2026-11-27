@@ -271,6 +271,8 @@ export interface ResumeThreadQueueInput extends ThreadCommandInput {
   readonly runId?: RunId;
   /** Starts the queued run on this selection instead of the one it was queued with. */
   readonly modelSelection?: ModelSelection;
+  /** The banner starts every held usage-limit item of the thread, not only this run. */
+  readonly releaseThreadHolds?: boolean;
 }
 
 export interface PromoteQueuedRunInput extends ThreadCommandInput {
@@ -1091,6 +1093,9 @@ export const resumeThreadQueue = Effect.fn("EnvironmentCommands.resumeThreadQueu
           type: "queued-run.start" as const,
           runId: input.runId,
           ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
+          ...(input.releaseThreadHolds === undefined
+            ? {}
+            : { releaseThreadHolds: input.releaseThreadHolds }),
         }),
     commandId: yield* allocateCommandId(input),
     threadId: input.threadId,

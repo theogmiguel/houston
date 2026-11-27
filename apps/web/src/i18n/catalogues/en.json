@@ -1267,5 +1267,8 @@
   "Not supported": "Not supported",
   "1 automatic start waits": "1 automatic start waits",
   "{count} automatic starts wait": "{count} automatic starts wait",
-  "Start held items": "Start held items"
+  "Start held items": "Start held items",
+  "Could not start held items": "Could not start held items",
+  "1 automatic start waits (overdue)": "1 automatic start waits (overdue)",
+  "{count} automatic starts wait (overdue)": "{count} automatic starts wait (overdue)"
 }

@@ -28,8 +28,7 @@ describe("runStartGate", () => {
           Ref.update(steps, (seen) => [...seen, "admission"]).pipe(
             Effect.as({ type: "start" as const }),
           ),
-        context: () =>
-          Ref.update(steps, (seen) => [...seen, "context"]).pipe(Effect.as("context")),
+        context: () => Ref.update(steps, (seen) => [...seen, "context"]).pipe(Effect.as("context")),
         start: () => Ref.update(steps, (seen) => [...seen, "start"]),
       })({ origin: "automatic" });
       assert.deepEqual(yield* Ref.get(steps), ["admission", "context", "start"]);

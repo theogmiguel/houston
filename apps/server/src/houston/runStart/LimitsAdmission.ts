@@ -10,6 +10,7 @@ import {
   usageLimitBlockedRun,
 } from "@houston-app/shared/orchestrationV2ThreadError";
 
+import type { LimitWindowRecord } from "./LimitWindowRegistry.ts";
 import type { RunStartHold } from "./RunStartGate.ts";
 
 type FailureScanTurnItem =
@@ -27,10 +28,7 @@ export interface LimitsAdmissionInput {
 }
 
 export function limitsHoldReason(
-  input: Pick<
-    LimitsAdmissionInput,
-    "providerInstanceId" | "nowMs"
-  > & {
+  input: Pick<LimitsAdmissionInput, "providerInstanceId" | "nowMs"> & {
     readonly releaseAt: string;
     readonly overdue?: boolean;
   },
@@ -50,12 +48,7 @@ export function limitsHoldReason(
  */
 export function threadUsageLimitHold(input: LimitsAdmissionInput): RunStartHold | null {
   if (input.origin !== "automatic" || !input.snoozeLimitedThreads) return null;
-  const blocked = usageLimitBlockedRun(
-    input.runs,
-    input.turnItems,
-    null,
-    input.providerInstanceId,
-  );
+  const blocked = usageLimitBlockedRun(input.runs, input.turnItems, null, input.providerInstanceId);
   const failure = latestRootProviderFailure(blocked, input.turnItems);
   if (failure?.class !== "usage_limit" || failure.resetAt == null) return null;
   const resetMs = Date.parse(failure.resetAt);
@@ -71,6 +64,88 @@ export function threadUsageLimitHold(input: LimitsAdmissionInput): RunStartHold 
   };
 }
 
-export function limitsAdmission(input: LimitsAdmissionInput): RunStartHold | null {
-  return threadUsageLimitHold(input);
+/** A no-reset failure is treated as recent for this long before it stops holding. */
+export const MAX_HOLD_WITHOUT_RESET_MS = 24 * 60 * 60 * 1000;
+const OVERDUE_GRACE_MS = 15 * 60 * 1000;
+const MAX_TEST_ATTEMPTS = 3;
+
+export interface LimitWindowState {
+  readonly active: boolean;
+  readonly overdue: boolean;
+  readonly releaseAt: string | null;
+}
+
+export function limitWindowState(record: LimitWindowRecord, nowMs: number): LimitWindowState {
+  if (record.resetAt !== null) {
+    const resetMs = Date.parse(record.resetAt);
+    if (!Number.isFinite(resetMs)) return { active: false, overdue: false, releaseAt: null };
+    return {
+      active: resetMs > nowMs,
+      overdue: nowMs > resetMs + OVERDUE_GRACE_MS,
+      releaseAt: record.resetAt,
+    };
+  }
+  const observedMs = Date.parse(record.observedAt);
+  const recent = Number.isFinite(observedMs) && nowMs - observedMs < MAX_HOLD_WITHOUT_RESET_MS;
+  const nextTestMs = record.nextTestAt === null ? null : Date.parse(record.nextTestAt);
+  const overdue =
+    record.testAttempt >= MAX_TEST_ATTEMPTS ||
+    (nextTestMs !== null && Number.isFinite(nextTestMs) && nowMs > nextTestMs + OVERDUE_GRACE_MS);
+  return { active: recent, overdue, releaseAt: null };
+}
+
+function windowApplies(record: LimitWindowRecord, model: string | null): boolean {
+  return record.scope === "*" || (model !== null && record.scope === model);
+}
+
+export function accountLimitHold(input: {
+  readonly origin: RunStartOrigin;
+  readonly providerInstanceId: ProviderInstanceId;
+  readonly model: string | null;
+  readonly windows: ReadonlyArray<LimitWindowRecord>;
+  readonly holdUnlimitedThreads: boolean;
+  readonly nowMs: number;
+}): RunStartHold | null {
+  if (input.origin !== "automatic" || !input.holdUnlimitedThreads) return null;
+  const states = input.windows
+    .filter((record) => windowApplies(record, input.model))
+    .map((record) => ({ record, state: limitWindowState(record, input.nowMs) }))
+    .filter(({ state }) => state.active);
+  if (states.length === 0) return null;
+  const releases = states.flatMap(({ state }) =>
+    state.releaseAt === null ? [] : [state.releaseAt],
+  );
+  const releaseAt = releases.length === 0 ? null : releases.toSorted().at(-1)!;
+  const overdue = states.some(({ state }) => state.overdue);
+  const reason: MessageDeliveryQueueHoldReason = {
+    kind: "usage_limit",
+    message:
+      releaseAt === null
+        ? `Provider instance ${input.providerInstanceId} is inside a usage limit window, so automatic starts and new sub-agents are held. The provider did not report when this limit resets; Houston retries a held start.`
+        : `Provider instance ${input.providerInstanceId} is inside a usage limit window that resets at ${releaseAt}, so automatic starts and new sub-agents are held until then. Send the message yourself to start it now.`,
+    providerInstanceId: input.providerInstanceId,
+    ...(releaseAt === null ? {} : { releaseAt }),
+    ...(overdue ? { overdue: true } : {}),
+  };
+  return { type: "hold", releaseAt, reason };
+}
+
+export function limitsAdmission(
+  input: LimitsAdmissionInput & {
+    readonly model: string | null;
+    readonly windows: ReadonlyArray<LimitWindowRecord>;
+    readonly holdUnlimitedThreads: boolean;
+  },
+): RunStartHold | null {
+  return (
+    threadUsageLimitHold(input) ??
+    accountLimitHold({
+      origin: input.origin,
+      providerInstanceId: input.providerInstanceId,
+      model: input.model,
+      windows: input.windows,
+      holdUnlimitedThreads: input.holdUnlimitedThreads,
+      nowMs: input.nowMs,
+    })
+  );
 }

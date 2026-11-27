@@ -1651,6 +1651,14 @@ const make = Effect.gen(function* () {
       childRunId: childRun?.id ?? null,
       childNodeId: task.id,
       status,
+      ...(status === "queued" && childRun?.queueHeld === true && childRun.queueHeldReason != null
+        ? {
+            queuedReason: childRun.queueHeldReason.message,
+            ...(childRun.queueHeldReason.releaseAt === undefined
+              ? {}
+              : { queuedReleaseAt: childRun.queueHeldReason.releaseAt }),
+          }
+        : {}),
       workState,
       hasPendingChildRuns: hasPendingChildRuns(childProjection, childRun),
       providerInstanceId: modelSelection.instanceId,
@@ -2623,8 +2631,11 @@ const make = Effect.gen(function* () {
         }),
       );
 
+      const initial = yield* readTask(scope, taskId, false, true);
+      // A held task returns at once in both modes; the parent is woken when the child finishes.
+      if (initial.status === "queued") return initial;
       if (input.mode !== "wait") {
-        return yield* readTask(scope, taskId, false, true);
+        return initial;
       }
       const timeoutMs = Math.min(
         MAX_WAIT_TIMEOUT_MS,

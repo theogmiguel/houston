@@ -739,6 +739,8 @@ export const OrchestrationV2Run = Schema.Struct({
   queueHeld: Schema.optional(Schema.Boolean),
   /** Why this queued run cannot start; cleared when it starts or its hold is released. */
   queueHeldReason: Schema.optional(Schema.NullOr(MessageDeliveryQueueHoldReason)),
+  /** The user released this thread's usage-limit hold explicitly, so admission must not re-hold it. */
+  releasedUsageLimitHold: Schema.optional(Schema.Boolean),
   requestedAt: Schema.DateTimeUtc,
   startedAt: Schema.NullOr(Schema.DateTimeUtc),
   completedAt: Schema.NullOr(Schema.DateTimeUtc),
@@ -3351,6 +3353,8 @@ export const OrchestrationV2Command = Schema.Union([
      * Absent keeps the selection it was queued with.
      */
     modelSelection: Schema.optional(ModelSelection),
+    /** The banner starts the thread's held usage-limit items together, not one row's item. */
+    releaseThreadHolds: Schema.optionalKey(Schema.Boolean),
   }),
   Schema.Struct({
     type: Schema.Literal("queued-run.reorder"),

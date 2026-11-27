@@ -53,17 +53,16 @@ export const runStartGate =
  * Ask the gate whether a start may proceed. The caller owns the start itself, because a start
  * is one transaction of domain events rather than a provider call.
  */
-export const enterRunStartGate =
-  <E = never, R = never>(input: {
-    readonly origin: RunStartOrigin;
-    readonly admission: () => Effect.Effect<RunStartAdmission, E, R>;
-    readonly context: () => Effect.Effect<void, E, R>;
-  }): Effect.Effect<RunStartAdmission, E, R> =>
-    Effect.gen(function* () {
-      const admission: RunStartAdmission = skipsAdmission(input.origin)
-        ? { type: "start" }
-        : yield* input.admission();
-      if (admission.type === "hold") return admission;
-      yield* input.context();
-      return admission;
-    });
+// The enclosing dispatch or queue-start span already covers a start, so the gate adds no span.
+export const enterRunStartGate = Effect.fnUntraced(function* <E = never, R = never>(input: {
+  readonly origin: RunStartOrigin;
+  readonly admission: () => Effect.Effect<RunStartAdmission, E, R>;
+  readonly context: () => Effect.Effect<void, E, R>;
+}): Effect.gen.Return<RunStartAdmission, E, R> {
+  const admission: RunStartAdmission = skipsAdmission(input.origin)
+    ? { type: "start" }
+    : yield* input.admission();
+  if (admission.type === "hold") return admission;
+  yield* input.context();
+  return admission;
+});

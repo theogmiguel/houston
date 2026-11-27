@@ -40,6 +40,7 @@ import { stripUnservedToolOutputImageBytes } from "./toolOutputImageBytes.ts";
 import { boundFileChangeForStorage } from "./WireProjection.ts";
 import { ReadinessLedger, reportTurnTerminal } from "../houston/providerReadiness.ts";
 import { MessageDeliveryWriter } from "../houston/messageDelivery.ts";
+import { LimitWindowRegistry } from "../houston/runStart/LimitWindowRegistry.ts";
 
 export class ProviderEventNormalizeError extends Schema.TaggedError<ProviderEventNormalizeError>()(
   "ProviderEventNormalizeError",
@@ -758,6 +759,18 @@ export const layer: Layer.Layer<
                     Effect.ignoreCause({ log: true }),
                     Effect.forkIn(scope, { startImmediately: true }),
                   );
+                  // Remember the account window so other threads on the instance wait too.
+                  const registry = yield* Effect.serviceOption(LimitWindowRegistry);
+                  if (Option.isSome(registry)) {
+                    yield* registry.value
+                      .recordFailure({
+                        providerInstanceId: input.providerInstanceId,
+                        model: null,
+                        resetAt: input.event.failure.resetAt ?? null,
+                        now: yield* DateTime.now,
+                      })
+                      .pipe(Effect.ignoreCause({ log: true }));
+                  }
                 }),
               ),
               Effect.flatMap((storedEvents) =>

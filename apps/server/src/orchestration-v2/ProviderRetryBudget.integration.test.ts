@@ -67,7 +67,7 @@ it.effect.each([
     }),
     retryDelayMs: null,
     result:
-      "exceeded retry limit, last status: 429 Too Many Requests. The provider retried for 10 minutes without recovering; the retry limit is 10 minutes, so the turn was stopped.",
+      "exceeded retry limit, last status: 429 Too Many Requests. The provider retried for 10 minutes without recovering; the retry limit is 10 minutes, so the turn was stopped. The provider did not report when this usage limit resets, so Houston cannot hold automatic starts until then.",
   },
 ] as const)(
   "a parent hears that its child failed in retries on $name",

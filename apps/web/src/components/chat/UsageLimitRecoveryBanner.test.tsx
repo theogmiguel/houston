@@ -11,6 +11,7 @@ function bannerDescription(
   resetAt: Date,
   timestampFormat: TimestampFormat,
   heldStarts?: number,
+  heldOverdue?: boolean,
 ) {
   return usageLimitRecoveryBannerItem({
     runId: RunId.make("run-1"),
@@ -23,6 +24,7 @@ function bannerDescription(
     recovery: null,
     timestampFormat,
     ...(heldStarts === undefined ? {} : { heldStarts }),
+    ...(heldOverdue === undefined ? {} : { heldOverdue }),
     translate: (source, params) => translate("en", source, params),
     onChange: async () => {},
   }).description;
@@ -48,6 +50,13 @@ describe("usageLimitRecoveryBannerItem", () => {
     using _now = vi.spyOn(Date, "now").mockReturnValue(stoppedAt.getTime());
     expect(bannerDescription(new Date(2026, 9, 20, 17, 30), "24-hour", 3)).toBe(
       "Resets 17:30 · 3 automatic starts wait",
+    );
+  });
+
+  it("says when a held start is overdue", () => {
+    using _now = vi.spyOn(Date, "now").mockReturnValue(stoppedAt.getTime());
+    expect(bannerDescription(new Date(2026, 9, 20, 17, 30), "24-hour", 1, true)).toBe(
+      "Resets 17:30 · 1 automatic start waits (overdue)",
     );
   });
 

@@ -83,11 +83,9 @@ import {
 import { modelSelectionsEqual } from "@houston-app/shared/model";
 import { modelSwitchSince } from "./modelSwitch.ts";
 import { recordThreadOpen } from "@houston-app/shared/paletteSearch";
-import {
-  enterRunStartGate,
-  type RunStartAdmission,
-} from "../houston/runStart/RunStartGate.ts";
+import { enterRunStartGate, type RunStartAdmission } from "../houston/runStart/RunStartGate.ts";
 import { limitsAdmission } from "../houston/runStart/LimitsAdmission.ts";
+import { LimitWindowRegistry } from "../houston/runStart/LimitWindowRegistry.ts";
 import {
   backgroundWorkHoldsCompletion,
   derivePendingBackgroundWork,
@@ -545,9 +543,7 @@ function nextQueuePosition(projection: Pick<OrchestrationV2ThreadProjection, "ru
   return (
     projection.runs.reduce(
       (max, run) =>
-        run.status === "queued"
-          ? Math.max(max, run.queuePosition ?? run.ordinal)
-          : max,
+        run.status === "queued" ? Math.max(max, run.queuePosition ?? run.ordinal) : max,
       0,
     ) + 1
   );
@@ -1095,6 +1091,8 @@ function releaseQueueHoldEvents(input: {
   readonly runs: ReadonlyArray<OrchestrationV2Run>;
   readonly messages?: ReadonlyArray<OrchestrationV2ConversationMessage>;
   readonly occurredAt: DateTime.Utc;
+  /** A user's explicit banner start: keep released usage-limit runs from being re-held. */
+  readonly markUsageLimitReleased?: boolean;
 }): ReadonlyArray<Omit<OrchestrationV2DomainEvent, "id">> {
   const messageIds = new Set(input.runs.map((run) => run.userMessageId));
   return [
@@ -1104,7 +1102,13 @@ function releaseQueueHoldEvents(input: {
       runId: run.id,
       providerInstanceId: run.providerInstanceId,
       occurredAt: input.occurredAt,
-      payload: { ...withoutQueueHoldReason(run), queueHeld: false },
+      payload: {
+        ...withoutQueueHoldReason(run),
+        queueHeld: false,
+        ...(input.markUsageLimitReleased === true && run.queueHeldReason?.kind === "usage_limit"
+          ? { releasedUsageLimitHold: true }
+          : {}),
+      },
     })),
     ...(input.messages ?? [])
       .filter((message) => messageIds.has(message.id) && message.delivery !== undefined)
@@ -1165,6 +1169,9 @@ export function resolveRunStartOrigin(
 interface RunStartAdmissionInput {
   readonly origin: RunStartOrigin;
   readonly providerInstanceId: ProviderInstanceId;
+  readonly model: string;
+  /** A user explicitly released this run's usage-limit hold; do not hold it again. */
+  readonly releasedUsageLimitHold?: boolean;
   readonly projection: Pick<OrchestrationV2ThreadProjection, "thread" | "runs" | "turnItems">;
   readonly now: DateTime.Utc;
 }
@@ -1192,9 +1199,10 @@ function usageLimitHoldsQueue(
   );
   if (blocked?.providerInstanceId !== providerInstanceId) return false;
   const failure = latestRootProviderFailure(blocked, projection.turnItems);
-  // The provider did not report a reset, or the reset already passed: the thread is no longer
-  // known to be limited, so the queue may start.
-  if (failure?.class !== "usage_limit" || failure.resetAt == null) return false;
+  if (failure?.class !== "usage_limit") return false;
+  // With the setting off the legacy hold still covers an unreported reset. A reset that passed
+  // no longer counts as limited, so the queue may start.
+  if (failure.resetAt == null) return true;
   const resetMs = Date.parse(failure.resetAt);
   return Number.isFinite(resetMs) && resetMs > nowMs;
 }
@@ -1478,11 +1486,19 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   // work may be held; a typed send and provider output always start.
   const admitRunStart = (input: RunStartAdmissionInput): Effect.Effect<RunStartAdmission> => {
     const admission = Effect.fnUntraced(function* () {
-      if (input.origin !== "automatic") return { type: "start" as const };
+      if (input.origin !== "automatic" || input.releasedUsageLimitHold === true)
+        return { type: "start" as const };
       const settings = yield* serverSettings.getSettings.pipe(Effect.orDie);
+      const registry = yield* Effect.serviceOption(LimitWindowRegistry);
+      const windows = Option.isSome(registry)
+        ? yield* registry.value.read(input.providerInstanceId)
+        : [];
       const hold = limitsAdmission({
         origin: input.origin,
         providerInstanceId: input.providerInstanceId,
+        model: input.model,
+        windows,
+        holdUnlimitedThreads: settings.holdUnlimitedThreads,
         runs: input.projection.runs,
         turnItems: input.projection.turnItems,
         snoozeLimitedThreads: settings.snoozeLimitedThreads,
@@ -2286,6 +2302,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : yield* admitRunStart({
               origin: startOriginForMessage(queuedMessage),
               providerInstanceId: queuedRun.providerInstanceId,
+              model: modelSelection.model,
+              releasedUsageLimitHold: queuedRun.releasedUsageLimitHold === true,
               projection,
               now,
             });
@@ -2524,6 +2542,92 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             }),
         ),
       );
+      // A deferred start records its workspace strategy while it waits, so a released held child
+      // now goes through the same preparation a non-held deferred start does before it starts.
+      if (queuedRun.workspacePreparation !== undefined) {
+        if (queuedRun.rootNodeId === null || queuedRun.providerThreadId === null) {
+          return yield* new OrchestratorDispatchError({
+            commandId: CommandId.make(`command:system:start-queued:${queuedRun.id}`),
+            commandType: "message.dispatch",
+            cause: `Queued run ${queuedRun.id} is missing execution identity.`,
+          });
+        }
+        const queuedUserTurnItem = projection.turnItems.find(
+          (
+            candidate,
+          ): candidate is Extract<OrchestrationV2TurnItem, { readonly type: "user_message" }> =>
+            candidate.type === "user_message" &&
+            candidate.runId === queuedRun.id &&
+            candidate.messageId === queuedRun.userMessageId,
+        );
+        const releasedDelivery = queuedMessage?.delivery;
+        yield* writeSystemEvents([
+          ...(queuedUserTurnItem === undefined || releasedDelivery === undefined
+            ? []
+            : [
+                {
+                  type: "turn-item.updated" as const,
+                  threadId,
+                  runId: queuedRun.id,
+                  nodeId: queuedRun.rootNodeId,
+                  providerInstanceId: queuedRun.providerInstanceId,
+                  occurredAt: now,
+                  payload: {
+                    ...queuedUserTurnItem,
+                    delivery: withoutDeliveryHoldReason(releasedDelivery),
+                    updatedAt: now,
+                  },
+                },
+              ]),
+          {
+            type: "run.updated",
+            threadId,
+            runId: queuedRun.id,
+            nodeId: queuedRun.rootNodeId,
+            providerInstanceId: queuedRun.providerInstanceId,
+            occurredAt: now,
+            payload: {
+              ...withoutQueueHoldReason(queuedRun),
+              status: "preparing",
+              queuePosition: null,
+              queueHeld: false,
+              startedAt: null,
+              // Send now and Resume queue are the user's explicit release of any limit hold.
+              ...(options?.bypassAdmission === true ? { releasedUsageLimitHold: true } : {}),
+            },
+          },
+          {
+            type: "turn-item.updated",
+            threadId,
+            runId: queuedRun.id,
+            nodeId: queuedRun.rootNodeId,
+            providerInstanceId: queuedRun.providerInstanceId,
+            occurredAt: now,
+            payload: {
+              id: idAllocator.derive.turnItemFromProviderItem({
+                driver: targetAdapter.driver,
+                nativeItemId: `workspace-preparation:${queuedRun.id}`,
+              }),
+              threadId,
+              runId: queuedRun.id,
+              nodeId: queuedRun.rootNodeId,
+              providerThreadId: queuedRun.providerThreadId,
+              providerTurnId: null,
+              nativeItemRef: null,
+              parentItemId: null,
+              ordinal: yield* nextTurnItemOrdinal(projection),
+              status: "running",
+              title: WORKSPACE_PREPARATION_INPUT,
+              startedAt: now,
+              completedAt: null,
+              updatedAt: now,
+              type: "command_execution",
+              input: WORKSPACE_PREPARATION_INPUT,
+            },
+          },
+        ]);
+        return;
+      }
       const activeProviderThread = projection.providerThreads.find(
         (candidate) => candidate.id === projection.thread.activeProviderThreadId,
       );
@@ -7723,6 +7827,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const admission = yield* admitRunStart({
       origin: resolveRunStartOrigin(command),
       providerInstanceId: modelSelection.instanceId,
+      model: modelSelection.model,
       projection,
       now,
     });
@@ -7979,9 +8084,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...(command.usageLimitContinuationOfRunId === undefined
           ? {}
           : { usageLimitContinuationOfRunId: command.usageLimitContinuationOfRunId }),
-        ...(admissionHold === undefined &&
-        dispatchMode.type === "defer_start" &&
-        dispatchMode.workspaceStrategy !== undefined
+        ...(dispatchMode.type === "defer_start" && dispatchMode.workspaceStrategy !== undefined
           ? { workspacePreparation: dispatchMode.workspaceStrategy }
           : {}),
         ...(continuedTaskId === undefined ? {} : { delegatedTaskId: continuedTaskId }),
@@ -11656,11 +11759,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ? "automatic"
             : "user",
         providerInstanceId: state.run.providerInstanceId,
+        model: state.run.modelSelection.model,
+        releasedUsageLimitHold: state.run.releasedUsageLimitHold === true,
         projection,
         now,
       });
       if (admission.type === "hold") {
-        yield* emit(events, command)({
+        yield* emit(
+          events,
+          command,
+        )({
           type: "run.updated",
           threadId: command.threadId,
           runId: state.run.id,
@@ -14961,16 +15069,26 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           });
         }
         const queued = projection.runs.filter((run) => run.status === "queued");
-        // Send now releases only its own item; Resume queue releases the whole queue.
-        const releasedHolds =
-          command.type === "queued-run.start" && selectedRun !== undefined
-            ? [selectedRun]
-            : queued;
+        // The banner starts the thread's whole limits hold together; a queued row's Send now
+        // releases only its own held usage-limit item.
+        const releasesUsageLimitHold =
+          command.type === "queued-run.start" &&
+          command.releaseThreadHolds === true &&
+          selectedRun?.queueHeld === true &&
+          selectedRun.queueHeldReason?.kind === "usage_limit";
+        const singleUsageLimitStart =
+          command.type === "queued-run.start" &&
+          !releasesUsageLimitHold &&
+          selectedRun?.queueHeld === true &&
+          selectedRun.queueHeldReason?.kind === "usage_limit";
+        const releasedRuns =
+          singleUsageLimitStart && selectedRun !== undefined ? [selectedRun] : queued;
         for (const event of releaseQueueHoldEvents({
           threadId: command.threadId,
-          runs: releasedHolds,
+          runs: releasedRuns,
           messages: projection.messages,
           occurredAt: now,
+          markUsageLimitReleased: releasesUsageLimitHold,
         })) {
           yield* emit(events, command)(event);
         }
@@ -15132,20 +15250,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     );
     if (drainsQueuedRunsAfterDispatch(command)) {
       yield* mapDispatchError(command)(
-        startNextQueuedRun(
-          commandThreadId(command),
-          {
-            ...(command.type === "queued-run.start"
-              ? {
-                  queuedRunId: command.runId,
-                  ...(command.modelSelection === undefined
-                    ? {}
-                    : { modelSelection: command.modelSelection }),
-                }
-              : {}),
-            ...(bypassesRunStartAdmission(command) ? { bypassAdmission: true } : {}),
-          },
-        ),
+        startNextQueuedRun(commandThreadId(command), {
+          ...(command.type === "queued-run.start"
+            ? {
+                queuedRunId: command.runId,
+                ...(command.modelSelection === undefined
+                  ? {}
+                  : { modelSelection: command.modelSelection }),
+              }
+            : {}),
+          ...(bypassesRunStartAdmission(command) ? { bypassAdmission: true } : {}),
+        }),
       );
     }
     return {
@@ -15359,20 +15474,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       (command.type === "thread.runtime-mode.set" && runtimeModeCeiling !== undefined)
     ) {
       yield* mapDispatchError(command)(
-        startNextQueuedRun(
-          commandThreadId(command),
-          {
-            ...(command.type === "queued-run.start"
-              ? {
-                  queuedRunId: command.runId,
-                  ...(command.modelSelection === undefined
-                    ? {}
-                    : { modelSelection: command.modelSelection }),
-                }
-              : {}),
-            ...(bypassesRunStartAdmission(command) ? { bypassAdmission: true } : {}),
-          },
-        ),
+        startNextQueuedRun(commandThreadId(command), {
+          ...(command.type === "queued-run.start"
+            ? {
+                queuedRunId: command.runId,
+                ...(command.modelSelection === undefined
+                  ? {}
+                  : { modelSelection: command.modelSelection }),
+              }
+            : {}),
+          ...(bypassesRunStartAdmission(command) ? { bypassAdmission: true } : {}),
+        }),
       );
     }
     if (command.type === "notification.delivery.accept") {

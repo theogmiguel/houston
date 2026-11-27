@@ -9,7 +9,13 @@ import {
 import * as DateTime from "effect/DateTime";
 import { assert, describe, it } from "@effect/vitest";
 
-import { limitsAdmission } from "./LimitsAdmission.ts";
+import {
+  accountLimitHold,
+  limitWindowState,
+  limitsAdmission,
+  MAX_HOLD_WITHOUT_RESET_MS,
+} from "./LimitsAdmission.ts";
+import { nextTestReleaseAt, type LimitWindowRecord } from "./LimitWindowRegistry.ts";
 
 const providerInstanceId = ProviderInstanceId.make("codex");
 const threadId = ThreadId.make("thread:limited");
@@ -50,6 +56,9 @@ const limitItem = (resetAt: string | null, runId = "run:limited"): Orchestration
 const input = (overrides: Partial<Parameters<typeof limitsAdmission>[0]> = {}) => ({
   origin: "automatic" as const,
   providerInstanceId,
+  model: "gpt-5.4",
+  windows: [],
+  holdUnlimitedThreads: false,
   runs: [failedRun()],
   turnItems: [limitItem("2026-01-01T01:00:00.000Z")],
   snoozeLimitedThreads: true,
@@ -100,5 +109,108 @@ describe("limitsAdmission", () => {
         }),
       ),
     );
+  });
+});
+
+const windowRecord = (overrides: Partial<LimitWindowRecord> = {}): LimitWindowRecord => ({
+  providerInstanceId,
+  scope: "*",
+  resetAt: "2026-01-01T01:00:00.000Z",
+  observedAt: "2026-01-01T00:00:00.000Z",
+  testAttempt: 0,
+  nextTestAt: null,
+  ...overrides,
+});
+
+describe("account limit windows", () => {
+  const nowMs = DateTime.toEpochMillis(now);
+
+  it("is active while the reported reset is ahead and overdue after 15 minutes", () => {
+    assert.deepEqual(limitWindowState(windowRecord(), nowMs), {
+      active: true,
+      overdue: false,
+      releaseAt: "2026-01-01T01:00:00.000Z",
+    });
+    assert.isTrue(limitWindowState(windowRecord(), Date.parse("2026-01-01T01:20:00.000Z")).overdue);
+    assert.isFalse(
+      limitWindowState(windowRecord({ resetAt: "2025-12-31T23:00:00.000Z" }), nowMs).active,
+    );
+  });
+
+  it("keeps a no-reset failure recent and overdue after three failed tests", () => {
+    const record = windowRecord({ resetAt: null, testAttempt: 3 });
+    assert.isTrue(limitWindowState(record, nowMs).active);
+    assert.isTrue(limitWindowState(record, nowMs).overdue);
+    assert.isFalse(limitWindowState(record, nowMs + MAX_HOLD_WITHOUT_RESET_MS + 1).active);
+  });
+
+  it("schedules test releases after 15, 30, then 60 minutes", () => {
+    const start = nowMs;
+    assert.equal(nextTestReleaseAt(start, 0), start + 15 * 60_000);
+    assert.equal(nextTestReleaseAt(start, 1), start + 30 * 60_000);
+    assert.equal(nextTestReleaseAt(start, 2), start + 60 * 60_000);
+    assert.equal(nextTestReleaseAt(start, 9), start + 60 * 60_000);
+  });
+
+  it("holds an automatic start on another thread of the same account", () => {
+    const hold = accountLimitHold({
+      origin: "automatic",
+      providerInstanceId,
+      model: "gpt-5.4",
+      windows: [windowRecord()],
+      holdUnlimitedThreads: true,
+      nowMs,
+    });
+    assert.isNotNull(hold);
+    assert.equal(hold?.reason.kind, "usage_limit");
+    assert.equal(hold?.releaseAt, "2026-01-01T01:00:00.000Z");
+  });
+
+  it("does not hold a user start or a limit scoped to another model", () => {
+    assert.isNull(
+      accountLimitHold({
+        origin: "user",
+        providerInstanceId,
+        model: "gpt-5.4",
+        windows: [windowRecord()],
+        holdUnlimitedThreads: true,
+        nowMs,
+      }),
+    );
+    assert.isNull(
+      accountLimitHold({
+        origin: "automatic",
+        providerInstanceId,
+        model: "gpt-5.4",
+        windows: [windowRecord({ scope: "claude-opus" })],
+        holdUnlimitedThreads: true,
+        nowMs,
+      }),
+    );
+  });
+
+  it("holds nothing while the new row is off", () => {
+    assert.isNull(
+      accountLimitHold({
+        origin: "automatic",
+        providerInstanceId,
+        model: "gpt-5.4",
+        windows: [windowRecord()],
+        holdUnlimitedThreads: false,
+        nowMs,
+      }),
+    );
+  });
+
+  it("marks a hold overdue in its reason", () => {
+    const hold = accountLimitHold({
+      origin: "automatic",
+      providerInstanceId,
+      model: "gpt-5.4",
+      windows: [windowRecord({ resetAt: null, testAttempt: 3 })],
+      holdUnlimitedThreads: true,
+      nowMs,
+    });
+    assert.isTrue(hold?.reason.overdue);
   });
 });

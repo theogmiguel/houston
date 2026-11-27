@@ -135,8 +135,9 @@ merge and after inactivity, the add-project base directory, host-folder clone la
 generation model and instructions, text generation fallback, and response streaming.
 
 **Hold until limits reset** holds automatic turns on a thread that already hit a usage limit
-until its reported reset; **Resume after usage limits** then continues the thread. See
-[Usage](usage.md).
+until its reported reset; **Resume after usage limits** then continues the thread. **Also hold
+threads that have not hit the limit** extends the hold to every thread on a provider instance
+inside a known limit window, including new sub-agents. See [Usage](usage.md).
 
 **Text generation fallback** chooses where background writing goes when its model cannot
 run. **Any provider** (the default) tries an instance marked as running local models first,

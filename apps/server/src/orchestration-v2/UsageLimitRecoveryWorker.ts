@@ -146,24 +146,29 @@ const makeSweep = Effect.gen(function* () {
       const heldThreadIds = yield* projections.getRecoveryThreadIds("queued-runs");
       for (const threadId of heldThreadIds) {
         const held = yield* projections.getHeldQueuedRuns(threadId);
-        if (!held.some((run) => run.queueHeldReason?.kind === "usage_limit")) continue;
+        const due = held.filter((run) => {
+          const reason = run.queueHeldReason;
+          return (
+            reason?.kind === "usage_limit" &&
+            reason.releaseAt != null &&
+            Date.parse(reason.releaseAt) <= nowMs
+          );
+        });
+        if (due.length === 0) continue;
         const shell = yield* projections.getThreadShell(threadId);
-        if (shell === null) continue;
-        const resetAt = shell.usageLimitResetAt;
+        // Auto-resume's continuation runs first when this thread's own failure armed it.
         const autoResumeOwns =
-          preferences.autoResumeLimitedThreads && shell.limitRecovery?.autoResume !== false;
-        if (
-          autoResumeOwns ||
-          shell.lastErrorClass !== "usage_limit" ||
-          resetAt == null ||
-          Date.parse(resetAt) > nowMs
-        )
-          continue;
+          shell?.lastErrorClass === "usage_limit" &&
+          preferences.autoResumeLimitedThreads &&
+          shell.limitRecovery?.autoResume !== false;
+        if (autoResumeOwns) continue;
         acted = true;
         yield* threads
           .dispatch({
             type: "queue.resume",
-            commandId: CommandId.make(`limit-release:${threadId}:${resetAt}`),
+            commandId: CommandId.make(
+              `limit-release:${threadId}:${due[0]?.queueHeldReason?.releaseAt ?? nowMs}`,
+            ),
             threadId,
           })
           .pipe(

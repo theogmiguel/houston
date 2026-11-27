@@ -2790,10 +2790,14 @@ export default function ChatView(props: ChatViewProps) {
     );
     return item ? [item] : [];
   });
-  const heldLimitStarts =
+  const heldLimitStarts = (
     serverProjection?.runs.filter(
       (run) => run.status === "queued" && run.queueHeldReason?.kind === "usage_limit",
-    ) ?? [];
+    ) ?? []
+  ).toSorted(
+    (left, right) => (left.queuePosition ?? left.ordinal) - (right.queuePosition ?? right.ordinal),
+  );
+  const heldLimitOverdue = heldLimitStarts.some((run) => run.queueHeldReason?.overdue === true);
   const limitRecoveryBanner =
     limitRecoveryRun !== null && activeThreadShell !== null
       ? usageLimitRecoveryBannerItem({
@@ -2808,12 +2812,17 @@ export default function ChatView(props: ChatViewProps) {
           timestampFormat,
           translate: t,
           heldStarts: heldLimitStarts.length,
+          heldOverdue: heldLimitOverdue,
           onStartHeld: async () => {
             const firstHeld = heldLimitStarts[0];
             if (firstHeld === undefined) return;
             await resumeThreadQueue({
               environmentId,
-              input: { threadId: activeThreadShell.id, runId: firstHeld.id },
+              input: {
+                threadId: activeThreadShell.id,
+                runId: firstHeld.id,
+                releaseThreadHolds: true,
+              },
             });
           },
           onChange: async (limitRecovery) => {

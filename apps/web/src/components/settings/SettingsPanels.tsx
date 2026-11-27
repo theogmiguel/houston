@@ -321,6 +321,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.snoozeLimitedThreads !== DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads
       ? ["Hold until limits reset"]
       : []),
+    ...(settings.holdUnlimitedThreads !== DEFAULT_UNIFIED_SETTINGS.holdUnlimitedThreads
+      ? ["Also hold threads that have not hit the limit"]
+      : []),
     ...(!Equal.equals(settings.snoozePresets, DEFAULT_UNIFIED_SETTINGS.snoozePresets)
       ? ["Hold options"]
       : []),
@@ -1488,6 +1491,22 @@ export function ThreadsSettingsPanel() {
                 updateSettings({ snoozeLimitedThreads: Boolean(checked) })
               }
               aria-label="Hold until limits reset"
+            />
+          }
+        />
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("hold-unlimited-threads")}
+          description="Hold automatic turns and new sub-agents on every thread of a provider instance inside a known limit window. Antigravity reports no limit windows, so its threads are not held this way."
+          settingKeys={["holdUnlimitedThreads"]}
+          control={
+            <ScopedSwitch
+              settingKeys={["holdUnlimitedThreads"]}
+              checked={settings.holdUnlimitedThreads}
+              onCheckedChange={(checked) =>
+                updateSettings({ holdUnlimitedThreads: Boolean(checked) })
+              }
+              aria-label="Also hold threads that have not hit the limit"
             />
           }
         />

@@ -42,6 +42,8 @@ import * as ThreadTitleRegenerationService from "./ThreadTitleRegenerationServic
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import * as MessageDelivery from "../houston/messageDelivery.ts";
 import * as HoustonResumeSessions from "../houston/resumeSessions.ts";
+import * as LimitWindowRegistry from "../houston/runStart/LimitWindowRegistry.ts";
+import * as AccountLimitHoldWorker from "../houston/runStart/AccountLimitHoldWorker.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as CommandOutputHub from "./CommandOutputHub.ts";
@@ -50,6 +52,7 @@ import * as ProviderSwitchService from "./ProviderSwitchService.ts";
 import * as ProviderTurnControlService from "./ProviderTurnControlService.ts";
 import * as ProviderTurnStartService from "./ProviderTurnStartService.ts";
 import * as RunExecutionService from "./RunExecutionService.ts";
+import * as RunWorkspacePreparationWorker from "./RunWorkspacePreparationWorker.ts";
 import * as RunFinalizationService from "./RunFinalizationService.ts";
 import * as ResourceCleanupService from "./ResourceCleanupService.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
@@ -87,6 +90,7 @@ const layerStores = Layer.mergeAll(
   layerCommandReceiptStoreProvided,
   EffectOutbox.layer,
   TurnItemPositionStore.layer,
+  LimitWindowRegistry.layer,
 );
 
 export const layerEventSink = EventSink.layerFromStores.pipe(Layer.provide(layerStores));
@@ -123,6 +127,7 @@ const layerProviderEventIngestorProvided = ProviderEventIngestor.layer.pipe(
       ThreadCommandExecutor.layer,
       GitVcsDriver.layer,
       layerMessageDeliveryProvided,
+      LimitWindowRegistry.layer,
     ),
   ),
 );
@@ -404,6 +409,9 @@ export const layerProduction = Layer.mergeAll(
   layerProjectService,
   layerManagedProjectFoldersProvided,
   layerThreadLaunchProvided,
+  RunWorkspacePreparationWorker.layer.pipe(
+    Layer.provide(Layer.merge(layerThreadLaunchProvided, layerThreadManagementProvided)),
+  ),
   layerScheduledTaskProvided,
   layerScratchThreadPromotionProvided,
   layerSecretRequestsProvided,
@@ -418,6 +426,16 @@ export const layerProduction = Layer.mergeAll(
   ),
   IdleCompactionService.layer.pipe(
     Layer.provide(Layer.merge(ProjectionStore.layer, layerOrchestratorProvided)),
+  ),
+  AccountLimitHoldWorker.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        ProjectionStore.layer,
+        LimitWindowRegistry.layer,
+        layerThreadManagementProvided,
+        layerOrchestratorProvided,
+      ),
+    ),
   ),
   layerProviderContinuationWorkerProvided,
   layerAgentSessionImporterProvided,

@@ -223,7 +223,11 @@ describe("routine command transport budget", () => {
       if ("projection" in receipt) {
         throw new Error("Expected a dispatch receipt");
       }
-      const { deliveryIntent: _deliveryIntent, ...formerCommand } = command;
+      const {
+        deliveryIntent: _deliveryIntent,
+        startOrigin: _startOrigin,
+        ...formerCommand
+      } = command;
 
       const historicalApplicationBytes =
         encodedBytes(projection) + encodedBytes(formerCommand) + encodedBytes(receipt);

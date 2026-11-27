@@ -503,6 +503,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["usage quota rate limit reset wake recover continue"],
   },
   {
+    id: "hold-unlimited-threads",
+    title: "Also hold threads that have not hit the limit",
+    to: "/settings/threads",
+    searchTerms: ["usage quota rate limit account provider window subagent delegate"],
+  },
+  {
     id: "auto-resume-limited-threads",
     title: "Resume after usage limits",
     to: "/settings/threads",

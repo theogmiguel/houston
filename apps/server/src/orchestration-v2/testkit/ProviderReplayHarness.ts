@@ -50,6 +50,7 @@ import * as ProviderContinuationRequests from "@houston-app/provider-core/server
 import * as ProviderContinuationService from "../ProviderContinuationService.ts";
 import * as ProviderEventIngestor from "../ProviderEventIngestor.ts";
 import * as MessageDelivery from "../../houston/messageDelivery.ts";
+import * as LimitWindowRegistry from "../../houston/runStart/LimitWindowRegistry.ts";
 import { HoustonReadOnlyThreads, layerNoReadOnlyThreads } from "../../houston/sideThreads.ts";
 import * as ProviderInstanceRegistry from "../../provider/ProviderInstanceRegistry.ts";
 import * as ProviderRuntimeRecoveryService from "../ProviderRuntimeRecoveryService.ts";
@@ -301,6 +302,8 @@ export function layerWithRegistry<Error>(
     /** Houston: the planners and reviewers that run read-only; none when absent. */
     readonly readOnlyThreads?: Layer.Layer<HoustonReadOnlyThreads>;
     readonly managedPolicy?: ManagedPolicyDocument;
+    /** Server settings a scenario needs beyond the replay defaults. */
+    readonly settings?: Record<string, unknown>;
   } = {},
 ): Layer.Layer<
   | Orchestrator.OrchestratorV2
@@ -308,7 +311,8 @@ export function layerWithRegistry<Error>(
   | EventSink.EventSinkV2
   | ProviderSessionManager.ProviderSessionManagerV2
   | CommandOutputRecorder.CommandOutputRecorder
-  | OrchestrationEventStore.OrchestrationEventStore,
+  | OrchestrationEventStore.OrchestrationEventStore
+  | LimitWindowRegistry.LimitWindowRegistry,
   Error | MigrationError | PlatformError.PlatformError | SqlError
 > {
   const layerServerConfig = Layer.effect(
@@ -344,6 +348,7 @@ export function layerWithRegistry<Error>(
           ...(options.continueThreadsAfterServerUpdate === undefined
             ? {}
             : { continueThreadsAfterServerUpdate: options.continueThreadsAfterServerUpdate }),
+          ...options.settings,
         },
         policy.summary,
       ),
@@ -358,6 +363,7 @@ export function layerWithRegistry<Error>(
     CommandReceiptStore.layer,
     EffectOutbox.layer,
     TurnItemPositionStore.layer,
+    LimitWindowRegistry.layer,
   ).pipe(Layer.provide(layerDatabase));
   const layerEventSinkProvided = EventSink.layerFromStores.pipe(
     Layer.provide(Layer.mergeAll(layerStores, layerDatabase)),
@@ -575,6 +581,7 @@ export function layerWithRegistry<Error>(
     Layer.provide(Layer.merge(layerStores, layerEffectExecutorProvided)),
   );
   const layerReplayRuntime = Layer.mergeAll(
+    layerStores,
     layerOrchestratorProvided,
     layerProviderSessionManagerProvided,
     layerEffectWorkerProvided,

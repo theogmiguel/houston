@@ -1477,6 +1477,24 @@ const TaskFolders = Effect.gen(function* () {
   yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_task_folders_real_path ON houston_task_folders(real_path)`;
 });
 
+// Account-level limit windows Houston learned from a limit failure or a provider usage reading.
+// One row per provider instance and scope; `*` is the account and a model slug is a model-only
+// weekly limit. A no-reset row carries the next test-release time.
+const LimitWindows = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_limit_windows (
+      provider_instance_id TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      reset_at TEXT,
+      observed_at TEXT NOT NULL,
+      test_attempt INTEGER NOT NULL,
+      next_test_at TEXT,
+      PRIMARY KEY (provider_instance_id, scope)
+    ) WITHOUT ROWID
+  `;
+});
+
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
@@ -1510,6 +1528,7 @@ const houstonMigrationEntries = [
   [32, "ProviderNativeSessions", createNativeSessionHistory],
   [33, "ProjectRepositories", ProjectRepositories],
   [34, "TaskFolders", TaskFolders],
+  [35, "LimitWindows", LimitWindows],
 ] as const;
 
 /** Every Houston migration id this build knows, for callers that must not run beside an older schema. */
