@@ -439,19 +439,50 @@ const make = Effect.gen(function* () {
         const shouldFetch = remote !== null;
         yield* setupTracker.stageStatus(threadId, "fetch", shouldFetch ? "running" : "skipped");
         if (remote !== null) {
-          const remoteBase = yield* git
+          const fetched = yield* git
             .fetchWorktreeBaseCommit({
               cwd: project.workspaceRoot,
               refName: input.workspaceStrategy.baseRef,
               remote,
             })
-            .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)));
-          if (remoteBase !== null) {
-            startRef = remoteBase.commitSha;
-            baseRefName = `refs/remotes/${remoteBase.remoteRefName}`;
+            .pipe(
+              Effect.map((remoteBase) => ({ _tag: "fetched" as const, remoteBase })),
+              Effect.catchTags({
+                GitCommandError: (error) => Effect.succeed({ _tag: "failed" as const, error }),
+              }),
+            );
+          if (fetched._tag === "fetched") {
+            if (fetched.remoteBase !== null) {
+              startRef = fetched.remoteBase.commitSha;
+              baseRefName = `refs/remotes/${fetched.remoteBase.remoteRefName}`;
+            }
+            yield* setupTracker.stageStatus(threadId, "fetch", "done");
+          } else {
+            const localBaseRef = input.workspaceStrategy.baseRef;
+            const available = yield* git
+              .hasCommit({ cwd: project.workspaceRoot, refName: localBaseRef })
+              .pipe(Effect.orElseSucceed(() => false));
+            if (!available) {
+              return yield* mapError(input, "provision-worktree", threadId)(fetched.error);
+            }
+            const local = yield* git
+              .resolveCommit({ cwd: project.workspaceRoot, revision: localBaseRef })
+              .pipe(Effect.mapError(mapError(input, "provision-worktree", threadId)));
+            const shortSha = local.commitSha.slice(0, 7);
+            const staleNote =
+              `Could not fetch ${remote.remoteName}/${remote.branchName}; ` +
+              `using the local ${localBaseRef} at ${shortSha}, which may be stale.`;
+            yield* setupTracker.stageStatus(threadId, "fetch", "skipped", staleNote);
+            yield* Effect.logWarning("worktree provisioning used the local base ref", {
+              commandId: input.commandId,
+              threadId,
+              baseRef: localBaseRef,
+              commitSha: local.commitSha,
+              remote,
+              cause: fetched.error,
+            });
           }
         }
-        if (shouldFetch) yield* setupTracker.stageStatus(threadId, "fetch", "done");
         if (
           branch !== null &&
           isTemporaryWorktreeBranch(branch) &&

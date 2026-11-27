@@ -45,6 +45,7 @@ import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../observabil
 import * as GitVcsDriver from "./GitVcsDriver.ts";
 import { removeEmptyDirectory } from "./removeEmptyDirectory.ts";
 import { confinedGitEnv } from "../houston/confinedGit.ts";
+import { redactSecrets } from "../houston/mergeQueue/redact.ts";
 import { gitSpawnEnv, gitConfigEnv } from "./VcsProcess.ts";
 import { carryOverWorktreeInclude } from "./worktreeInclude.ts";
 import { removeLinkedWorktree } from "./worktreeRemoval.ts";
@@ -5324,12 +5325,31 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       return { headCommit: input.targetCommit, moved: true, onTarget: true };
     });
 
-  const fetchRemote = Effect.fn("fetchRemote")(function* (input: GitVcsDriver.GitFetchRemoteInput) {
+  const fetchRemote = Effect.fn("fetchRemote")(function* (
+    input: GitVcsDriver.GitFetchRemoteInput,
+    failureOf?: (
+      args: ReadonlyArray<string>,
+      result: GitVcsDriver.ExecuteGitResult,
+    ) => GitCommandError,
+  ) {
     const args = ["fetch", "--quiet", "--", input.remoteName];
     const options = {
       env: STATUS_UPSTREAM_REFRESH_ENV,
       fallbackErrorDetail: `git fetch ${input.remoteName} failed`,
     };
+    const failure = (fetchArgs: ReadonlyArray<string>, result: GitVcsDriver.ExecuteGitResult) =>
+      failureOf?.(fetchArgs, result) ??
+      new GitCommandError({
+        ...gitCommandContext({
+          operation: "GitVcsDriver.fetchRemote",
+          cwd: input.cwd,
+          args: fetchArgs,
+        }),
+        detail: fetchFailureDetail(result.stderr) ?? options.fallbackErrorDetail,
+        ...(result.exitCode === null ? {} : { exitCode: result.exitCode }),
+        stdoutLength: result.stdout.length,
+        stderrLength: result.stderr.length,
+      });
     // Another fetch in the same repository, such as the background status
     // poll, can win the race for a remote-tracking ref. The loser fails, but
     // the ref is free again by the time a rerun needs it, so retry once.
@@ -5352,21 +5372,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     };
     const fetchAll = runFetch(args).pipe(
       Effect.flatMap((result) =>
-        result.exitCode === 0
-          ? Effect.void
-          : Effect.fail(
-              new GitCommandError({
-                ...gitCommandContext({
-                  operation: "GitVcsDriver.fetchRemote",
-                  cwd: input.cwd,
-                  args,
-                }),
-                detail: fetchFailureDetail(result.stderr) ?? options.fallbackErrorDetail,
-                ...(result.exitCode === null ? {} : { exitCode: result.exitCode }),
-                stdoutLength: result.stdout.length,
-                stderrLength: result.stderr.length,
-              }),
-            ),
+        result.exitCode === 0 ? Effect.void : Effect.fail(failure(args, result)),
       ),
     );
     if (input.refName === undefined) {
@@ -5391,17 +5397,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     ) {
       return false;
     }
-    return yield* new GitCommandError({
-      ...gitCommandContext({
-        operation: "GitVcsDriver.fetchRemote",
-        cwd: input.cwd,
-        args: scopedArgs,
-      }),
-      detail: fetchFailureDetail(result.stderr) ?? options.fallbackErrorDetail,
-      ...(result.exitCode === null ? {} : { exitCode: result.exitCode }),
-      stdoutLength: result.stdout.length,
-      stderrLength: result.stderr.length,
-    });
+    return yield* failure(scopedArgs, result);
   });
 
   const resolveRemoteTrackingCommit: GitVcsDriver.GitVcsDriver["Service"]["resolveRemoteTrackingCommit"] =
@@ -5465,8 +5461,34 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       if (target === null) return null;
       const { remoteName, branchName } = target;
       const remoteRefName = `${remoteName}/${branchName}`;
+      const withFetchDiagnostics = (
+        args: ReadonlyArray<string>,
+        result: GitVcsDriver.ExecuteGitResult,
+      ) => {
+        const stderr = redactSecrets(result.stderr).trim();
+        return new GitCommandError({
+          ...gitCommandContext({
+            operation: "GitVcsDriver.fetchWorktreeBaseCommit",
+            cwd: input.cwd,
+            args,
+          }),
+          detail: [
+            fetchFailureDetail(result.stderr) ?? "git fetch failed",
+            ...(stderr.length === 0 ? [] : [`Git stderr:\n${stderr}`]),
+            `Command: ${redactSecrets(["git", ...args].join(" "))}`,
+          ].join("\n"),
+          ...(result.exitCode === null ? {} : { exitCode: result.exitCode }),
+          stdoutLength: result.stdout.length,
+          stderrLength: result.stderr.length,
+        });
+      };
       // A missing remote branch can leave a stale tracking ref; never resolve it.
-      if (!(yield* fetchRemote({ cwd: input.cwd, remoteName, refName: remoteRefName }))) {
+      if (
+        !(yield* fetchRemote(
+          { cwd: input.cwd, remoteName, refName: remoteRefName },
+          withFetchDiagnostics,
+        ))
+      ) {
         return null;
       }
       const resolved = yield* executeGit(
