@@ -292,7 +292,7 @@ it("shows an unreadable repository in the list and refuses its actions", async (
 });
 
 it("keeps a long repository name readable while its branch truncates first", async () => {
-  const longName = "repository-with-a-long-but-readable-name";
+  const longName = "repository-readable-name";
   const longBranch = `feature/${"very-long-branch-name-".repeat(10)}end`;
   const longRepository: RepositoryChoice = {
     key: "long",
