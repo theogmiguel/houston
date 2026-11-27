@@ -14,6 +14,7 @@ import * as AcpRegistryRuntimeCoordinator from "@houston-app/provider-acp-regist
 import * as AcpRegistrySupport from "@houston-app/provider-acp-registry/server/AcpRegistrySupport";
 import * as ProviderLatestVersions from "@houston-app/provider-core/server/ProviderLatestVersions";
 import * as SecretResolver from "@houston-app/secret-provider-core/server/SecretResolver";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -333,13 +334,18 @@ const layerServices = HoustonLayoutWorkspaces.layer.pipe(
 const withWs = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
   fileSystemOverrides?: (fileSystem: FileSystem.FileSystem) => FileSystem.FileSystem,
+  platform?: NodeJS.Platform,
 ) => {
+  // A host check reads the platform from the context, so a test that fakes a Linux file reads it too.
+  const platformLayer =
+    platform === undefined ? Layer.empty : Layer.succeed(HostProcess.Platform, platform);
   const nodeLayers =
     fileSystemOverrides === undefined
-      ? Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)
+      ? Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, platformLayer)
       : Layer.mergeAll(
           NodeServices.layer,
           NodeCrypto.layer,
+          platformLayer,
           // The override wraps the real file system so unrelated reads keep working.
           Layer.effect(
             FileSystem.FileSystem,
@@ -390,6 +396,8 @@ const workspace = (overrides: Record<string, unknown> = {}) => ({
 
 type Listed = ReadonlyArray<{ id: string; name: string }>;
 
+const PLATFORM_UNDER_TEST: NodeJS.Platform = "linux";
+
 describe("layout workspaces over /ws", () => {
   it.effect("reports the browser host sandbox setup over /ws", () =>
     withWs(
@@ -414,6 +422,7 @@ describe("layout workspaces over /ws", () => {
             ? Effect.succeed(false)
             : fileSystem.exists(path),
       }),
+      PLATFORM_UNDER_TEST,
     ),
   );
 
