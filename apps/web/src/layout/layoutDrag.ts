@@ -26,7 +26,18 @@ export type LayoutDragSource =
   | { kind: "tab"; tabId: string }
   | { kind: "thread"; threadRef: ScopedThreadRef; title?: string }
   /** New content that is not open yet (a launcher from the `+` button): a drop opens it there. */
-  | { kind: "content"; content: LayoutTabContent };
+  | { kind: "content"; content: LayoutTabContent }
+  /**
+   * A surface that may not be open yet (a file, a pull request). `open` puts it in the
+   * right panel store with the drop's placement, so the layout sync gives it a tab there.
+   */
+  | {
+      kind: "surface";
+      threadRef: ScopedThreadRef;
+      surfaceId: string;
+      title?: string;
+      open: (destination: LayoutTabDestination) => void;
+    };
 
 /** A sidebar card dropped on a pane that took its thread into another workspace. */
 export interface LayoutThreadDrop {
@@ -277,7 +288,7 @@ export function layoutDropLabel(target: LayoutDropTarget): string {
 /** A thread goes into any composer except its own dragged tab's; other content goes into none. */
 export function composerTakesDrag(source: LayoutDragSource, composer: HTMLElement): boolean {
   if (source.kind === "thread") return true;
-  if (source.kind === "content") return false;
+  if (source.kind === "content" || source.kind === "surface") return false;
   return (
     composer.closest<HTMLElement>("[data-layout-tab-id]")?.dataset.layoutTabId !== source.tabId
   );
@@ -360,6 +371,14 @@ function sameSource(a: LayoutDragSource, b: LayoutDragSource): boolean {
       layoutTabContentKey(a.content) === layoutTabContentKey(b.content)
     );
   }
+  if (a.kind === "surface" || b.kind === "surface") {
+    return (
+      a.kind === "surface" &&
+      b.kind === "surface" &&
+      a.surfaceId === b.surfaceId &&
+      scopedThreadKey(a.threadRef) === scopedThreadKey(b.threadRef)
+    );
+  }
   return scopedThreadKey(a.threadRef) === scopedThreadKey(b.threadRef);
 }
 
@@ -400,6 +419,15 @@ function commitLayoutDrop(source: LayoutDragSource, target: LayoutDropTarget): b
     store.moveTab(source.tabId, destination);
   } else if (source.kind === "content") {
     store.placeContent(source.content, destination);
+  } else if (source.kind === "surface") {
+    const content = {
+      kind: "surface",
+      threadRef: source.threadRef,
+      surfaceId: source.surfaceId,
+    } as const;
+    const existing = findLayoutTabByContent(store.layout, content);
+    if (existing) store.moveTab(existing.tab.id, destination);
+    else source.open(destination);
   } else {
     placeDraggedThread(source, destination);
   }

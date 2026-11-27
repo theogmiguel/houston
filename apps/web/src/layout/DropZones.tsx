@@ -1,4 +1,5 @@
-import { AppWindowIcon, Columns2Icon, Layers2Icon, Rows2Icon } from "lucide-react";
+import { AppWindowIcon, Columns2Icon, FileIcon, Layers2Icon, Rows2Icon } from "lucide-react";
+import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import {
@@ -17,7 +18,8 @@ import {
   type LayoutDragState,
   type LayoutDropTarget,
 } from "./layoutDrag";
-import { findLayoutTab, type LayoutTab } from "./layoutModel";
+import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
+import { findLayoutTab, type LayoutTab, type LayoutTabContent } from "./layoutModel";
 import { useLayoutStore } from "./layoutStore";
 import type { LayoutTabLabel } from "./PaneTabBar";
 
@@ -111,18 +113,33 @@ function DraggedTab({
   tab,
   point,
   tabLabel,
+  title,
+  icon,
 }: {
   tab: LayoutTab;
   point: { x: number; y: number };
   tabLabel: (tab: LayoutTab) => LayoutTabLabel;
+  title?: string | undefined;
+  icon?: ReactNode;
 }) {
   const label = tabLabel(tab);
   return (
     <LayoutDragGhost point={point}>
-      {label.icon}
-      <span className="min-w-0 truncate">{label.title}</span>
+      {icon ?? label.icon}
+      <span className="min-w-0 truncate">{title ?? label.title}</span>
     </LayoutDragGhost>
   );
+}
+
+function surfaceDragIcon(content: LayoutTabContent): ReactNode | null {
+  if (content.kind !== "surface") return null;
+  if (content.surfaceId.startsWith("pull-request:")) {
+    return <PullRequestGlyph.pullRequest aria-hidden className="size-3.5 shrink-0" />;
+  }
+  if (content.surfaceId.startsWith("file:")) {
+    return <FileIcon aria-hidden className="size-3.5 shrink-0" />;
+  }
+  return null;
 }
 
 /**
@@ -139,8 +156,21 @@ export function LayoutDropZones({ tabLabel }: { tabLabel: (tab: LayoutTab) => La
       ? null
       : (findLayoutTab(store.layout, (tab) => tab.id === draggedTabId)?.tab ?? null),
   );
+  const draggedSurface =
+    state?.source.kind === "surface"
+      ? {
+          id: "dragged",
+          content: {
+            kind: "surface",
+            threadRef: state.source.threadRef,
+            surfaceId: state.source.surfaceId,
+          } as const,
+          title: state.source.title,
+        }
+      : null;
   // Content with no tab yet is labelled as the tab it would open.
-  const dragged = draggedTab ?? (draggedContent && { id: "dragged", content: draggedContent });
+  const dragged =
+    draggedTab ?? (draggedContent && { id: "dragged", content: draggedContent }) ?? draggedSurface;
   if (!state) return null;
   const insert = state.target ? dropInsertMark(state, state.target) : null;
   // Between two tabs the mark alone says where; any other drop shows the area it fills.
@@ -158,7 +188,17 @@ export function LayoutDropZones({ tabLabel }: { tabLabel: (tab: LayoutTab) => La
             {layoutDropLabel(state.target)}
           </LayoutDropPill>
         ) : null}
-        {dragged ? <DraggedTab tab={dragged} point={state.point} tabLabel={tabLabel} /> : null}
+        {dragged ? (
+          <DraggedTab
+            tab={dragged}
+            point={state.point}
+            tabLabel={tabLabel}
+            {...("title" in dragged ? { title: dragged.title } : {})}
+            {...(draggedSurface === dragged
+              ? { icon: surfaceDragIcon(draggedSurface.content) ?? undefined }
+              : {})}
+          />
+        ) : null}
       </LayoutPassiveLayer>
     </LayoutDragOverlay>,
     document.body,

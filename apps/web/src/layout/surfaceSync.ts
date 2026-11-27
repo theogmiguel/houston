@@ -28,6 +28,7 @@ import {
   shareLayoutBeside,
   THREAD_TERMINAL_SURFACE_ID,
   type LayoutCompanionKind,
+  type LayoutDirection,
   type LayoutState,
   type LayoutTab,
   type LayoutTabDestination,
@@ -43,6 +44,7 @@ export type LayoutSurfacePlacement =
   | { kind: "beside" }
   | { kind: "below" }
   | { kind: "pane"; paneId: string; index?: number; replaceTabId?: string }
+  | { kind: "split"; paneId: string; side: LayoutDirection; exact?: boolean }
   | { kind: "column"; workspaceId: string; index: number }
   | { kind: "workspace"; workspaceId: string };
 
@@ -106,6 +108,28 @@ export function layoutSurfacePlacement(
 ): LayoutSurfacePlacement {
   const destination = layoutSurfaceDestination(chat, terminal);
   return destination.kind === "split" ? { kind: terminal ? "below" : "beside" } : destination;
+}
+
+/** The placement that opens a surface where a tab drop would put one. */
+export function layoutSurfacePlacementForDestination(
+  destination: LayoutTabDestination,
+): LayoutSurfacePlacement {
+  if (destination.kind === "pane") {
+    return {
+      kind: "pane",
+      paneId: destination.paneId,
+      ...(destination.index === undefined ? {} : { index: destination.index }),
+    };
+  }
+  if (destination.kind === "split") {
+    return {
+      kind: "split",
+      paneId: destination.paneId,
+      side: destination.side,
+      ...(destination.exact === undefined ? {} : { exact: destination.exact }),
+    };
+  }
+  return { kind: "column", workspaceId: destination.workspaceId, index: destination.index };
 }
 
 function dropPanelPlacement(threadRef: ScopedThreadRef): void {
@@ -250,6 +274,15 @@ function placeSurfaceTabs(
         kind: "pane",
         paneId: pending.paneId,
         ...(pending.index === undefined ? {} : { index: pending.index }),
+      };
+    }
+  } else if (pending?.kind === "split") {
+    if (findLayoutPane(layout, pending.paneId)) {
+      placement = {
+        kind: "split",
+        paneId: pending.paneId,
+        side: pending.side,
+        ...(pending.exact === undefined ? {} : { exact: pending.exact }),
       };
     }
   } else if (pending?.kind === "column") {
