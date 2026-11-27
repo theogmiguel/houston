@@ -53,6 +53,10 @@ import { HoustonSideThread, makeHoustonSideThreadCommands } from "./houston/side
 import { HoustonMergeQueueNotifyCommand } from "./houston/mergeQueue.ts";
 import { RuntimeRequestAnsweredBy } from "./houston/runtimeRequestAuthor.ts";
 import { HoustonSlackAnswerCommand } from "./houston/slack.ts";
+import {
+  HoustonProjectRequestFields,
+  HoustonProjectRequestRecordCommand,
+} from "./houston/projectRequest.ts";
 import { ChatAttachment } from "./chatAttachment.ts";
 import { StoredThreadTags, ThreadTag } from "./threadTags.ts";
 import {
@@ -1903,6 +1907,10 @@ export const OrchestrationV2TurnItem = Schema.Union([
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
+    ...HoustonProjectRequestFields,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2TurnItemBaseFields,
     type: Schema.Literal("subagent"),
     subagentId: NodeId,
     origin: Schema.Literals(["provider_native", "app_owned"]),
@@ -2740,6 +2748,10 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
+    ...HoustonProjectRequestFields,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2TurnItemJsonBaseFields,
     type: Schema.Literal("subagent"),
     subagentId: NodeId,
     origin: Schema.Literals(["provider_native", "app_owned"]),
@@ -3545,6 +3557,8 @@ const OrchestrationV2InternalCommand = Schema.Union([
   HoustonSlackAnswerCommand,
   /** A merge queue notice; a client could otherwise post one into any thread. */
   HoustonMergeQueueNotifyCommand,
+  /** Records the one approved add-project call; a client could otherwise forge one. */
+  HoustonProjectRequestRecordCommand,
   /** Moves a thread to a project rooted at the folder it already works in, so its cwd never changes. */
   Schema.Struct({
     type: Schema.Literal("thread.project.adopt-folder"),

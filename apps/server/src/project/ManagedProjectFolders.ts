@@ -98,8 +98,30 @@ export class ManagedProjectFolders extends Context.Service<
       readonly text: string;
     }) => Effect.Effect<Option.Option<string>, ScratchFolderError>;
     readonly namedProjectsRoot: string;
+    /** The path a new named project would take, without creating anything. */
+    readonly planNamedProjectFolder: (input: {
+      readonly name: string;
+    }) => Effect.Effect<string, NamedProjectFolderError>;
     /** Removes failed/cancelled creations' folders only while no project owns them. */
     readonly createNamedProject: (input: { readonly name: string }) => Effect.Effect<
+      {
+        readonly projectId: ProjectId;
+        readonly workspaceRoot: string;
+        readonly commitError?: string;
+      },
+      NamedProjectError
+    >;
+    /**
+     * Creates a named project at the exact folder `planNamedProjectFolder`
+     * named. A folder taken since that plan fails instead of choosing another,
+     * so an approved card always registers the path it showed.
+     */
+    readonly createNamedProjectAt: (input: {
+      readonly name: string;
+      readonly workspaceRoot: string;
+      readonly commandId?: CommandId;
+      readonly projectId?: ProjectId;
+    }) => Effect.Effect<
       {
         readonly projectId: ProjectId;
         readonly workspaceRoot: string;
@@ -429,6 +451,99 @@ const make = Effect.gen(function* () {
       );
   });
 
+  const planNamedProjectFolder: ManagedProjectFolders["Service"]["planNamedProjectFolder"] =
+    Effect.fn("ManagedProjectFolders.planNamedProjectFolder")(function* (input) {
+      const folderName = newProjectFolderName(input.name);
+      for (let attempt = 1; attempt <= MAX_NAMED_FOLDER_ATTEMPTS; attempt++) {
+        const folder = path.join(
+          namedProjectsRoot,
+          attempt === 1 ? folderName : `${folderName}-${attempt}`,
+        );
+        const taken = yield* fileSystem
+          .exists(folder)
+          .pipe(
+            Effect.mapError(
+              (cause) => new NamedProjectFolderError({ folder: namedProjectsRoot, cause }),
+            ),
+          );
+        if (!taken) return folder;
+      }
+      return yield* new NamedProjectFolderError({
+        folder: path.join(namedProjectsRoot, folderName),
+        cause: `Every folder name for "${folderName}" is taken.`,
+      });
+    });
+
+  const createNamedProjectAt: ManagedProjectFolders["Service"]["createNamedProjectAt"] = Effect.fn(
+    "ManagedProjectFolders.createNamedProjectAt",
+  )(function* (input) {
+    const workspaceRoot = path.resolve(input.workspaceRoot);
+    const relative = path.relative(namedProjectsRoot, workspaceRoot);
+    if (
+      relative.length === 0 ||
+      relative === ".." ||
+      relative.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relative)
+    ) {
+      return yield* new NamedProjectFolderError({
+        folder: workspaceRoot,
+        cause: "A new project folder must be inside the managed projects folder.",
+      });
+    }
+    const taken = yield* fileSystem
+      .exists(workspaceRoot)
+      .pipe(
+        Effect.mapError((cause) => new NamedProjectFolderError({ folder: workspaceRoot, cause })),
+      );
+    if (taken) {
+      return yield* new NamedProjectFolderError({
+        folder: workspaceRoot,
+        cause: "The approved project folder already exists.",
+      });
+    }
+    // Non-recursive: the plan claimed this exact name, so a racer fails here.
+    yield* fileSystem
+      .makeDirectory(workspaceRoot)
+      .pipe(
+        Effect.mapError((cause) => new NamedProjectFolderError({ folder: workspaceRoot, cause })),
+      );
+    const removeFolder = fileSystem.remove(workspaceRoot, { recursive: true }).pipe(Effect.ignore);
+    const prepared = yield* Effect.all([
+      scaffoldRepository(workspaceRoot, input.name).pipe(
+        Effect.mapError((cause) => new NamedProjectFolderError({ folder: workspaceRoot, cause })),
+      ),
+      input.projectId === undefined
+        ? random
+            .uuidV4()
+            .pipe(Effect.mapError((cause) => new NamedProjectCreateError({ workspaceRoot, cause })))
+        : Effect.succeed(input.projectId),
+    ]).pipe(Effect.onExit((exit) => (Exit.isSuccess(exit) ? Effect.void : removeFolder)));
+    const [commitError, id] = prepared;
+    const project = yield* projects
+      .create({
+        commandId: input.commandId ?? CommandId.make(`named-project:${id}`),
+        projectId: ProjectId.make(id),
+        title: input.name,
+        workspaceRoot,
+      })
+      .pipe(
+        Effect.tapError((error) =>
+          error._tag === "ProjectConflictError"
+            ? Effect.void
+            : projects.getByWorkspaceRoot(workspaceRoot).pipe(
+                Effect.flatMap((owner) => (Option.isNone(owner) ? removeFolder : Effect.void)),
+                Effect.ignore,
+              ),
+        ),
+        Effect.mapError((cause) => new NamedProjectCreateError({ workspaceRoot, cause })),
+      );
+    return {
+      projectId: project.id,
+      workspaceRoot,
+      ...(commitError === undefined ? {} : { commitError }),
+    };
+  });
+
   const createNamedProject: ManagedProjectFolders["Service"]["createNamedProject"] = Effect.fn(
     "ManagedProjectFolders.createNamedProject",
   )(function* (input) {
@@ -475,7 +590,9 @@ const make = Effect.gen(function* () {
     isScratchProject,
     folderForThread,
     namedProjectsRoot,
+    planNamedProjectFolder,
     createNamedProject,
+    createNamedProjectAt,
   });
 });
 

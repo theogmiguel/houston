@@ -15,6 +15,7 @@ import {
   ProjectUpdatePayload,
   ProjectId,
   OrchestratorMcpClientRequestId,
+  HOUSTON_PROJECT_REQUEST_REASON_MAX_LENGTH,
   OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpFailure,
   SourceControlCloneRepositoryInput,
@@ -84,11 +85,19 @@ const ProjectReadTool = Tool.make("houston_project_read", {
 const ProjectCreateTool = Tool.make("houston_project_create", {
   ...shared,
   description:
-    "Register a project folder. `createWorkspaceRootIfMissing` creates it; a registered folder is rejected. No `workspaceRoot`: makes a git repo from `title` with README, icon, first commit (`commitError` on failure; project still exists). Clone first with `houston_project_clone` if needed.",
+    "Register a project folder. `createWorkspaceRootIfMissing` creates it; a registered folder is rejected. No `workspaceRoot`: makes a git repo from `title` with README, icon, first commit (`commitError` on failure; project still exists). Clone first with `houston_project_clone` if needed. Outside full access the user approves this one folder; retry with the same clientRequestId.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     ...ProjectCreatePayload.fields,
     workspaceRoot: Schema.optional(ProjectCreatePayload.fields.workspaceRoot),
+    reason: Schema.optional(
+      Schema.String.check(Schema.isMaxLength(HOUSTON_PROJECT_REQUEST_REASON_MAX_LENGTH)).annotate({
+        description: "Why this folder is needed, shown in the approval card.",
+      }),
+    ),
+    clientRequestId: Schema.optional(OrchestratorMcpClientRequestId).annotate({
+      description: "Retry key.",
+    }),
   }),
   success: Schema.Struct({ ...Project.fields, commitError: Schema.optional(Schema.String) }),
   dependencies: [...shared.dependencies, ManagedProjectFolders.ManagedProjectFolders],

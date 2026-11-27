@@ -10,6 +10,7 @@ import {
   type ModelSelection,
   type RuntimeMode,
   type OrchestrationV2ThreadShell,
+  RunId,
   ThreadId,
 } from "@houston-app/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
@@ -32,6 +33,7 @@ import * as ServerSettings from "../../../serverSettings.ts";
 import * as Project from "../../../project/ProjectService.ts";
 import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
+import * as ProjectRequests from "../../../houston/projects/ProjectRequests.ts";
 import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
 import * as VcsProcess from "../../../vcs/VcsProcess.ts";
@@ -64,6 +66,10 @@ const clientLaunchHarness = (input: {
   readonly workspaces?: Layer.Layer<HoustonLayoutWorkspaceService>;
   /** Runs when the launch fake accepts a thread, as the projection would record it. */
   readonly onLaunched?: (launch: ThreadLaunch.ThreadLaunchInput) => Effect.Effect<void>;
+  /** A live calling thread, so a tool below full access can ask it. */
+  readonly thread?: OrchestrationV2ThreadShell;
+  /** Records projects a full-access approval path creates. */
+  readonly createdProjects?: Array<Project.ProjectCreateInput>;
 }) => {
   const projectId = ProjectId.make("project:client-target");
   const modelSelection = {
@@ -96,7 +102,14 @@ const clientLaunchHarness = (input: {
     Layer.succeed(McpInvocationContext.McpInvocationContext, {
       environmentId: EnvironmentId.make("environment"),
       requestNamespace: "client:session-1",
-      thread: undefined,
+      thread:
+        input.thread === undefined
+          ? undefined
+          : {
+              threadId: input.thread.id,
+              providerSessionId: "session-1",
+              providerInstanceId: input.thread.providerInstanceId,
+            },
       client: {
         sessionId: "session-1",
         label: "Claude Code",
@@ -122,6 +135,9 @@ const clientLaunchHarness = (input: {
           ),
         ),
       getThreadShell: (threadId) => {
+        if (input.thread !== undefined && input.thread.id === threadId) {
+          return Effect.succeed(input.thread);
+        }
         const launch = input.launched.find((candidate) => candidate.threadId === threadId);
         return Effect.succeed(
           launch === undefined
@@ -174,6 +190,24 @@ const clientLaunchHarness = (input: {
       },
     }),
     Layer.mock(Project.ProjectService)({
+      create: (createInput) => {
+        input.createdProjects?.push(createInput);
+        return Effect.succeed({
+          id: createInput.projectId,
+          title: createInput.title,
+          workspaceRoot: createInput.workspaceRoot,
+          repositoryIdentity: null,
+          faviconPath: null,
+          defaultModelSelection: null,
+          defaultThreadEnvMode: null,
+          autoPull: false,
+          projectIcon: null,
+          scripts: [],
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          deletedAt: null,
+        } as unknown as ProjectRecord);
+      },
       getById: (id) =>
         Effect.succeed(
           id === projectId
@@ -835,4 +869,170 @@ it.effect(
         expect(refused.workspace.error).toContain("ghost");
       }),
     ),
+);
+
+const callingThread = (input: {
+  readonly id: ThreadId;
+  readonly projectId: ProjectId;
+  readonly modelSelection: ModelSelection;
+  readonly runtimeMode: RuntimeMode;
+}): OrchestrationV2ThreadShell =>
+  ({
+    id: input.id,
+    projectId: input.projectId,
+    modelSelection: input.modelSelection,
+    providerInstanceId: input.modelSelection.instanceId,
+    runtimeMode: input.runtimeMode,
+    interactionMode: "default",
+    archivedAt: null,
+    deletedAt: null,
+    activeRunId: RunId.make("run:approval"),
+    pendingBackgroundTasks: [],
+  }) as unknown as OrchestrationV2ThreadShell;
+
+it.effect("full access adds the project without asking", () =>
+  Effect.gen(function* () {
+    const createdProjects: Array<Project.ProjectCreateInput> = [];
+    const harness = clientLaunchHarness({
+      runtimeModeCeiling: "full-access",
+      launched: [],
+      createdProjects,
+    });
+    const toolkit = yield* ProjectToolkit.pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(
+          Layer.provide(harness.dependencies),
+        ),
+      ),
+    );
+    const result = yield* toolkit
+      .handle("houston_project_create", {
+        title: "Research",
+        workspaceRoot: "/work/nps-research",
+        reason: "The repository holds the code.",
+      })
+      .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(harness.dependencies));
+
+    expect(result.at(-1)?.result).toMatchObject({
+      id: createdProjects[0]?.projectId,
+      workspaceRoot: "/work/nps-research",
+    });
+    expect(createdProjects).toHaveLength(1);
+    expect(createdProjects[0]?.workspaceRoot).toBe("/work/nps-research");
+  }),
+);
+
+it.effect("a client with no thread to ask is refused and told how to add the project", () =>
+  Effect.gen(function* () {
+    const createdProjects: Array<Project.ProjectCreateInput> = [];
+    const harness = clientLaunchHarness({
+      runtimeModeCeiling: "auto",
+      launched: [],
+      createdProjects,
+    });
+    const toolkit = yield* ProjectToolkit.pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(
+          Layer.provide(harness.dependencies),
+        ),
+      ),
+    );
+    const refused = yield* toolkit
+      .handle("houston_project_create", {
+        title: "Research",
+        workspaceRoot: "/work/nps-research",
+        reason: "The repository holds the code.",
+      })
+      .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(harness.dependencies));
+
+    const refusal = refused.at(-1)?.result as { readonly message: string } | undefined;
+    expect(refusal).toMatchObject({ code: "capability_denied" });
+    if (refusal === undefined) throw new Error("expected a refusal");
+    expect(refusal.message).toContain("Add the folder as a project in the app");
+    expect(createdProjects).toHaveLength(0);
+  }),
+);
+
+it.effect("a live thread below full access asks its user, then launches there", () =>
+  Effect.gen(function* () {
+    const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
+    const threadId = ThreadId.make("thread:approval");
+    const harness = clientLaunchHarness({
+      runtimeModeCeiling: "auto",
+      launched,
+    });
+    const thread = callingThread({
+      id: threadId,
+      projectId: harness.projectId,
+      modelSelection: harness.modelSelection,
+      runtimeMode: "auto",
+    });
+    const requests: Array<{
+      readonly workspaceRoot?: string;
+      readonly title: string;
+      readonly reason?: string;
+      readonly clientRequestId?: string;
+    }> = [];
+    const dependencies = Layer.merge(
+      clientLaunchHarness({
+        runtimeModeCeiling: "auto",
+        launched,
+        thread,
+      }).dependencies,
+      Layer.mock(ProjectRequests.ProjectRequests)({
+        request: (input) => {
+          requests.push(input as never);
+          return Effect.succeed({
+            id: harness.projectId,
+            title: "Research",
+            workspaceRoot: "/work/nps-research",
+            repositoryIdentity: null,
+            faviconPath: null,
+            defaultModelSelection: null,
+            defaultThreadEnvMode: null,
+            autoPull: false,
+            projectIcon: null,
+            scripts: [],
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+            deletedAt: null,
+          } as never);
+        },
+      }),
+    );
+    const toolkit = yield* ProjectToolkit.pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(Layer.provide(dependencies)),
+      ),
+    );
+    const run = <T>(name: string, input: object) =>
+      (
+        toolkit.handle as unknown as (
+          name: string,
+          input: object,
+        ) => Effect.Effect<Stream.Stream<{ result: T }>>
+      )(name, input).pipe(
+        Stream.unwrap,
+        Stream.runCollect,
+        Effect.map((results) => results.at(-1)?.result as T),
+        Effect.provide(dependencies),
+      );
+
+    const created = yield* run<{ id: string }>("houston_project_create", {
+      title: "Research",
+      workspaceRoot: "/work/nps-research",
+      reason: "The repository holds the code.",
+      clientRequestId: "add-1",
+    });
+    expect(requests[0]).toMatchObject({
+      workspaceRoot: "/work/nps-research",
+      reason: "The repository holds the code.",
+      clientRequestId: "add-1",
+    });
+    expect(created.id).toBe(harness.projectId);
+
+    yield* run("houston_thread_launch", { projectId: created.id, title: "Next" });
+    expect(launched[0]?.projectId).toBe(created.id);
+    expect(launched[0]?.runtimeMode).toBe("auto");
+  }),
 );

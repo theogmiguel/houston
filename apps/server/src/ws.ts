@@ -127,6 +127,7 @@ import * as DocumentText from "./provider/DocumentText.ts";
 import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
+import * as ProjectRequests from "./houston/projects/ProjectRequests.ts";
 import {
   bufferShellLiveStream,
   coalesceShellApplicationEvents,
@@ -1587,6 +1588,7 @@ export const layerWsRpc = (
       const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
       const secretRequests = yield* SecretRequests.SecretRequests;
+      const projectRequests = yield* Effect.serviceOption(ProjectRequests.ProjectRequests);
       const pullRequests = yield* PullRequestService.PullRequestService;
       const issues = yield* IssueService.IssueService;
       const issueTrackers = yield* IssueTrackerConnections.IssueTrackerConnections;
@@ -2532,6 +2534,15 @@ export const layerWsRpc = (
         [WS_METHODS.secretsAnswerRequest]: (input) =>
           Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
             Effect.andThen(secretRequests.answer(input)),
+          ),
+        [WS_METHODS.houstonProjectRequestAnswer]: (input) =>
+          Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
+            Effect.andThen(
+              Option.match(projectRequests, {
+                onNone: () => Effect.die("Project request answering is unavailable here."),
+                onSome: (service) => service.answer(input),
+              }),
+            ),
           ),
         [WS_METHODS.scheduledTasksListWebhookDeliveries]: (input) =>
           Effect.annotateCurrentSpan({ "scheduled_task.id": input.id }).pipe(

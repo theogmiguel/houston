@@ -21,6 +21,7 @@ import * as ThreadLaunch from "../../../orchestration-v2/ThreadLaunchService.ts"
 import * as ThreadMessageIntake from "../../../orchestration-v2/ThreadMessageIntake.ts";
 import * as Claims from "../../../orchestration-v2/AttachmentClaims.ts";
 import * as Project from "../../../project/ProjectService.ts";
+import * as ProjectRequests from "../../../houston/projects/ProjectRequests.ts";
 import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
 import { mutateProjectWithClone } from "../../../project/ProjectMutation.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
@@ -325,49 +326,88 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
       return result.value;
     }),
   ),
-  houston_project_create: McpToolAccess.writesEnvironment(
-    ({ workspaceRoot, ...input }) =>
+  houston_project_create: McpToolAccess.writesEnvironmentAllowingApproval(
+    ({ workspaceRoot, reason, clientRequestId, ...input }, check, caller) =>
       Effect.gen(function* () {
         const projects = yield* Project.ProjectService;
-        if (workspaceRoot === undefined) {
-          // Only updates record model defaults; reject defaults that creation would silently drop.
-          if (
-            input.scripts !== undefined ||
-            input.createWorkspaceRootIfMissing !== undefined ||
-            input.defaultModelSelection !== undefined
-          )
-            return yield* new OrchestratorMcpFailure({
-              code: "invalid_request",
-              message:
-                "A project started from its title takes only a title; set scripts or defaultModelSelection afterwards with houston_project_update.",
-            });
-          const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
-          const created = yield* folders.createNamedProject({ name: input.title }).pipe(
-            Effect.mapError(
-              (error) =>
-                new OrchestratorMcpFailure({
-                  code: "orchestration_error",
-                  message: error.message,
-                }),
-            ),
-          );
-          const project = yield* projects
-            .getById(created.projectId)
-            .pipe(
-              Effect.mapError(unavailable),
-              Effect.flatMap(
-                Option.match({ onNone: () => Effect.fail(unavailable()), onSome: Effect.succeed }),
+        const createHere = Effect.fn("projectCreate.createHere")(function* (
+          root: string | undefined,
+        ) {
+          if (root === undefined) {
+            // Only updates record model defaults; reject defaults that creation would silently drop.
+            if (
+              input.scripts !== undefined ||
+              input.createWorkspaceRootIfMissing !== undefined ||
+              input.defaultModelSelection !== undefined
+            )
+              return yield* new OrchestratorMcpFailure({
+                code: "invalid_request",
+                message:
+                  "A project started from its title takes only a title; set scripts or defaultModelSelection afterwards with houston_project_update.",
+              });
+            const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
+            const created = yield* folders.createNamedProject({ name: input.title }).pipe(
+              Effect.mapError(
+                (error) =>
+                  new OrchestratorMcpFailure({
+                    code: "orchestration_error",
+                    message: error.message,
+                  }),
               ),
             );
-          return {
-            ...project,
-            ...(created.commitError === undefined ? {} : { commitError: created.commitError }),
-          };
+            const project = yield* projects.getById(created.projectId).pipe(
+              Effect.mapError(unavailable),
+              Effect.flatMap(
+                Option.match({
+                  onNone: () => Effect.fail(unavailable()),
+                  onSome: Effect.succeed,
+                }),
+              ),
+            );
+            return {
+              ...project,
+              ...(created.commitError === undefined ? {} : { commitError: created.commitError }),
+            };
+          }
+          const commandId = yield* newCommandId();
+          return yield* projects
+            .create({
+              ...input,
+              workspaceRoot: root,
+              commandId,
+              projectId: ProjectId.make(commandId),
+            })
+            .pipe(Effect.mapError(projectFailure));
+        });
+        if (McpToolAccess.hasFullAccess(caller)) return yield* createHere(workspaceRoot);
+        // A client outside a thread has nowhere to show the card; tell it how
+        // the user adds the folder instead of refusing without a next step.
+        if (caller.scope.thread === undefined) {
+          return yield* new OrchestratorMcpFailure({
+            code: "capability_denied",
+            message:
+              "Adding a project needs the user's approval, and this MCP client is not running inside a Houston thread. Add the folder as a project in the app, then continue.",
+          });
         }
-        const commandId = yield* newCommandId();
-        return yield* projects
-          .create({ ...input, workspaceRoot, commandId, projectId: ProjectId.make(commandId) })
-          .pipe(Effect.mapError(projectFailure));
+        const projectRequests = yield* Effect.serviceOption(ProjectRequests.ProjectRequests);
+        if (Option.isNone(projectRequests)) {
+          return yield* new OrchestratorMcpFailure({
+            code: "capability_denied",
+            message:
+              "Adding a project needs the user's approval, which is unavailable here. Add the folder as a project in the app, then continue.",
+          });
+        }
+        return yield* projectRequests.value.request({
+          scope: caller.scope,
+          title: input.title,
+          reason,
+          workspaceRoot,
+          createWorkspaceRootIfMissing: input.createWorkspaceRootIfMissing,
+          defaultModelSelection: input.defaultModelSelection,
+          scripts: input.scripts,
+          clientRequestId,
+          recheck: check.pipe(Effect.asVoid),
+        });
       }),
     // Linked work may bring the repository it works in; an existing
     // registered workspace is still refused.

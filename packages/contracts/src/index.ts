@@ -57,6 +57,7 @@ export * from "./houston/access.ts";
 export * from "./houston/mcpSignIn.ts";
 export * from "./houston/projects.ts";
 export * from "./houston/projectFolderSearch.ts";
+export * from "./houston/projectRequest.ts";
 export * from "./editor.ts";
 export * from "./project.ts";
 export * from "./filesystem.ts";
