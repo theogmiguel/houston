@@ -180,18 +180,46 @@ NodeTest.test(
 );
 
 NodeTest.test(
-  "a held driver without exactly one entry on each side is refused with its count",
+  "a held driver split into several upstream entries becomes Houston's one entry",
   () => {
-    const houston = JSON.stringify(manifest({}, [{ driver: "codex", houstonCodeRange: "*" }]));
-    const upstream = JSON.stringify(
-      manifest({}, [{ driver: "antigravity", t3CodeRange: "*", ranges: [] }]),
-    );
-    NodeAssert.throws(
-      () => translateUpstreamText(upstream, houston),
-      /Houston manifest has 0 compatibility entries for held driver "antigravity"; expected exactly 1/,
-    );
+    const bundled = NodeFS.readFileSync(BUNDLED_PATH, "utf8");
+    const renamed = bundled.replaceAll('"houstonCodeRange":', '"t3CodeRange":');
+    // Composed: upstream splits a driver by t3CodeRange, as it did for antigravity.
+    const anchor = '"driver": "antigravity",';
+    const close = renamed.indexOf("\n    }", renamed.indexOf(anchor)) + "\n    }".length;
+    const split =
+      ',\n    {\n      "driver": "antigravity",\n      "t3CodeRange": ">=0.1.10",\n' +
+      '      "recommendedRange": ">=1.5.12 <2",\n' +
+      '      "ranges": [{ "range": "<1.5.0", "status": "broken" }]\n    }';
+    const upstream = `${renamed.slice(0, close)}${split}${renamed.slice(close)}`;
+    NodeAssert.equal(JSON.parse(upstream).compatibility.length, 13);
+    const { manifest, text } = translateUpstreamText(upstream, bundled);
+    NodeAssert.equal(text, bundled);
+    NodeAssert.deepEqual(manifest, JSON.parse(bundled));
   },
 );
+
+NodeTest.test("a held driver missing from Houston's manifest is refused with its count", () => {
+  const houston = JSON.stringify(manifest({}, [{ driver: "codex", houstonCodeRange: "*" }]));
+  const upstream = JSON.stringify(
+    manifest({}, [{ driver: "antigravity", t3CodeRange: "*", ranges: [] }]),
+  );
+  NodeAssert.throws(
+    () => translateUpstreamText(upstream, houston),
+    /Houston manifest has 0 compatibility entries for held driver "antigravity"; expected exactly 1/,
+  );
+});
+
+NodeTest.test("a held driver missing from upstream's manifest is refused with its count", () => {
+  const houston = JSON.stringify(
+    manifest({}, [{ driver: "antigravity", houstonCodeRange: "*", ranges: [] }]),
+  );
+  const upstream = JSON.stringify(manifest({}, [{ driver: "codex", t3CodeRange: "*" }]));
+  NodeAssert.throws(
+    () => translateUpstreamText(upstream, houston),
+    /Upstream manifest has 0 compatibility entries for held driver "antigravity"; expected at least 1/,
+  );
+});
 
 NodeTest.test("the pull request body names each held driver and why", () => {
   const body = formatPullRequestBody({
