@@ -10,6 +10,8 @@ import {
   type ThreadSearchSubject,
 } from "@houston-app/shared/paletteSearch";
 import { threadSearchSubject } from "@houston-app/client-runtime/state/thread-search";
+import type { AuthMcpClientAccess } from "@houston-app/contracts";
+import type { PeerLinkSearchMatch } from "@houston-app/contracts/houston/peerLinkSearch";
 import type { AddProjectFlowRequest } from "../addProjectFlow";
 import type { CommandPaletteLinkedThreads } from "../commandPaletteBus";
 import {
@@ -57,6 +59,74 @@ export function buildLinkedThreadActionItems(
     icon: input.icon,
     run: () => input.runThread({ environmentId: input.environmentId, id: thread.id }),
   }));
+}
+
+/**
+ * Rows from other machines this environment links to. Their titles and
+ * excerpts are the other machine's text: plain strings, never rendered as
+ * links, and each row names the machine it came from.
+ */
+export function linkedAccessLabel(access: AuthMcpClientAccess): string {
+  switch (access) {
+    case "full-access":
+      return "Full access";
+    case "approval-required":
+      return "Approval required";
+    case "auto-accept-edits":
+      return "Auto-accept edits";
+    case "auto":
+      return "Auto";
+    case "read-only":
+      return "Read only";
+  }
+}
+
+export interface LinkedMachineWithAccess {
+  readonly environmentId: EnvironmentId;
+  readonly label: string;
+  readonly access: AuthMcpClientAccess;
+  readonly host: string;
+  readonly matches: ReadonlyArray<PeerLinkSearchMatch>;
+}
+
+export function buildLinkedMachineActionItems(input: {
+  readonly query: string;
+  readonly machines: ReadonlyArray<LinkedMachineWithAccess>;
+  readonly icon: ReactNode;
+  readonly runMatch: (
+    machine: LinkedMachineWithAccess,
+    match: PeerLinkSearchMatch,
+  ) => Promise<void>;
+}): CommandPaletteActionItem[] {
+  return input.machines.flatMap((machine) =>
+    machine.matches.map((match) => ({
+      kind: "action" as const,
+      value: `linked:${machine.environmentId}:${match.threadId}`,
+      title: match.title.length > 0 ? match.title : "Untitled thread",
+      searchTerms: [match.title, match.snippet ?? ""].filter((term) => term.length > 0),
+      icon: input.icon,
+      machineLabel: machine.label,
+      ...(machine.access === "full-access"
+        ? {}
+        : {
+            description: `Pairing needs a Full access link. ${machine.label}'s link is ${linkedAccessLabel(machine.access)}.`,
+            linkedActionLabel: "Add environment…",
+          }),
+      ...(match.messageCreatedAt != null
+        ? { timestamp: formatRelativeTimeLabel(match.messageCreatedAt) }
+        : {}),
+      ...(match.snippet !== undefined && match.source !== "title"
+        ? {
+            threadContentMatch: {
+              source: match.source,
+              snippet: match.snippet,
+              query: input.query,
+            },
+          }
+        : {}),
+      run: () => input.runMatch(machine, match),
+    })),
+  );
 }
 
 export function browseInputEndPaddingClass(input: {
@@ -208,6 +278,10 @@ export interface CommandPaletteItem {
   /** Shown in place of the description when the match is not in the title. */
   readonly matchHint?: SearchMatchHint;
   readonly icon: ReactNode;
+  /** The machine a result came from, shown at the row's right edge. */
+  readonly machineLabel?: string;
+  /** A row-level action a linked result offers, such as adding the environment. */
+  readonly linkedActionLabel?: string;
   readonly disabled?: boolean;
   readonly titleLeadingContent?: ReactNode;
   readonly titleTrailingContent?: ReactNode;
@@ -577,6 +651,8 @@ export function filterCommandPaletteGroups(input: {
   threadSearchItems: ReadonlyArray<CommandPaletteActionItem>;
   /** Threads whose messages match, best first; threads already listed are skipped. */
   threadMessageItems?: ReadonlyArray<CommandPaletteActionItem>;
+  /** Matches from linked machines, appended without a heading after local results. */
+  linkedMachineItems?: ReadonlyArray<CommandPaletteActionItem>;
   now?: number;
 }): CommandPaletteGroup[] {
   if (input.allOptions && input.isInSubmenu) {
@@ -679,9 +755,16 @@ export function filterCommandPaletteGroups(input: {
   const listed = new Set(groups.flatMap((group) => group.items.map((item) => item.value)));
   // The items arrive cut to what the palette shows; see `nextShownOrder`.
   const messageItems = (input.threadMessageItems ?? []).filter((item) => !listed.has(item.value));
-  return messageItems.length === 0
-    ? groups
-    : [...groups, { value: "threads-messages", label: "In messages", items: messageItems }];
+  const linkedItems = (input.linkedMachineItems ?? []).filter((item) => !listed.has(item.value));
+  const trailing = [
+    ...(messageItems.length === 0
+      ? []
+      : [{ value: "threads-messages", label: "In messages", items: messageItems }]),
+    ...(linkedItems.length === 0
+      ? []
+      : [{ value: "linked-machines", label: "", items: linkedItems }]),
+  ];
+  return [...groups, ...trailing];
 }
 
 const TRAILING_ELLIPSIS = /(\.\.\.|…)$/u;
@@ -720,12 +803,21 @@ export function commandPaletteEmptyStateMessage(input: {
   readonly isBrowsing: boolean;
   readonly relativePathNeedsActiveProject: boolean;
   readonly isThreadSearchPending: boolean;
+  readonly linkedMachinesSearching?: boolean;
+  readonly linkedMachinesFailed?: boolean;
 }): string | undefined {
   if (input.relativePathNeedsActiveProject) {
     return "Relative paths require an active project.";
   }
   if (input.isBrowsing) {
     return "Type a folder path, or pick one below";
+  }
+  // A failed machine must not read as an empty result everywhere.
+  if (input.linkedMachinesSearching) {
+    return "Searching linked machines…";
+  }
+  if (input.linkedMachinesFailed) {
+    return "No matches on this machine.";
   }
   if (input.isThreadSearchPending) {
     return "Searching thread messages…";

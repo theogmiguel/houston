@@ -1436,6 +1436,47 @@ const InferenceImageVerdicts = Effect.gen(function* () {
   `;
 });
 
+// Folders a project tracks from outside its own folder, and the repository ignore patterns it
+// stores beside houston.json's. Both are keyed by upstream ProjectId without a foreign key; a
+// deleted project's rows go with its deletion hook.
+const ProjectRepositories = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_project_repositories (
+      project_id TEXT NOT NULL,
+      folder_path TEXT NOT NULL,
+      added_at TEXT NOT NULL,
+      PRIMARY KEY (project_id, folder_path)
+    ) WITHOUT ROWID
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_project_repository_ignores (
+      project_id TEXT NOT NULL,
+      pattern TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (project_id, pattern)
+    ) WITHOUT ROWID
+  `;
+});
+
+// The folder a worktree thread of a multi-repository project works in, keyed by folder path
+// because forks and reused worktrees share one. A row goes with storage cleanup, not project
+// deletion: a folder that kept files stays listed until they are gone.
+const TaskFolders = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_task_folders (
+      folder_path TEXT PRIMARY KEY,
+      real_path TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      project_root TEXT NOT NULL,
+      repositories_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    ) WITHOUT ROWID
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_task_folders_real_path ON houston_task_folders(real_path)`;
+});
+
 const houstonMigrationEntries = [
   [1, "ReviewFilesViewed", ReviewFilesViewed],
   [2, "TasksBacklog", TasksBacklog],
@@ -1467,6 +1508,8 @@ const houstonMigrationEntries = [
   [30, "InferenceRequests", InferenceRequests],
   [31, "InferenceImageVerdicts", InferenceImageVerdicts],
   [32, "ProviderNativeSessions", createNativeSessionHistory],
+  [33, "ProjectRepositories", ProjectRepositories],
+  [34, "TaskFolders", TaskFolders],
 ] as const;
 
 /** Every Houston migration id this build knows, for callers that must not run beside an older schema. */

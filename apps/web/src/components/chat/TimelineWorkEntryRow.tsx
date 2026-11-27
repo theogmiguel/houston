@@ -81,6 +81,7 @@ import {
 } from "./TimelineWorkEntryRow.logic";
 import { TimelinePlanCard } from "./TimelinePlanCard";
 import { TimelineFileChangeCard } from "./TimelineFileChangeCard";
+import { McpSignInNotice } from "./McpSignInNotice";
 
 export function useThreadReadTarget(entry: TimelineWorkEntry, environmentId: EnvironmentId) {
   const rawThreadId = threadReadTargetId(entry);
@@ -227,6 +228,19 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       ? ctx.pendingApprovals.get(failureItem.requestId)
       : undefined;
   if (pendingApproval) return <TimelinePendingApprovalRow approval={pendingApproval} />;
+  if (failureItem?.type === "system_notice" && failureItem.mcpSignIn !== undefined) {
+    return (
+      <McpSignInNotice
+        item={failureItem}
+        server={failureItem.mcpSignIn.server}
+        environmentId={ctx.activeThreadEnvironmentId}
+        createdAt={workEntry.createdAt}
+        timestampFormat={timestampFormat}
+        signedInAt={ctx.mcpSignInTimes.get(failureItem.mcpSignIn.server)}
+        onSignedIn={ctx.onMcpSignedIn}
+      />
+    );
+  }
   if (failureItem?.type === "todo_list") {
     const planRunIsLatest =
       failureItem.runId === null ||

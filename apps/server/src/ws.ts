@@ -3,7 +3,10 @@ import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
+import * as PeerForwarding from "./peer/PeerForwarding.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
+import * as PeerLinkSearch from "./houston/peerLinkSearch.ts";
+import * as PeerLinkPairing from "./houston/peerLinkPairing.ts";
 
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -115,6 +118,7 @@ import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as ThreadManagementService from "./orchestration-v2/ThreadManagementService.ts";
 import * as CommandOutputHub from "./orchestration-v2/CommandOutputHub.ts";
 import * as McpAppRequests from "./mcpApps/McpAppRequests.ts";
+import * as McpSignIn from "./houston/mcpSignIn.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as ThreadLaunchService from "./orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadMessageIntake from "./orchestration-v2/ThreadMessageIntake.ts";
@@ -228,6 +232,7 @@ import * as HoustonLayoutWorkspaces from "./houston/layoutWorkspaces.ts";
 import * as HoustonSlackService from "./houston/slack/Service.ts";
 import * as HoustonSlackV1Import from "./houston/slack/V1Import.ts";
 import * as HoustonMergeQueueService from "./houston/mergeQueue/Service.ts";
+import * as HoustonProjectRepositories from "./houston/projects/ProjectRepositoriesService.ts";
 import * as InferenceDiscovery from "./houston/inference/InferenceDiscovery.ts";
 import * as InferenceImageChecks from "./houston/inference/InferenceImageChecks.ts";
 import * as InferenceServerRegistry from "./houston/inference/InferenceServerRegistry.ts";
@@ -236,6 +241,7 @@ import * as InferenceStops from "./houston/inference/InferenceStops.ts";
 import * as HoustonTerminalShells from "./houston/terminalShells.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
+import { repositoriesOf } from "./project/threadRepositories.ts";
 import { threadWorkspaceRoot } from "./project/threadWorkspaceRoot.ts";
 import * as ManagedProjectFolders from "./project/ManagedProjectFolders.ts";
 import * as ScratchThreadPromotion from "./project/ScratchThreadPromotion.ts";
@@ -739,6 +745,7 @@ const SPLIT_WS_RPC_PREFIXES = [
   "issueTrackers",
   "provider",
   "orchestration",
+  "vcs",
 ] as const;
 type SplitWsRpc = Extract<
   ServerWsRpc,
@@ -1540,6 +1547,7 @@ export const layerWsRpc = (
 
       const providerSessionsV2 = yield* ProviderSessionManager.ProviderSessionManagerV2;
       const mcpAppRequests = yield* McpAppRequests.McpAppRequests;
+      const mcpSignIn = yield* McpSignIn.McpSignIn;
       const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
       const commandOutputHub = yield* CommandOutputHub.CommandOutputHub;
       const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
@@ -1600,6 +1608,8 @@ export const layerWsRpc = (
       const houstonSlack = yield* HoustonSlackService.HoustonSlackService;
       const houstonSlackImport = yield* HoustonSlackV1Import.HoustonSlackV1Import;
       const houstonMergeQueue = yield* HoustonMergeQueueService.HoustonMergeQueueService;
+      const houstonProjectRepositories =
+        yield* HoustonProjectRepositories.HoustonProjectRepositories;
       const inferenceRegistry = yield* InferenceServerRegistry.InferenceServerRegistry;
       const inferenceDiscovery = yield* InferenceDiscovery.InferenceDiscovery;
       const inferenceImageChecks = yield* InferenceImageChecks.InferenceImageChecks;
@@ -1645,6 +1655,8 @@ export const layerWsRpc = (
         : Effect.as(Effect.void, undefined);
       const secretResolver = yield* SecretResolver.SecretResolver;
       const peerLinks = yield* PeerLinks.PeerLinks;
+      const peerLinkSearch = yield* PeerLinkSearch.PeerLinkSearch;
+      const peerLinkPairing = yield* PeerLinkPairing.PeerLinkPairing;
       const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
@@ -2704,6 +2716,8 @@ export const layerWsRpc = (
                 })),
             };
           }),
+        [WS_METHODS.houstonMcpSignInStart]: (input) => mcpSignIn.start(input),
+        [WS_METHODS.houstonMcpSignInComplete]: (input) => mcpSignIn.complete(input),
         [WS_METHODS.mcpAppsCallTool]: (input) => mcpAppRequests.callTool(input),
         [WS_METHODS.mcpAppsToolInfo]: (input) => mcpAppRequests.toolInfo(input),
         [WS_METHODS.mcpAppsUpdateModelContext]: (input) => mcpAppRequests.updateModelContext(input),
@@ -2838,6 +2852,12 @@ export const layerWsRpc = (
         }),
         [WS_METHODS.peerLinksList]: (_input) =>
           peerLinks.list.pipe(Effect.map((links) => ({ links }))),
+        [WS_METHODS.houstonPeerLinksSearch]: (input) => peerLinkSearch.search(input),
+        [WS_METHODS.houstonPeerLinksPairClient]: (input) =>
+          peerLinkPairing.pairClient(input, {
+            scopes: currentSession.scopes,
+            clientLabel: currentSession.client?.label ?? "Houston client",
+          }),
         [WS_METHODS.peerLinksLink]: (input) => peerLinks.link(input),
         [WS_METHODS.peerLinksUnlink]: ({ environmentId }) =>
           peerLinks.unlink(environmentId).pipe(Effect.map((removed) => ({ removed }))),
@@ -3288,9 +3308,13 @@ export const layerWsRpc = (
                 resource: input.resource,
               });
             }
+            const [repository] = yield* repositoriesOf(
+              thread.thread,
+              Effect.succeedSome(project.value),
+            ).pipe(Effect.orDie);
             return yield* issueAssetUrl({
               resource: input.resource,
-              workspaceRoot: thread.thread.worktreePath ?? project.value.workspaceRoot,
+              workspaceRoot: repository.root,
             });
           }),
         [WS_METHODS.assetsPersistChatAttachments]: (input) =>
@@ -3466,6 +3490,14 @@ export const layerWsRpc = (
           houstonMergeQueue.handToThread(input),
         [WS_METHODS.houstonMergeQueueRevert]: (input) => houstonMergeQueue.revert(input),
         [WS_METHODS.houstonMergeQueueAcknowledge]: (input) => houstonMergeQueue.acknowledge(input),
+        [WS_METHODS.houstonProjectsRepositoriesList]: (input) =>
+          houstonProjectRepositories.list(input),
+        [WS_METHODS.houstonProjectsRepositoriesTrack]: (input) =>
+          houstonProjectRepositories.track(input),
+        [WS_METHODS.houstonProjectsRepositoriesUntrack]: (input) =>
+          houstonProjectRepositories.untrack(input),
+        [WS_METHODS.houstonProjectsRepositoriesIgnore]: (input) =>
+          houstonProjectRepositories.setIgnorePatterns(input),
         [WS_METHODS.houstonInferenceSubscribe]: () =>
           inferenceRegistry.streamChanges.pipe(Stream.map((servers) => ({ servers }))),
         [WS_METHODS.houstonInferenceRefresh]: (input) =>
@@ -3834,7 +3866,9 @@ export const layer = Layer.unwrap(
     const issueTrackers = yield* IssueTrackerConnections.IssueTrackerConnections;
     const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
     const peerLinks = yield* PeerLinks.PeerLinks;
+    const peerForwarding = yield* PeerForwarding.PeerForwarding;
     const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
+    const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
     const sql = yield* SqlClient.SqlClient;
     const e2eeEnvironmentId = yield* Effect.flatMap(
       ServerEnvironment.ServerEnvironmentIdentity,
@@ -3949,6 +3983,15 @@ export const layer = Layer.unwrap(
                 ),
               ),
               Layer.provide(Layer.succeed(PeerLinks.PeerLinks, peerLinks)),
+              Layer.provide(
+                Layer.merge(PeerLinkSearch.layer, PeerLinkPairing.layer).pipe(
+                  Layer.provideMerge(Layer.succeed(PeerLinks.PeerLinks, peerLinks)),
+                  Layer.provideMerge(Layer.succeed(PeerForwarding.PeerForwarding, peerForwarding)),
+                  Layer.provideMerge(
+                    Layer.succeed(ServerEnvironment.ServerEnvironment, serverEnvironment),
+                  ),
+                ),
+              ),
               Layer.provide(Layer.succeed(PeerLinkRequests.PeerLinkRequests, peerLinkRequests)),
               Layer.provide(
                 SourceControlDiscovery.layer.pipe(

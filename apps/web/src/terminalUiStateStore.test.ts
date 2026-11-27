@@ -160,6 +160,57 @@ describe("terminalUiStateStore actions", () => {
     expect(terminalUiState.activeTerminalGroupId).toBe(`group-${DEFAULT_THREAD_TERMINAL_ID}`);
   });
 
+  it("cycles the active group's terminals in both directions and wraps", () => {
+    const store = useTerminalUiStateStore.getState();
+    store.splitTerminal(THREAD_REF, "terminal-2");
+    store.splitTerminal(THREAD_REF, "terminal-3");
+    store.splitTerminal(THREAD_REF, "terminal-4");
+    const activeId = () =>
+      selectThreadTerminalUiState(
+        useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+        THREAD_REF,
+      ).activeTerminalId;
+
+    expect(activeId()).toBe("terminal-4");
+    store.cycleActiveTerminal(THREAD_REF, "next");
+    expect(activeId()).toBe("terminal-2");
+    store.cycleActiveTerminal(THREAD_REF, "previous");
+    expect(activeId()).toBe("terminal-4");
+    store.cycleActiveTerminal(THREAD_REF, "previous");
+    expect(activeId()).toBe("terminal-3");
+  });
+
+  it("keeps cycling inside the active group when another group exists", () => {
+    const store = useTerminalUiStateStore.getState();
+    store.setTerminalOpen(THREAD_REF, true);
+    store.newTerminal(THREAD_REF, "terminal-2");
+    store.setActiveTerminal(THREAD_REF, DEFAULT_THREAD_TERMINAL_ID);
+    store.splitTerminal(THREAD_REF, "terminal-3");
+    store.cycleActiveTerminal(THREAD_REF, "next");
+    store.cycleActiveTerminal(THREAD_REF, "next");
+
+    const terminalUiState = selectThreadTerminalUiState(
+      useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+      THREAD_REF,
+    );
+    expect(terminalUiState.activeTerminalId).toBe("terminal-3");
+    expect(terminalUiState.activeTerminalGroupId).toBe(`group-${DEFAULT_THREAD_TERMINAL_ID}`);
+  });
+
+  it("leaves a lone terminal active when cycling", () => {
+    const store = useTerminalUiStateStore.getState();
+    store.newTerminal(THREAD_REF, "terminal-2");
+    store.cycleActiveTerminal(THREAD_REF, "next");
+    store.cycleActiveTerminal(THREAD_REF, "previous");
+
+    expect(
+      selectThreadTerminalUiState(
+        useTerminalUiStateStore.getState().terminalUiStateByThreadKey,
+        THREAD_REF,
+      ).activeTerminalId,
+    ).toBe("terminal-2");
+  });
+
   it("does not import a closed panel terminal from stale metadata", () => {
     const store = useTerminalUiStateStore.getState();
     store.newTerminal(THREAD_REF, "term-2");

@@ -7,6 +7,10 @@ state directory on the machine that runs it.
 
 - **Agents.** Each provider receives the prompts you send and the files its agent reads, under
   that provider's own terms.
+- **MCP server sign-in.** When an agent's MCP server needs a sign-in, the provider's page opens in
+  your browser and Houston sends the address it ended on only to the server that runs the thread,
+  which validates it and passes it to the agent's own local listener. Houston makes no other
+  request for that sign-in.
 - **Features you turn on.** Integrations such as GitHub, Slack, Notion, Linear, usage hubs and
   transcript cleanup contact the services you configure for them, and nothing while they are off.
   A connected Linear tracker sends the API key with each request and reads the teams, issues,
@@ -16,6 +20,12 @@ state directory on the machine that runs it.
   comments and people the bound data source holds, and writes the title, body, labels, assignees,
   state, pull request URL and comment you ask for. Remove the token under **Settings ? Source
   control** to disconnect it, after which Houston sends nothing to Notion.
+- **Linked environments.** When **Settings ▸ Labs ▸ Linked environments** is on, a command
+  palette search sends the text you typed to each machine you linked and nothing else: no
+  files, thread contents or credentials. Each machine answers with matching thread titles and
+  message excerpts, which stay on this machine. Connecting this window to a linked machine asks
+  it for a one-time pairing code valid for three minutes and limited to the permissions this
+  window already holds. While the beta is off, no request reaches a linked machine.
 - **Cloud dictation.** When you choose OpenAI, Grok or OpenRouter under Settings ▸ Voice, the
   environment sends each finished recording to that provider with your API key. Nothing is sent
   while dictation is Off or set to an environment. See [Dictation](dictation.md#network-use).

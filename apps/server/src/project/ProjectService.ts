@@ -38,6 +38,7 @@ import * as HoustonTaskStore from "../houston/tasks/TaskStore.ts";
 import * as IssueTrackerBindings from "../persistence/IssueTrackerBindings.ts";
 import * as HoustonSlackStore from "../houston/slack/Store.ts";
 import * as HoustonMergeQueueStore from "../houston/mergeQueue/Store.ts";
+import * as HoustonProjectRepositoriesStore from "../houston/projects/ProjectRepositoriesStore.ts";
 
 export interface ProjectCreateInput extends ProjectCreatePayload {
   readonly commandId: CommandId;
@@ -186,6 +187,9 @@ export const make = Effect.gen(function* () {
   const houstonSlack = yield* Effect.serviceOption(HoustonSlackStore.HoustonSlackStore);
   const houstonMergeQueue = yield* Effect.serviceOption(
     HoustonMergeQueueStore.HoustonMergeQueueStore,
+  );
+  const houstonProjectRepositories = yield* Effect.serviceOption(
+    HoustonProjectRepositoriesStore.HoustonProjectRepositoriesStore,
   );
   const projectLocks = yield* KeyedLock.make<ProjectId>();
   const workspaceLocks = yield* KeyedLock.make<string>();
@@ -551,6 +555,18 @@ export const make = Effect.gen(function* () {
         if (Option.isSome(houstonSlack)) yield* houstonSlack.value.projectRemoved(projectId);
         if (Option.isSome(houstonMergeQueue)) {
           yield* houstonMergeQueue.value.projectRemoved(projectId);
+        }
+        if (Option.isSome(houstonProjectRepositories)) {
+          yield* houstonProjectRepositories.value
+            .projectRemoved(projectId)
+            .pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning(
+                  `Failed to drop the repositories of deleted project ${projectId}.`,
+                  cause,
+                ),
+              ),
+            );
         }
       }
       yield* projectEnrichment.invalidate([existing.value.workspaceRoot]);

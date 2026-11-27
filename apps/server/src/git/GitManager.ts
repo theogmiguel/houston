@@ -1169,6 +1169,60 @@ export const make = Effect.gen(function* () {
         prLookupEpochByCwd.set(cacheKey, prLookupEpoch(cacheKey) + 1);
       }),
     );
+  interface RememberedPrLookupValue {
+    readonly readAtMs: number;
+    readonly value: string | null;
+  }
+  // Inherited by fibers forked inside one lookup, so it is cleared when the lookup ends and
+  // bypassed once invalidateStatus bumps the epoch.
+  interface SharedPrLookupGitReads {
+    open: boolean;
+    queriedProvider: boolean;
+    readonly cwd: string;
+    readonly epoch: number;
+    remotes: ReadonlyArray<string> | undefined;
+    readonly configValues: Map<string, RememberedPrLookupValue>;
+  }
+  const prLookupGitReads = Context.Reference<SharedPrLookupGitReads | null>(
+    "houston/GitManager/prLookupGitReads",
+    { defaultValue: () => null },
+  );
+  const parseRemoteNames = (stdout: string): ReadonlyArray<string> =>
+    stdout
+      .split("\n")
+      .map((name) => name.trim())
+      .filter((name) => name.length > 0);
+  const isActivePrLookupGitReads = (
+    shared: SharedPrLookupGitReads | null,
+    cwd: string,
+  ): shared is SharedPrLookupGitReads =>
+    shared !== null && shared.open && shared.cwd === cwd && prLookupEpoch(cwd) === shared.epoch;
+  const withPrLookupGitReads = <A, E, R>(effect: Effect.Effect<A, E, R>, cwd: string) =>
+    Effect.suspend(() => {
+      const shared: SharedPrLookupGitReads = {
+        open: true,
+        queriedProvider: false,
+        cwd,
+        epoch: prLookupEpoch(cwd),
+        remotes: undefined,
+        configValues: new Map(),
+      };
+      return effect.pipe(
+        Effect.provideService(prLookupGitReads, shared),
+        Effect.ensuring(
+          Effect.sync(() => {
+            shared.open = false;
+            shared.queriedProvider = false;
+            shared.remotes = undefined;
+            shared.configValues.clear();
+          }),
+        ),
+      );
+    });
+  const withActivePrLookupGitReads = <A, E, R>(cwd: string, effect: Effect.Effect<A, E, R>) =>
+    Effect.flatMap(prLookupGitReads, (shared) =>
+      isActivePrLookupGitReads(shared, cwd) ? effect : withPrLookupGitReads(effect, cwd),
+    );
   const prLookupCacheKey = (
     cwd: string,
     details: {
@@ -1243,22 +1297,27 @@ export const make = Effect.gen(function* () {
         localBranchExists: branchExists !== "0",
         ...(remoteName.length > 0 ? { remoteName } : {}),
       };
-      return Effect.gen(function* () {
-        const { headContext, lookup } = yield* resolveLookupHeadContext(cwd, details);
-        if (!lookup) {
-          return { latest: null, headContext };
-        }
-        if (
-          details.localBranchExists &&
-          (details.upstreamRef === null || headContext.remoteName === null) &&
-          (yield* isUnpublishedBranch(cwd, headContext))
-        ) {
-          return { latest: null, headContext };
-        }
-        const latest = yield* findLatestPrForHeadContext(cwd, headContext);
-        if (latest !== null) yield* noteLookupState(latest);
-        return { latest, headContext };
-      });
+      return withActivePrLookupGitReads(
+        cwd,
+        Effect.gen(function* () {
+          const { headContext, lookup } = yield* resolveLookupHeadContext(cwd, details);
+          if (!lookup) {
+            return { latest: null, headContext };
+          }
+          if (
+            details.localBranchExists &&
+            (details.upstreamRef === null || headContext.remoteName === null) &&
+            (yield* isUnpublishedBranch(cwd, headContext))
+          ) {
+            return { latest: null, headContext };
+          }
+          const shared = yield* prLookupGitReads;
+          if (isActivePrLookupGitReads(shared, cwd)) shared.queriedProvider = true;
+          const latest = yield* findLatestPrForHeadContext(cwd, headContext);
+          if (latest !== null) yield* noteLookupState(latest);
+          return { latest, headContext };
+        }),
+      );
     },
     {
       capacity: PR_LOOKUP_CACHE_CAPACITY,
@@ -1466,8 +1525,49 @@ export const make = Effect.gen(function* () {
       Effect.flatMap((cacheKey) => Cache.invalidate(remoteStatusResultCache, cacheKey)),
     );
 
+  const readLookupRemotes = (cwd: string, operation: string) =>
+    Effect.flatMap(prLookupGitReads, (shared) => {
+      if (isActivePrLookupGitReads(shared, cwd) && shared.remotes !== undefined) {
+        return Effect.succeed(shared.remotes);
+      }
+      return gitCore
+        .execute({
+          operation,
+          cwd,
+          args: ["remote"],
+          timeoutMs: 5_000,
+        })
+        .pipe(
+          Effect.map((result) => parseRemoteNames(result.stdout)),
+          Effect.tap((remoteNames) =>
+            Effect.sync(() => {
+              if (isActivePrLookupGitReads(shared, cwd)) shared.remotes = remoteNames;
+            }),
+          ),
+        );
+    });
+  const readLookupConfigValue = (cwd: string, key: string) =>
+    Effect.flatMap(prLookupGitReads, (shared) => {
+      if (isActivePrLookupGitReads(shared, cwd)) {
+        const cached = shared.configValues.get(key);
+        if (cached !== undefined) return Effect.succeed(cached.value);
+      }
+      return Clock.currentTimeMillis.pipe(
+        Effect.flatMap((readAtMs) =>
+          gitCore.readConfigValue(cwd, key).pipe(
+            Effect.tap((value) =>
+              Effect.sync(() => {
+                if (isActivePrLookupGitReads(shared, cwd)) {
+                  shared.configValues.set(key, { readAtMs, value });
+                }
+              }),
+            ),
+          ),
+        ),
+      );
+    });
   const readConfigValueNullable = (cwd: string, key: string) =>
-    gitCore.readConfigValue(cwd, key).pipe(Effect.orElseSucceed(() => null));
+    readLookupConfigValue(cwd, key).pipe(Effect.orElseSucceed(() => null));
 
   // Whether the remote's host creates change requests in the only remote. A host's tools can let
   // configuration outside the remotes name another repository; the remote itself otherwise.
@@ -1593,19 +1693,10 @@ export const make = Effect.gen(function* () {
       remoteName !== null &&
       remoteName !== "origin" &&
       originRepository.remoteUrlKey === null &&
-      (yield* gitCore
-        .execute({
-          operation: "GitManager.resolveBranchHeadContext.remotes",
-          cwd,
-          args: ["remote"],
-          timeoutMs: 5_000,
-        })
-        .pipe(
-          Effect.map(
-            (result) => result.stdout.split("\n").filter((name) => name.trim().length > 0).length,
-          ),
-          Effect.orElseSucceed(() => 0),
-        )) === 1 &&
+      (yield* readLookupRemotes(cwd, "GitManager.resolveBranchHeadContext.remotes").pipe(
+        Effect.map((remotes) => remotes.length),
+        Effect.orElseSucceed(() => 0),
+      )) === 1 &&
       (yield* targetsOnlyRemote(cwd, remoteName, remoteRepository));
     const isForeignRemote = remoteName !== null && remoteName !== "origin" && !isOnlyRemote;
 
@@ -1669,15 +1760,10 @@ export const make = Effect.gen(function* () {
   ) {
     if (branch.length === 0) return null;
     return yield* Effect.gen(function* () {
-      const remoteNames = (yield* gitCore.execute({
-        operation: "GitManager.findRemoteTrackingRemote.remotes",
+      const remoteNames = yield* readLookupRemotes(
         cwd,
-        args: ["remote"],
-        timeoutMs: 5_000,
-      })).stdout
-        .split("\n")
-        .map((name) => name.trim())
-        .filter((name) => name.length > 0);
+        "GitManager.findRemoteTrackingRemote.remotes",
+      );
       if (remoteNames.length === 0) return null;
       const refs = new Set(
         (yield* gitCore.execute({
@@ -1708,15 +1794,10 @@ export const make = Effect.gen(function* () {
     branch: string,
   ) {
     const localRef = `refs/heads/${branch}`;
-    const remoteNames = (yield* gitCore.execute({
-      operation: "GitManager.findPublishedBranchRemote.remotes",
+    const remoteNames = yield* readLookupRemotes(
       cwd,
-      args: ["remote"],
-      timeoutMs: 5_000,
-    })).stdout
-      .split("\n")
-      .map((name) => name.trim())
-      .filter((name) => name.length > 0);
+      "GitManager.findPublishedBranchRemote.remotes",
+    );
     if (remoteNames.length === 0) return null;
 
     const refs = yield* gitCore.execute({
@@ -1852,7 +1933,7 @@ export const make = Effect.gen(function* () {
     return yield* Effect.gen(function* () {
       const [configuredRemote, configuredMerge] = yield* Effect.all(
         [
-          gitCore.readConfigValue(cwd, `branch.${headContext.localBranch}.remote`),
+          readLookupConfigValue(cwd, `branch.${headContext.localBranch}.remote`),
           gitCore.readConfigValue(cwd, `branch.${headContext.localBranch}.merge`),
         ],
         { concurrency: "unbounded" },
@@ -2402,30 +2483,32 @@ export const make = Effect.gen(function* () {
     return mergeGitStatusParts(local, remote);
   });
   // Closed PR results can settle threads or remove worktrees; confirm fresh git state before persisting.
-  const prLookupGitStateByKey = new Map<
-    string,
-    { readonly readAtMs: number; readonly value: string | null }
-  >();
+  const prLookupGitStateByKey = new Map<string, RememberedPrLookupValue>();
   const rememberPrLookupGitState = Effect.fn("GitManager.rememberPrLookupGitState")(function* <E>(
     cwd: string,
     key: string,
     fresh: boolean,
     read: Effect.Effect<string | null, E>,
+    memoized?: RememberedPrLookupValue,
   ) {
     const entryKey = `${cwd}\u0000${key}`;
-    const readAtMs = yield* Clock.currentTimeMillis;
+    const now = yield* Clock.currentTimeMillis;
     const remembered = prLookupGitStateByKey.get(entryKey);
     if (
       !fresh &&
       remembered !== undefined &&
-      readAtMs - remembered.readAtMs < Duration.toMillis(PR_LOOKUP_GIT_STATE_TTL)
+      now - remembered.readAtMs < Duration.toMillis(PR_LOOKUP_GIT_STATE_TTL)
     ) {
       return remembered.value;
     }
     // invalidateStatus bumps the epoch. A read that started before a Houston git
     // action, or before a newer read finished, must not replace their state.
     const epoch = prLookupEpoch(cwd);
-    const value = yield* read;
+    const useMemoized =
+      memoized !== undefined &&
+      (remembered === undefined || remembered.readAtMs <= memoized.readAtMs);
+    const readAtMs = useMemoized ? memoized.readAtMs : now;
+    const value = useMemoized ? memoized.value : yield* read;
     const latest = prLookupGitStateByKey.get(entryKey);
     if (prLookupEpoch(cwd) !== epoch || (latest !== undefined && latest.readAtMs > readAtMs)) {
       return value;
@@ -2458,12 +2541,20 @@ export const make = Effect.gen(function* () {
       remoteNameOverride: string | undefined,
       fresh: boolean,
     ) {
+      // Reads after a provider call must re-read git to catch external remote changes.
+      const canReuseMemo = (
+        shared: SharedPrLookupGitReads | null,
+      ): shared is SharedPrLookupGitReads =>
+        isActivePrLookupGitReads(shared, cwd) && !shared.queriedProvider;
       const readConfig = (key: string) =>
-        rememberPrLookupGitState(
-          cwd,
-          `config\u0000${key}`,
-          fresh,
-          gitCore.readConfigValue(cwd, key),
+        Effect.flatMap(prLookupGitReads, (shared) =>
+          rememberPrLookupGitState(
+            cwd,
+            `config\u0000${key}`,
+            fresh,
+            gitCore.readConfigValue(cwd, key),
+            canReuseMemo(shared) ? shared.configValues.get(key) : undefined,
+          ),
         ).pipe(Effect.orElseSucceed(() => null));
       const readRemoteUrlKey = (remoteName: string | null) =>
         remoteName === null
@@ -2529,20 +2620,14 @@ export const make = Effect.gen(function* () {
   ) {
     const remember = <E>(key: string, read: Effect.Effect<string | null, E>) =>
       rememberPrLookupGitState(cacheCwd, key, options.freshGitState, read);
+    // Seed the shared remotes only when `git remote` actually runs, never from a TTL hit.
     const remotes = yield* remember(
       "remotes",
-      gitCore
-        .execute({
-          operation: "GitManager.branchPullRequest.remotes",
-          cwd: cacheCwd,
-          args: ["remote"],
-        })
-        .pipe(Effect.map((result) => result.stdout)),
+      readLookupRemotes(cacheCwd, "GitManager.branchPullRequest.remotes").pipe(
+        Effect.map((names) => names.join("\n")),
+      ),
     );
-    const remoteNames = (remotes ?? "")
-      .split("\n")
-      .map((remoteName) => remoteName.trim())
-      .filter((remoteName) => remoteName.length > 0);
+    const remoteNames = parseRemoteNames(remotes ?? "");
     const [firstRemoteName] = remoteNames;
     if (firstRemoteName === undefined) return null;
     const branchRef = yield* readPrLookupBranchRef(cacheCwd, branch, options.freshGitState);
@@ -2649,12 +2734,17 @@ export const make = Effect.gen(function* () {
     }
     if (!hasSameIdentity(cached.headContext, currentIdentity)) {
       yield* Cache.invalidate(prLookupCache, cacheKey);
-      cached = yield* getPrLookup(cacheKey);
-      const refreshedIdentity = yield* resolvePrLookupRepositoryIdentity(
-        cacheCwd,
-        branch,
-        identityRemoteName(cached.headContext),
-        true,
+      cached = yield* withPrLookupGitReads(getPrLookup(cacheKey), cacheCwd);
+      // The identity check after the provider re-reads git instead of the lookup memo.
+      const refreshedIdentity = yield* Effect.provideService(
+        resolvePrLookupRepositoryIdentity(
+          cacheCwd,
+          branch,
+          identityRemoteName(cached.headContext),
+          true,
+        ),
+        prLookupGitReads,
+        null,
       );
       if (
         !canVerifyIdentity(cached.headContext, refreshedIdentity) ||
@@ -2684,7 +2774,7 @@ export const make = Effect.gen(function* () {
       // Hosting CLIs may target upstream; the PR URL identifies its actual repository.
       repositoryKey: pullRequestRepositoryKey(latest.url),
     };
-  });
+  }, withPrLookupGitReads);
   const branchPullRequest: GitManager["Service"]["branchPullRequest"] = Effect.fn(
     "branchPullRequest",
   )(function* ({ cwd, branch }, options) {

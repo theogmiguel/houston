@@ -69,12 +69,15 @@ import * as Keybindings from "../../keybindings.ts";
 import * as KnownWorkspaces from "../../workspace/KnownWorkspaces.ts";
 import * as ManagedProjectFolders from "../../project/ManagedProjectFolders.ts";
 import * as McpAppRequests from "../../mcpApps/McpAppRequests.ts";
+import * as McpSignIn from "../mcpSignIn.ts";
 import * as ModelManifest from "../../provider/ModelManifest.ts";
 import * as OrchestrationEventStore from "../../persistence/OrchestrationEventStore.ts";
 import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as OtlpEndpointCheck from "../../observability/OtlpEndpointCheck.ts";
 import * as PairingGrantStore from "../../auth/PairingGrantStore.ts";
 import * as PeerLinkRequests from "../../peer/PeerLinkRequests.ts";
+import * as PeerLinkSearch from "../peerLinkSearch.ts";
+import * as PeerLinkPairing from "../peerLinkPairing.ts";
 import * as PeerLinks from "../../peer/PeerLinks.ts";
 import * as PortScanner from "../../preview/PortScanner.ts";
 import * as PreviewAutomationBroker from "../../mcp/PreviewAutomationBroker.ts";
@@ -132,6 +135,7 @@ import * as HoustonResumeSessions from "../resumeSessions.ts";
 import * as HoustonReviewState from "../reviewState.ts";
 import * as HoustonLayoutWorkspaces from "../layoutWorkspaces.ts";
 import * as HoustonMergeQueueService from "../mergeQueue/Service.ts";
+import * as HoustonProjectRepositories from "../projects/ProjectRepositoriesService.ts";
 import { makeMemory } from "../secrets/HoustonSecrets.ts";
 import * as HoustonIssueV1Import from "../../issue/V1Import.ts";
 import { createProject } from "../tasks/tasks.testkit.ts";
@@ -184,13 +188,17 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(HoustonIssueV1Import.HoustonIssueV1Import)({}),
   Layer.mock(HoustonLayoutWorkspaces.HoustonLayoutWorkspaceService)({}),
   Layer.mock(HoustonMergeQueueService.HoustonMergeQueueService)({}),
+  Layer.mock(HoustonProjectRepositories.HoustonProjectRepositories)({}),
   Layer.mock(KnownWorkspaces.KnownWorkspaces)({}),
   Layer.mock(McpAppRequests.McpAppRequests)({}),
+  Layer.mock(McpSignIn.McpSignIn)({}),
   Layer.mock(OrchestrationEventStore.OrchestrationEventStore)({}),
   Layer.mock(Orchestrator.OrchestratorV2)({}),
   Layer.mock(OtlpEndpointCheck.OtlpEndpointCheck)({}),
   Layer.mock(PairingGrantStore.PairingGrantStore)({}),
   Layer.mock(PeerLinks.PeerLinks)({}),
+  Layer.mock(PeerLinkSearch.PeerLinkSearch)({}),
+  Layer.mock(PeerLinkPairing.PeerLinkPairing)({}),
   Layer.mock(PeerLinkRequests.PeerLinkRequests)({}),
   Layer.mock(PortScanner.PortDiscovery)({ trackAgent: () => () => undefined }),
   Layer.mock(PreviewManager.PreviewManager)({}),

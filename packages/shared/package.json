@@ -455,6 +455,10 @@
       "types": "./src/codexAuthCallback.ts",
       "import": "./src/codexAuthCallback.ts"
     },
+    "./oauthCallback": {
+      "types": "./src/oauthCallback.ts",
+      "import": "./src/oauthCallback.ts"
+    },
     "./codexAuthHandoff": {
       "types": "./src/codexAuthHandoff.ts",
       "import": "./src/codexAuthHandoff.ts"

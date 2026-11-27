@@ -20,6 +20,7 @@ import { isUsageLimitsCommand } from "@houston-app/shared/usageLimits";
 import {
   AuthOrchestrationOperateScope,
   DEFAULT_MODEL,
+  PROVIDER_DISPLAY_NAMES,
   type EnvironmentId,
   type ModelSelection,
   type PreviewAnnotationPayload,
@@ -191,6 +192,11 @@ interface ComposerSendInput {
   readonly runtimeMode: RuntimeMode;
   readonly sendEnvMode: DraftThreadEnvMode;
   readonly startFromOrigin: boolean;
+  /** A multi-repository worktree's base branch, which may differ from the thread's branch. */
+  readonly worktreeBaseBranch?: string | null | undefined;
+  readonly worktreeStartFromOrigin?: boolean | undefined;
+  /** The project's chosen repositories for a multi-repository worktree. */
+  readonly repositoryKeys?: ReadonlyArray<string> | undefined;
   readonly localCheckoutBranchMismatch: {
     readonly threadBranch: string;
     readonly currentBranch: string;
@@ -294,6 +300,9 @@ export function useComposerSend(input: ComposerSendInput) {
     runtimeMode,
     sendEnvMode,
     startFromOrigin,
+    worktreeBaseBranch,
+    worktreeStartFromOrigin,
+    repositoryKeys,
     localCheckoutBranchMismatch,
     logicalProjectEnvironments,
     providerInstanceEntries,
@@ -349,6 +358,9 @@ export function useComposerSend(input: ComposerSendInput) {
     layoutTabId,
     persistThreadSettingsForNextTurn,
   } = input;
+  // A multi-repository worktree may start from a branch its repositories share, or from HEAD.
+  const effectiveWorktreeBaseBranch = worktreeBaseBranch ?? activeThreadBranch;
+  const effectiveWorktreeStartFromOrigin = worktreeStartFromOrigin ?? startFromOrigin;
   const linkedEnvironments = useLinkedEnvironments(environmentId);
   const handleNewThread = useNewThreadHandler();
   const navigate = useNavigate();
@@ -541,6 +553,57 @@ export function useComposerSend(input: ComposerSendInput) {
       onResumeCommand();
       return;
     }
+    // A terminal command name Houston has an action for opens that action instead of sending.
+    const terminalCommand =
+      !answeringQuestion &&
+      !directAnnotation &&
+      !queuedRunEdit.isEditing &&
+      !draftHasNonPromptContent(composerDraftTarget)
+        ? composerRef.current?.resolveTerminalCommand(promptAtSend)
+        : null;
+    if (terminalCommand) {
+      if (terminalCommand.entry.argumentHint !== undefined && terminalCommand.argument === "") {
+        const usage = `/${terminalCommand.entry.names[0]} ${terminalCommand.entry.argumentHint}`;
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: `${usage} needs a value`,
+            description: `Received "${promptAtSend.trim()}" with nothing after the name. Type ${usage}.`,
+          }),
+        );
+        return;
+      }
+      if (
+        composerRef.current?.runTerminalAction(
+          terminalCommand.entry.action,
+          terminalCommand.argument,
+        )
+      ) {
+        promptRef.current = "";
+        setComposerDraftPrompt(composerDraftTarget, "");
+        composerRef.current?.resetCursorState();
+        return;
+      }
+    }
+    // A terminal-only name no provider reports gets a local explanation, not a model turn.
+    const terminalOnlyCommand =
+      !answeringQuestion &&
+      !directAnnotation &&
+      !queuedRunEdit.isEditing &&
+      !draftHasNonPromptContent(composerDraftTarget)
+        ? composerRef.current?.resolveTerminalOnlyCommand(promptAtSend)
+        : null;
+    if (terminalOnlyCommand && sendCtx) {
+      const provider = PROVIDER_DISPLAY_NAMES[sendCtx.selectedProvider] ?? sendCtx.selectedProvider;
+      toastManager.add(
+        stackedThreadToast({
+          type: "warning",
+          title: `${provider} does not run /${terminalOnlyCommand.name}`,
+          description: `/${terminalOnlyCommand.name} only works in a terminal, so nothing was sent. Houston has no equivalent for it.`,
+        }),
+      );
+      return;
+    }
     // Where side chats are unavailable, `/side` text can still be a literal answer.
     if (sideChatDisabledReason !== null && sideChatCommand && !answeringQuestion) {
       toastManager.add(
@@ -641,7 +704,7 @@ export function useComposerSend(input: ComposerSendInput) {
       selectedProviderModels: ctxSelectedProviderModels,
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
-      interactionMode: sendInteractionMode,
+      interactionMode: composerInteractionMode,
       interactionModeEnabled: sendInteractionModeEnabled,
     } = sendCtx;
     const { images: composerImages, previewAnnotations: composerPreviewAnnotations } =
@@ -653,7 +716,7 @@ export function useComposerSend(input: ComposerSendInput) {
       });
     // A direct "send annotation" writes the draft and sends in the same tick; the reference
     // must be in the text now, not after the next render.
-    const promptForSend = directAnnotation
+    let promptForSend = directAnnotation
       ? ensureInlineContextReferences(promptRef.current, [
           previewAnnotationContextReference(directAnnotation.annotation),
         ])
@@ -866,17 +929,26 @@ export function useComposerSend(input: ComposerSendInput) {
       }
       return;
     }
+    let interactionModeOverride: "plan" | "default" | null = null;
     const standaloneSlashCommand =
       sendInteractionModeEnabled && composerHoldsOnlyText
         ? parseStandaloneComposerSlashCommand(trimmed)
         : null;
     if (standaloneSlashCommand && multipleModelSelections === null) {
-      handleInteractionModeChange(standaloneSlashCommand);
-      promptRef.current = "";
-      clearComposerDraftContent(composerDraftTarget);
-      composerRef.current?.resetCursorState();
-      return;
+      handleInteractionModeChange(standaloneSlashCommand.mode);
+      if (standaloneSlashCommand.prompt.length === 0) {
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+        return;
+      }
+      // The text after `/plan` is the message; the mode change applies to this same send.
+      interactionModeOverride = standaloneSlashCommand.mode;
+      promptForSend = standaloneSlashCommand.prompt;
+      promptRef.current = standaloneSlashCommand.prompt;
+      setComposerDraftPrompt(composerDraftTarget, standaloneSlashCommand.prompt);
     }
+    const sendInteractionMode = interactionModeOverride ?? composerInteractionMode;
     if (!hasSendableContent) {
       if (expiredTerminalContextCount > 0) {
         const toastCopy = buildExpiredTerminalContextToastCopy(
@@ -938,7 +1010,7 @@ export function useComposerSend(input: ComposerSendInput) {
       activeMessageCount,
       sendEnvMode,
       worktreePath: activeThread.worktreePath,
-      activeThreadBranch,
+      activeThreadBranch: effectiveWorktreeBaseBranch,
       resumeCompactionTokens,
       keepFullHistory,
       phase,
@@ -1249,7 +1321,9 @@ export function useComposerSend(input: ComposerSendInput) {
       await sendToMultipleModels({
         threadId: threadIdForSend,
         project: activeProject,
-        branch: activeThreadBranch!,
+        branch: effectiveWorktreeBaseBranch!,
+        startFromOrigin: effectiveWorktreeStartFromOrigin,
+        ...(repositoryKeys === undefined ? {} : { repositoryKeys }),
         selections: multipleModelSelections,
         targets: multipleTargets,
         sendSnapshot,
@@ -1406,7 +1480,8 @@ export function useComposerSend(input: ComposerSendInput) {
                     prepareWorktree: {
                       projectCwd: activeProject.workspaceRoot,
                       baseBranch: baseBranchForWorktree,
-                      ...(startFromOrigin ? { startFromOrigin: true } : {}),
+                      ...(effectiveWorktreeStartFromOrigin ? { startFromOrigin: true } : {}),
+                      ...(repositoryKeys === undefined ? {} : { repositoryKeys }),
                     },
                     runSetupScript: true,
                   }
@@ -1451,8 +1526,8 @@ export function useComposerSend(input: ComposerSendInput) {
               scopeProjectRef(activeProject.environmentId, activeProject.id),
               resolveBackgroundDraftWorkspaceOptions({
                 envMode: sendEnvMode,
-                branch: activeThreadBranch,
-                startFromOrigin,
+                branch: effectiveWorktreeBaseBranch,
+                startFromOrigin: effectiveWorktreeStartFromOrigin,
               }),
             ),
           );

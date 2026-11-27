@@ -27,6 +27,7 @@ import {
 } from "./claudeWorkflowProgress.ts";
 
 import { isWorkspaceImagePreviewPath } from "@houston-app/shared/filePreview";
+import { oauthCallbackUrl, pastedUrl } from "@houston-app/shared/oauthCallback";
 import {
   claudeReportedContextWindows,
   normalizeClaudeTurnTokenUsage,
@@ -116,6 +117,7 @@ import {
   type OrchestrationV2WorkflowRunHandles,
   type OrchestrationV2TurnItem,
   type OrchestrationV2WebSearchResult,
+  HoustonMcpSignInError,
   type ProviderApprovalDecision,
   type ProviderApprovalFullAccessOverride,
   type ProviderApprovalOption,
@@ -158,6 +160,11 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { CHECK_TIMEOUT, checkWorkingDirectory } from "../../houston/nonBlockingSpawner.ts";
 import * as TraceContext from "../../houston/observability/TraceContext.ts";
+import {
+  ClaudeSdkMethodMissingError,
+  claudeMcpSignInSdk,
+} from "../../houston/claudeMcpSignInSdk.ts";
+import { mcpSignInNoticeText, mcpSignInServerName } from "../../houston/mcpSignInNotice.ts";
 import { snapshotMcpApp } from "../../mcpApps/McpAppSnapshot.ts";
 import { resolveClaudeSdkExecutablePath } from "../../provider/Drivers/ClaudeExecutable.ts";
 import {
@@ -640,6 +647,18 @@ export interface ClaudeAgentSdkQuerySession {
     { readonly contents: ReadonlyArray<unknown> },
     ClaudeAgentSdkQueryRunnerError
   >;
+  /** Starts an MCP server's sign-in. The CLI never opens a browser; null means none is needed. */
+  readonly mcpAuthenticate: (
+    server: string,
+  ) => Effect.Effect<string | null, ClaudeAgentSdkQueryRunnerError>;
+  /** Finishes it with the address the browser was sent to; the CLI checks its state. */
+  readonly mcpSubmitOAuthCallbackUrl: (input: {
+    readonly server: string;
+    readonly callbackUrl: string;
+  }) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
+  readonly reconnectMcpServer: (
+    server: string,
+  ) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   /** Runs an MCP tool without a model turn and returns the server's raw `CallToolResult`. */
   readonly callMcpTool: (input: {
     readonly tool: string;
@@ -804,6 +823,13 @@ async function sendClaudeControlRequest(
   return Predicate.isObject(reply) ? reply.response : undefined;
 }
 
+const decodeClaudeMcpAuthenticateReply = Schema.decodeUnknownEffect(
+  Schema.Struct({
+    authUrl: Schema.optional(Schema.String),
+    requiresUserAction: Schema.optional(Schema.Boolean),
+  }),
+);
+
 const ClaudePermissionRules = Schema.Struct({
   state: Schema.Struct({
     rules: Schema.Array(
@@ -827,6 +853,35 @@ const CLAUDE_MCP_APP_CAPABILITIES = [
 ] as const;
 // Captured inline, unlike Codex's shared app-server: a slow read delays only this session's stream, and only this long.
 const CLAUDE_MCP_APP_CAPTURE_TIMEOUT = "20 seconds";
+
+const mcpSignInFailure = (
+  server: string,
+  step: "start" | "complete" | "submit" | "reconnect",
+  cause?: unknown,
+) =>
+  new HoustonMcpSignInError({
+    kind: "failed",
+    server,
+    // The runner's cause can hold the pasted address, so only a fixed line per step is kept.
+    message:
+      cause instanceof ClaudeSdkMethodMissingError
+        ? cause.message
+        : step === "start"
+          ? `Claude couldn't start the sign-in to ${server}.`
+          : step === "reconnect"
+            ? `Signed in, but ${server} didn't reconnect. Restart the agent session to use it.`
+            : step === "submit"
+              ? "Claude didn't accept that address. Paste the address your browser went to after you approved, or start again."
+              : `Claude couldn't finish the sign-in to ${server}.`,
+  });
+
+// claude.ai connectors the user never connected report needs-auth without being a sign-in this
+// session can finish.
+const isClaudeAiConnector = (name: string) => name.startsWith("claude.ai ");
+
+// The status call runs while a result is processed, so a stalled process must not hold the stream
+// for long; two seconds covers a healthy local round trip with margin.
+const CLAUDE_MCP_SIGN_IN_STATUS_TIMEOUT = Duration.seconds(2);
 
 function claudeSupportsMcpApps(capabilities: ReadonlySet<string>): boolean {
   return CLAUDE_MCP_APP_CAPABILITIES.every((capability) => capabilities.has(capability));
@@ -1533,6 +1588,29 @@ export const layerQueryRunner: Layer.Layer<
                 try: () => queryRuntime.readMcpResource(server, uri),
                 catch: (cause) => queryRunnerError(cause, "readMcpResource"),
               }),
+            mcpAuthenticate: (server) =>
+              Effect.tryPromise({
+                try: () => claudeMcpSignInSdk(queryRuntime).authenticate(server),
+                catch: (cause) => queryRunnerError(cause, "mcpAuthenticate"),
+              }).pipe(
+                Effect.flatMap(decodeClaudeMcpAuthenticateReply),
+                Effect.map((reply) =>
+                  reply.requiresUserAction === true && reply.authUrl !== undefined
+                    ? reply.authUrl
+                    : null,
+                ),
+                Effect.mapError((cause) => queryRunnerError(cause, "mcpAuthenticate")),
+              ),
+            mcpSubmitOAuthCallbackUrl: ({ server, callbackUrl }) =>
+              Effect.tryPromise({
+                try: () => claudeMcpSignInSdk(queryRuntime).submitCallbackUrl(server, callbackUrl),
+                catch: (cause) => queryRunnerError(cause, "mcpSubmitOAuthCallbackUrl"),
+              }).pipe(Effect.asVoid),
+            reconnectMcpServer: (server) =>
+              Effect.tryPromise({
+                try: () => queryRuntime.reconnectMcpServer(server),
+                catch: (cause) => queryRunnerError(cause, "reconnectMcpServer"),
+              }),
             callMcpTool: (call) =>
               Effect.tryPromise({
                 try: () =>
@@ -1806,6 +1884,8 @@ export function makeClaudeQueryOptions(input: {
   readonly resume: boolean;
   readonly resumeSessionAt?: string;
   readonly cwd: string | null;
+  /** The runtime policy's directory list; defaults to `cwd` alone. */
+  readonly directories?: readonly string[];
   readonly attachmentsDir?: string;
   readonly settings?: ClaudeSettings;
   /** The provider's Claude in Chrome switch; `--chrome` is passed only when it is on. */
@@ -1992,7 +2072,7 @@ export function makeClaudeQueryOptions(input: {
     ...(Object.keys(extraArgs).length === 0 ? {} : { extraArgs }),
   };
   const additionalDirectories = [
-    ...(input.cwd === null ? [] : [input.cwd]),
+    ...(input.directories ?? (input.cwd === null ? [] : [input.cwd])),
     ...(input.attachmentsDir === undefined ? [] : [input.attachmentsDir]),
     ...claudeLaunchArgDirectories(input.settings?.launchArgs),
   ];
@@ -4619,6 +4699,8 @@ interface ClaudeLiveQueryContext {
   // The CLI may fall back from the requested mode on its first init frame.
   openedPermissionMode: PermissionMode;
   receivedInit: boolean;
+  // Init listed a server still connecting or needing a sign-in; a result checks which it was.
+  checkMcpSignIns: boolean;
   // From system/init; feature-detects control requests such as MCP Apps.
   capabilities: ReadonlySet<string>;
   permissionMode: PermissionMode;
@@ -5247,6 +5329,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   return ProviderAdapter.ProviderAdapterV2.of({
     instanceId: adapterOptions.instanceId,
     driver: CLAUDE_PROVIDER,
+    supportsAdditionalDirectories: true,
     getCapabilities: Effect.fn("ClaudeAdapterV2.getCapabilities")(function () {
       return Effect.succeed(ClaudeProviderCapabilitiesV2);
     }),
@@ -7663,6 +7746,100 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             registry: target.toolCalls,
           });
 
+        // Keyed by native thread and server: one notice per server for as long as the session runs.
+        const announcedMcpSignIns = new Set<string>();
+        /** Claude reports a server that needs a sign-in only in its status, which settles after start. */
+        const announceMcpSignIns = Effect.fn("ClaudeAdapterV2.announceMcpSignIns")(function* (
+          liveQuery: ClaudeLiveQueryContext,
+          context: ActiveClaudeTurnContext,
+        ) {
+          if (!liveQuery.checkMcpSignIns) return;
+          const statuses = yield* liveQuery.query.mcpServerStatus.pipe(
+            Effect.timeoutOrElse({
+              duration: CLAUDE_MCP_SIGN_IN_STATUS_TIMEOUT,
+              orElse: () => Effect.succeed<ReadonlyArray<ClaudeMcpServerStatus>>([]),
+            }),
+            Effect.orElseSucceed((): ReadonlyArray<ClaudeMcpServerStatus> => []),
+          );
+          liveQuery.checkMcpSignIns = statuses.some((status) => status.status === "pending");
+          for (const status of statuses) {
+            // Every claude.ai connector the user never connected reports needs-auth too.
+            if (status.status !== "needs-auth" || status.scope === "claudeai") continue;
+            const server = mcpSignInServerName(status.name);
+            if (server === undefined) continue;
+            const key = `${liveQuery.nativeThreadId}\u0000${server}`;
+            if (announcedMcpSignIns.has(key)) continue;
+            announcedMcpSignIns.add(key);
+            const nativeItemId = `mcp-sign-in:${context.providerTurnId}:${server}`;
+            const now = yield* DateTime.now;
+            const text = mcpSignInNoticeText(server, "Claude");
+            yield* emitProviderEvent({
+              type: "turn_item.updated",
+              driver: CLAUDE_PROVIDER,
+              turnItem: {
+                id: idAllocator.derive.turnItemFromProviderItem({
+                  driver: CLAUDE_PROVIDER,
+                  nativeItemId,
+                }),
+                threadId: context.input.threadId,
+                runId: context.input.runId,
+                nodeId: context.input.rootNodeId,
+                providerThreadId: context.input.providerThread.id,
+                providerTurnId: context.providerTurnId,
+                nativeItemRef: {
+                  driver: CLAUDE_PROVIDER,
+                  nativeId: nativeItemId,
+                  strength: "weak",
+                },
+                parentItemId: null,
+                ordinal: yield* resolveItemOrdinal(context, nativeItemId),
+                type: "system_notice",
+                status: "completed",
+                title: text.title,
+                message: text.message,
+                mcpSignIn: { server },
+                startedAt: now,
+                completedAt: now,
+                updatedAt: now,
+              },
+            });
+          }
+        });
+
+        const liveQueryForThread = Effect.fn("ClaudeAdapterV2.liveQueryForThread")(function* (
+          providerThread: OrchestrationV2ProviderThread,
+        ) {
+          const liveQuery = yield* Ref.get(queryContext);
+          if (
+            liveQuery === null ||
+            liveQuery.stopping ||
+            liveQuery.nativeThreadId !== providerThread.nativeThreadRef?.nativeId
+          ) {
+            return yield* new ProviderAdapter.ProviderAdapterSessionStoppedError({
+              driver: CLAUDE_PROVIDER,
+            });
+          }
+          return liveQuery;
+        });
+
+        // What the pasted address must match, from the page `start` returned. Without it
+        // (a page that names no redirect or state) the CLI's own check is the only one.
+        const pendingMcpSignIns = new Map<string, { redirectUri: string; state: string }>();
+        const pendingMcpSignInKey = (liveQuery: ClaudeLiveQueryContext, server: string) =>
+          `${liveQuery.nativeThreadId}\u0000${server}`;
+        const expectedCallback = (authorizationUrl: string) => {
+          try {
+            const url = new URL(authorizationUrl);
+            const redirectUri = url.searchParams.get("redirect_uri");
+            const state = url.searchParams.get("state");
+            return redirectUri === null || state === null || state === ""
+              ? undefined
+              : { redirectUri, state };
+          } catch {
+            return undefined;
+          }
+        };
+
         // App requests never start a CLI; they reuse the live process that ran the tool.
         const mcpAppQuery = Effect.fn("ClaudeAdapterV2.mcpAppQuery")(function* (
           providerThread: OrchestrationV2ProviderThread,
@@ -9362,6 +9539,22 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           }
           yield* trackClaudeGoal({ nativeThreadId: liveQuery.nativeThreadId, context, message });
 
+          if (message.type === "system" && message.subtype === "local_command_output") {
+            // A command the CLI ran itself reports its output here, not as an assistant message.
+            // A compaction's output is carried by its compaction item instead.
+            if (
+              message.content.trim().length > 0 &&
+              !isCompactionCommandMessage({ role: "user", ...context.input.message })
+            ) {
+              yield* emitAssistantTextArtifacts({
+                context,
+                nativeItemId: message.uuid,
+                text: message.content,
+              });
+            }
+            return;
+          }
+
           if (message.type === "stream_event" && !message.parent_tool_use_id) {
             const event = message.event;
             const reasoning = context.reasoning;
@@ -10412,6 +10605,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           }
 
           if (message.type === "result") {
+            if (context === (yield* Ref.get(activeTurn))) {
+              yield* announceMcpSignIns(liveQuery, context);
+            }
             const contextUsage = context.streamUsage?.usage ?? context.compactionTokens;
             if (resultsReportingNewContextWindow.has(message) && contextUsage !== undefined) {
               yield* emitContextUsage(context, contextUsage);
@@ -11481,6 +11677,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             resume: shouldResume,
             ...(resumeSessionAt === undefined ? {} : { resumeSessionAt }),
             cwd: turnInput.runtimePolicy.cwd,
+            ...(turnInput.runtimePolicy.directories === undefined
+              ? {}
+              : { directories: turnInput.runtimePolicy.directories }),
             attachmentsDir,
             settings: adapterOptions.settings,
             // Delegated threads have no one typing, so they never ask for suggestions.
@@ -11571,6 +11770,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             promptEchoMode: "unknown",
             openedPermissionMode: queryOptions.permissionMode,
             receivedInit: false,
+            checkMcpSignIns: false,
             capabilities: new Set(),
             permissionMode: queryOptions.permissionMode,
             stopping: false,
@@ -11624,6 +11824,14 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                         message.permissionMode ?? context.openedPermissionMode;
                       context.receivedInit = true;
                       context.capabilities = new Set(message.capabilities ?? []);
+                    }
+                    if (message.type === "system" && message.subtype === "init") {
+                      // Recorded frames from older CLIs can omit the list.
+                      context.checkMcpSignIns = (message.mcp_servers ?? []).some(
+                        (server) =>
+                          (server.status === "pending" || server.status === "needs-auth") &&
+                          !isClaudeAiConnector(server.name),
+                      );
                     }
                     if (
                       message.type === "system" &&
@@ -12671,6 +12879,68 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                         cause,
                       }),
                   ),
+                );
+            }),
+          },
+          mcpSignIn: {
+            start: Effect.fn("ClaudeAdapterV2.mcpSignIn.start")(function* ({
+              providerThread,
+              server,
+            }) {
+              const liveQuery = yield* liveQueryForThread(providerThread);
+              const authorizationUrl = yield* liveQuery.query
+                .mcpAuthenticate(server)
+                .pipe(Effect.mapError((error) => mcpSignInFailure(server, "start", error.cause)));
+              const expected =
+                authorizationUrl === null ? undefined : expectedCallback(authorizationUrl);
+              const key = pendingMcpSignInKey(liveQuery, server);
+              if (expected === undefined) pendingMcpSignIns.delete(key);
+              else pendingMcpSignIns.set(key, expected);
+              return { authorizationUrl };
+            }),
+            complete: Effect.fn("ClaudeAdapterV2.mcpSignIn.complete")(function* ({
+              providerThread,
+              server,
+              callbackUrl,
+            }) {
+              const liveQuery = yield* liveQueryForThread(providerThread);
+              const statuses = yield* liveQuery.query.mcpServerStatus.pipe(
+                Effect.mapError((error) => mcpSignInFailure(server, "complete", error.cause)),
+              );
+              // A browser on this machine may already have finished it on Claude's own page.
+              if (statuses.find((status) => status.name === server)?.status === "connected") return;
+              const expected = pendingMcpSignIns.get(pendingMcpSignInKey(liveQuery, server));
+              const pasted = yield* Effect.try({
+                try: () =>
+                  expected === undefined
+                    ? pastedUrl(callbackUrl).toString()
+                    : oauthCallbackUrl(
+                        callbackUrl,
+                        expected.redirectUri,
+                        expected.state,
+                      ).toString(),
+                // The parser's own message can repeat the pasted address, so only ours is kept.
+                catch: (cause) =>
+                  new HoustonMcpSignInError({
+                    kind: "callback-rejected",
+                    server,
+                    message:
+                      expected === undefined
+                        ? "That isn't an address. Paste the whole address from your browser."
+                        : cause instanceof Error
+                          ? cause.message
+                          : "This redirect URL does not belong to the current sign-in.",
+                  }),
+              });
+              yield* liveQuery.query
+                .mcpSubmitOAuthCallbackUrl({ server, callbackUrl: pasted })
+                .pipe(Effect.mapError((error) => mcpSignInFailure(server, "submit", error.cause)));
+              pendingMcpSignIns.delete(pendingMcpSignInKey(liveQuery, server));
+              // The CLI reconnects after its own callback page, but not after a pasted address.
+              yield* liveQuery.query
+                .reconnectMcpServer(server)
+                .pipe(
+                  Effect.mapError((error) => mcpSignInFailure(server, "reconnect", error.cause)),
                 );
             }),
           },

@@ -168,6 +168,8 @@ interface StartThreadBootstrap {
     readonly baseBranch: string;
     readonly branch?: string;
     readonly startFromOrigin?: boolean;
+    /** The project's repositories to check out in a multi-repository task folder, by key. */
+    readonly repositoryKeys?: ReadonlyArray<string>;
   };
   readonly runSetupScript?: boolean;
 }
@@ -695,6 +697,9 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
             ...(prepareWorktree.startFromOrigin === undefined
               ? {}
               : { startFromOrigin: prepareWorktree.startFromOrigin }),
+            ...(prepareWorktree.repositoryKeys === undefined
+              ? {}
+              : { repositoryKeys: prepareWorktree.repositoryKeys }),
           }
         : bootstrap?.worktreePath
           ? {

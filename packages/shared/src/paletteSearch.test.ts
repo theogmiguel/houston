@@ -9,6 +9,7 @@ import {
   rankSearchItems,
   recordThreadOpen,
   messageMatcher,
+  messageSearchTokens,
   scoreSearchTerms,
   scoreThreadSearch,
   SEARCH_RECENCY_HALF_LIFE_MS,
@@ -741,5 +742,119 @@ describe("scoreMessageMatch", () => {
     expect(scoreMessageMatch("İ Enable fts and model", "fts")).toMatchObject({ offset: 9 });
     expect(scoreMessageMatch("İ Enable fts and model", "model")?.quality).toBe(1);
     expect(scoreMessageMatch("Trip to İstanbul", "İstanbul")).toEqual({ quality: 1, offset: 8 });
+  });
+});
+
+describe("quoted phrases in a message query", () => {
+  it("parses each balanced quoted segment as one phrase and leaves the rest as words", () => {
+    expect(messageSearchTokens('fix "side bar" now')).toEqual({
+      long: ["fix", "now", "side bar"],
+      short: [],
+      words: ["fix", "now"],
+      phrases: ["side bar"],
+    });
+    expect(messageSearchTokens('"fix sidebar"')).toEqual({
+      long: ["fix sidebar"],
+      short: [],
+      words: [],
+      phrases: ["fix sidebar"],
+    });
+    expect(messageSearchTokens("\u201cFix  Sidebar\u201d lag")).toMatchObject({
+      words: ["lag"],
+      phrases: ["fix sidebar"],
+    });
+    expect(messageSearchTokens('"a" "one two"').phrases).toEqual(["a", "one two"]);
+  });
+
+  it("treats an unbalanced quote as a literal character, not an error", () => {
+    expect(messageSearchTokens('say "hello world')).toMatchObject({
+      words: ["say", '"hello', "world"],
+      phrases: [],
+    });
+    expect(messageSearchTokens('"fix sidebar')).toMatchObject({
+      words: ['"fix', "sidebar"],
+      phrases: [],
+    });
+    // A third quote has no partner.
+    expect(messageSearchTokens('"one two" "three')).toMatchObject({
+      words: ['"three'],
+      phrases: ["one two"],
+    });
+  });
+
+  it("drops an empty phrase and still strips single quotes around a pasted query", () => {
+    expect(messageSearchTokens('"" fix')).toMatchObject({ words: ["fix"], phrases: [] });
+    expect(messageSearchTokens("'fix sidebar'")).toMatchObject({
+      words: ["fix", "sidebar"],
+      phrases: [],
+    });
+  });
+
+  it("files a phrase under short when it is too short to search, as a word is", () => {
+    expect(messageSearchTokens('"ab"')).toMatchObject({ long: [], short: ["ab"], phrases: ["ab"] });
+    expect(messageSearchTokens('sidebar "ab"')).toMatchObject({
+      long: ["sidebar"],
+      short: ["ab"],
+    });
+    // Two CJK characters count as long, a phrase of one Latin pair does not.
+    expect(messageSearchTokens('"\u4f60\u597d"').long).toEqual(["\u4f60\u597d"]);
+    expect(messageSearchTokens('"a b"').long).toEqual(["a b"]);
+  });
+
+  it("matches a phrase only as that exact wording, whatever the case or accents", () => {
+    const phrase = '"fix sidebar"';
+    const found = scoreMessageMatch("Please Fix Sidebar lag today", phrase);
+    expect(found).toEqual({ quality: 1, offset: 7 });
+    expect(scoreMessageMatch("The sidebar needs a fix", phrase)).toBeNull();
+    expect(scoreMessageMatch("fix the sidebar", phrase)).toBeNull();
+    expect(scoreMessageMatch("Fix  sidebar", phrase)).toBeNull();
+    expect(scoreMessageMatch("Le Caf\u00e9 open late", '"cafe open"')).not.toBeNull();
+    expect(scoreMessageMatch("The cafe open late", '"caf\u00e9 open"')).not.toBeNull();
+    expect(scoreMessageMatch("I don\u2019t know why", '"don\'t know"')).not.toBeNull();
+  });
+
+  it("requires every phrase and every word of a mixed query", () => {
+    const query = 'lag "fix sidebar"';
+    expect(scoreMessageMatch("Fix sidebar lag", query)).not.toBeNull();
+    expect(scoreMessageMatch("Fix sidebar slowness", query)).toBeNull();
+    expect(scoreMessageMatch("lag: sidebar fix", query)).toBeNull();
+    expect(scoreMessageMatch("a b c fix sidebar", '"a b" "fix sidebar"')).not.toBeNull();
+    expect(scoreMessageMatch("a b c sidebar fix", '"a b" "fix sidebar"')).toBeNull();
+    // The snippet starts at the phrase, not at an earlier word.
+    const text = `lag early. ${"More notes. ".repeat(10)}Then fix sidebar lag works`;
+    expect(scoreMessageMatch(text, query)?.offset).toBe(text.indexOf("fix sidebar"));
+  });
+
+  it("checks a short phrase as exact text and treats an unbalanced quote literally", () => {
+    expect(scoreMessageMatch("sidebar about", 'sidebar "ab"')).not.toBeNull();
+    expect(scoreMessageMatch("sidebar cd", 'sidebar "ab"')).toBeNull();
+    expect(scoreMessageMatch("only short", '"ab"')).toBeNull();
+    expect(scoreMessageMatch("fix sidebar", '"fix sidebar')).toBeNull();
+    expect(scoreMessageMatch('he said "fix sidebar', '"fix sidebar')).not.toBeNull();
+  });
+
+  it("matches a quoted query in a title as its words, ignoring the quotes", () => {
+    expect(rankTitles('lag "fix sidebar"', [thread("Fix sidebar lag")])).toEqual([
+      "Fix sidebar lag",
+    ]);
+    expect(rankTitles('"fix sidebar"', [thread("Fix sidebar")])).toEqual(["Fix sidebar"]);
+  });
+
+  it("highlights a phrase as one adjacent range and never its words apart", () => {
+    const text = "Fix the sidebar, then fix sidebar lag";
+    expect(findSearchTokenRanges(text, '"fix sidebar"')).toEqual([{ start: 22, end: 33 }]);
+    expect(findSearchTokenRanges("Sidebar, then fix", '"fix sidebar"')).toEqual([]);
+    expect(findSearchTokenRanges(text, '"fix sidebar" lag')).toEqual([
+      { start: 22, end: 33 },
+      { start: 34, end: 37 },
+    ]);
+    expect(findSearchTokenRanges("Le Caf\u00e9 open", '"cafe open"')).toEqual([
+      { start: 3, end: 12 },
+    ]);
+    // A phrase and a word beside it stay separate runs.
+    expect(findSearchTokenRanges("fix sidebar lag", '"fix sidebar" lag')).toEqual([
+      { start: 0, end: 11 },
+      { start: 12, end: 15 },
+    ]);
   });
 });

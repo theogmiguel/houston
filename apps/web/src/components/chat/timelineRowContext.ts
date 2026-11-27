@@ -106,6 +106,9 @@ export interface TimelineRowSharedState {
   openPullRequest: (event: MouseEvent<HTMLElement>, url: string) => void;
   onToggleWorkGroup: (groupId: string, anchorKey: string) => void;
   onToggleWorkEntry: (anchorKey: string, collapsed: boolean) => void;
+  /** Sign-in times by MCP server in this timeline; a time covers notices raised before it. */
+  mcpSignInTimes: ReadonlyMap<string, string>;
+  onMcpSignedIn: (server: string, signedInAt: string) => void;
   onCancelWorktreeSetup: (() => void) | null;
   retryableWorkspacePreparationRunIds: ReadonlySet<RunId>;
   onRetryWorkspacePreparation: ((runId: RunId) => void) | null;

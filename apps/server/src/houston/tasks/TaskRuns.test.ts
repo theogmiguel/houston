@@ -245,6 +245,31 @@ describe("start launches a worktree thread with the brief", () => {
   );
 });
 
+describe("tasks stay single-repository", () => {
+  it.effect(
+    "refuses to start a task run in a project that covers several repositories",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeRunsHarness("several-repositories");
+        yield* runWith(
+          harness,
+          (context) =>
+            Effect.gen(function* () {
+              const task = yield* context.readyTask("Fix it");
+              const refused = yield* refusal(context.runs.start({ id: task.key }));
+              assert.include(refused.message, "covers 2 repositories");
+              assert.include(refused.message, "tasks stay single-repository");
+              const detail = yield* detailOf(context, task);
+              const run = newestRun(detail);
+              assert.strictEqual(run.state, "failed");
+            }),
+          { repositoryCount: 2 },
+        );
+      }),
+    TIMEOUT,
+  );
+});
+
 describe("a slack-filed task's brief fences the request and carries its images", () => {
   it.effect(
     "the note, one closing marker, the requester's line inside, and two image attachments",

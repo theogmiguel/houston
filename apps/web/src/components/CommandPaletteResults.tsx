@@ -27,6 +27,7 @@ import {
   CommandListVirtualized,
   CommandShortcut,
 } from "./ui/command";
+import { CommandResultAction, CommandResultMachine } from "./ui/command-result-meta";
 import { getVirtualizedScrollFadeClassName } from "./ui/scroll-area";
 import { ProjectPinButton } from "./ProjectPinButton";
 import { SearchMatchHintLine, ThreadSearchMatchExcerpt } from "./ThreadSearchMatch";
@@ -289,6 +290,10 @@ function DisabledCommandPaletteResultRow(props: {
         </span>
       )}
       {props.item.titleTrailingContent}
+      {props.item.machineLabel ? <CommandResultMachine label={props.item.machineLabel} /> : null}
+      {props.item.linkedActionLabel ? (
+        <CommandResultAction>{props.item.linkedActionLabel}</CommandResultAction>
+      ) : null}
     </div>
   );
 }
@@ -354,6 +359,10 @@ function CommandPaletteResultRow(props: {
         </span>
       )}
       {props.item.titleTrailingContent}
+      {props.item.machineLabel ? <CommandResultMachine label={props.item.machineLabel} /> : null}
+      {props.item.linkedActionLabel ? (
+        <CommandResultAction>{props.item.linkedActionLabel}</CommandResultAction>
+      ) : null}
       {props.item.kind === "action" && props.item.pin ? (
         <ProjectPinButton
           name={props.item.pin.name}

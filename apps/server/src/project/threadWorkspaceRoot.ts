@@ -1,9 +1,9 @@
 import type { ThreadId } from "@houston-app/contracts";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "./ProjectService.ts";
+import { repositoriesOf } from "./threadRepositories.ts";
 
 /** The directory a thread works in, or undefined when the thread or its project is gone. */
 export const threadWorkspaceRoot = Effect.fn("threadWorkspaceRoot")(
@@ -12,8 +12,8 @@ export const threadWorkspaceRoot = Effect.fn("threadWorkspaceRoot")(
     const projects = yield* ProjectService.ProjectService;
     const shell = yield* threads.getThreadShell(threadId);
     if (shell === null) return undefined;
-    if (shell.worktreePath) return shell.worktreePath;
-    return Option.getOrUndefined(yield* projects.getById(shell.projectId))?.workspaceRoot;
+    const [repository] = yield* repositoriesOf(shell, projects.getById(shell.projectId));
+    return repository.root;
   },
   Effect.orElseSucceed(() => undefined),
 );

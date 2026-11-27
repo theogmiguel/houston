@@ -122,23 +122,30 @@ function shortTokenSpellings(token: string): ReadonlyArray<string> {
 }
 
 /**
- * The SQL inputs for a message search, or null when the query has no token
- * long enough to search. Tokens of three or more characters go to the
- * trigram index as quoted phrases; shorter ones, and every token when the
- * index cannot serve the query, are checked as substrings of the hits.
+ * The SQL inputs for a message search, or null when no term is long enough to
+ * search. Terms of three or more characters go to the trigram index, a quoted
+ * phrase as one string, and are then checked as exact substrings; shorter terms
+ * only narrow. A phrase under three characters alone searches nothing.
  */
 function buildMessageSearch(
   query: string,
   hasIndex: boolean,
 ): Omit<typeof SearchRequest.Type, "projectId" | "excludedThreadIds"> | null {
-  const { long, short } = messageSearchTokens(query);
+  const { long, short, phrases } = messageSearchTokens(query);
   if (long.length === 0) return null;
   // Two-character CJK words are too short for trigrams.
   const indexed = hasIndex && long.every((token) => Array.from(token).length >= 3);
   const narrowing = short.filter((token) => !NON_ASCII.test(token));
+  // The index folds every script, but lower() folds ASCII only: a non-ASCII phrase the index
+  // already matched exactly is not checked again, which could drop a case variant.
+  const exactPhrases = phrases.filter(
+    (phrase) => long.includes(phrase) && !(indexed && NON_ASCII.test(phrase)),
+  );
   return {
     match: indexed ? long.map((token) => `"${token.replaceAll('"', '""')}"`).join(" ") : null,
-    substrings: indexed ? narrowing : [...long, ...narrowing],
+    substrings: indexed
+      ? [...new Set([...narrowing, ...exactPhrases])]
+      : [...new Set([...long, ...narrowing])],
     shortSpellings: short.filter((token) => NON_ASCII.test(token)).map(shortTokenSpellings),
   };
 }
@@ -244,9 +251,13 @@ export const messageHitsQuery = (
       -- Answers to an agent's question show inside its question card, where
       -- neither find nor a jump can reach them.
       AND messages.message_id NOT LIKE 'async-answer:%'
+      -- The index stores curly apostrophes straight, so a phrase is checked on the text as stored.
       AND NOT EXISTS (
         SELECT 1 FROM json_each(${substrings}) AS token
-        WHERE instr(lower(json_extract(messages.payload_json, '$.text')), token.value) = 0
+        WHERE instr(
+          replace(replace(lower(json_extract(messages.payload_json, '$.text')), '’', ''''), '‘', ''''),
+          token.value
+        ) = 0
       )
       AND NOT EXISTS (
         SELECT 1 FROM json_each(${shortSpellings}) AS token

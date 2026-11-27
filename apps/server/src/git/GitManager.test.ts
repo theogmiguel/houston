@@ -1,3 +1,4 @@
+// @effect-diagnostics globalConsoleInEffect:off - the benchmark prints its readings for the run log.
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import { SourceControlProviderKind } from "@houston-app/contracts";
@@ -1177,6 +1178,69 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       // A new PR from the reused branch shows on the next host query.
       yield* TestClock.adjust("5 minutes");
       expect((yield* lookup)?.number).toBe(2);
+    }),
+  );
+
+  it.effect("branch PR lookup reads each git config key at most once per lookup", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("houston-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+      yield* runGit(repoDir, ["remote", "set-head", "origin", "main"]);
+      yield* configureVisibleRemoteUrlWithLocalRewrite(
+        repoDir,
+        "origin",
+        "https://github.com/pingdotgg/codething-mvp.git",
+        remoteDir,
+      );
+      yield* runGit(repoDir, ["checkout", "-b", "feature/no-upstream"]);
+      NodeFS.writeFileSync(NodePath.join(repoDir, "feature.txt"), "local work\n");
+      yield* runGit(repoDir, ["add", "feature.txt"]);
+      yield* runGit(repoDir, ["commit", "-m", "Local work"]);
+
+      const gitCommands: string[] = [];
+      const { manager, providerCalls } = yield* makeManager({ gitCommands });
+
+      const countsFor = (command: string) =>
+        gitCommands.filter((entry) => entry === command).length;
+
+      // The branch is unpublished, so the lookup never queries the provider and every read is a
+      // pre-provider read that one lookup-scoped memo can serve once.
+      expect(
+        yield* manager.branchPullRequest({ cwd: repoDir, branch: "feature/no-upstream" }),
+      ).toBeNull();
+      expect(providerCalls).toHaveLength(0);
+      console.info(
+        `unpublished branch PR lookup: ${gitCommands.length} git processes, remote ` +
+          `${countsFor("remote")}, branch remote ` +
+          `${countsFor("config --get branch.feature/no-upstream.remote")}, origin url ` +
+          `${countsFor("config --get remote.origin.url")}: ${gitCommands.join("; ")}`,
+      );
+      expect(countsFor("remote")).toBe(1);
+      expect(countsFor("config --get branch.feature/no-upstream.remote")).toBe(1);
+      expect(countsFor("config --get remote.origin.url")).toBe(1);
+      expect(gitCommands.length).toBeLessThanOrEqual(9);
+
+      // A refresh lookup reads fresh but still shares one read per key.
+      gitCommands.length = 0;
+      expect(
+        yield* manager.branchPullRequest(
+          { cwd: repoDir, branch: "feature/no-upstream" },
+          { refresh: true },
+        ),
+      ).toBeNull();
+      console.info(
+        `refresh branch PR lookup: ${gitCommands.length} git processes, remote ` +
+          `${countsFor("remote")}, branch remote ` +
+          `${countsFor("config --get branch.feature/no-upstream.remote")}, origin url ` +
+          `${countsFor("config --get remote.origin.url")}: ${gitCommands.join("; ")}`,
+      );
+      expect(countsFor("remote")).toBe(1);
+      expect(countsFor("config --get branch.feature/no-upstream.remote")).toBe(1);
+      expect(countsFor("config --get remote.origin.url")).toBe(1);
+      expect(gitCommands.length).toBeLessThanOrEqual(9);
     }),
   );
 

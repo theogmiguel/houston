@@ -43,6 +43,82 @@ or lint. Add them under **Settings ▸ Projects ▸ Actions** or from the thread
 An action with **Stop this action when the thread settles** turned on stops its terminal and child
 processes when the thread settles; an agent's own shell command is never attached to it.
 
+## Projects that cover several repositories
+
+A project can cover more than one git repository. A thread in the project folder works in every
+repository the project covers. A **worktree** thread of such a project gets a **task folder**: one
+worktree for each repository you choose, each at the same relative path it has in the project, all
+on the thread's branch name. Repositories you do not choose are not in the task folder. A project
+with one repository keeps the single worktree it had. Git status, diff, commit and push act on one
+repository at a time.
+
+When you start a new worktree thread, the composer's repository control replaces the base-branch
+picker. It lists the project's repositories with **All** and **None**, searches once there are more
+than eight, and starts with none chosen in that case; otherwise it starts with all of them. The
+control also takes a base branch: each repository starts from that branch when it has one, and
+otherwise from its own current branch or `HEAD`. A repository with no commit or one Houston cannot
+read is disabled with the reason. Your choice is remembered for the project, and repositories that
+leave the project drop out of it. Choose at least one repository to send: otherwise the message
+waits with the reason. A repository with no commit is skipped when the worktree is created, and the
+thread is refused when none can be checked out.
+
+Removing the thread removes every worktree in its task folder. A file that exists only in the task
+folder is kept, and the folder's removal is reported with the path it kept. The project repositories
+and their branches are left as they were.
+
+Houston discovers repositories inside the project folder:
+
+- the project folder itself when its `.git` is a directory, keyed `.`;
+- each direct child folder that is a repository;
+- one further level inside a direct child that is a plain folder, keyed `<child>/<repository>`;
+- the submodules a discovered repository's `.gitmodules` lists, each as its own repository.
+
+Names starting with `.` and `node_modules` are skipped. A folder counts as a repository only
+when `.git` is a directory, so linked worktrees and submodules on disk are not discovered by
+walking; submodules come from `.gitmodules` instead. Discovery reads at most 4,096 directory
+entries and resolves at most 64 repositories, with at most 32 submodules from one repository.
+A bound that trips keeps what was found so far and is reported with the bound, the value at it
+and the repository requested.
+
+**Tracked folders** add a repository that lives elsewhere on disk. Houston stores the absolute
+folder with the project. Add, review and remove them in **Settings ▸ Projects ▸ <project> ▸
+Repositories**, which also lists the repositories found in the project folder and the ignore
+patterns saved with the project. A tracked folder must exist, be a git repository, lie outside
+the project folder, and not already be tracked. A project tracks at most 128 folders; past that, adding one is refused with
+the limit, the current count and the folder.
+
+Both the repo's `houston.json` and the project's stored list can **ignore** repositories. Each
+entry is a glob matched against a repository's path relative to the project folder and against
+its folder name; `*` stays within one path segment, `**` crosses them, and `?` matches one
+character. `houston.json` spells the field `ignoreRepositories`, for example:
+
+```json
+{
+  "ignoreRepositories": ["legacy", "vendor/**"]
+}
+```
+
+The project's own repository and tracked folders are never ignored. The same **Repositories**
+section edits the patterns saved with the project; patterns from `houston.json` stay listed and
+ignored.
+
+Claude can read every repository directory of a project-folder thread. Every other provider
+(Codex and Antigravity among them) cannot read directories outside the thread's `cwd`: when any
+repository lies outside it, such as a tracked folder, it refuses to start a turn, naming the
+provider and the folders it cannot reach. A repository at or below the thread's `cwd` needs
+nothing extra.
+
+In a thread that covers several repositories, Changes groups each repository's files under its
+own heading and offers a repository picker. The first view lists every repository; commits need
+one repository picked. The thread details card lists the repositories, and its git actions act on
+the selected one and name it in the action. A repository that cannot be read is reported with its
+path and the reason, and its git actions are refused.
+
+Several repositories share one branch name, but they are separate histories: there is no commit
+across repositories. The merge queue and tasks stay single-repository and refuse a thread whose
+task folder holds several repositories. A rewind restores every repository in the task folder; if
+one cannot be restored, the others are still restored and the failure names the repository.
+
 ## Creating a thread
 
 Choose **New thread** from a workspace's **+** or from the **New thread** action of an empty
@@ -160,6 +236,15 @@ It covers **On hold** and **Closed** threads, which expand while a search runs. 
 `Up` move the highlighted result, `Enter` opens it, and `Escape` clears the search. A
 message match opens its thread with Find on the matched text. With no match the rail says
 **No threads found**.
+
+Message search finds every word you type, in any order. Put words in double quotes to match
+that exact wording: `"fix sidebar"` finds only messages that contain `fix sidebar` as written,
+ignoring case, and the match is highlighted as one run. A quoted phrase can sit beside plain
+words (`lag "fix sidebar"`), and each phrase must match. Whitespace inside a phrase is one
+space, so a phrase does not match across a line break. A phrase shorter than three
+characters is not searched alone and only narrows the results of a longer word or phrase. A
+quote without a partner is an ordinary character. Titles, branches and pull requests ignore
+the quotes.
 
 ### Rows
 
@@ -306,6 +391,30 @@ text you typed; clicking the card opens the quoted response. The agent receives 
 reference material, not as instructions.
 
 `Ctrl+S` stashes the current prompt. The stash menu restores or deletes a stashed prompt.
+
+Terminal command names open the Houston action that does the same, whether you pick the name
+from the `/` menu or type it and press Enter. A name the selected provider reports stays with
+the provider, and an entry appears only when the thread supports it.
+
+| Terminal name                             | Opens in Houston                           |
+| ----------------------------------------- | ------------------------------------------ |
+| `/rewind`, `/checkpoint`, `/undo`         | Rewind to before your last message         |
+| `/context`                                | Context window usage                       |
+| `/effort`                                 | Reasoning effort picker                    |
+| `/fast`                                   | Response speed picker                      |
+| `/permissions`                            | Permission mode picker                     |
+| `/diff`                                   | Changes panel                              |
+| `/fork`, `/branch`                        | A new thread forked at the latest response |
+| `/rename <title>`                         | Rename this thread                         |
+| `/theme`                                  | Appearance settings                        |
+| `/keybindings`                            | Keyboard shortcut settings                 |
+| `/config`                                 | Settings                                   |
+| `/status`, `/login`, `/logout`, `/doctor` | Provider status, health and sign-in        |
+| `/voice`                                  | Voice settings                             |
+
+`/terminal-setup`, `/statusline`, `/exit`, `/quit`, `/ide`, `/tui` and `/vim` work only in a
+terminal. Houston says so in place and sends nothing. `/plan <text>` enters plan mode and
+sends `<text>` as the message.
 
 **Plan mode** is optional and off by default (**Settings ▸ Labs**). Enter it with `/plan` or
 `Shift+Tab`; a **Plan** chip then shows in the composer and returns to the default mode when

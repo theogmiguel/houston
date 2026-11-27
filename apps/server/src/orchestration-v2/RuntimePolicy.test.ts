@@ -11,6 +11,8 @@ import {
 } from "@houston-app/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 
@@ -19,6 +21,8 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
+import { ThreadRepositoryResolver } from "../project/threadRepositories.ts";
+import * as HoustonTaskFolders from "../houston/worktrees/TaskFolders.ts";
 
 const projectId = ProjectId.make("project:runtime-policy");
 const providerInstanceId = ProviderInstanceId.make("codex");
@@ -63,17 +67,22 @@ function makeThread(input: {
 }
 
 const grokInstanceId = ProviderInstanceId.make("grok");
+const claudeInstanceId = ProviderInstanceId.make("claude");
 const supportedRuntimeModesByInstance = new Map<ProviderInstanceId, ReadonlyArray<RuntimeMode>>([
   [grokInstanceId, ["approval-required", "auto", "full-access"]],
 ]);
 const providerInstanceFor = (instanceId: ProviderInstanceId) =>
   ({
+    driverKind: instanceId,
+    orchestrationAdapter: {
+      supportsAdditionalDirectories: instanceId === claudeInstanceId,
+    },
     snapshot: {
       getSnapshot: Effect.succeed({
         supportedRuntimeModes: supportedRuntimeModesByInstance.get(instanceId),
       } as ServerProvider),
     },
-  }) as ProviderInstance;
+  }) as unknown as ProviderInstance;
 
 const layerWithPolicy = (policy?: ManagedPolicySummary) =>
   RuntimePolicy.layerFromProjectStore.pipe(
@@ -131,6 +140,78 @@ it.layer(layerTest)("RuntimePolicyV2", (it) => {
       assert.equal(yield* modeFor(providerInstanceId, "auto-accept-edits"), "auto-accept-edits");
     }),
   );
+
+  it.effect("names the repositories a thread works in, cwd first", () =>
+    Effect.gen(function* () {
+      const policy = yield* RuntimePolicy.RuntimePolicyV2;
+      const now = yield* DateTime.now;
+      const fromProject = yield* policy.resolve({
+        thread: makeThread({ now, worktreePath: null }),
+        modelSelection,
+      });
+      assert.equal(fromProject.cwd, "/project-root");
+      assert.deepStrictEqual(fromProject.directories, ["/project-root"]);
+
+      const fromWorktree = yield* policy.resolve({
+        thread: makeThread({ now, worktreePath: "/work/wt/feature" }),
+        modelSelection,
+      });
+      assert.equal(fromWorktree.cwd, "/work/wt/feature");
+      assert.deepStrictEqual(fromWorktree.directories, ["/work/wt/feature"]);
+    }),
+  );
+});
+
+const multiRepositoryList = {
+  list: () =>
+    Effect.succeed([
+      { key: ".", root: "/project-root", branch: null, baseBranch: null },
+      { key: "sibling", root: "/project-root/sibling", branch: null, baseBranch: null },
+      { key: "../tracked", root: "/tracked", branch: null, baseBranch: null },
+    ]),
+};
+
+it.layer(
+  layerWithPolicy().pipe(
+    Layer.provideMerge(Layer.succeed(ThreadRepositoryResolver, multiRepositoryList)),
+  ),
+)("RuntimePolicyV2 over several repositories", (it) => {
+  it.effect("refuses a provider that cannot read directories outside its cwd", () =>
+    Effect.gen(function* () {
+      const policy = yield* RuntimePolicy.RuntimePolicyV2;
+      const now = yield* DateTime.now;
+      const exit = yield* Effect.exit(
+        policy.resolve({
+          thread: makeThread({ now, worktreePath: null }),
+          modelSelection,
+        }),
+      );
+      assert.isTrue(exit._tag === "Failure");
+      const error = exit._tag === "Failure" ? Exit.findErrorOption(exit) : Option.none();
+      assert.isTrue(Option.isSome(error));
+      const failure = Option.getOrThrow(error);
+      assert.equal(failure._tag, "RuntimePolicyUnreachableRepositoriesError");
+      assert.include(failure.message, "codex");
+      assert.include(failure.message, "/tracked");
+    }),
+  );
+
+  it.effect("lets a provider that reads additional directories see every repository", () =>
+    Effect.gen(function* () {
+      const policy = yield* RuntimePolicy.RuntimePolicyV2;
+      const now = yield* DateTime.now;
+      const resolved = yield* policy.resolve({
+        thread: makeThread({ now, worktreePath: null }),
+        modelSelection: { instanceId: claudeInstanceId, model: "claude-test" },
+      });
+      assert.equal(resolved.cwd, "/project-root");
+      assert.deepStrictEqual(resolved.directories, [
+        "/project-root",
+        "/project-root/sibling",
+        "/tracked",
+      ]);
+    }),
+  );
 });
 
 it.layer(
@@ -162,3 +243,64 @@ it.layer(
     }),
   );
 });
+
+const taskFolderRecord = {
+  folderPath: "/work/task",
+  realPath: "/work/task",
+  projectId,
+  projectRoot: "/project-root",
+  repositories: [
+    {
+      key: "api",
+      projectPath: "/project-root/api",
+      worktreePath: "/work/task/api",
+      branch: "houston/worktree-task",
+    },
+    {
+      key: "web",
+      projectPath: "/project-root/web",
+      worktreePath: "/work/task/web",
+      branch: "houston/worktree-task",
+    },
+  ],
+  createdAt: "2026-01-01T00:00:00.000Z",
+};
+
+const layerTaskFolders = Layer.succeed(HoustonTaskFolders.HoustonTaskFolders, {
+  plan: () => Effect.succeed(null),
+  create: () => Effect.die("unused"),
+  find: (folderPath: string) =>
+    Effect.succeed(folderPath === taskFolderRecord.folderPath ? taskFolderRecord : null),
+  remove: () => Effect.die("unused"),
+} as unknown as HoustonTaskFolders.HoustonTaskFoldersShape);
+
+it.layer(layerWithPolicy().pipe(Layer.provideMerge(layerTaskFolders)))(
+  "RuntimePolicyV2 in a task folder",
+  (it) => {
+    it.effect("resolves the task folder as cwd for a provider that cannot read extra folders", () =>
+      Effect.gen(function* () {
+        const policy = yield* RuntimePolicy.RuntimePolicyV2;
+        const now = yield* DateTime.now;
+        const resolved = yield* policy.resolve({
+          thread: makeThread({ now, worktreePath: taskFolderRecord.folderPath }),
+          modelSelection,
+        });
+        assert.equal(resolved.cwd, "/work/task");
+        assert.deepStrictEqual(resolved.directories, ["/work/task/api", "/work/task/web"]);
+      }),
+    );
+
+    it.effect("resolves it the same way for a provider that reads extra folders", () =>
+      Effect.gen(function* () {
+        const policy = yield* RuntimePolicy.RuntimePolicyV2;
+        const now = yield* DateTime.now;
+        const resolved = yield* policy.resolve({
+          thread: makeThread({ now, worktreePath: taskFolderRecord.folderPath }),
+          modelSelection: { instanceId: claudeInstanceId, model: "test-model" },
+        });
+        assert.equal(resolved.cwd, "/work/task");
+        assert.deepStrictEqual(resolved.directories, ["/work/task/api", "/work/task/web"]);
+      }),
+    );
+  },
+);

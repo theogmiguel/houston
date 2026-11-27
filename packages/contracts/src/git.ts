@@ -398,6 +398,17 @@ const VcsStatusLocalShape = {
       deletions: NonNegativeInt,
     }),
   ),
+  /**
+   * Present when the repository reads local status only because the server's concurrent remote
+   * poller limit was reached; names the limit, the poller count at the request and the repository.
+   */
+  remotePollingLimit: Schema.optional(
+    Schema.Struct({
+      limit: Schema.Int,
+      count: Schema.Int,
+      repository: Schema.String,
+    }),
+  ),
   // Present only while a merge, rebase or cherry-pick is paused in the checkout.
   pausedOperation: Schema.optional(
     Schema.Struct({

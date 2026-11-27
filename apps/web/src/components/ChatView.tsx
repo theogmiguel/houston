@@ -250,6 +250,12 @@ import { collectInlineContextIds } from "../lib/composerContextReferences";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useKnownTerminalSessions, useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useEnvironmentQueryRefresh } from "../state/query";
+import { useWorktreeRepositories } from "../state/worktreeRepositories";
+import {
+  repositoryKeysForSend,
+  resolveRepositoryBaseBranch,
+  worktreeRepositorySendBlockReason,
+} from "../state/worktreeRepositories.logic";
 import { useEnvironmentScope } from "~/state/session";
 import {
   primaryServerAvailableEditorsAtom,
@@ -281,7 +287,12 @@ import {
   useThreadRunStop,
 } from "../state/entities";
 import { useEnvironmentShellHasSnapshot } from "../state/shell";
-import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import {
+  ChatComposer,
+  type ChatComposerHandle,
+  type ExternalTerminalCommandActions,
+} from "./chat/ChatComposer";
+import { useThreadActions } from "../hooks/useThreadActions";
 import { resolveThreadStatusPill } from "./Sidebar.logic";
 import { DraftHeroHeadline, DraftHeroProjectContext } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialogHost, openExpandedImagePreview } from "./chat/ExpandedImageDialog";
@@ -2420,6 +2431,27 @@ export default function ChatView(props: ChatViewProps) {
     requestedEnvMode: envMode,
     isGitRepo,
   });
+  const worktreeRepositories = useWorktreeRepositories({
+    environmentId: activeProject?.environmentId ?? environmentId,
+    projectId: activeProject?.id ?? null,
+    enabled: sendEnvMode === "worktree" && activeProject !== null && isGitRepo,
+  });
+  const usesRepositoryChoiceForWorktree =
+    sendEnvMode === "worktree" && worktreeRepositories.usesRepositoryChoice;
+  const repositoryBaseBranch = resolveRepositoryBaseBranch({
+    typed: activeThreadBranch,
+    fallback: gitStatusQuery.data?.refName ?? null,
+  });
+  const repositorySendBlockReason = worktreeRepositorySendBlockReason({
+    usesRepositoryChoice: usesRepositoryChoiceForWorktree,
+    selectedCount: worktreeRepositories.selectedKeys.length,
+  });
+  const repositoryKeys = repositoryKeysForSend({
+    usesRepositoryChoice: usesRepositoryChoiceForWorktree,
+    selectedKeys: worktreeRepositories.selectedKeys,
+  });
+  const worktreeStartFromOrigin =
+    usesRepositoryChoiceForWorktree && repositoryBaseBranch === "HEAD" ? false : startFromOrigin;
   const localCheckoutBranchMismatch = isServerThread
     ? resolveLocalCheckoutBranchMismatch({
         effectiveEnvMode: envMode,
@@ -3122,6 +3154,24 @@ export default function ChatView(props: ChatViewProps) {
       : (timelineMessages.findLast(
           (message) => message.role === "user" && message.runId === latestTurnDiff.runId,
         ) ?? null);
+  const latestForkRunId =
+    timelineMessages.findLast(
+      (message) =>
+        message.role === "assistant" &&
+        message.runId !== null &&
+        message.runId !== activeRunningTurnId,
+    )?.runId ?? null;
+  const forkCapabilities =
+    serverProjection?.providerSessions.findLast(
+      (session) => session.providerInstanceId === activeProviderInstanceId,
+    )?.capabilities ?? null;
+  const canForkFromLatestRun =
+    forkCapabilities === null ||
+    (forkCapabilities.threads.canForkThread &&
+      forkCapabilities.threads.canForkFromTurn &&
+      forkCapabilities.identity.nativeThreadIds === "strong") ||
+    forkCapabilities.context.supportsFullThreadHandoff;
+  const { renameThread } = useThreadActions();
   const changedFilesBar =
     latestTurnDiff === null ||
     latestTurnDiff.status !== "ready" ||
@@ -3142,6 +3192,57 @@ export default function ChatView(props: ChatViewProps) {
           onKeep: () => setDismissedChangeRuns((runs) => new Set(runs).add(latestTurnDiff.runId)),
           disabled: isRevertingCheckpoint || phase === "running",
         };
+  const terminalCommandActions: ExternalTerminalCommandActions = {
+    ...(supportsConversationRollback &&
+    canOperateThread &&
+    !activeEnvironmentUnavailable &&
+    phase !== "running" &&
+    !isSendBusy &&
+    !isRevertingCheckpoint &&
+    latestTurnDiff !== null &&
+    latestTurnUserMessage !== null &&
+    availableRevertTurnCounts.has(latestTurnDiff.checkpointTurnCount)
+      ? {
+          rewind: () =>
+            onRevertTimelineTurnStable(
+              latestTurnDiff.checkpointTurnCount,
+              latestTurnUserMessage.id,
+            ),
+        }
+      : {}),
+    ...(isServerThread && isGitRepo ? { diff: () => openChangesFromThreadPanelStable() } : {}),
+    ...(isServerThread &&
+    !embedded &&
+    canOperateThread &&
+    !activeEnvironmentUnavailable &&
+    canForkFromLatestRun &&
+    latestForkRunId !== null
+      ? {
+          fork: () => {
+            void onForkFromRunStable({ sourceThreadId: threadId, runId: latestForkRunId });
+          },
+        }
+      : {}),
+    ...(isServerThread && !embedded && canOperateThread && activeThreadRef
+      ? {
+          rename: (title: string) => {
+            void renameThread(activeThreadRef, title);
+          },
+        }
+      : {}),
+    "settings-appearance": () => void navigate({ to: "/settings/appearance" }),
+    "settings-keybindings": () => void navigate({ to: "/settings/keybindings" }),
+    "settings-general": () => void navigate({ to: "/settings/general" }),
+    "settings-voice": () => void navigate({ to: "/settings/voice" }),
+    "settings-providers": () =>
+      void navigate({
+        to: "/settings/providers",
+        search: {
+          environmentId,
+          ...(activeProviderInstanceId === null ? {} : { instanceId: activeProviderInstanceId }),
+        },
+      }),
+  };
   // The run the composer's pending-changes row already summarises; its turn card folds to a header.
   const changeBannerRunId = changedFilesBar === null ? null : (latestTurnDiff?.runId ?? null);
   const timelinePendingApprovals =
@@ -3269,6 +3370,9 @@ export default function ChatView(props: ChatViewProps) {
     runtimeMode,
     sendEnvMode,
     startFromOrigin,
+    worktreeBaseBranch: usesRepositoryChoiceForWorktree ? repositoryBaseBranch : null,
+    worktreeStartFromOrigin: usesRepositoryChoiceForWorktree ? worktreeStartFromOrigin : undefined,
+    repositoryKeys,
     localCheckoutBranchMismatch,
     logicalProjectEnvironments,
     providerInstanceEntries,
@@ -4108,9 +4212,11 @@ export default function ChatView(props: ChatViewProps) {
                                         ? t("Sending feedback")
                                         : threadDetailLoading
                                           ? t("Messages loading")
-                                          : worktreeSetupBlocksSend
-                                            ? t("Preparing worktree")
-                                            : projectCloneSendBlockReason
+                                          : repositorySendBlockReason
+                                            ? t(repositorySendBlockReason)
+                                            : worktreeSetupBlocksSend
+                                              ? t("Preparing worktree")
+                                              : projectCloneSendBlockReason
                               }
                               isPreparingWorktree={isPreparingWorktree && !sendQueuesBehindSetup}
                               bannerItems={isDraftHeroState ? [] : shownInlineComposerBanners}
@@ -4143,6 +4249,7 @@ export default function ChatView(props: ChatViewProps) {
                               onResumeCommand={
                                 activeProject !== null ? handleOpenResumeSessionStable : undefined
                               }
+                              terminalCommandActions={terminalCommandActions}
                               environmentUnavailable={activeEnvironmentUnavailableState}
                               activePendingApproval={activePendingApproval}
                               pendingApprovals={pendingApprovals}

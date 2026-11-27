@@ -189,3 +189,73 @@ it(
   },
   APP_BOOT_TEST_TIMEOUT_MS,
 );
+
+it(
+  "blocks a multi-repository worktree send until a repository is chosen",
+  async () => {
+    using _environment = installFakeEnvironment(PROJECT_THREADS, {
+      repositories: [
+        {
+          key: "api",
+          root: "/workspace/render/api",
+          branch: "main",
+          detached: false,
+          kind: "discovered",
+        },
+        {
+          key: "web",
+          root: "/workspace/render/web",
+          branch: "main",
+          detached: false,
+          kind: "discovered",
+        },
+      ],
+      vcsStatus: {
+        local: {
+          isRepo: true,
+          hasPrimaryRemote: false,
+          isDefaultRef: true,
+          refName: "main",
+          hasWorkingTreeChanges: false,
+          workingTree: { files: [], insertions: 0, deletions: 0 },
+        },
+        remote: null,
+      },
+    });
+    await using _viewport = await viewport(1440);
+    __setClientSettingsForTests({
+      ...DEFAULT_CLIENT_SETTINGS,
+      onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+    });
+    loadEmptyLayout();
+    const draftId = DraftId.make("draft-worktree-repositories");
+    useComposerDraftStore
+      .getState()
+      .setProjectDraftThreadId(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID), draftId, {
+        threadId: ThreadId.make("thread-worktree-repositories"),
+        envMode: "worktree",
+        branch: "main",
+      });
+    const router = getRouter(createMemoryHistory({ initialEntries: [`/draft/${draftId}`] }));
+    await router.load();
+    await using _app = await render(<AppRoot router={router} />, { router: false });
+    await expect
+      .element(page.getByRole("button", { name: "Repositories: All repositories" }))
+      .toBeVisible();
+
+    await userEvent.click(
+      page.getByRole("button", { name: "Repositories: All repositories" }).element(),
+    );
+    await userEvent.click(page.getByRole("button", { name: "None" }).element());
+    await userEvent.keyboard("{Escape}");
+
+    await expect
+      .element(
+        page.getByRole("button", {
+          name: "Choose at least one repository to start a worktree.",
+        }),
+      )
+      .toBeDisabled();
+  },
+  APP_BOOT_TEST_TIMEOUT_MS,
+);

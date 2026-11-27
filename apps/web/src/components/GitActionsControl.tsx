@@ -120,6 +120,16 @@ import { getSourceControlPresentation, sourceControlIcon } from "~/sourceControl
 import { sourceControlClients } from "@houston-app/client-runtime/source-control-clients";
 import { formatDiffCount } from "@houston-app/client-runtime/diff-count";
 import { useOpenLink } from "~/browser/useOpenLink";
+import { RepositorySelectionRow } from "./ui/repository-list";
+import { selectActiveRepositoryKey, useActiveRepositoryStore } from "~/state/activeRepository";
+import { useThreadRepositories } from "~/state/threadRepositories";
+import {
+  branchLabel,
+  isMultiRepository,
+  repositoryErrorMessage,
+  resolveGitActionsRepository,
+  type RepositoryChoice,
+} from "./diffs/multiRepositoryChanges.logic";
 
 interface GitActionsControlProps {
   gitCwd: string | null;
@@ -941,8 +951,57 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
   );
 }
 
+function RepositoryActionRow({
+  environmentId,
+  repository,
+  selected,
+  onSelect,
+}: {
+  readonly environmentId: ScopedThreadRef["environmentId"];
+  readonly repository: RepositoryChoice;
+  readonly selected: boolean;
+  readonly onSelect: () => void;
+}) {
+  const statusQuery = useEnvironmentQuery(
+    repository.error === undefined
+      ? vcsEnvironment.status({ environmentId, input: { cwd: repository.root } })
+      : null,
+  );
+  const worktreesQuery = useEnvironmentQuery(
+    repository.detached && repository.error === undefined
+      ? vcsEnvironment.listWorktrees({ environmentId, input: { cwd: repository.root } })
+      : null,
+  );
+  const headSha =
+    worktreesQuery.data?.worktrees.find((worktree) => worktree.path === repository.root)?.headSha ??
+    worktreesQuery.data?.worktrees.find((worktree) => worktree.isDetached)?.headSha ??
+    null;
+  const status = statusQuery.data;
+  const branch = branchLabel(
+    {
+      branch: status?.refName ?? repository.branch,
+      detached: repository.detached || status?.refName === null,
+    },
+    headSha,
+  );
+  const totals = resolveChangesTotals(status);
+  return (
+    <RepositorySelectionRow
+      name={repository.name}
+      branch={branch}
+      insertions={totals?.insertions ?? 0}
+      deletions={totals?.deletions ?? 0}
+      selected={selected}
+      {...(repository.error === undefined
+        ? {}
+        : { errorMessage: repositoryErrorMessage(repository) })}
+      onSelect={onSelect}
+    />
+  );
+}
+
 export default function GitActionsControl({
-  gitCwd,
+  gitCwd: requestedGitCwd,
   activeThreadRef,
   draftId,
   compact = false,
@@ -957,7 +1016,6 @@ export default function GitActionsControl({
     "thread branch metadata update",
   );
   const activeEnvironmentId = activeThreadRef?.environmentId ?? null;
-  const successScopeKey = `${activeEnvironmentId ?? ""}\u0000${gitCwd ?? ""}`;
   const canWriteSourceControl = useEnvironmentScope(
     activeEnvironmentId,
     AuthSourceControlWriteScope,
@@ -985,6 +1043,28 @@ export default function GitActionsControl({
   const isLocalDraftThread = activeDraftThread !== null && activeServerThread === null;
   const canChangeThreadBranch = canWriteSourceControl && (isLocalDraftThread || canOperateThread);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
+  const activeRepositoryKey = useActiveRepositoryStore((state) =>
+    selectActiveRepositoryKey(state, activeThreadRef),
+  );
+  const repositoryProjectId = activeServerThread?.projectId ?? activeDraftThread?.projectId ?? null;
+  const threadWorktreePath =
+    activeServerThread?.worktreePath ?? activeDraftThread?.worktreePath ?? null;
+  const threadRepositories = useThreadRepositories(
+    activeThreadRef && repositoryProjectId
+      ? {
+          environmentId: activeThreadRef.environmentId,
+          projectId: repositoryProjectId,
+          worktreePath: threadWorktreePath,
+        }
+      : null,
+  );
+  const repositories = threadRepositories.repositories;
+  const multiRepository = isMultiRepository(repositories);
+  const selectedRepository = multiRepository
+    ? resolveGitActionsRepository(repositories, activeRepositoryKey)
+    : null;
+  const gitCwd = selectedRepository?.root ?? requestedGitCwd;
+  const successScopeKey = `${activeEnvironmentId ?? ""}\u0000${gitCwd ?? ""}`;
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [isAmendDialog, setIsAmendDialog] = useState(false);
   const [dialogCommitMessage, setDialogCommitMessage] = useState("");
@@ -1043,6 +1123,9 @@ export default function GitActionsControl({
   });
 
   const syncThreadBranchAfterGitAction = (result: GitRunStackedActionResult) => {
+    // A multi-repository thread's branch belongs to its first repository; another repository's
+    // action must not rewrite it.
+    if (multiRepository && selectedRepository?.key !== repositories[0]?.key) return;
     const branchUpdate = resolveThreadBranchUpdate(result);
     if (!branchUpdate) {
       return;
@@ -1135,11 +1218,20 @@ export default function GitActionsControl({
     isDefaultRef,
     hasPrimaryRemote,
   );
-  const quickActionDisabledReason = !canWriteSourceControl
-    ? "This connection cannot change source control."
-    : quickAction.disabled
-      ? (quickAction.hint ?? "This action is currently unavailable.")
-      : null;
+  const repositoryUnavailableReason = selectedRepository?.error
+    ? repositoryErrorMessage(selectedRepository)
+    : null;
+  const quickActionDisabledReason =
+    repositoryUnavailableReason ??
+    (!canWriteSourceControl
+      ? "This connection cannot change source control."
+      : quickAction.disabled
+        ? (quickAction.hint ?? "This action is currently unavailable.")
+        : null);
+  const repositoryActionLabel =
+    multiRepository && selectedRepository
+      ? `${quickAction.label} · ${selectedRepository.name}`
+      : quickAction.label;
   const gitActionProgress = resolveGitActionProgressPresentation(vcsActionState);
   // A fresh draft or a thread with no turns hides commit, push, and diff rows until there is work.
   const quietEmptyDraft =
@@ -1617,6 +1709,23 @@ export default function GitActionsControl({
 
   return (
     <>
+      {multiRepository && activeThreadRef && activeEnvironmentId !== null ? (
+        <div role="group" aria-label="Repositories" className="flex flex-col gap-px pb-1">
+          {repositories.map((repository) => (
+            <RepositoryActionRow
+              key={repository.key}
+              environmentId={activeEnvironmentId}
+              repository={repository}
+              selected={selectedRepository?.key === repository.key}
+              onSelect={() => {
+                useActiveRepositoryStore
+                  .getState()
+                  .setActiveRepository(activeThreadRef, repository.key);
+              }}
+            />
+          ))}
+        </div>
+      ) : null}
       {!showActions ? null : !isRepo ? (
         <ThreadDetailsControl
           size="xs"
@@ -1682,7 +1791,7 @@ export default function GitActionsControl({
                   className={THREAD_DETAILS_PANEL_ICON_CLASS}
                 />
                 <span className={cn("truncate", THREAD_DETAILS_PANEL_LABEL_CLASS)}>
-                  {quickAction.label}
+                  {repositoryActionLabel}
                 </span>
               </PopoverTrigger>
               <PopoverPopup tooltipStyle side="bottom" align="start">
@@ -1704,7 +1813,7 @@ export default function GitActionsControl({
                 className={THREAD_DETAILS_PANEL_ICON_CLASS}
               />
               <span className={cn("truncate", THREAD_DETAILS_PANEL_LABEL_CLASS)}>
-                {quickAction.label}
+                {repositoryActionLabel}
               </span>
             </ThreadDetailsControl>
           )}

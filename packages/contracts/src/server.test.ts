@@ -132,3 +132,18 @@ describe("OtlpEndpointCheckInput", () => {
     }
   });
 });
+
+describe("ServerProvider slash command aliases", () => {
+  const withCommands = (slashCommands: ReadonlyArray<unknown>) =>
+    decodeServerProvider({ ...baseProviderSnapshot, models: [], slashCommands });
+
+  it("decodes a snapshot written before commands carried aliases", () => {
+    const provider = withCommands([{ name: "usage", description: "Show usage" }]);
+    expect(provider.slashCommands[0]?.aliases).toBeUndefined();
+  });
+
+  it("decodes the aliases a command carries", () => {
+    const provider = withCommands([{ name: "usage", aliases: ["cost", "stats"] }]);
+    expect(provider.slashCommands[0]?.aliases).toEqual(["cost", "stats"]);
+  });
+});
