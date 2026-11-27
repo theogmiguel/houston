@@ -42,6 +42,12 @@ folder** opens the setting that chooses the fallback directory.
 explicit **Create folder … and add it** row, kept apart from the results and showing the
 absolute path it would create.
 
+An agent in a thread without **Full access** can ask to add a folder instead of being
+refused. The request names the folder and why the agent needs it; approving registers that one
+folder without changing the thread's access, and declining or stopping the run adds nothing.
+When the folder or a new project's repository does not exist yet, the request says it will be
+created.
+
 **Project settings** in a thread's action menu
 or the command palette renames a project, pins it, archives it and changes its checkouts.
 Pinned projects lead the list.

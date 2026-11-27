@@ -1,7 +1,15 @@
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
 
-export function StartTruncatedPath({ path, className }: { path: string; className?: string }) {
+export function StartTruncatedPath({
+  path,
+  detail,
+  className,
+}: {
+  path: string;
+  detail?: string | undefined;
+  className?: string;
+}) {
   return (
     <Tooltip>
       <TooltipTrigger
@@ -19,6 +27,7 @@ export function StartTruncatedPath({ path, className }: { path: string; classNam
       </TooltipTrigger>
       <TooltipPopup side="top" variant="code">
         {path}
+        {detail === undefined ? null : <span>{detail}</span>}
       </TooltipPopup>
     </Tooltip>
   );
