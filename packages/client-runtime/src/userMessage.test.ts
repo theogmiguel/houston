@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@houston-app/shared/composerContextReferences";
-import { resolveUserMessagePresentation } from "./userMessage.ts";
+import { compactionReasonTitle, resolveUserMessagePresentation } from "./userMessage.ts";
 
 describe("resolveUserMessagePresentation", () => {
   const legacyText = "[Triggered by schedule task: Daily audit]\n\nCheck for crashes.\n";
@@ -64,5 +64,15 @@ describe("resolveUserMessagePresentation", () => {
         scheduledTaskId: "task:daily-audit",
       });
     }
+  });
+});
+
+describe("compactionReasonTitle", () => {
+  it("names the reason and the context size before compacting", () => {
+    expect(compactionReasonTitle("beforeCacheExpires", 268_000)).toBe(
+      "Compacted before the cache expired: 268K",
+    );
+    expect(compactionReasonTitle("onReturn", 241_000)).toBe("Compacted when you returned: 241K");
+    expect(compactionReasonTitle("onRequest", undefined)).toBe("Compacted on request");
   });
 });

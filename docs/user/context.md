@@ -33,6 +33,22 @@ Houston does not read Claude's managed policy settings or the `autoCompactEnable
 Claude's global configuration file, so a window or an off switch set there is not shown.
 Other providers choose their own compaction point and Houston does not show it.
 
+## Why a thread compacted
+
+The timeline's compaction row says why the thread compacted and how large its context was
+before it did:
+
+- **Compacted before the cache expired** — Houston compacted an idle thread before its
+  provider prompt cache expired.
+- **Compacted when you returned** — Houston compacted before sending the message you left
+  while the thread was idle.
+- **Compacted on request** — you asked for the compaction.
+- **Compacted by Claude at … (inside a long turn)** — Claude compacted on its own during a
+  turn. The size is the context it held before compacting; Claude reports when it ran without
+  Houston asking.
+
+Threads compacted before Houston recorded a reason keep their earlier wording.
+
 ## Coverage
 
 The card appears for providers that report token usage. A provider that reports no context

@@ -7,6 +7,7 @@ import { collectAssistantCitations } from "@houston-app/shared/assistantCitation
 import { shallow } from "zustand/vanilla/shallow";
 import { claudeResumeCompactionAge } from "@houston-app/shared/claudeCompaction";
 import {
+  compactionReasonTitle,
   IDLE_COMPACTING_LABELS,
   IDLE_COMPACTION_TITLES,
 } from "@houston-app/client-runtime/user-message";
@@ -51,7 +52,9 @@ import {
   idleCompactionOf,
   isCompactionCommandMessage,
   type MessageId,
+  type OrchestrationV2CompactionReason,
   type OrchestrationV2IdleCompaction,
+  type OrchestrationV2TurnItem,
   type WorktreeSetupSnapshot,
   type OrchestrationV2ProjectedTurnItem,
   type RunAttemptId,
@@ -77,6 +80,8 @@ import {
   formatSearchToolLabel,
 } from "@houston-app/shared/toolActivity";
 import { isWindowsAbsolutePath } from "@houston-app/shared/path";
+import { formatTokens } from "@houston-app/shared/usageFormat";
+import { formatProviderDriverKindLabel } from "../../providerModels";
 
 const WHITESPACE_RUN = /\s+/g;
 const LINE_BREAK_CHAR = /[\r\n]/;
@@ -1075,6 +1080,33 @@ function timelineEntryEnd(entry: TimelineEntry): string {
   return entry.kind === "message" ? entry.message.updatedAt : entry.createdAt;
 }
 
+function providerCompactionTitle(
+  compaction: Extract<OrchestrationV2TurnItem, { type: "compaction" }>,
+): string | undefined {
+  if (compaction.trigger === undefined) return undefined;
+  const before =
+    compaction.beforeTokenCount === undefined
+      ? undefined
+      : formatTokens(compaction.beforeTokenCount);
+  if (compaction.trigger === "manual") {
+    return before === undefined ? "Compacted on request" : `Compacted on request: ${before}`;
+  }
+  const provider =
+    compaction.driver === null
+      ? undefined
+      : String(compaction.driver) === "claudeAgent"
+        ? "Claude"
+        : formatProviderDriverKindLabel(compaction.driver);
+  if (provider === undefined) {
+    return before === undefined
+      ? "Compacted inside a long turn"
+      : `Compacted at ${before} (inside a long turn)`;
+  }
+  return before === undefined
+    ? `Compacted by ${provider} inside a long turn`
+    : `Compacted by ${provider} at ${before} (inside a long turn)`;
+}
+
 function timelineEntryIsCompaction(entry: TimelineEntry): boolean {
   return entry.kind === "work" && entry.entry.sourceActivityKind === "context-compaction";
 }
@@ -1970,6 +2002,7 @@ export function deriveMessagesTimelineRows(input: {
   // and working indicator, from the moment the turn starts. Likewise an answered "compact before
   // continuing?" question folds into the compaction it asked for.
   const compactionRuns = new Map<RunId, OrchestrationV2IdleCompaction | undefined>();
+  const compactionReasons = new Map<RunId, OrchestrationV2CompactionReason>();
   const compactedRunIds = new Set<RunId>();
   const pendingResumeCompactionAgeByRunId = new Map<RunId, string>();
   const resumeCompactionAgeByEntryId = new Map<string, string>();
@@ -1980,6 +2013,9 @@ export function deriveMessagesTimelineRows(input: {
       isCompactionCommandMessage(entry.message)
     ) {
       compactionRuns.set(entry.message.runId, idleCompactionOf(entry.message));
+      if (entry.message.compactionReason !== undefined) {
+        compactionReasons.set(entry.message.runId, entry.message.compactionReason);
+      }
     } else if (entry.kind === "work" && entry.entry.runId) {
       if (timelineEntryIsCompaction(entry)) {
         compactedRunIds.add(entry.entry.runId);
@@ -1995,12 +2031,36 @@ export function deriveMessagesTimelineRows(input: {
       if (age !== null) pendingResumeCompactionAgeByRunId.set(entry.entry.runId, age);
     }
   }
-  const compactionTitle = (runId: RunId | null | undefined, entryId: string) => {
-    if (runId == null) return undefined;
-    const reason = compactionRuns.get(runId);
-    if (reason !== undefined) return IDLE_COMPACTION_TITLES[reason];
-    const age = resumeCompactionAgeByEntryId.get(entryId);
-    return age ? `Context compacted after ${age} idle` : undefined;
+  const compactionTitle = (
+    runId: RunId | null | undefined,
+    entryId: string,
+    compaction: Extract<OrchestrationV2TurnItem, { type: "compaction" }> | undefined,
+  ): { readonly title?: string; readonly replacesTokenCounts: boolean } => {
+    if (runId != null) {
+      const reason = compactionReasons.get(runId);
+      if (reason !== undefined) {
+        return {
+          title: compactionReasonTitle(reason, compaction?.beforeTokenCount),
+          replacesTokenCounts: true,
+        };
+      }
+      if (compactionRuns.has(runId)) {
+        const idle = compactionRuns.get(runId);
+        if (idle !== undefined) {
+          return { title: IDLE_COMPACTION_TITLES[idle], replacesTokenCounts: false };
+        }
+      }
+      const age = resumeCompactionAgeByEntryId.get(entryId);
+      if (age !== undefined) {
+        return { title: `Context compacted after ${age} idle`, replacesTokenCounts: false };
+      }
+      // A legacy `/compact` someone asked for keeps its older title, never a provider one.
+      if (compactionRuns.has(runId)) return { replacesTokenCounts: false };
+    }
+    const title = compaction === undefined ? undefined : providerCompactionTitle(compaction);
+    return title === undefined
+      ? { replacesTokenCounts: false }
+      : { title, replacesTokenCounts: true };
   };
   const activeCompactionEntry = timelineEntries.find(
     (entry): entry is Extract<TimelineEntry, { kind: "work" }> =>
@@ -2191,11 +2251,16 @@ export function deriveMessagesTimelineRows(input: {
       )
         continue;
       const compaction = timelineEntry.entry.structuredPayload;
+      const compactionItem = compaction?.type === "compaction" ? compaction : undefined;
       const compactionRunId = timelineEntry.entry.runId;
-      const title = compactionTitle(compactionRunId, timelineEntry.id);
+      const { title, replacesTokenCounts } = compactionTitle(
+        compactionRunId,
+        timelineEntry.id,
+        compactionItem,
+      );
       const reason = compactionRunId == null ? undefined : compactionRuns.get(compactionRunId);
-      const failed = compaction?.type === "compaction" && compaction.status === "failed";
-      const failure = failed ? compaction.summary?.trim() || undefined : undefined;
+      const failed = compactionItem?.status === "failed";
+      const failure = failed ? compactionItem.summary?.trim() || undefined : undefined;
       nextRows.push({
         kind: "context-compaction",
         id: timelineEntry.id,
@@ -2205,7 +2270,9 @@ export function deriveMessagesTimelineRows(input: {
         createdAt: timelineEntry.createdAt,
         label: active && reason ? IDLE_COMPACTING_LABELS[reason] : timelineEntry.entry.label,
         tokenCounts:
-          compaction?.type === "compaction" ? contextCompactionTokenCounts(compaction) : null,
+          replacesTokenCounts || compactionItem === undefined
+            ? null
+            : contextCompactionTokenCounts(compactionItem),
         active,
       });
       continue;
@@ -2455,10 +2522,14 @@ export function deriveMessagesTimelineRows(input: {
       if (!compactedRunIds.has(compactionRunId) && compactionRunId !== activeCompactionRunId) {
         const pending = compactionRunId === runningCompactionRunId;
         const reason = compactionRuns.get(compactionRunId);
+        const compactionReason = compactionReasons.get(compactionRunId);
         nextRows.push({
           kind: "context-compaction",
           id: `compaction:${compactionRunId}`,
           createdAt: timelineEntry.createdAt,
+          ...(!pending && compactionReason !== undefined
+            ? { title: compactionReasonTitle(compactionReason, undefined) }
+            : {}),
           label: pending
             ? reason
               ? IDLE_COMPACTING_LABELS[reason]

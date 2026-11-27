@@ -9852,6 +9852,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 title: "Context compacted",
                 completedAt: compaction.completedAt ?? now,
                 updatedAt: now,
+                trigger: message.compact_metadata.trigger,
                 ...(message.compact_metadata.pre_tokens === undefined
                   ? {}
                   : { beforeTokenCount: message.compact_metadata.pre_tokens }),

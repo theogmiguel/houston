@@ -183,6 +183,7 @@ export interface StartThreadTurnInput extends ThreadCommandInput {
     readonly attachments: ReadonlyArray<ChatAttachment | UploadChatAttachment>;
     readonly context?: import("@houston-app/contracts").OrchestrationMessageContext;
     readonly idleCompaction?: import("@houston-app/contracts").OrchestrationV2IdleCompaction;
+    readonly compactionReason?: import("@houston-app/contracts").OrchestrationV2CompactionReason;
   };
   readonly modelSelection?: ModelSelection;
   readonly titleSeed?: string;
@@ -753,6 +754,9 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
       ...(input.message.idleCompaction === undefined
         ? {}
         : { idleCompaction: input.message.idleCompaction }),
+      ...(input.message.compactionReason === undefined
+        ? {}
+        : { compactionReason: input.message.compactionReason }),
       attachments,
       ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
       ...(input.sourceProposedPlan === undefined
@@ -783,6 +787,9 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
     ...(input.message.idleCompaction === undefined
       ? {}
       : { idleCompaction: input.message.idleCompaction }),
+    ...(input.message.compactionReason === undefined
+      ? {}
+      : { compactionReason: input.message.compactionReason }),
     attachments,
     ...(input.titleSeed === undefined ? {} : { titleSeed: input.titleSeed }),
     ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),

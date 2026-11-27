@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 import { CommandId, NodeId, RunAttemptId, RunId, TrimmedNonEmptyString } from "./index.ts";
 import {
   compactCommandInstructions,
+  compactionReasonForMessage,
   isCompactCommandText,
   isCompactionCommandMessage,
   isDelegatedAppThread,
@@ -741,5 +742,39 @@ describe("compaction command text", () => {
         attachments: [{}],
       }),
     ).toBe(false);
+  });
+});
+
+describe("compaction reason", () => {
+  it("keeps a typed reason and maps Houston's older idle field", () => {
+    expect(
+      compactionReasonForMessage({
+        createdBy: "user",
+        text: "/compact",
+        compactionReason: "onRequest",
+      }),
+    ).toBe("onRequest");
+    expect(
+      compactionReasonForMessage({
+        createdBy: "agent",
+        text: "/compact",
+        idleCompaction: "beforeCacheExpires",
+      }),
+    ).toBe("beforeCacheExpires");
+    expect(
+      compactionReasonForMessage({ createdBy: "user", text: "/compact", attachments: [] }),
+    ).toBe("onRequest");
+  });
+
+  it("leaves a message from before the field without a reason", () => {
+    expect(
+      compactionReasonForMessage({
+        createdBy: "user",
+        text: "/compact keep the risks",
+        attachments: [{}],
+      }),
+    ).toBeUndefined();
+    expect(compactionReasonForMessage({ createdBy: "agent", text: "/compact" })).toBeUndefined();
+    expect(compactionReasonForMessage({ createdBy: "user", text: "Continue" })).toBeUndefined();
   });
 });

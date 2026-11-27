@@ -8096,6 +8096,75 @@ it.layer(layerSharedApplicationDataPlaneTest)("visited projection", (it) => {
       assert.deepEqual(revisited!.lastVisitedAt, turnCompletedAt);
     }),
   );
+  it.effect("stores the typed reason on a compaction message and its user turn item", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const projects = yield* ProjectService.ProjectService;
+      const cases = [
+        { name: "manual", fields: {}, expected: "onRequest" },
+        {
+          name: "idle",
+          fields: { idleCompaction: "beforeCacheExpires" as const },
+          expected: "beforeCacheExpires",
+        },
+        {
+          name: "return",
+          fields: { idleCompaction: "onReturn" as const },
+          expected: "onReturn",
+        },
+      ];
+      for (const testCase of cases) {
+        const threadId = ThreadId.make(`runtime-layer-compaction-reason-${testCase.name}`);
+        const projectId = ProjectId.make(`${threadId}:project`);
+        const messageId = MessageId.make(`${threadId}:message`);
+        yield* projects.create({
+          commandId: CommandId.make(`${threadId}:project-create`),
+          projectId,
+          title: "Compaction reason",
+          workspaceRoot: `/tmp/${threadId}`,
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make(`${threadId}:create`),
+          threadId,
+          projectId,
+          title: "Compaction reason",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+        });
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make(`${threadId}:dispatch`),
+          threadId,
+          messageId,
+          text: "/compact",
+          attachments: [],
+          modelSelection,
+          dispatchMode: { type: "start_immediately" },
+          ...testCase.fields,
+        });
+        const projection = yield* orchestrator.getThreadProjection(threadId);
+        assert.equal(
+          projection.messages.find((message) => message.id === messageId)?.compactionReason,
+          testCase.expected,
+        );
+        const turnItem = projection.turnItems.find(
+          (item) => item.type === "user_message" && item.messageId === messageId,
+        );
+        assert.equal(
+          turnItem?.type === "user_message" ? turnItem.compactionReason : undefined,
+          testCase.expected,
+        );
+      }
+    }),
+  );
 });
 
 it.layer(Layer.fresh(layerSharedApplicationDataPlaneTest))("thread opens", (it) => {

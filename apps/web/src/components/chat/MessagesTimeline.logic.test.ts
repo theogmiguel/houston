@@ -710,6 +710,96 @@ describe("deriveMessagesTimelineRows", () => {
     }
   });
 
+  it("names each compaction reason with its size, and Claude's own trigger", () => {
+    const fixture = makeStreamingTimelineFixture();
+    const [history0, history1, history2, liveUser, , liveAssistant] = fixture.visibleTurnItems;
+    if (liveUser?.item.type !== "user_message" || liveAssistant?.item.type !== "assistant_message")
+      throw new Error("Expected live fixture items");
+    const prompt = (
+      fields: Partial<
+        Pick<Extract<OrchestrationV2TurnItem, { type: "user_message" }>, "compactionReason">
+      >,
+    ): OrchestrationV2ProjectedTurnItem => ({
+      ...liveUser,
+      item: {
+        ...liveUser.item,
+        text: "/compact",
+        ...fields,
+      } as Extract<OrchestrationV2TurnItem, { type: "user_message" }>,
+    });
+    const compacted = (
+      fields: Partial<Extract<OrchestrationV2TurnItem, { type: "compaction" }>>,
+    ): OrchestrationV2ProjectedTurnItem => ({
+      ...liveAssistant,
+      item: {
+        ...liveAssistant.item,
+        type: "compaction" as const,
+        status: "completed" as const,
+        beforeTokenCount: 899_000,
+        afterTokenCount: 19_000,
+        driver: null,
+        ...fields,
+      } as Extract<OrchestrationV2TurnItem, { type: "compaction" }>,
+    });
+    const rowsFor = (visibleTurnItems: OrchestrationV2ProjectedTurnItem[]) =>
+      deriveMessagesTimelineRows({
+        timelineEntries: deriveTimelineEntriesFromVisibleTurnItems({
+          visibleTurnItems: [history0!, history1!, history2!, ...visibleTurnItems],
+          optimisticMessages: [],
+        }),
+        isWorking: false,
+        latestRun: {
+          runId: fixture.runId,
+          status: "completed",
+          startedAt: fixture.time(5),
+          completedAt: fixture.time(9),
+        },
+        turnDiffSummaries: [],
+        supportsConversationRollback: false,
+      });
+    const rowFor = (visibleTurnItems: OrchestrationV2ProjectedTurnItem[]) =>
+      rowsFor(visibleTurnItems).find((row) => row.kind === "context-compaction");
+
+    for (const [reason, title] of [
+      ["beforeCacheExpires", "Compacted before the cache expired: 899K"],
+      ["onReturn", "Compacted when you returned: 899K"],
+      ["onRequest", "Compacted on request: 899K"],
+    ] as const) {
+      expect(
+        rowFor([prompt({ compactionReason: reason }), compacted({ trigger: "manual" })]),
+      ).toMatchObject({ title, tokenCounts: null });
+    }
+
+    expect(
+      rowFor([
+        { ...liveUser, item: { ...liveUser.item, text: "Continue" } },
+        compacted({
+          driver: ProviderDriverKind.make("claudeAgent"),
+          trigger: "auto",
+          beforeTokenCount: 967_000,
+        }),
+      ]),
+    ).toMatchObject({
+      title: "Compacted by Claude at 967K (inside a long turn)",
+      tokenCounts: null,
+    });
+    expect(
+      rowFor([
+        { ...liveUser, item: { ...liveUser.item, text: "Continue" } },
+        compacted({ trigger: "manual", beforeTokenCount: 967_000 }),
+      ]),
+    ).toMatchObject({ title: "Compacted on request: 967K", tokenCounts: null });
+    expect(
+      rowFor([
+        { ...liveUser, item: { ...liveUser.item, text: "Continue" } },
+        compacted({ trigger: "auto", beforeTokenCount: 967_000 }),
+      ]),
+    ).toMatchObject({
+      title: "Compacted at 967K (inside a long turn)",
+      tokenCounts: null,
+    });
+  });
+
   it.each(["/compact", "Continue"])(
     "keeps a completed compaction divider visible while other settled work folds for %s",
     (promptText) => {

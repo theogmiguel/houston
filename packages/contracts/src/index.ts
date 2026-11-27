@@ -30,6 +30,7 @@ export * from "./settings.ts";
 export * from "./houston/providerSuggestions.ts";
 export * from "./houston/previewBrowserHost.ts";
 export * from "./houston/runStart.ts";
+export * from "./houston/compactionReason.ts";
 export * from "./managedPolicy.ts";
 export * from "./git.ts";
 export * from "./vcs.ts";

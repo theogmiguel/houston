@@ -1635,10 +1635,11 @@ function ContextCompactionTimelineRow({
 }: {
   row: Extract<TimelineRow, { kind: "context-compaction" }>;
 }) {
-  const label =
-    row.title && row.label.startsWith("Context compacted")
+  const label = row.active
+    ? row.label
+    : row.tokenCounts && row.title && row.label.startsWith("Context compacted")
       ? row.title + row.label.slice("Context compacted".length)
-      : row.label;
+      : (row.title ?? row.label);
   const content = (
     <span className="flex min-w-0 items-center gap-1.5">
       {row.failed ? (

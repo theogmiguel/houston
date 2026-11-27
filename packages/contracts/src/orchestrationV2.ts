@@ -47,6 +47,7 @@ import {
 } from "./houston/messageDelivery.ts";
 import { RunStartOrigin } from "./houston/runStart.ts";
 import { HoustonBlockingBackgroundWork } from "./houston/backgroundWork.ts";
+import { OrchestrationV2CompactionReason } from "./houston/compactionReason.ts";
 import { HoustonProviderTurnCompaction } from "./houston/contextWindow.ts";
 import { HoustonSideThread, makeHoustonSideThreadCommands } from "./houston/sideThreads.ts";
 import { HoustonMergeQueueNotifyCommand } from "./houston/mergeQueue.ts";
@@ -628,6 +629,26 @@ export function idleCompactionOf(
   // Servers before `idleCompaction` marked their own as agent-created.
   return message.createdBy === "agent" && message.creationSource === "server"
     ? "beforeCacheExpires"
+    : undefined;
+}
+
+/**
+ * The reason a stored `/compact` message carries. `idleCompaction` remains for older clients;
+ * a message from before the typed field has none and keeps its older title.
+ */
+export function compactionReasonForMessage(message: {
+  readonly compactionReason?: OrchestrationV2CompactionReason | undefined;
+  readonly idleCompaction?: OrchestrationV2IdleCompaction | undefined;
+  readonly text: string;
+  readonly attachments?: ReadonlyArray<unknown> | undefined;
+  readonly createdBy?: OrchestrationV2Actor | undefined;
+}): OrchestrationV2CompactionReason | undefined {
+  if (message.compactionReason !== undefined) return message.compactionReason;
+  if (message.idleCompaction !== undefined) return message.idleCompaction;
+  return message.createdBy === "user" &&
+    isCompactCommandText(message.text) &&
+    (message.attachments?.length ?? 0) === 0
+    ? "onRequest"
     : undefined;
 }
 
@@ -1357,6 +1378,7 @@ export const OrchestrationV2ConversationMessage = Schema.Struct({
   scheduledTaskId: Schema.optional(ScheduledTaskId),
   senderThreadId: Schema.optional(ThreadId),
   idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
+  compactionReason: Schema.optional(OrchestrationV2CompactionReason),
   /**
    * The message is the script a provider-native workflow run executes, not prose. Clients show
    * the workflow's opening instead and keep the script behind a disclosure.
@@ -1677,6 +1699,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
     scheduledTaskId: Schema.optional(ScheduledTaskId),
     senderThreadId: Schema.optional(ThreadId),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
+    compactionReason: Schema.optional(OrchestrationV2CompactionReason),
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
     freshContext: OrchestrationV2Run.fields.freshContext,
     inputIntent: OrchestrationV2UserMessageInputIntent,
@@ -1811,6 +1834,8 @@ export const OrchestrationV2TurnItem = Schema.Union([
     type: Schema.Literal("compaction"),
     driver: Schema.NullOr(ProviderDriverKind),
     summary: Schema.optional(Schema.String),
+    /** The provider's own trigger for a compaction it ran without Houston asking. */
+    trigger: Schema.optional(Schema.Literals(["manual", "auto"])),
     beforeTokenCount: Schema.optional(NonNegativeInt),
     afterTokenCount: Schema.optional(NonNegativeInt),
   }),
@@ -2519,6 +2544,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     scheduledTaskId: Schema.optional(ScheduledTaskId),
     senderThreadId: Schema.optional(ThreadId),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
+    compactionReason: Schema.optional(OrchestrationV2CompactionReason),
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
     freshContext: OrchestrationV2Run.fields.freshContext,
     inputIntent: OrchestrationV2UserMessageInputIntent,
@@ -2645,6 +2671,8 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     type: Schema.Literal("compaction"),
     driver: Schema.NullOr(ProviderDriverKind),
     summary: Schema.optional(Schema.String),
+    /** The provider's own trigger for a compaction it ran without Houston asking. */
+    trigger: Schema.optional(Schema.Literals(["manual", "auto"])),
     beforeTokenCount: Schema.optional(NonNegativeInt),
     afterTokenCount: Schema.optional(NonNegativeInt),
   }),
@@ -3237,6 +3265,7 @@ export const OrchestrationV2Command = Schema.Union([
     scheduledTaskId: Schema.optional(ScheduledTaskId),
     senderThreadId: Schema.optional(ThreadId),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
+    compactionReason: Schema.optional(OrchestrationV2CompactionReason),
     /** Start a new provider session without the thread's earlier context. Never steers. */
     freshContext: Schema.optional(Schema.Boolean),
     /** Who asked for this start; only `automatic` work may be held before it reaches the provider. */

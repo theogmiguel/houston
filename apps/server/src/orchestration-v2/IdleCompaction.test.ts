@@ -714,7 +714,11 @@ describe("IdleCompactionService over a database file", () => {
   // Real: the SQLite file and its migrations, the projection store, the scheduler and the sweep.
   // Fake: the orchestrator, which records each dispatch and writes its compaction run through the
   // real store, and the settings.
-  const server = (file: string, dispatched: Array<string>) =>
+  const server = (
+    file: string,
+    dispatched: Array<string>,
+    commands: Array<OrchestrationV2Command> = [],
+  ) =>
     Layer.fresh(IdleCompactionService.layer).pipe(
       Layer.provide(
         Layer.effect(
@@ -726,6 +730,7 @@ describe("IdleCompactionService over a database file", () => {
               dispatch: (command: OrchestrationV2Command) =>
                 Effect.gen(function* () {
                   dispatched.push(command.commandId);
+                  commands.push(command);
                   const data = records();
                   const compactionRunId = RunId.make(`compaction-${dispatched.length}`);
                   const compactionMessageId = MessageId.make(
@@ -794,6 +799,7 @@ describe("IdleCompactionService over a database file", () => {
       const dir = yield* fs.makeTempDirectoryScoped({ prefix: "houston-idle-compaction-" });
       const file = path.join(dir, "state.sqlite");
       const dispatched: Array<string> = [];
+      const commands: Array<OrchestrationV2Command> = [];
       const { sweeps, tracer } = yield* sweepsTraced;
       yield* TestClock.setTime(NOW_MS);
       // The first server: the thread completes with a one-hour cache and is not yet due.
@@ -803,7 +809,7 @@ describe("IdleCompactionService over a database file", () => {
         );
         yield* TestClock.adjust(10 * MINUTE_MS);
         yield* Queue.take(sweeps);
-      }).pipe(Effect.provide(server(file, dispatched)), Effect.withTracer(tracer));
+      }).pipe(Effect.provide(server(file, dispatched, commands)), Effect.withTracer(tracer));
       expect(dispatched).toEqual([]);
       yield* Queue.clear(sweeps);
       // The restarted server, inside the one-hour cache's five-minute lead.
@@ -812,10 +818,14 @@ describe("IdleCompactionService over a database file", () => {
         yield* Queue.take(sweeps);
         yield* TestClock.adjust(5_000);
         yield* Queue.take(sweeps);
-      }).pipe(Effect.provide(server(file, dispatched)), Effect.withTracer(tracer));
+      }).pipe(Effect.provide(server(file, dispatched, commands)), Effect.withTracer(tracer));
       expect(dispatched).toEqual(
         scenario.dispatched === 1 ? ["server:idle-compact:idle-thread:run-1"] : [],
       );
+      const idleCompaction = commands.find((command) => command.type === "message.dispatch");
+      expect(
+        idleCompaction?.type === "message.dispatch" ? idleCompaction.compactionReason : undefined,
+      ).toBe(scenario.dispatched === 1 ? "beforeCacheExpires" : undefined);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });

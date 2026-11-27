@@ -117,6 +117,7 @@ const makeSweep = Effect.gen(function* () {
         createdBy: "agent",
         creationSource: "server",
         idleCompaction: "beforeCacheExpires",
+        compactionReason: "beforeCacheExpires",
         dispatchMode: { type: "start_immediately" },
         startOrigin: "maintenance",
       });

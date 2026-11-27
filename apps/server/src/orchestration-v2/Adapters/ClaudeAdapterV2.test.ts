@@ -10554,6 +10554,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           assert.equal(compaction.turnItem.beforeTokenCount, 1500);
           assert.equal(compaction.turnItem.afterTokenCount, 400);
           assert.equal(compaction.turnItem.status, "completed");
+          assert.equal(compaction.turnItem.trigger, "manual");
         }
         const watermark = harness.events.find(
           (event) =>

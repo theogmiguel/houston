@@ -1,9 +1,11 @@
 import {
   type OrchestrationV2Actor,
+  type OrchestrationV2CompactionReason,
   type OrchestrationV2CreationSource,
   type OrchestrationV2IdleCompaction,
   ScheduledTaskId,
 } from "@houston-app/contracts";
+import { formatTokens } from "@houston-app/shared/usageFormat";
 import { isAttachmentOnlyBootstrapPrompt } from "@houston-app/shared/composerContextReferences";
 
 /** The working row while Houston's own compaction runs. */
@@ -17,6 +19,21 @@ export const IDLE_COMPACTION_TITLES = {
   beforeCacheExpires: "Context automatically compacted before cache expiry",
   onReturn: "Context compacted before sending",
 } satisfies Record<OrchestrationV2IdleCompaction, string>;
+
+/** The finished compaction's own reason, with the size it held before compacting. */
+export const COMPACTION_REASON_TITLES = {
+  beforeCacheExpires: "Compacted before the cache expired",
+  onReturn: "Compacted when you returned",
+  onRequest: "Compacted on request",
+} satisfies Record<OrchestrationV2CompactionReason, string>;
+
+export function compactionReasonTitle(
+  reason: OrchestrationV2CompactionReason,
+  beforeTokenCount: number | undefined,
+): string {
+  const title = COMPACTION_REASON_TITLES[reason];
+  return beforeTokenCount === undefined ? title : `${title}: ${formatTokens(beforeTokenCount)}`;
+}
 
 const LEGACY_AUTOMATION_PREFIX = /^\[Triggered by schedule task: [^\r\n]+\]\r?\n\r?\n/;
 const LEGACY_AUTOMATION_MESSAGE_ID = /^scheduled-task-message:(.+):\d+:(?:scheduled|manual)$/;
