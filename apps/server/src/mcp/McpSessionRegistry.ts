@@ -22,7 +22,17 @@ export interface McpCredentialRequest {
   readonly subagent?: boolean;
   /** Houston: the credential holds only `houston-task-submit`, for a task's planner or reviewer. */
   readonly houstonTaskSubmitOnly?: boolean;
+  /** Houston: the bot run the thread works for; an unattended one gets only what its reads need. */
+  readonly bot?: McpInvocationContext.McpBotCaller;
 }
+
+/** An unattended bot run's allowed reads need these, and nothing that opens a worktree, a
+ * browser or a device. */
+const UNATTENDED_BOT_CAPABILITIES: ReadonlyArray<McpInvocationContext.McpCapability> = [
+  "orchestration",
+  "pull-requests",
+  "issues",
+];
 
 export interface McpIssuedCredential {
   readonly config: McpProviderSession.McpProviderSessionConfig;
@@ -111,18 +121,22 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           providerSessionId,
           providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
           subagent: request.subagent === true,
+          ...(request.bot === undefined ? {} : { bot: request.bot }),
         },
         client: undefined,
         capabilities: new Set<McpInvocationContext.McpCapability>(
           request.houstonTaskSubmitOnly === true
             ? ["houston-task-submit"]
-            : [
-                "orchestration",
-                "worktree",
-                "pull-requests",
-                "issues",
-                ...(request.capabilities ?? (browserToolsAvailable ? (["preview"] as const) : [])),
-              ],
+            : request.bot?.kind === "unattended"
+              ? UNATTENDED_BOT_CAPABILITIES
+              : [
+                  "orchestration",
+                  "worktree",
+                  "pull-requests",
+                  "issues",
+                  ...(request.capabilities ??
+                    (browserToolsAvailable ? (["preview"] as const) : [])),
+                ],
         ),
         issuedAt,
       };

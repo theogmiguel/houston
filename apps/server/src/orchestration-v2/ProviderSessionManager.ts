@@ -64,6 +64,8 @@ import * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdap
 import { makeProviderFailure } from "@houston-app/provider-core/server/failure";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
+import { HoustonBotThreads, mcpBotCallerOf } from "../houston/bots/botThreads.ts";
+import { sameBotCaller } from "../mcp/McpInvocationContext.ts";
 import { HoustonReadOnlyThreads, mayHoldHoustonTools } from "../houston/sideThreads.ts";
 
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
@@ -465,6 +467,7 @@ export const layerWithOptions = (
   | CommandOutputHub.CommandOutputHub
   | EventSink.EventSinkV2
   | FileSystem.FileSystem
+  | HoustonBotThreads
   | HoustonReadOnlyThreads
   | IdAllocator.IdAllocatorV2
   | McpProviderSessions.McpProviderSessions
@@ -496,6 +499,7 @@ export const layerWithOptions = (
       const providerEventIngestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
       const houstonReadOnlyThreads = yield* HoustonReadOnlyThreads;
+      const houstonBotThreads = yield* HoustonBotThreads;
       const agentScope = yield* AgentScope;
       // Labs flag, read live: Codex per turn (its shared session outlives a toggle), Claude per query.
       // Unreadable settings keep it off.
@@ -636,9 +640,26 @@ export const layerWithOptions = (
                   yield* mcpSessions.clear(threadId);
                   return { mcpCredentialId: undefined, issued: false };
                 }
+                // Houston: a bot thread's credential carries only its bot run's tools; a thread
+                // whose bot run cannot be read gets none.
+                const botLookup = yield* projectionStore.getThread(threadId).pipe(
+                  Effect.flatMap(houstonBotThreads.policyOf),
+                  Effect.map((policy) => ({
+                    bot: policy === undefined ? undefined : mcpBotCallerOf(policy),
+                  })),
+                  Effect.orElseSucceed(() => undefined),
+                );
+                if (botLookup === undefined) {
+                  yield* mcpSessionRegistry.revokeThread(threadId);
+                  yield* mcpSessions.clear(threadId);
+                  return { mcpCredentialId: undefined, issued: false };
+                }
+                const { bot } = botLookup;
+                const unattended = bot?.kind === "unattended";
                 // Live providers build MCP clients once; reuse credentials across workspace handoffs.
-                const { browser: browserToolsAvailable, device: deviceToolsAvailable } =
-                  yield* agentAccessSettings(threadId);
+                const access = yield* agentAccessSettings(threadId);
+                const browserToolsAvailable = access.browser && !unattended;
+                const deviceToolsAvailable = access.device && !unattended;
                 const capabilities = new Set<
                   import("../mcp/McpInvocationContext.ts").McpCapability
                 >(["orchestration", "worktree", "pull-requests", "issues"]);
@@ -674,6 +695,8 @@ export const layerWithOptions = (
                     resolved.capabilities.has("device") === deviceToolsAvailable &&
                     // A credential issued while the lineage read failed is replaced once it works.
                     (resolved.thread.subagent === true) === subagent &&
+                    // A credential issued under other bot rules, or none, is never reused.
+                    sameBotCaller(resolved.thread.bot, bot) &&
                     (yield* linkedInferenceServer(providerInstanceId))?.serverId ===
                       existing.inferenceGateway?.serverId
                   ) {
@@ -689,6 +712,7 @@ export const layerWithOptions = (
                   capabilities,
                   subagent,
                   ...(submitOnly ? { houstonTaskSubmitOnly: true } : {}),
+                  ...(bot === undefined ? {} : { bot }),
                 });
                 const linked = yield* linkedInferenceServer(providerInstanceId);
                 const inferenceGateway =

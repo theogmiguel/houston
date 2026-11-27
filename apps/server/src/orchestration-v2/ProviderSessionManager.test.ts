@@ -1,7 +1,7 @@
 import * as NetAddress from "effect/net/NetAddress";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { assert, it } from "@effect/vitest";
+import { assert, expect, it } from "@effect/vitest";
 import { AgentScope } from "@houston-app/shared/AgentScope";
 import {
   EnvironmentId,
@@ -62,6 +62,13 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import { layerNoReadOnlyThreads } from "../houston/sideThreads.ts";
+import {
+  type BotThreadPolicy,
+  HoustonBotThreadLookupError,
+  HoustonBotThreads,
+  layerNoBotThreads,
+} from "../houston/bots/botThreads.ts";
+import { policyFor, UNATTENDED_HOUSTON_TOOLS } from "../houston/bots/kinds.ts";
 import * as CommandOutputHub from "./CommandOutputHub.ts";
 import * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 import {
@@ -642,6 +649,7 @@ function layerTest(input: {
   readonly eventStreamsEnded?: Queue.Queue<ProviderSessionId>;
   readonly serverSettingsLayer?: ReturnType<typeof ServerSettings.layerTest>;
   readonly projectServiceLayer?: Layer.Layer<ProjectService.ProjectService>;
+  readonly botThreadsLayer?: Layer.Layer<HoustonBotThreads>;
 }) {
   const layerConfiguredEventSink =
     input.flakyReleaseWrites !== undefined
@@ -732,6 +740,7 @@ function layerTest(input: {
           layerConfiguredMcpRegistry,
           layerTestStores,
           layerNoReadOnlyThreads,
+          input.botThreadsLayer ?? layerNoBotThreads,
           ...(input.serverSettingsLayer === undefined ? [] : [input.serverSettingsLayer]),
           ...(input.projectServiceLayer === undefined ? [] : [input.projectServiceLayer]),
         ),
@@ -5643,4 +5652,131 @@ it.effect("ProviderSessionManagerV2 gives a delegated child its project's device
     });
     assert.isTrue(child?.capabilities?.has("device"));
   }),
+);
+
+// Houston: a bot thread's credential carries only what its kind needs, and a credential issued
+// under other rules is not reused.
+const botThreadPolicy = (kind: "asked" | "unattended", botRunId: string): BotThreadPolicy => {
+  const policy = policyFor({
+    kind,
+    bot: { askedMode: "auto", unattendedFullAccess: false, maxMinutes: 20 },
+  });
+  return {
+    botRunId,
+    provider: {
+      botName: "Night digest",
+      kind,
+      child: false,
+      refusedTools: policy.refusedTools,
+      rules: policy.rules,
+      neverAsk: policy.neverAsk,
+    },
+  };
+};
+
+const layerBotThreadsFrom = (current: Ref.Ref<BotThreadPolicy | "unreadable" | undefined>) =>
+  Layer.succeed(HoustonBotThreads, {
+    policyOf: (thread) =>
+      Ref.get(current).pipe(
+        Effect.filterOrFail(
+          (policy): policy is BotThreadPolicy | undefined => policy !== "unreadable",
+          () => new HoustonBotThreadLookupError({ threadId: thread.id }),
+        ),
+      ),
+  });
+
+it.effect(
+  "ProviderSessionManagerV2 narrows a bot thread's credential and never reuses an older one",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const mcpConfigs = yield* Ref.make<
+        ReadonlyArray<McpProviderSession.McpProviderSessionConfig | undefined>
+      >([]);
+      const current = yield* Ref.make<BotThreadPolicy | "unreadable" | undefined>(undefined);
+      const effect = Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const registry = yield* McpSessionRegistry.McpSessionRegistry;
+        const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+        const threadId = ThreadId.make("thread-provider-session-manager-bot");
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId,
+        });
+        yield* eventSink.write({
+          events: [
+            yield* makeThreadCreatedEvent({ idAllocator, threadId, now: yield* DateTime.now }),
+          ],
+        });
+        const input = { threadId, providerSessionId, modelSelection, runtimePolicy };
+        const tokenOf = (config: McpProviderSession.McpProviderSessionConfig | undefined) =>
+          config?.authorizationHeader.replace(/^Bearer\s+/, "") ?? "";
+        const reopen = Effect.gen(function* () {
+          yield* manager.detach({ providerSessionId, threadId, detail: "Rules changed." });
+          yield* manager.open(input);
+          return yield* mcpSessions.read(threadId);
+        });
+
+        yield* manager.open(input);
+        const ordinary = tokenOf(yield* mcpSessions.read(threadId));
+        expect((yield* registry.resolve(ordinary))?.capabilities.has("worktree")).toBe(true);
+
+        // Asked keeps today's capabilities, so only the bot tells the two credentials apart.
+        yield* Ref.set(current, botThreadPolicy("asked", "bot-run-2"));
+        const asked = tokenOf(yield* reopen);
+        expect(asked).not.toBe(ordinary);
+        expect(yield* registry.resolve(ordinary)).toBeUndefined();
+        expect((yield* registry.resolve(asked))?.thread.bot).toEqual({
+          kind: "asked",
+          child: false,
+          botRunId: "bot-run-2",
+          botName: "Night digest",
+          tools: { deny: ["schedule_task", "delete_scheduled_task", "run_scheduled_task_now"] },
+        });
+        // The same rules keep the credential the live process holds; another bot run does not.
+        expect(tokenOf(yield* reopen)).toBe(asked);
+        yield* Ref.set(current, botThreadPolicy("asked", "bot-run-3"));
+        const nextRun = tokenOf(yield* reopen);
+        expect(nextRun).not.toBe(asked);
+
+        yield* Ref.set(current, botThreadPolicy("unattended", "bot-run-1"));
+        const unattended = tokenOf(yield* reopen);
+        expect(unattended).not.toBe(nextRun);
+        expect(yield* registry.resolve(nextRun)).toBeUndefined();
+        const narrow = yield* registry.resolve(unattended);
+        expect(narrow?.capabilities).toEqual(new Set(["orchestration", "issues", "pull-requests"]));
+        expect(narrow?.thread.bot).toEqual({
+          kind: "unattended",
+          child: false,
+          botRunId: "bot-run-1",
+          botName: "Night digest",
+          tools: { allow: [...UNATTENDED_HOUSTON_TOOLS] },
+        });
+        expect(tokenOf(yield* reopen)).toBe(unattended);
+
+        // A lookup that fails leaves the thread no Houston credential at all.
+        yield* Ref.set(current, "unreadable");
+        yield* reopen;
+        expect(yield* registry.resolve(unattended)).toBeUndefined();
+        expect(yield* mcpSessions.read(threadId)).toBeUndefined();
+
+        yield* Ref.set(current, undefined);
+        const back = tokenOf(yield* reopen);
+        expect((yield* registry.resolve(back))?.thread.bot).toBeUndefined();
+        yield* manager.close(providerSessionId);
+      });
+
+      yield* effect.pipe(
+        Effect.provide(
+          layerTest({
+            state,
+            idleTimeoutMs: 60_000,
+            mcpConfigs,
+            botThreadsLayer: layerBotThreadsFrom(current),
+          }),
+        ),
+      );
+    }),
 );
