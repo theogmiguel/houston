@@ -66,6 +66,11 @@ export const TERMINAL_COMMAND_ENTRIES: ReadonlyArray<TerminalCommandEntry> = [
     names: ["status", "login", "logout", "doctor"],
     description: "Open provider status, health and sign-in",
   },
+  {
+    action: "settings-providers",
+    names: ["mcp"],
+    description: "Open provider settings, where MCP servers are managed",
+  },
   { action: "settings-voice", names: ["voice"], description: "Open voice settings" },
 ];
 

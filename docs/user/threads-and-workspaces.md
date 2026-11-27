@@ -410,6 +410,7 @@ the provider, and an entry appears only when the thread supports it.
 | `/keybindings`                            | Keyboard shortcut settings                 |
 | `/config`                                 | Settings                                   |
 | `/status`, `/login`, `/logout`, `/doctor` | Provider status, health and sign-in        |
+| `/mcp`                                    | Provider settings for MCP servers          |
 | `/voice`                                  | Voice settings                             |
 
 `/terminal-setup`, `/statusline`, `/exit`, `/quit`, `/ide`, `/tui` and `/vim` work only in a

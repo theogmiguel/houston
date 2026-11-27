@@ -221,4 +221,21 @@ describe("terminal command items", () => {
     expect(slashCommandItemsForPromptPosition(items, true)).toEqual(items);
     expect(slashCommandItemsForPromptPosition(items, false)).toEqual([]);
   });
+
+  it("offers /mcp with its own row and description beside /status", () => {
+    const status = TERMINAL_COMMAND_ENTRIES.find(
+      (entry) => entry.action === "settings-providers" && entry.names[0] === "status",
+    );
+    const mcp = TERMINAL_COMMAND_ENTRIES.find((entry) => entry.names[0] === "mcp");
+    expect(status).toBeDefined();
+    expect(mcp).toBeDefined();
+
+    const menuItems = terminalCommandSlashItems([status!, mcp!]);
+    expect(menuItems.map((item) => item.label)).toEqual(["/status", "/mcp"]);
+    expect(new Set(menuItems.map((item) => item.id)).size).toBe(2);
+    expect(menuItems.find((item) => item.label === "/mcp")?.description).toBe(
+      "Open provider settings, where MCP servers are managed",
+    );
+    expect(searchSlashCommandItems(menuItems, "/mcp").map((item) => item.label)).toEqual(["/mcp"]);
+  });
 });
