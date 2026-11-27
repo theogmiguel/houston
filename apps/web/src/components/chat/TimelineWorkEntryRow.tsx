@@ -271,6 +271,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         <TimelineFileChangeCard
           item={failureItem}
           workspaceRoot={workspaceRoot}
+          threadRef={ctx.threadRef ?? undefined}
           onOpenDiff={onOpenDiff}
         />
       </div>

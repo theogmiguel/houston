@@ -8,7 +8,8 @@ surfaces open as a side pane or as tabs, as set in **Settings ▸ Appearance** (
 [Threads and workspaces](threads-and-workspaces.md#workspaces)).
 
 Tabs can be dragged to reorder, closed, maximized and restored. A tab's menu also closes
-the others, those to its right, or all of them.
+the others, those to its right, or all of them. A changed file, file chip or pull request chip
+opens its surface where you drop it in the layout.
 
 ## Files and editing
 

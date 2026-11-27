@@ -1,4 +1,4 @@
-import type { OrchestrationV2TurnItem } from "@houston-app/contracts";
+import type { OrchestrationV2TurnItem, ScopedThreadRef } from "@houston-app/contracts";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import { cn } from "~/lib/utils";
 import { TIMELINE_CHANGE_DIFF_CLS } from "../ui/timeline-changes-recipes";
@@ -72,10 +72,12 @@ function parseDiff(item: FileChangeItem): DiffRow[] {
 export function TimelineFileChangeCard({
   item,
   workspaceRoot,
+  threadRef,
   onOpenDiff,
 }: {
   item: FileChangeItem;
   workspaceRoot: string | undefined;
+  threadRef?: ScopedThreadRef | undefined;
   onOpenDiff?: (() => void) | undefined;
 }) {
   const rows = parseDiff(item);
@@ -88,6 +90,7 @@ export function TimelineFileChangeCard({
         files={[{ path: item.fileName, additions, deletions }]}
         totals={{ count: 1, additions, deletions }}
         workspaceRoot={workspaceRoot}
+        {...(threadRef === undefined ? {} : { threadRef })}
         {...(onOpenDiff === undefined ? {} : { onOpenDiff })}
         onOpenFile={() => onOpenDiff?.()}
         detail={

@@ -1,6 +1,7 @@
 import type { PullRequestChecksState, ScopedThreadRef } from "@houston-app/contracts";
 import type { MouseEvent as ReactMouseEvent } from "react";
 
+import { usePullRequestSurfaceDrag } from "../../layout/surfaceDrag";
 import type { RowPullRequest } from "../../threads/rowPullRequest";
 import { useSupportsMultiplePullRequests } from "../../hooks/useSupportsMultiplePullRequests";
 import { useOpenPrLink } from "../../lib/openPullRequestLink";
@@ -65,6 +66,16 @@ export function ThreadRowPullRequestBadge({
   readonly onOpenThread: () => void;
 }) {
   const openPullRequestLink = useOpenPrLink(threadRef);
+  const drag = usePullRequestSurfaceDrag({
+    threadRef,
+    environmentId: threadRef.environmentId,
+    url: pullRequest.url,
+    title:
+      pullRequest.title === null
+        ? `#${pullRequest.number}`
+        : `#${pullRequest.number} ${pullRequest.title}`,
+    stopPropagation: true,
+  });
   const supportsList = useSupportsMultiplePullRequests(threadRef.environmentId);
   const presentation = describePullRequest(pullRequest);
   const tone =
@@ -102,6 +113,7 @@ export function ThreadRowPullRequestBadge({
               if (event.button === 1) event.preventDefault();
             }}
             className={cn(ROW_BADGE_BUTTON_CLS, MOTION_FEEDBACK, FOCUS_ACTION_CLS)}
+            {...drag}
           />
         }
       >

@@ -71,6 +71,8 @@ function UserMessageMentionChip(props: {
   const drag = filePillDragHandlers({
     path: props.record.path,
     workspaceRoot: ctx.workspaceRoot,
+    ...(ctx.threadRef === null ? {} : { threadRef: ctx.threadRef }),
+    title: props.record.label,
   });
   return (
     <Tooltip>
@@ -129,7 +131,7 @@ function UserMessagePullRequestContextChip(props: {
   copyMarkdown: string;
   kind: ContextChipKind;
 }) {
-  const { activeThreadEnvironmentId, openPullRequest } = use(TimelineRowCtx);
+  const { activeThreadEnvironmentId, openPullRequest, threadRef } = use(TimelineRowCtx);
   const metadata = props.record.pullRequest;
   if (metadata === undefined) return null;
   return (
@@ -140,6 +142,7 @@ function UserMessagePullRequestContextChip(props: {
       kindLabel={pullRequestContextKindLabel(props.record)}
       kind={props.kind}
       copyMarkdown={props.copyMarkdown}
+      threadRef={threadRef ?? undefined}
       onOpen={openPullRequest}
     />
   );

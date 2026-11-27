@@ -1,5 +1,7 @@
+import type { ScopedThreadRef } from "@houston-app/contracts";
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon, FileText, XIcon } from "lucide-react";
 
+import { filePillDragHandlers } from "~/lib/filePillDrag";
 import { cn } from "~/lib/utils";
 
 import { Button } from "./button";
@@ -51,12 +53,20 @@ export function DiffFileList(props: {
   readonly onSelectFile: (path: string) => void;
   readonly fileState?: (path: string) => DiffFileListState;
   readonly onStageToggle?: (path: string) => void;
+  readonly threadRef?: ScopedThreadRef | undefined;
+  readonly workspaceRoot?: string | undefined;
 }) {
   return (
     <div className="flex flex-col gap-px px-1.5 py-1.5 max-phone:p-0">
       {props.entries.map((entry) => {
         const selected = entry.path === props.selectedPath;
         const state = props.fileState?.(entry.path);
+        const drag = filePillDragHandlers({
+          path: entry.path,
+          workspaceRoot: props.workspaceRoot,
+          ...(props.threadRef === undefined ? {} : { threadRef: props.threadRef }),
+          title: entry.path,
+        });
         return (
           <div
             key={entry.path}
@@ -69,6 +79,7 @@ export function DiffFileList(props: {
               type="button"
               onClick={() => props.onSelectFile(entry.path)}
               className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+              {...drag}
             >
               <FileText aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
               <span className="min-w-0 flex-1 truncate">
