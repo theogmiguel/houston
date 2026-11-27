@@ -100,6 +100,7 @@ import {
 import {
   isThreadHistoryUserTurn,
   isConversationHistoryItem,
+  DEFERRED_WORK_ITEM_TYPES,
   THREAD_HISTORY_MAX_RAW_TURNS,
   missingInterruptRequests,
   deferWorkHistoryRows,
@@ -2905,6 +2906,16 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       threadId: ThreadId,
       window: ProjectionWindow,
     ) {
+      const lastOrdinal = sql`COALESCE(
+                      (
+                        SELECT ordinal
+                        FROM orchestration_v2_projection_turn_items
+                        WHERE thread_id = ${threadId}
+                          AND turn_item_id = ${window.anchorItemId ?? null}
+                        LIMIT 1
+                      ),
+                      9223372036854775807
+                    )`;
       const eligible = sql`
                 WITH eligible AS NOT MATERIALIZED (
                   SELECT item.rowid AS item_rowid, item.payload_json, item.ordinal, item.turn_item_id,
@@ -2922,16 +2933,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                       ORDER BY attempt_ordinal DESC LIMIT 1
                     )
                   WHERE item.thread_id = ${threadId}
-                    AND item.ordinal <= COALESCE(
-                      (
-                        SELECT ordinal
-                        FROM orchestration_v2_projection_turn_items
-                        WHERE thread_id = ${threadId}
-                          AND turn_item_id = ${window.anchorItemId ?? null}
-                        LIMIT 1
-                      ),
-                      9223372036854775807
-                    )
+                    AND item.ordinal <= ${lastOrdinal}
                     AND (
                       ${window.requiredRunId ?? null} IS NOT NULL
                       OR (
@@ -3050,14 +3052,63 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 SELECT ordinal, (SELECT MAX(ordinal) FROM user_anchors) AS latest FROM boundary
               `;
       const boundary = anchors[0]!;
+      // Grouping work needs whole segments, not the whole history. Rows of other types always keep
+      // their own place, so the window never reaches below the newest `tailRows` of them. Work is
+      // grouped from the latest segment start, at or below that row, of each run that reaches it.
+      const tailRows = Math.max(window.rowLimit, THREAD_HISTORY_TURN_SNAPSHOT_ROW_LIMIT);
+      const workStartRows =
+        // SQLite reads a negative limit as none.
+        window.deferWork === true && boundary.latest !== null && window.rowLimit >= 0
+          ? yield* sql<{ readonly ordinal: number | null }>`
+                ${eligible}, visible_tail AS (
+                  SELECT ordinal FROM eligible
+                  WHERE ordinal >= ${boundary.ordinal}
+                    AND type NOT IN ${sql.in(DEFERRED_WORK_ITEM_TYPES)}
+                  ORDER BY ordinal DESC
+                  LIMIT ${tailRows}
+                ), tail AS (
+                  SELECT MIN(ordinal) AS ordinal FROM visible_tail HAVING COUNT(*) >= ${tailRows}
+                ), tail_runs AS (
+                  -- A run whose rows are all ineligible only lowers the start, so this reads the index alone.
+                  SELECT DISTINCT member.run_id
+                  FROM tail CROSS JOIN orchestration_v2_projection_turn_items AS member
+                  WHERE member.thread_id = ${threadId} AND member.ordinal >= tail.ordinal
+                    AND member.ordinal <= ${lastOrdinal} AND member.run_id IS NOT NULL
+                )
+                -- A run without a segment start there (a wake) is taken from its first row. Rows
+                -- without a run have no start, so no start may lie above the tail. Both lookups
+                -- go by run: with a thread term SQLite walks the thread's index once per run.
+                SELECT MIN(MIN(COALESCE(
+                  (
+                    SELECT start.ordinal FROM eligible AS start
+                    WHERE start.item_rowid = (
+                      SELECT prompt.rowid FROM orchestration_v2_projection_turn_items AS prompt
+                      WHERE prompt.run_id = tail_runs.run_id AND prompt.type = 'user_message'
+                        AND prompt.ordinal <= tail.ordinal
+                      ORDER BY prompt.ordinal DESC LIMIT 1
+                    )
+                  ),
+                  (
+                    SELECT MIN(first.ordinal) FROM orchestration_v2_projection_turn_items AS first
+                    WHERE first.run_id = tail_runs.run_id
+                  ),
+                  tail.ordinal
+                ), tail.ordinal)) AS ordinal
+                FROM tail LEFT JOIN tail_runs
+              `
+          : [];
+      const workStart = Math.max(boundary.ordinal, workStartRows[0]?.ordinal ?? 0);
       return sql`
                 ${eligible}, blocked_runs AS MATERIALIZED (
                   SELECT DISTINCT run_id FROM orchestration_v2_projection_turn_items
                   WHERE thread_id = ${threadId} AND run_id IS NOT NULL
                     AND ${window.deferWork ? 1 : 0} = 1
+                    -- Only the runs of grouped rows are asked about, so more runs than those change
+                    -- nothing, and the index alone names them.
                     AND run_id IN (
-                      SELECT run_id FROM eligible
-                      WHERE ordinal >= ${boundary.ordinal} AND run_id IS NOT NULL
+                      SELECT member.run_id FROM orchestration_v2_projection_turn_items AS member
+                      WHERE member.thread_id = ${threadId} AND member.ordinal >= ${workStart}
+                        AND member.ordinal <= ${lastOrdinal} AND member.run_id IS NOT NULL
                     )
                     AND (type IN ('run_interrupt_request', 'run_interrupt_result')
                       OR (type = 'error' AND status = 'failed' AND parent_item_id IS NULL))
@@ -3066,14 +3117,14 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                     MAX(CASE WHEN type = 'user_message' THEN ordinal ELSE 0 END)
                       OVER (PARTITION BY run_id ORDER BY ordinal) AS segment,
                     CASE WHEN status = 'completed' AND (run_status = 'completed' OR attempt_status = 'superseded')
-                      AND type IN ('command_execution', 'reasoning', 'file_change', 'file_search', 'web_search', 'dynamic_tool')
+                      AND type IN ${sql.in(DEFERRED_WORK_ITEM_TYPES)}
                       AND NOT (${inlineWorkOutput})
                       AND run_id NOT IN (SELECT run_id FROM blocked_runs)
                       THEN 1 ELSE 0 END AS can_defer
                   FROM eligible AS item
                   WHERE ${window.deferWork ? 1 : 0} = 1
                     AND ${boundary.latest === null ? 0 : 1} = 1
-                    AND ordinal >= ${boundary.ordinal}
+                    AND ordinal >= ${workStart}
                 ), deferred_work AS (
                   SELECT run_id, segment, attempt_id, MIN(ordinal) AS first_ordinal,
                     MAX(ordinal) AS last_ordinal, COUNT(*) AS item_count
@@ -3108,6 +3159,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   FROM window_items
                   WHERE ordinal >= ${boundary.ordinal}
                   ORDER BY ordinal DESC, turn_item_id DESC
+                  -- No limit here or in latest_user_turn may exceed tailRows: work below workStart is not grouped.
                   LIMIT CASE
                     WHEN ${window.rowLimit} = 0 THEN 0
                     WHEN (SELECT row_count FROM latest_user_turn)
