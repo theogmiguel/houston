@@ -115,6 +115,7 @@ import * as HoustonProjectRepositories from "./houston/projects/ProjectRepositor
 import * as HoustonTaskFolders from "./houston/worktrees/TaskFolders.ts";
 import * as HoustonTaskFolderStore from "./houston/worktrees/TaskFolderStore.ts";
 import * as HoustonProjectRepositoriesStore from "./houston/projects/ProjectRepositoriesStore.ts";
+import * as HoustonProjectRepositoriesSweep from "./houston/projects/ProjectRepositoriesSweep.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
@@ -699,6 +700,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
   Layer.effectDiscard(HoustonTaskProjectSweep.sweep),
   Layer.effectDiscard(HoustonSlackStore.sweep),
+  Layer.effectDiscard(HoustonProjectRepositoriesSweep.sweep),
   Layer.effectDiscard(HoustonNativeSessionHistory.startNativeSessionBackfill),
   HoustonLayoutWorkspaces.layer,
   // Model servers registered in Settings: periodic probes, discovery and the image check.
@@ -767,6 +769,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
     // Below the orchestration runtime so its ProjectService sees the store on project deletion.
     Layer.provideMerge(HoustonMergeQueueStore.layer),
+    Layer.provideMerge(HoustonProjectRepositoriesStore.layer),
     Layer.provideMerge(HoustonSlackStore.layer),
     Layer.provideMerge(layerHoustonSecrets),
     Layer.provideMerge(layerHoustonTaskPersistence),

@@ -1460,9 +1460,8 @@ const ProjectRepositories = Effect.gen(function* () {
 });
 
 // The folder a worktree thread of a multi-repository project works in, keyed by folder path
-// because subagents, forks and reused worktrees share one path across threads. repositories_json
-// holds each repository's key, project and worktree path and branch; keyed by upstream ProjectId
-// without a foreign key, so a deleted project's rows go with its deletion hook.
+// because forks and reused worktrees share one. A row goes with storage cleanup, not project
+// deletion: a folder that kept files stays listed until they are gone.
 const TaskFolders = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   yield* sql`

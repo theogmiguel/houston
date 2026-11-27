@@ -36,6 +36,10 @@ export class HoustonProjectRepositoriesStore extends Context.Service<
       readonly patterns: ReadonlyArray<string>;
       readonly updatedAt: string;
     }) => Effect.Effect<void, SqlError.SqlError>;
+    /** Drops every tracked folder and ignore pattern the project stored. */
+    readonly projectRemoved: (projectId: ProjectId) => Effect.Effect<void, SqlError.SqlError>;
+    /** Ids of every project that has a tracked folder or an ignore pattern. */
+    readonly projectIds: Effect.Effect<ReadonlyArray<string>, SqlError.SqlError>;
   }
 >()("@houston-app/cli/houston/projects/ProjectRepositoriesStore/HoustonProjectRepositoriesStore") {}
 
@@ -99,6 +103,23 @@ const make = Effect.gen(function* () {
         );
       },
     ),
+
+    projectRemoved: Effect.fn("HoustonProjectRepositoriesStore.projectRemoved")(
+      function* (projectId) {
+        yield* sql.withTransaction(
+          Effect.gen(function* () {
+            yield* sql`DELETE FROM houston_project_repositories WHERE project_id = ${projectId}`;
+            yield* sql`DELETE FROM houston_project_repository_ignores WHERE project_id = ${projectId}`;
+          }),
+        );
+      },
+    ),
+
+    projectIds: sql<{ readonly project_id: string }>`
+      SELECT project_id FROM houston_project_repositories
+      UNION
+      SELECT project_id FROM houston_project_repository_ignores
+    `.pipe(Effect.map((rows) => rows.map((row) => row.project_id))),
   });
 });
 
