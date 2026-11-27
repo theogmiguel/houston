@@ -147,9 +147,18 @@ function segmentReads(segment: string, depth: number): boolean {
   ) {
     start += 1;
   }
+  const argumentsAfter = (index: number) => words.slice(index + 1).map((entry) => entry.word);
+  // Any other unquoted gh with words after it is a call too, as in `timeout 5 gh …`:
+  // that fails closed where a list of prefixes would not.
+  for (let index = start + 1; index < words.length - 1; index += 1) {
+    const entry = words[index]!;
+    if (!entry.quoted && isGhWord(entry.word) && !ghArgumentsRead(argumentsAfter(index))) {
+      return false;
+    }
+  }
   const command = words[start];
   if (command !== undefined && isGhWord(command.word)) {
-    return ghArgumentsRead(words.slice(start + 1).map((entry) => entry.word));
+    return ghArgumentsRead(argumentsAfter(start));
   }
   // A quoted word may itself be a command, as in `sh -c '…'`.
   return words.every(

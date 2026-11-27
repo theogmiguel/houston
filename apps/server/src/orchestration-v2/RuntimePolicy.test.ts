@@ -1,3 +1,5 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
   type ManagedPolicySummary,
@@ -6,6 +8,7 @@ import {
   type OrchestrationV2ProviderCapabilities,
   ProjectId,
   ProviderInstanceId,
+  type ProviderReplayTranscript,
   type RuntimeMode,
   type ServerProvider,
   ThreadId,
@@ -16,16 +19,32 @@ import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 
 import type { ProviderInstance } from "@houston-app/provider-core/server/driver";
+import * as McpProviderSessions from "@houston-app/provider-core/server/McpProviderSessions";
 import type * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
+import { readProviderReplayTranscript } from "@houston-app/provider-testing/replayTranscript";
 import {
   HoustonBotThreadLookupError,
   HoustonBotThreads,
   type BotThreadPolicy,
 } from "../houston/bots/botThreads.ts";
 import { policyFor } from "../houston/bots/kinds.ts";
+import { BUILT_IN_DRIVERS } from "../provider/builtInDrivers.ts";
+import { AcpRegistryOrchestratorReplayHarness } from "./Adapters/AcpRegistryAdapterV2.testkit.ts";
+import { makeAntigravityAcpAdapterFlavor } from "./Adapters/AntigravityAdapterV2.ts";
 import { ClaudeProviderCapabilitiesV2 } from "./Adapters/ClaudeAdapterV2.ts";
+import { ClaudeOrchestratorReplayHarness } from "./Adapters/ClaudeAdapterV2.testkit.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
+import { CodexOrchestratorReplayHarness } from "./Adapters/CodexAdapterV2.testkit.ts";
+import { CursorOrchestratorReplayHarness } from "./Adapters/CursorAdapterV2.testkit.ts";
+import { FxOrchestratorReplayHarness } from "./Adapters/FxAdapterV2.testkit.ts";
+import { GrokOrchestratorReplayHarness } from "./Adapters/GrokAdapterV2.testkit.ts";
+import { KiroOrchestratorReplayHarness } from "./Adapters/KiroAdapterV2.testkit.ts";
+import { MuseOrchestratorReplayHarness } from "./Adapters/MuseAdapterV2.testkit.ts";
+import { OpenCode2OrchestratorReplayHarness } from "./Adapters/OpenCode2AdapterV2.testkit.ts";
+import { OpenCodeOrchestratorReplayHarness } from "./Adapters/OpenCodeAdapterV2.testkit.ts";
+import { PiOrchestratorReplayHarness } from "./Adapters/PiAdapterV2.testkit.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
+import type { OrchestratorV2ProviderReplayHarness } from "./testkit/ProviderReplayHarness.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ProjectStore from "./ProjectStore.ts";
@@ -212,10 +231,95 @@ const botPolicy = (kind: "asked" | "unattended", runtimeMode?: RuntimeMode): Bot
   };
 };
 
+const replayFixture = (path: string) =>
+  readProviderReplayTranscript(new URL(`./testkit/fixtures/${path}`, import.meta.url)).pipe(
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+  );
+
+/** What an adapter of the harness's family declares, read from the adapter itself. */
+const capabilitiesOf = <Transcript extends ProviderReplayTranscript, E>(
+  harness: OrchestratorV2ProviderReplayHarness<Transcript, E>,
+  file: string,
+) =>
+  Effect.gen(function* () {
+    const transcript = yield* harness.decodeTranscript({
+      ...(yield* replayFixture(file)),
+      entries: [],
+    });
+    return yield* Effect.gen(function* () {
+      const registry = yield* ProviderAdapterRegistry.ProviderAdapterRegistryV2;
+      const [instanceId] = yield* registry.list();
+      return yield* (yield* registry.get(instanceId!)).getCapabilities();
+    }).pipe(
+      Effect.provide(
+        harness
+          .makeProviderAdapterRegistryLayer(transcript)
+          .pipe(Layer.provide(McpProviderSessions.layer)),
+      ),
+    );
+  }).pipe(Effect.scoped, Effect.orDie);
+
+/** Each adapter of every driver family, as [driver kind, name, capabilities]. */
+const familyCapabilities = Effect.all([
+  Effect.map(
+    capabilitiesOf(ClaudeOrchestratorReplayHarness, "simple/claude_transcript.ndjson"),
+    (capabilities) => ["claudeAgent", "Claude", capabilities] as const,
+  ),
+  Effect.map(
+    capabilitiesOf(CodexOrchestratorReplayHarness, "simple/codex_transcript.ndjson"),
+    (capabilities) => ["codex", "Codex", capabilities] as const,
+  ),
+  Effect.map(
+    capabilitiesOf(OpenCodeOrchestratorReplayHarness, "simple/opencode_transcript.ndjson"),
+    (capabilities) => ["opencode", "OpenCode 1", capabilities] as const,
+  ),
+  Effect.map(
+    capabilitiesOf(
+      OpenCode2OrchestratorReplayHarness,
+      "opencode2_simple/opencode_transcript.ndjson",
+    ),
+    (capabilities) => ["opencode", "OpenCode 2", capabilities] as const,
+  ),
+  Effect.succeed([
+    "antigravity",
+    "Antigravity",
+    makeAntigravityAcpAdapterFlavor({} as never).capabilities,
+  ] as const),
+  Effect.map(
+    capabilitiesOf(AcpRegistryOrchestratorReplayHarness, "simple/registry_transcript.ndjson"),
+    (capabilities) => ["acpRegistry", "ACP registry", capabilities] as const,
+  ),
+  Effect.map(
+    capabilitiesOf(CursorOrchestratorReplayHarness, "simple/cursor_transcript.ndjson"),
+    (capabilities) => ["cursor", "Cursor", capabilities] as const,
+  ),
+  Effect.map(
+    capabilitiesOf(GrokOrchestratorReplayHarness, "simple/grok_transcript.ndjson"),
+    (capabilities) => ["grok", "Grok", capabilities] as const,
+  ),
+  Effect.map(
+    capabilitiesOf(FxOrchestratorReplayHarness, "simple/fx_transcript.ndjson"),
+    (capabilities) => ["fx", "Fx", capabilities] as const,
+  ),
+  Effect.map(
+    capabilitiesOf(KiroOrchestratorReplayHarness, "simple/kiro_transcript.ndjson"),
+    (capabilities) => ["kiro", "Kiro", capabilities] as const,
+  ),
+  Effect.map(
+    capabilitiesOf(MuseOrchestratorReplayHarness, "simple/muse_transcript.ndjson"),
+    (capabilities) => ["muse", "Muse", capabilities] as const,
+  ),
+  Effect.map(
+    capabilitiesOf(PiOrchestratorReplayHarness, "simple/pi_transcript.ndjson"),
+    (capabilities) => ["pi", "Pi", capabilities] as const,
+  ),
+]);
+
 /** The bot layer over the project-store policy, with the given thread's bot policy. */
 const layerBots = (
   found: BotThreadPolicy | undefined | "fails",
   managedPolicy?: ManagedPolicySummary,
+  moreAdapters: ReadonlyArray<ProviderAdapter.ProviderAdapterV2["Service"]> = [],
 ) =>
   RuntimePolicy.layerBotThreads.pipe(
     Layer.provide(layerWithPolicy(managedPolicy)),
@@ -228,6 +332,7 @@ const layerBots = (
           ...ClaudeProviderCapabilitiesV2,
           runtimePolicy: undeclared,
         }),
+        ...moreAdapters,
       ]),
     ),
     Layer.provide(
@@ -329,6 +434,33 @@ describe("bot threads", () => {
           assert.include(refused.message, "Digest writer");
           assert.include(refused.message, instanceId);
           assert.include(refused.message, kind);
+        }
+      }
+    }),
+  );
+
+  it.effect("of every registered driver family, only Claude applies a bot run's rules", () =>
+    Effect.gen(function* () {
+      const families = yield* familyCapabilities;
+      assert.sameMembers(
+        [...new Set(families.map(([driver]): string => driver))],
+        BUILT_IN_DRIVERS.map((driver): string => driver.driverKind),
+      );
+      for (const [index, [driver, name, capabilities]] of families.entries()) {
+        if (driver === "claudeAgent") {
+          assert.deepEqual(capabilities.runtimePolicy.houstonBotRuns, ["asked", "unattended"]);
+          continue;
+        }
+        assert.isFalse("houstonBotRuns" in capabilities.runtimePolicy, name);
+        const instanceId = ProviderInstanceId.make(`family-${index}`);
+        for (const kind of ["asked", "unattended"] as const) {
+          const refused = yield* resolveWith(
+            layerBots(botPolicy(kind), undefined, [adapterWith(instanceId, capabilities)]),
+            { runtimeMode: "auto", instanceId },
+          ).pipe(Effect.flip);
+          assert.equal(refused._tag, "RuntimePolicyResolveError", name);
+          assert.include(refused.message, "Digest writer", name);
+          assert.include(refused.message, kind, name);
         }
       }
     }),

@@ -3864,6 +3864,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
   const makeWakeHarness = makeWakeHarnessWithOptions();
 
   describe("bot threads", () => {
+    const UNRUN_TOOL_ERROR =
+      "<tool_use_error>Error: No such tool available: Frobnicate</tool_use_error>";
     const botTestLayer = Layer.mergeAll(
       IdAllocator.layer,
       McpProviderSessions.layer,
@@ -4042,6 +4044,46 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             assert.include(terminal.failure?.message, "tool check did not run");
           }).pipe(Effect.provide(botTestLayer)),
         ),
+    );
+
+    it.effect.each([
+      ["a refused unknown tool does not stop the bot run", UNRUN_TOOL_ERROR, "completed"],
+      ["a result of an unchecked call stops the bot run", "Command failed", "failed"],
+    ] as const)("%s", ([, content, status]) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { harness } = yield* startBotTurn("unattended");
+          yield* Queue.offer(
+            harness.sdkMessages,
+            claudeSdkFrame({
+              type: "user",
+              uuid: "result-without-decision",
+              session_id: WAKE_NATIVE_SESSION,
+              parent_tool_use_id: null,
+              message: {
+                role: "user",
+                content: [
+                  { type: "tool_result", tool_use_id: "no-decision", content, is_error: true },
+                ],
+              },
+            }),
+          );
+          yield* Queue.offer(
+            harness.sdkMessages,
+            claudeSdkFrame({
+              ...makeResultFrame({
+                uuid: "00000000-0000-4000-8000-000000000911",
+                result: "Digest written.",
+              }),
+              user_message_uuid: harness.promptUuid(0),
+            }),
+          );
+          const terminal = yield* Queue.take(harness.terminalReceipts);
+          assert.equal(terminal.status, status);
+          if (status === "failed")
+            assert.include(terminal.failure?.message, "tool check did not run");
+        }).pipe(Effect.provide(botTestLayer)),
+      ),
     );
 
     it.effect(

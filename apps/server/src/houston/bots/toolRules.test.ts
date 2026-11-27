@@ -186,8 +186,12 @@ describe("gh in a shell command, unattended", () => {
     "gh api graphql --paginate",
     "git status && gh pr status",
     "echo gh",
-    "git commit -m 'fix the gh call'",
+    "git commit -m 'fix the call to gh'",
     "ls | grep gh",
+    "timeout 5 gh pr list",
+    "nice gh pr view 1",
+    "eval gh issue list",
+    "sudo -u bot gh repo view",
   ];
   const WRITES = [
     "gh api -X POST repos/o/r/issues",
@@ -211,6 +215,18 @@ describe("gh in a shell command, unattended", () => {
     "echo 'unbalanced && gh pr merge 1",
     "echo $(gh issue create)",
     "/usr/bin/gh pr merge 1",
+    "eval gh issue create -t x",
+    "timeout 5 gh issue create",
+    "nice gh pr merge 1",
+    "env X=1 gh pr create",
+    "sudo gh issue close 3",
+    "sudo -u bot gh pr merge 1",
+    "xargs gh issue close",
+    "xargs -n1 gh issue close",
+    "find . -name x -exec gh pr merge {} +",
+    "bash -c 'timeout 5 gh issue create'",
+    // Fails closed: gh with words after it is a call wherever it stands.
+    "git commit -m 'fix the gh call'",
   ];
 
   it("allows reads", () => {
