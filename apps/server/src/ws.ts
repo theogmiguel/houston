@@ -234,6 +234,7 @@ import * as HoustonSlackService from "./houston/slack/Service.ts";
 import * as HoustonSlackV1Import from "./houston/slack/V1Import.ts";
 import * as HoustonMergeQueueService from "./houston/mergeQueue/Service.ts";
 import * as HoustonProjectRepositories from "./houston/projects/ProjectRepositoriesService.ts";
+import * as HoustonProjectFolderSearch from "./houston/projects/FolderSearchService.ts";
 import * as InferenceDiscovery from "./houston/inference/InferenceDiscovery.ts";
 import * as InferenceImageChecks from "./houston/inference/InferenceImageChecks.ts";
 import * as InferenceServerRegistry from "./houston/inference/InferenceServerRegistry.ts";
@@ -3551,6 +3552,8 @@ export const layerWsRpc = (
           houstonProjectRepositories.untrack(input),
         [WS_METHODS.houstonProjectsRepositoriesIgnore]: (input) =>
           houstonProjectRepositories.setIgnorePatterns(input),
+        [WS_METHODS.houstonProjectsSearchFolders]: (input) =>
+          HoustonProjectFolderSearch.searchProjectFolders(input),
         [WS_METHODS.houstonInferenceSubscribe]: () =>
           inferenceRegistry.streamChanges.pipe(Stream.map((servers) => ({ servers }))),
         [WS_METHODS.houstonInferenceRefresh]: (input) =>

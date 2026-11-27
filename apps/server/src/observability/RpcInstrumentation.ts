@@ -183,6 +183,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.houstonProjectsRepositoriesTrack]: "workspace",
   [WS_METHODS.houstonProjectsRepositoriesUntrack]: "workspace",
   [WS_METHODS.houstonProjectsRepositoriesIgnore]: "workspace",
+  [WS_METHODS.houstonProjectsSearchFolders]: "workspace",
   [WS_METHODS.shellOpenInEditor]: "workspace",
   [WS_METHODS.filesystemBrowse]: "workspace",
   [WS_METHODS.filesystemGetMetadata]: "workspace",

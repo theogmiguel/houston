@@ -23,6 +23,7 @@ import {
 import { createEnvironmentRpcQueryAtomFamily } from "./runtime.ts";
 
 const BROWSE_IDLE_TTL_MS = 5_000;
+const EXPLICIT_RELATIVE_PATH = /^\.\.?([/\\]|$)/u;
 
 export function resolveFilesystemReadAccess(input: {
   readonly isCatalogReady: boolean;
@@ -68,6 +69,15 @@ export function getFilesystemBrowsePath(query: string, platform = "", enabled = 
     parentPath,
     canBrowseUp: isBrowsing && canNavigateUp(directoryPath),
   };
+}
+
+/** True when the box holds a folder name to search for, not a path to list. */
+export function isFilesystemNameQuery(value: string, platform = ""): boolean {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return false;
+  if (isFilesystemBrowseQuery(trimmed, platform)) return false;
+  // A relative path is still a folder to enter, not a name to find elsewhere.
+  return !EXPLICIT_RELATIVE_PATH.test(trimmed);
 }
 
 export function filterFilesystemBrowseEntries(
@@ -152,6 +162,11 @@ export function createFilesystemEnvironmentAtoms<R, E>(
       tag: WS_METHODS.filesystemBrowse,
       // A listing kept alive while unread is never revalidated, so reopening the browser
       // would show folders as they were. Keep it only long enough for a prefetch to land.
+      idleTtlMs: BROWSE_IDLE_TTL_MS,
+    }),
+    searchFolders: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:filesystem:search-folders",
+      tag: WS_METHODS.houstonProjectsSearchFolders,
       idleTtlMs: BROWSE_IDLE_TTL_MS,
     }),
   };

@@ -26,6 +26,8 @@ import {
   type ProjectId,
   type EnvironmentMachineKind,
   type FilesystemBrowseEntry,
+  type HoustonProjectFolderMatch,
+  type HoustonProjectFolderPlace,
   type KeybindingCommand,
   type SourceControlDiscoveryResult,
   type ScopedThreadRef,
@@ -823,6 +825,59 @@ export function commandPaletteEmptyStateMessage(input: {
     return "Searching thread messages…";
   }
   return undefined;
+}
+
+/** Folder search results use the picker's existing row shape, inside its submenu view. */
+export function buildAddProjectFolderGroups(input: {
+  readonly query: string;
+  readonly places: ReadonlyArray<HoustonProjectFolderPlace>;
+  readonly folders: ReadonlyArray<HoustonProjectFolderMatch>;
+  readonly placeIcon: ReactNode;
+  readonly folderIcon: ReactNode;
+  readonly gitFolderIcon: ReactNode;
+  readonly runPlace: (place: HoustonProjectFolderPlace) => void | Promise<void>;
+  readonly runFolder: (folder: HoustonProjectFolderMatch) => void | Promise<void>;
+}): CommandPaletteGroup[] {
+  if (input.query.trim().length === 0) {
+    if (input.places.length === 0) return [];
+    return [
+      {
+        value: "folder-places",
+        label: "Places to start",
+        items: input.places.map((place) => ({
+          kind: "action",
+          value: `folder-place:${place.kind}:${place.path}`,
+          searchTerms: [place.label, place.path],
+          title: place.label,
+          description: place.path,
+          icon: input.placeIcon,
+          keepOpen: true,
+          run: async () => {
+            await input.runPlace(place);
+          },
+        })),
+      },
+    ];
+  }
+
+  if (input.folders.length === 0) return [];
+  return [
+    {
+      value: "folder-results",
+      label: "Folders",
+      items: input.folders.map((folder) => ({
+        kind: "action",
+        value: `folder-result:${folder.path}`,
+        searchTerms: [folder.name, folder.path],
+        title: folder.name,
+        description: folder.path,
+        icon: folder.gitRepository ? input.gitFolderIcon : input.folderIcon,
+        run: async () => {
+          await input.runFolder(folder);
+        },
+      })),
+    },
+  ];
 }
 
 export function buildBrowseGroups(input: {

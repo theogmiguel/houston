@@ -169,6 +169,50 @@ function CommandFooter({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
+/** Names the folder a picker is listing, with a link to the setting that chooses it. */
+function CommandScopeBar({
+  title,
+  path,
+  actionLabel,
+  onAction,
+}: {
+  title: string;
+  path?: string | undefined;
+  actionLabel?: string | undefined;
+  onAction?: (() => void) | undefined;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 px-4 pt-3 pb-1">
+      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+        {title}
+        {path === undefined ? null : (
+          <>
+            {" "}
+            <span className="font-mono">{path}</span>
+          </>
+        )}
+      </span>
+      {actionLabel !== undefined && onAction !== undefined ? (
+        <CommandFooterAction onClick={onAction}>{actionLabel}</CommandFooterAction>
+      ) : null}
+    </div>
+  );
+}
+
+function CommandStatus({
+  role = "status",
+  children,
+}: {
+  role?: "status" | "alert" | undefined;
+  children: React.ReactNode;
+}) {
+  return (
+    <div role={role} className="px-4 py-3 text-sm text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+
 function CommandFooterAction({
   className,
   ...props
@@ -196,5 +240,7 @@ export {
   CommandListHeading,
   CommandListVirtualized,
   CommandPanel,
+  CommandScopeBar,
   CommandShortcut,
+  CommandStatus,
 };

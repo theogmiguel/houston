@@ -96,6 +96,10 @@ import {
   HoustonProjectRepositoryTrackInput,
   HoustonProjectRepositoryUntrackInput,
 } from "./houston/projects.ts";
+import {
+  HoustonProjectFolderSearchInput,
+  HoustonProjectFolderSearchResult,
+} from "./houston/projectFolderSearch.ts";
 import { ClientActivityReportInput } from "./background.ts";
 import {
   FilesystemGetMetadataInput,
@@ -755,6 +759,7 @@ export const WS_METHODS = {
   houstonProjectsRepositoriesTrack: "houston.projects.repositories.track",
   houstonProjectsRepositoriesUntrack: "houston.projects.repositories.untrack",
   houstonProjectsRepositoriesIgnore: "houston.projects.repositories.ignore",
+  houstonProjectsSearchFolders: "houston.projects.searchFolders",
   houstonInferenceSubscribe: "houston.inference.subscribe",
   houstonInferenceRefresh: "houston.inference.refresh",
   houstonInferenceSave: "houston.inference.save",
@@ -2198,6 +2203,12 @@ const WsHoustonProjectsRepositoriesIgnoreRpc = Rpc.make(
   },
 );
 
+const WsHoustonProjectsSearchFoldersRpc = Rpc.make(WS_METHODS.houstonProjectsSearchFolders, {
+  payload: HoustonProjectFolderSearchInput,
+  success: HoustonProjectFolderSearchResult,
+  error: EnvironmentAuthorizationError,
+});
+
 const WsHoustonTasksGetRpc = Rpc.make(WS_METHODS.houstonTasksGet, {
   payload: HoustonTaskGetInput,
   success: HoustonTaskDetail,
@@ -3351,6 +3362,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonProjectsRepositoriesTrackRpc,
   WsHoustonProjectsRepositoriesUntrackRpc,
   WsHoustonProjectsRepositoriesIgnoreRpc,
+  WsHoustonProjectsSearchFoldersRpc,
   WsHoustonInferenceSubscribeRpc,
   WsHoustonInferenceRefreshRpc,
   WsHoustonInferenceSaveRpc,

@@ -31,8 +31,16 @@ and you can still change the destination before cloning.
 clone from. **New project** appears when the server configures a projects folder. Adding a project opens a new thread in the focused
 workspace with the composer ready.
 
-In **Add folder**, **Enter** adds a folder that exists and never creates one; a path that does
-not exist offers an explicit **Create folder … and add it** row.
+In **Add folder**, the list starts with places to start: the parent folders of existing
+projects, your home folder and, on Windows, the drives. Type a folder name to search the
+projects' parent folders first and then the add-project base directory; Git repositories lead
+the results, and each result shows its full path so folders with the same name stay apart.
+A full path pasted into the box lists that folder, with either slash on Windows. **Change base
+folder** opens the setting that chooses the fallback directory.
+
+**Enter** adds a folder that exists and never creates one. A path that does not exist offers an
+explicit **Create folder … and add it** row, kept apart from the results and showing the
+absolute path it would create.
 
 **Project settings** in a thread's action menu
 or the command palette renames a project, pins it, archives it and changes its checkouts.

@@ -167,6 +167,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.houstonProjectsRepositoriesTrack]: AuthOrchestrationOperateScope,
   [WS_METHODS.houstonProjectsRepositoriesUntrack]: AuthOrchestrationOperateScope,
   [WS_METHODS.houstonProjectsRepositoriesIgnore]: AuthOrchestrationOperateScope,
+  [WS_METHODS.houstonProjectsSearchFolders]: AuthFilesystemReadScope,
   [WS_METHODS.projectsListIgnoredFiles]: AuthFilesystemReadScope,
   [WS_METHODS.projectsReadFile]: AuthFilesystemReadScope,
   [WS_METHODS.projectsSearchContents]: AuthFilesystemReadScope,

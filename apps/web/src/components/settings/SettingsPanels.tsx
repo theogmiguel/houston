@@ -1490,7 +1490,7 @@ export function ThreadsSettingsPanel() {
         serverScoped
         settingKeys={["addProjectBaseDirectory"]}
         {...searchableSetting("add-project-starts-in")}
-        description='Leave empty to use "~/" when the Add Project browser opens.'
+        description="The Add folder browser searches this after the parents of registered projects. Leave empty to search your home folder."
         resetAction={
           settings.addProjectBaseDirectory !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (
             <SettingResetButton

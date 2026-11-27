@@ -149,6 +149,9 @@ other automatic runs after you press Stop. They wait in the thread's queued list
 Resume or send a message; **Send now** starts one at once. Off by default. See
 [Agent status](agent-status.md).
 
+**Add project base directory** is the folder the Add folder browser searches after the
+parents of registered projects. Empty means your home folder.
+
 **Text generation fallback** chooses where background writing goes when its model cannot
 run. **Any provider** (the default) tries an instance marked as running local models first,
 then the other providers. **Local models only** never sends it to a cloud instance, even before

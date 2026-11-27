@@ -42,6 +42,8 @@ interface CommandPaletteResultsProps {
 }
 
 function CommandPaletteEmptyState(props: { emptyStateMessage?: string; isActionsOnly: boolean }) {
+  // An empty message means the state is already reported above the list.
+  if (props.emptyStateMessage === "") return null;
   return (
     <div className="py-10 text-center text-sm text-muted-foreground">
       {props.emptyStateMessage ??
