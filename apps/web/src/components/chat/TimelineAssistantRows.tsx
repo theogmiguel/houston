@@ -45,8 +45,9 @@ import { PHONE_META_SEPARATOR_CLS } from "~/components/ui/phone-recipes";
 
 /**
  * The hover footer closes a turn. Its 6px lead, 24px buttons less the 8px they hang below it,
- * and the 2px row padding add up to the 24px between turns (`pb-0` on the row in
- * `MessagesTimeline`), so the gap does not depend on whether the footer is showing.
+ * and the 2px row padding make up 24px; `FOOTER_GAP_CLASS` and `FOOTER_TURN_GAP_CLASS` in
+ * `timelineSpacing` add the gap below the buttons, and the footer takes its room whether or not
+ * it is showing.
  */
 const ASSISTANT_TURN_FOOTER_CLASS_NAME = "mt-1.5 -mb-2 h-6 max-phone:-ms-2";
 
