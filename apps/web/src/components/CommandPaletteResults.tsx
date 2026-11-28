@@ -19,6 +19,7 @@ import {
 } from "./CommandPalette.logic";
 import {
   CommandCollection,
+  CommandFixedRows,
   CommandGroup,
   CommandGroupLabel,
   CommandItem,
@@ -221,6 +222,31 @@ export function CommandPaletteVirtualizedResults(props: CommandPaletteVirtualize
         )}
       />
     </CommandListVirtualized>
+  );
+}
+
+/** Rows that stay under the list while it scrolls and filters. `startIndex` is the first row's
+ * place in the palette's item order, so the arrow keys reach them after the last list row. */
+export function CommandPaletteFixedRows(props: {
+  items: ReadonlyArray<CommandPaletteActionItem | CommandPaletteSubmenuItem>;
+  startIndex: number;
+  highlightedItemValue: string | null;
+  keybindings: ResolvedKeybindingsConfig;
+  onExecuteItem: (item: CommandPaletteActionItem | CommandPaletteSubmenuItem) => void;
+}) {
+  return (
+    <CommandFixedRows>
+      {props.items.map((item, offset) => (
+        <CommandPaletteResultRow
+          key={item.value}
+          index={props.startIndex + offset}
+          item={item}
+          keybindings={props.keybindings}
+          isActive={props.highlightedItemValue === item.value}
+          onExecuteItem={props.onExecuteItem}
+        />
+      ))}
+    </CommandFixedRows>
   );
 }
 

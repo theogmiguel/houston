@@ -24,7 +24,7 @@ describe("CommandPalette open intents", () => {
     await expect.element(page.getByPlaceholder("Search...")).toHaveFocus();
   });
 
-  it("offers Add project… as the last row of New thread in...", async () => {
+  it("offers Add project… in New thread in...", async () => {
     setup();
     await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
 

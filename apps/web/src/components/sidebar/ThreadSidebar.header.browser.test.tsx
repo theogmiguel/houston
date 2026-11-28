@@ -275,7 +275,21 @@ describe("Workspaces header", () => {
     expect(actions.className).toContain("group-focus-within/section:opacity-100");
   });
 
-  it("puts new thread, new workspace, add project and view options beside the search", async () => {
+  it("offers New workspace on the Workspaces label", async () => {
+    resetTestState();
+    const onNewWorkspace = vi.fn();
+    await using screen = await render(
+      <TooltipProvider delay={0}>
+        <SidebarWorkspacesHeader onNewWorkspace={onNewWorkspace} />
+      </TooltipProvider>,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "New workspace" }).element());
+    expect(onNewWorkspace).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Add project" }).elements()).toHaveLength(0);
+  });
+
+  it("puts only new thread and view options beside the search", async () => {
     resetTestState();
     const onNewWorkspace = vi.fn();
     await using screen = await render(
@@ -291,7 +305,7 @@ describe("Workspaces header", () => {
       </TooltipProvider>,
     );
 
-    const names = ["New thread", "New workspace", "Add project", "View options"];
+    const names = ["New thread", "View options"];
     const boxes = names.map((name) =>
       screen.getByRole("button", { name }).element().getBoundingClientRect(),
     );
@@ -300,16 +314,12 @@ describe("Workspaces header", () => {
       expect(box.height).toBe(28);
       expect(box.top).toBe(boxes[0]!.top);
     }
-    await userEvent.click(screen.getByRole("button", { name: "New workspace" }).element());
-    expect(onNewWorkspace).toHaveBeenCalledTimes(1);
-
-    await userEvent.click(screen.getByRole("button", { name: "Add project" }).element());
-    expect(openAddProjectDialog).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button").elements()).toHaveLength(names.length);
 
     await userEvent.click(screen.getByRole("button", { name: "View options" }).element());
     await expect.element(page.getByText("Sort threads")).toBeVisible();
     await userEvent.click(page.getByRole("menuitem", { name: "New workspace" }).element());
-    expect(onNewWorkspace).toHaveBeenCalledTimes(2);
+    expect(onNewWorkspace).toHaveBeenCalledTimes(1);
   });
 
   it("starts a thread from the toolbar in a new tab of the focused pane", async () => {

@@ -26,7 +26,7 @@ To clone into `<host>/<owner>/<repo>` folders, turn on **Clone into host folders
 **Settings ▸ Threads**. Clones then default to that path under the add-project base directory,
 and you can still change the destination before cloning.
 
-**Add project**, in the sidebar's search row or the command palette, offers **Open folder**,
+**Add project**, in the new-thread project picker or the command palette, offers **Open folder**,
 **Clone repository** and **New project**, followed by the provider repositories Houston can
 clone from. **New project** appears when the server configures a projects folder. Adding a project opens a new thread in the focused
 workspace with the composer ready.
@@ -162,7 +162,7 @@ surface, or the **Pull requests** or **Tasks** page. A thread's chat has one tab
 opening a thread that is already open focuses its tab. Settings, which includes Usage, opens
 as a card above the layout.
 
-- **New workspace** (a sidebar button, also in the **View options** menu and the command
+- **New workspace** (on the **Workspaces** label, also in the **View options** menu and the command
   palette) adds one at the end of the list under a numbered name, with that name selected for
   editing: `Enter` keeps it and opens a new thread there, `Escape` takes the workspace back. The
   sidebar lists them all, and at least one always exists.
@@ -201,17 +201,18 @@ same id.
 
 ## The sidebar
 
-The sidebar opens with search and icon buttons for **New thread**, **New workspace**,
-**Add project** and **View options**, then one group per layout workspace, in workspace order. A group lists the threads whose chat is
+The sidebar opens with search and icon buttons for **New thread** and **View options**, then
+one group per layout workspace, in workspace order. A group lists the threads whose chat is
 open in that workspace, whichever project they belong to. A thread whose chat is not placed in
 any workspace is listed under the first one. Clicking a group label shows that workspace in the
 main area, and **Enter** or **Space** on the focused label does the same. Its chevron collapses
 and expands the group, which keeps its state; a search opens every group it matches in. The
-**…** button beside the label, or a right-click, opens the workspace's actions. With no real
-projects, a workspace's **New thread** opens the project picker, which offers **No project** and
-**Add project…**; **Add project** in the search row adds one.
+**…** button beside the label, or a right-click, opens the workspace's actions. **New thread**
+opens the project picker: the projects scroll and filter as you type, and **Add project…** and
+**No project** stay under the list. A search that matches no project selects **Add project…**.
 
-The **Workspaces** header carries **Filter by project** and the **Hidden workspaces** menu.
+The **Workspaces** header carries **Filter by project**, the **Hidden workspaces** menu and
+**New workspace**.
 **View options** sorts threads (**Workspace order**, **Last activity** or **Created**), chooses
 what rows show and holds **New workspace**. A workspace's menu offers
 **New thread**, **Rename workspace** (`F2`), **Pin workspace** / **Unpin workspace**,
