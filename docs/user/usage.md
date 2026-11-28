@@ -90,6 +90,35 @@ no limit windows cannot be held this way and are named in the setting's descript
 is one. One provider account used from two channels, or from the Windows Subsystem for Linux
 backend, is tracked separately by each server, so a limit seen in one is not known to the other.
 
+## Load
+
+**Hold new sub-agents under load**, in **Settings ▸ Threads**, makes new sub-agent work wait
+instead of starting when too many runs are active or the machine is short of memory. It is off
+by default. Held work is a delegated child, a thread an agent launches, a new round sent to a
+sub-agent and a sub-agent's continuation. A message you type, a task run you start and a result
+delivered to a parent thread always start.
+
+**Concurrent runs** is **Auto** by default and sets the ceiling from installed memory: one run
+per 6 GB, so 5 on a 30 GB machine and 2 on 16 GB. You can set 1 to 32. The row shows the current
+value and how many runs are active. A run counts while it is starting, running, or waiting on
+something other than you; a run waiting on your answer does not count.
+
+A held sub-agent shows **Waiting**, and its tooltip names the reason: how many runs are active
+against the ceiling, or the share of memory available. A held sub-agent creates no worktree
+while it waits, and `delegate_task` returns `status: "queued"` with the reason.
+
+Houston releases held work oldest first, one start every 20 seconds, while the count is below
+the ceiling and memory has room. Turning the row off releases it in the same order and pace.
+A hold older than 30 minutes is marked overdue and its parent receives one message saying the
+child still waits and can be cancelled.
+
+Memory pressure is the machine's available memory against its total; swap use alone never
+counts as pressure. Below 10% available is high pressure. An unreadable memory reading is
+skipped, logged once, and treated as no pressure. On Windows Houston reads only available
+physical memory, so there is no pressure signal there and the ceiling alone holds work. The WSL
+backend is a separate machine: it sees only its own virtual machine, so its ceiling and pressure
+do not describe Windows or another Houston server on the same computer.
+
 ## Memory
 
 Turn on **Memory** in the thread details checklist to see the machine's memory left in the

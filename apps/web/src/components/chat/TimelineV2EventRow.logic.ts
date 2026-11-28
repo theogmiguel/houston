@@ -70,9 +70,10 @@ export function subagentStatusLabel(status: SubagentStatus): string {
     case "completed":
       return "Ready";
     case "running":
-    case "waiting":
     case "pending":
       return "Running";
+    case "waiting":
+      return "Waiting";
     case "failed":
       return "Failed";
     case "idle":

@@ -509,6 +509,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["usage quota rate limit account provider window subagent delegate"],
   },
   {
+    id: "hold-new-subagents-under-load",
+    title: "Hold new sub-agents under load",
+    to: "/settings/threads",
+    searchTerms: ["memory pressure concurrent runs ceiling subagent delegate queue wait"],
+  },
+  {
     id: "auto-resume-limited-threads",
     title: "Resume after usage limits",
     to: "/settings/threads",

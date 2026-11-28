@@ -44,6 +44,7 @@ import * as MessageDelivery from "../houston/messageDelivery.ts";
 import * as HoustonResumeSessions from "../houston/resumeSessions.ts";
 import * as LimitWindowRegistry from "../houston/runStart/LimitWindowRegistry.ts";
 import * as AccountLimitHoldWorker from "../houston/runStart/AccountLimitHoldWorker.ts";
+import * as LoadHoldWorker from "../houston/runStart/LoadHoldWorker.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as CommandOutputHub from "./CommandOutputHub.ts";
@@ -443,6 +444,15 @@ export const layerProduction = Layer.mergeAll(
       Layer.mergeAll(
         ProjectionStore.layer,
         LimitWindowRegistry.layer,
+        layerThreadManagementProvided,
+        layerOrchestratorProvided,
+      ),
+    ),
+  ),
+  LoadHoldWorker.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        ProjectionStore.layer,
         layerThreadManagementProvided,
         layerOrchestratorProvided,
       ),

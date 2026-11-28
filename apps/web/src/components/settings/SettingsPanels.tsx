@@ -15,7 +15,9 @@ import {
 import {
   DEFAULT_UNIFIED_SETTINGS,
   type DiffLayout,
+  MAX_CONCURRENT_RUNS,
   MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+  MIN_CONCURRENT_RUNS,
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   SidebarProjectSortOrder,
 } from "@houston-app/contracts/settings";
@@ -66,6 +68,7 @@ import { ensureLocalApi, readLocalApi } from "../../localApi";
 import { isMacPlatform } from "../../lib/utils";
 import { RESET_THREAD_DETAILS_ITEMS } from "../chat/threadDetailsItems";
 import { useEnvironmentProviders } from "../../state/environments";
+import { useThreadShells } from "../../state/entities";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import { Button, InlineButton } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
@@ -285,6 +288,8 @@ export function settingsRestoreDefaultsPatch() {
     snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
     holdUnlimitedThreads: DEFAULT_UNIFIED_SETTINGS.holdUnlimitedThreads,
     holdAgentMessagesAfterStop: DEFAULT_UNIFIED_SETTINGS.holdAgentMessagesAfterStop,
+    holdNewSubagentsUnderLoad: DEFAULT_UNIFIED_SETTINGS.holdNewSubagentsUnderLoad,
+    concurrentRuns: DEFAULT_UNIFIED_SETTINGS.concurrentRuns,
     snoozePresets: DEFAULT_UNIFIED_SETTINGS.snoozePresets,
     responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
     enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
@@ -1443,6 +1448,16 @@ export function ThreadsSettingsPanel() {
   const supportsAutoSettlementScope = connectedEnvironments.every(
     (target) => target.serverConfig?.environment.capabilities.threadAutoSettlementScope === true,
   );
+  const threadShells = useThreadShells();
+  const activeRunCount = threadShells.filter(
+    (thread) =>
+      (environmentId === null || thread.environmentId === environmentId) &&
+      thread.runtime !== null &&
+      (thread.runtime.status === "starting" ||
+        thread.runtime.status === "running" ||
+        thread.runtime.status === "waiting"),
+  ).length;
+  const concurrentRunsValue = String(settings.concurrentRuns);
 
   const textGenerationProviders = serverProviders.filter(
     (provider) => provider.supportsTextGeneration !== false,
@@ -1582,6 +1597,70 @@ export function ThreadsSettingsPanel() {
 
       <SettingsSection id="stopped-threads" title="Stopped threads">
         <HoldAgentMessagesAfterStopRow />
+      </SettingsSection>
+
+      <SettingsSection id="load" title="Load">
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("hold-new-subagents-under-load")}
+          description={`New sub-agents wait while the ceiling is reached or memory is short. Runs you start always start. ${
+            settings.concurrentRuns === "auto"
+              ? "Auto picks a ceiling from installed memory."
+              : `The ceiling is ${settings.concurrentRuns} runs.`
+          } ${activeRunCount} ${activeRunCount === 1 ? "run is" : "runs are"} active.`}
+          settingKeys={["holdNewSubagentsUnderLoad", "concurrentRuns"]}
+          control={
+            <div className="flex flex-wrap items-center gap-2">
+              <Select
+                value={concurrentRunsValue}
+                onValueChange={(value) => {
+                  if (value === "auto") {
+                    updateSettings({ concurrentRuns: "auto" });
+                    return;
+                  }
+                  const parsed = Number(value);
+                  if (Number.isInteger(parsed)) {
+                    updateSettings({
+                      concurrentRuns: Math.min(
+                        MAX_CONCURRENT_RUNS,
+                        Math.max(MIN_CONCURRENT_RUNS, parsed),
+                      ),
+                    });
+                  }
+                }}
+              >
+                <SelectTrigger size="sm" className="w-32" aria-label="Concurrent runs">
+                  <SelectValue>
+                    {settings.concurrentRuns === "auto"
+                      ? "Auto"
+                      : `${settings.concurrentRuns} runs`}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem hideIndicator value="auto">
+                    Auto
+                  </SelectItem>
+                  {Array.from(
+                    { length: MAX_CONCURRENT_RUNS - MIN_CONCURRENT_RUNS + 1 },
+                    (_, index) => MIN_CONCURRENT_RUNS + index,
+                  ).map((runs) => (
+                    <SelectItem hideIndicator key={runs} value={String(runs)}>
+                      {runs} {runs === 1 ? "run" : "runs"}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+              <ScopedSwitch
+                settingKeys={["holdNewSubagentsUnderLoad"]}
+                checked={settings.holdNewSubagentsUnderLoad}
+                onCheckedChange={(checked) =>
+                  updateSettings({ holdNewSubagentsUnderLoad: Boolean(checked) })
+                }
+                aria-label="Hold new sub-agents under load"
+              />
+            </div>
+          }
+        />
       </SettingsSection>
 
       <SettingsSection id="usage-limits" title="Usage limits">

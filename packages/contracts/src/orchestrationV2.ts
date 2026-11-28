@@ -1005,6 +1005,8 @@ export const OrchestrationV2Subagent = Schema.Struct({
     "cancelled",
     "interrupted",
   ]),
+  /** Why this sub-agent's new work is held before it reaches the provider; absent when running. */
+  holdReason: Schema.optional(Schema.NullOr(MessageDeliveryQueueHoldReason)),
   progress: Schema.optional(Schema.String),
   workflow: Schema.optional(OrchestrationV2SubagentWorkflow),
   result: Schema.NullOr(Schema.String),

@@ -53,6 +53,7 @@ export function SubagentTooltipContent(props: {
   parentProject?: Pick<OrchestrationProjectShell, "workspaceRoot"> | undefined;
   childProject?: Pick<OrchestrationProjectShell, "id" | "title" | "workspaceRoot"> | undefined;
   status: OrchestrationV2TurnItemStatus;
+  holdReason?: { readonly message: string } | null | undefined;
   result?: string | null | undefined;
   progress?: string | null | undefined;
 }) {
@@ -175,6 +176,7 @@ export function SubagentTooltipContent(props: {
         </span>
         {props.elapsed}
       </div>
+      {props.holdReason ? <div>{props.holdReason.message}</div> : null}
       {metadata.map(({ label, value }) => {
         const Icon = label === "Branch" ? GitBranchIcon : FolderIcon;
         return (

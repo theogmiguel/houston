@@ -532,6 +532,8 @@ export interface ProjectionStoreV2Shape {
   >;
   /** Threads that are not deleted, archived ones included. */
   readonly countThreads: () => Effect.Effect<number, ProjectionStoreV2Error>;
+  /** Runs starting, running, or waiting on something other than a pending user request. */
+  readonly countActiveRuns: () => Effect.Effect<number, ProjectionStoreV2Error>;
   /** Every active thread, in shell order. */
   readonly listActiveShellIndex: () => Effect.Effect<
     ReadonlyArray<ActiveShellIndexEntry>,
@@ -7438,6 +7440,24 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       return rows[0]?.count ?? 0;
     }, Effect.mapError(shellSnapshotReadError));
 
+    const countActiveRuns = Effect.fn("ProjectionStore.countActiveRuns")(function* () {
+      const rows = yield* sql<{ readonly count: number }>`
+        SELECT COUNT(*) AS count
+        FROM orchestration_v2_projection_runs run
+        WHERE run.status IN ('preparing', 'starting', 'running')
+          OR (
+            run.status = 'waiting'
+            AND NOT EXISTS (
+              SELECT 1 FROM orchestration_v2_projection_runtime_requests request
+              WHERE request.thread_id = run.thread_id
+                AND request.status = 'pending'
+                AND request.kind IN ('permission', 'mcp-elicitation', 'user_input')
+            )
+          )
+      `;
+      return rows[0]?.count ?? 0;
+    }, Effect.mapError(shellSnapshotReadError));
+
     const listActiveShellIndex = Effect.fn("ProjectionStore.listActiveShellIndex")(function* () {
       const rows = yield* sql<{
         readonly thread_id: string;
@@ -7689,6 +7709,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       getPullRequestSnapshot: readOnReader(getPullRequestSnapshot),
       listActiveSubagentThreadIds: readOnReader(listActiveSubagentThreadIds),
       countThreads: readOnReader(countThreads),
+      countActiveRuns: readOnReader(countActiveRuns),
       listActiveShellIndex: readOnReader(listActiveShellIndex),
       listProviderThreadRefs: readOnReader(listProviderThreadRefs),
       readShellSnapshot: readOnReader(readShellSnapshot),

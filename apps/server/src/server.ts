@@ -572,6 +572,7 @@ const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
   Layer.provide(RuntimeLayer.layerProjectService),
   Layer.provide(layerCheckpointStore),
   Layer.provide(layerGitWorkflow),
+  Layer.provide(ThreadMemory.layer),
   Layer.provide(
     RunFinalizationService.layerObserver.pipe(
       Layer.provide(ProjectionStoreV2.layer),

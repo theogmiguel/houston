@@ -112,6 +112,18 @@ export const SidebarAutoSettleAfterDays = Schema.Number.check(
 export type SidebarAutoSettleAfterDays = typeof SidebarAutoSettleAfterDays.Type;
 const DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS: SidebarAutoSettleAfterDays = 3;
 
+export const MIN_CONCURRENT_RUNS = 1;
+export const MAX_CONCURRENT_RUNS = 32;
+/** Auto computes the ceiling from RAM; a number pins it. */
+export const ConcurrentRuns = Schema.Union([
+  Schema.Literal("auto"),
+  Schema.Int.check(
+    Schema.isBetween({ minimum: MIN_CONCURRENT_RUNS, maximum: MAX_CONCURRENT_RUNS }),
+  ),
+]);
+export type ConcurrentRuns = typeof ConcurrentRuns.Type;
+const DEFAULT_CONCURRENT_RUNS: ConcurrentRuns = "auto";
+
 export const MAX_SNOOZE_PRESET_MINUTES = 30 * 24 * 60;
 export const MAX_SNOOZE_PRESETS = 8;
 export const SnoozePresetDay = Schema.Literals([
@@ -1491,6 +1503,11 @@ export const ServerSettings = Schema.Struct({
   holdAgentMessagesAfterStop: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
+  /** Hold new sub-agent work while runs reach the ceiling or memory pressure is high. */
+  holdNewSubagentsUnderLoad: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  concurrentRuns: ConcurrentRuns.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_CONCURRENT_RUNS)),
+  ),
   autoResumeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   snoozePresets: SnoozePresetSettings.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SNOOZE_PRESETS)),
@@ -1964,6 +1981,8 @@ export const ServerSettingsPatch = Schema.Struct({
   snoozeLimitedThreads: Schema.optionalKey(Schema.Boolean),
   holdUnlimitedThreads: Schema.optionalKey(Schema.Boolean),
   holdAgentMessagesAfterStop: Schema.optionalKey(Schema.Boolean),
+  holdNewSubagentsUnderLoad: Schema.optionalKey(Schema.Boolean),
+  concurrentRuns: Schema.optionalKey(ConcurrentRuns),
   snoozePresets: Schema.optionalKey(SnoozePresetSettings),
   hiddenThreadTags: Schema.optionalKey(Schema.Array(Schema.String)),
   hideTaggedThreads: Schema.optionalKey(Schema.Boolean),

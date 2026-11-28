@@ -46,6 +46,7 @@ import {
   type ScopedThreadRef,
 } from "@houston-app/contracts";
 import type { TimestampFormat } from "@houston-app/contracts/settings";
+import type { MessageDeliveryQueueHoldReason } from "@houston-app/contracts/houston/messageDelivery";
 import {
   BotIcon,
   CircleCheckIcon,
@@ -436,6 +437,7 @@ function SubagentTimelineLink(props: {
   readonly result: string | null;
   readonly progress: string | undefined;
   readonly status: OrchestrationV2TurnItem["status"];
+  readonly holdReason?: MessageDeliveryQueueHoldReason | null;
   readonly startedAt: DateTime.Utc | null;
   readonly completedAt: DateTime.Utc | null;
   readonly threadId: ThreadId | null;
@@ -600,6 +602,7 @@ function SubagentTimelineLink(props: {
           model={agent?.model ?? null}
           modelSelection={agent?.modelSelection}
           status={liveStatus}
+          holdReason={agent?.holdReason ?? props.holdReason ?? null}
           result={agent?.result ?? props.result}
           progress={agent?.progress ?? props.progress}
         />
@@ -641,6 +644,7 @@ function SubagentTimelineTooltip(
       driver={props.driver}
       elapsed={props.elapsed}
       status={props.status}
+      holdReason={props.holdReason}
       result={props.result}
       progress={props.progress}
       parentTitle={formatSubagentDisplayTitle(parent?.title ?? "Parent thread")}

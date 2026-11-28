@@ -149,6 +149,12 @@ other automatic runs after you press Stop. They wait in the thread's queued list
 Resume or send a message; **Send now** starts one at once. Off by default. See
 [Agent status](agent-status.md).
 
+**Hold new sub-agents under load** waits new sub-agent work while too many runs are active or
+memory is short. **Concurrent runs** is Auto by default and picks the ceiling from installed
+memory, or can be set from 1 to 32; the row shows the current value and how many runs are
+active. A message you type always starts, and so does a result delivered to a parent thread.
+See [Usage](usage.md) for the causes, release order and the Windows and WSL limits.
+
 **Add project base directory** is the folder the Add folder browser searches after the
 parents of registered projects. Empty means your home folder.
 
