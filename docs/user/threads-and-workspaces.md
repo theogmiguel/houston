@@ -418,7 +418,9 @@ reference material, not as instructions.
 
 Terminal command names open the Houston action that does the same, whether you pick the name
 from the `/` menu or type it and press Enter. A name the selected provider reports stays with
-the provider, and an entry appears only when the thread supports it.
+the provider, and an entry appears only when the thread supports it. Claude reports `/mcp`,
+`/effort`, `/fast` and `/rename` but can serve them only in its own terminal interface, so
+Houston opens its action for those four.
 
 | Terminal name                             | Opens in Houston                           |
 | ----------------------------------------- | ------------------------------------------ |
@@ -437,8 +439,8 @@ the provider, and an entry appears only when the thread supports it.
 | `/mcp`                                    | Provider settings for MCP servers          |
 | `/voice`                                  | Voice settings                             |
 
-`/terminal-setup`, `/statusline`, `/exit`, `/quit`, `/ide`, `/tui` and `/vim` work only in a
-terminal. Houston says so in place and sends nothing. `/plan <text>` enters plan mode and
+`/terminal-setup`, `/statusline`, `/exit`, `/quit`, `/ide`, `/tui`, `/vim`, `/hooks` and
+`/memory` work only in a terminal. Houston says so in place and sends nothing. `/plan <text>` enters plan mode and
 sends `<text>` as the message.
 
 **Plan mode** is optional and off by default (**Settings ▸ Labs**). Enter it with `/plan` or

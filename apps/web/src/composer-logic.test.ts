@@ -625,6 +625,8 @@ describe("parseSideChatCommand", () => {
 describe("parseTerminalOnlySlashCommand", () => {
   it("classifies a terminal-only name as the whole message", () => {
     expect(parseTerminalOnlySlashCommand("/exit", [])).toEqual({ name: "exit" });
+    expect(parseTerminalOnlySlashCommand("/hooks", [])).toEqual({ name: "hooks" });
+    expect(parseTerminalOnlySlashCommand("/memory", [])).toEqual({ name: "memory" });
     expect(parseTerminalOnlySlashCommand("  /VIM  ", [])).toEqual({ name: "vim" });
     expect(parseTerminalOnlySlashCommand("/terminal-setup --force", [])).toEqual({
       name: "terminal-setup",

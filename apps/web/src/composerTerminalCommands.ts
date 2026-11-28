@@ -74,6 +74,34 @@ export const TERMINAL_COMMAND_ENTRIES: ReadonlyArray<TerminalCommandEntry> = [
   { action: "settings-voice", names: ["voice"], description: "Open voice settings" },
 ];
 
+/**
+ * Names a provider reports but cannot serve without its own terminal interface. Measured on the
+ * headless Claude CLI: `/mcp` and `/fast` only decline, `/effort` is overwritten by Houston's
+ * next turn, and `/rename` renames the provider's session rather than the thread.
+ */
+const NAMES_HOUSTON_ANSWERS_FOR_PROVIDER: Readonly<Record<string, ReadonlySet<string>>> = {
+  claudeAgent: new Set(["mcp", "fast", "effort", "rename"]),
+};
+
+/**
+ * The provider's commands without those Houston answers itself: a withheld name is one the
+ * provider cannot serve here and whose Houston action this thread can run right now.
+ */
+export function providerCommandsLeftToProvider<Command extends { readonly name: string }>(
+  commands: ReadonlyArray<Command>,
+  input: { readonly provider: string; readonly availableActions: ReadonlySet<TerminalActionId> },
+): ReadonlyArray<Command> {
+  const withheld = NAMES_HOUSTON_ANSWERS_FOR_PROVIDER[input.provider];
+  if (withheld === undefined) return commands;
+  const kept = commands.filter((command) => {
+    const name = command.name.toLowerCase();
+    if (!withheld.has(name)) return true;
+    const entry = TERMINAL_COMMAND_ENTRIES.find((candidate) => candidate.names.includes(name));
+    return entry === undefined || !input.availableActions.has(entry.action);
+  });
+  return kept.length === commands.length ? commands : kept;
+}
+
 const TERMINAL_COMMAND_TEXT = /^\/([a-z][a-z0-9-]*)(?:\s+([\s\S]*))?$/i;
 const TERMINAL_COMMAND_NAME = /^\/([a-z][a-z0-9-]*)/i;
 

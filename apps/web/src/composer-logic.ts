@@ -374,6 +374,8 @@ export const TERMINAL_ONLY_COMMAND_NAMES = [
   "ide",
   "tui",
   "vim",
+  "hooks",
+  "memory",
 ] as const;
 
 export function parseTerminalOnlySlashCommand(
