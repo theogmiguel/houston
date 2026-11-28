@@ -2,8 +2,9 @@
 
 Rules that protect resources outside Houston's control: an external tool's format, the user's
 files, the user's desktop session, or a safety gate. Each one names what enforces it and the
-incident or measurement behind it. [`AGENTS.md`](../../AGENTS.md) states the rules; this file
-carries the reasons.
+incident or measurement behind it. [`AGENTS.md`](../../AGENTS.md) lists the hard rules under
+"Never do these" and the working defaults; this file carries the reasons for the hard ones. A
+rule here changes only with a recorded reason.
 
 ## Signals and processes
 
@@ -206,5 +207,5 @@ irrelevant to confidentiality and lets the client detect a substituted host.
   scope — shell, editor, agents — silently. `oom-shield.sh` caps one scope
   (`MemoryHigh=16G`, `MemoryMax=18G`, `nice -n 19`) and serializes invocations with a
   per-user flock.
-- **Full suites run at integration boundaries and before pushes.** Use focused tests while
-  iterating and the full suites at the documented delivery cadence.
+- **CI owns the full suites.** Iterate with focused tests and run `pnpm check:changed` before a
+  push; run a full suite locally when the change is broad.

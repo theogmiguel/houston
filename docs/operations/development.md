@@ -150,7 +150,9 @@ Every checkout and worktree has its own `target/`, which only grows. Agent workt
 - `apps/` and `packages/`: the package's `typecheck` and the touched tests; for the server,
   `pnpm --filter @houston-app/cli exec vp test run <files>`.
 
-**Before every push** — the full suites, Cargo inside `scripts/oom-shield.sh` on Linux and
+**Before a push** — run `pnpm check:changed`. CI runs the full suites, and `ci-gate` is the
+aggregate check. Run the full suites locally when the change is broad or a maintainer asks,
+with Cargo inside `scripts/oom-shield.sh` on Linux and
 with three jobs on Windows.
 
 ### Full gate commands

@@ -1,197 +1,176 @@
 # Houston contributor instructions
 
-Houston is a local-first desktop application for coding agents on Linux and Windows. An
-Electron host starts, or attaches to, a TypeScript server for its channel; the renderer
-presents each agent conversation as a **thread**. Closing the window keeps the host in the
-tray, so the server and its agent runs continue; quitting stops the server the host started.
+Houston is mission control for coding agents. It ships today as a desktop app on Linux and
+Windows; that is the current state, not a limit. An Electron host starts, or attaches to, a
+TypeScript server for its channel; the renderer presents each agent conversation as a
+**thread**. Closing the window keeps the host in the tray, so the server and
+its agent runs continue; quitting stops the server the host started.
 
-Prefer the smallest design that satisfies the requirement. Verify documentation against
-the implementation and correct discrepancies in the same change. If an instruction
-conflicts with the task, explain the conflict and obtain maintainer direction.
+## How to read this file
 
-## Invariants
+These are good defaults, not hard rules. The maintainer's direction in a task overrides
+anything here except the items under "Never do these". Prefer ambitious ideas built as simple
+systems: do not keep complexity because it exists, and do not add machinery because it looks
+impressive. Find the real constraint and build the smallest model that makes correct behaviour
+unsurprising. When a default conflicts with the task, follow the task and say in one line which
+default was set aside. Verify documentation against the implementation and correct
+discrepancies in the same change.
 
-- **Server lifetime** (`apps/server`): the server owns threads and agent runs, and a window is
-  only a client. Closing the window stops neither the server nor its runs. Quitting stops the
-  server the host started; a server the host attached to is never stopped by it. One server
-  runs per channel directory; clients find it through that directory's
-  `v2/userdata/server-runtime.json`.
-- **Local state** (`<channel dir>/v2`): one user, one machine, one SQLite database per channel
-  state directory. The Windows WSL backend is a separate environment: it runs its own server
-  whose channel state lives inside the distro, so its database, threads, projects and secrets are
-  never shared with the Windows server. Upstream's tables follow upstream's migrations; Houston's
-  tables live on the Houston migration track (`houston_sql_migrations`), whose ids never enter
-  upstream's migrator. Telemetry is allowed to improve Houston: anonymous usage data and crash and
-  diagnostic data (OpenTelemetry traces, metrics and logs). It never includes source code, prompts,
-  agent responses, file contents, credentials or paths, can be turned off, and
-  `docs/user/privacy.md` lists what is sent, to whom and how to turn it off before it ships.
-  Local-first does not mean offline: a network-backed feature can be turned off, sends nothing
-  while off, and sends no credential or user content to a destination the user did not configure.
-  Updates require an explicit user action.
-- **v1 state** (`~/.houston`): v2 never deletes, moves or opens v1's state read-write. A one-time
-  import reads v1's `houston.db` read-only. The host's one v1 cleanup reads the channel
-  directory and edits only the agent CLI configs v1 changed.
-- **Reported status** (provider adapters): agent status comes from each provider adapter's
-  structured stream (SDK, app-server, server or ACP events), never from terminal output.
-- **Orchestration** (orchestration-v2): agent-to-agent work uses upstream's orchestration-v2 and
-  the server's MCP toolkits. A credential carries only the capabilities its thread needs: a
-  read-only thread runs with the provider's own read-only sandbox, no user MCP servers, and no
-  MCP credential beyond the operations it must submit.
-- **Contracts** (`packages/contracts`): every server ↔ renderer message is typed there. Houston
-  additions live under `houston/` and use `houston.*` RPC names. A new WebSocket method is listed in
-  `RpcInstrumentation.ts` and given a scope in `RpcAuthorization.ts`.
-- **External configuration** (managed-marker): changes to an agent CLI's configuration are
-  reversible managed-marker blocks. `~/.claude.json` is never rewritten; it changes only through
-  `claude mcp`.
-- **Secrets** (secret store): tokens live in the server's secret store (`ServerSecretStore`),
-  one 0600 file per secret in a 0700 directory under the channel's state, scoped by channel
-  directory, project and provider, never in the database, logs, traces, errors, RPC replies or
-  stream events. A token is bounded in size and refused by name above the bound. The OS keychain
-  is read only once, by the import of earlier builds' tokens, and never written or deleted.
-- **Untrusted input**: text from outside (GitHub, Notion, Slack, imported files) is bounded,
-  attributed and kept from acting as instructions before it reaches a prompt; text Houston sends
-  out is escaped so it cannot mention, link or close anything it did not mean to.
-- **Houston additions** (`apps/server/src/houston`): Houston code lives under `houston/`
-  directories. Ported code is pushed only with the MIT notice in `NOTICE` and
-  `third-party-licenses.config.json`.
+## What Houston does not compromise on
 
-<!-- Host and renderer invariants (Theo): the Electron host, the desktop bridge, the renderer
-     base and style guards, the terminal drawer. Until then the rule below stands. -->
+- **The server owns the work.** Threads and runs live in the server; a window is only a client,
+  and closing it never stops a run.
+- **The user's data stays the user's.** State is local by default. Secrets live in the secret
+  store, one 0600 file per secret in a 0700 directory, never in the database, logs, traces,
+  errors, RPC replies or stream events. Telemetry never carries source code, prompts, agent
+  responses, file contents, credentials or paths, and it can be turned off.
+- **Honest about the network.** A feature that sends data off the machine can be turned off and
+  sends nothing while off. Its user-facing text is true about what it sends and to whom. Houston
+  may offer its own services, such as a relay or notifications, under that rule. A credential
+  never goes to a destination the user did not choose. `docs/user/privacy.md` lists what is
+  sent before it ships.
+- **Performance.** The renderer runs in an Electron webview: watch WebSocket payloads, long
+  lists and animation cost. Motion rules live in [renderer](docs/internals/renderer.md).
 
-- **Renderer:** the web app under `apps/web`. Its primitives adopt Houston's tokens and
-  recipes and are bound by the style guards; feature components that still follow the original
-  port are exempt from the feature-`className` rule until they are adapted.
+## Never do these
+
+These are the only hard rules. [Invariants](docs/internals/invariants.md) carries the reasons.
+
+1. **Identify processes by channel.** Stop a server only by the PID its channel's
+   `server-runtime.json` names. Never use `pkill -f`, `pgrep | kill`, or a PID chosen by
+   matching a name, path or parent PID. Host code signals processes only through
+   `crate::sys::pid`.
+2. **Protect installed state.** Never point a development server at `~/.houston` or
+   `~/.houston/v2`, or open v1's database read-write. `--channel release` requires explicit
+   instruction. Tests use temporary directories, never the real home.
+3. **One server per channel.** Keep upstream's server ownership lock; a second server for the
+   same base directory exits instead of sharing its database.
+4. **Never touch the host keyring.** Server tests use the in-memory secret store; only
+   `server.ts` provides the live one. Do not run `gnome-keyring-daemon`, least of all with
+   `--unlock`: it re-encrypts the user's login keyring. Host Secret Service tests run through
+   `scripts/with-test-keyring.sh`. The OS keychain is read once, by the import of earlier
+   builds' tokens, and never written or deleted.
+5. **Never touch the user's repositories by accident.** Git commands that act for the user
+   neutralise configuration that could reach refs outside their worktree (`rebase.updateRefs`,
+   `push.followTags`, hooks, signing, submodule recursion). Push only with a lease to branches
+   the server owns, and leave the user's checkout byte-identical.
+6. **Never write v1 state.** v2 never deletes, moves or opens v1's state under `~/.houston`
+   read-write. The one-time import reads v1's `houston.db` read-only, and the host's one v1
+   cleanup edits only the agent CLI configs v1 changed.
+7. **Keep external configuration reversible.** Changes to an agent CLI's configuration are
+   reversible managed-marker blocks. `~/.claude.json` changes only through `claude mcp`.
+
+## Working defaults
+
+- Agent status comes from each provider adapter's structured stream, never from terminal output.
+- Every server ↔ renderer message is typed in `packages/contracts`. A new WebSocket method is
+  listed in `RpcInstrumentation.ts` and given a scope in `RpcAuthorization.ts`.
+- Houston code usually lives under `houston/` directories, with `houston.*` RPC names and
+  Houston tables on the Houston migration track. This keeps upstream syncs cheap; code shared
+  with upstream stays where upstream has it.
+- Ported code carries the MIT notice in `NOTICE` and `third-party-licenses.config.json`.
+- Text from outside (GitHub, Notion, Slack, imported files) is bounded and attributed before it
+  reaches a prompt; text Houston sends out is escaped.
+- Keep provider complexity at provider boundaries, server models testable and renderer logic
+  focused on presentation.
+- Errors include the offending value and expected shape. A limit's error names the limit, the
+  actual value and the requested operation.
+- Tunable constants carry a one-line rationale; measure when their value affects performance.
+- A credential carries only the capabilities its thread needs: a read-only thread runs with the
+  provider's own read-only sandbox, no user MCP servers and no MCP credential beyond the
+  operations it must submit.
+- Comments explain non-obvious usage and follow the comment hygiene budget. Avoid unrelated
+  product names in code and comments; document the technical constraint instead.
+- Change only what the task requires.
+
+## Hit every surface
+
+The most common defect is a change that works on the tested path and is missing elsewhere.
+Before calling work done, say which of these applied.
+
+- **Providers.** Each provider gets a decision. A refusal names the provider and the missing
+  capability.
+- **Reverse states.** Every way in has a way out and a way to see it. Settings show their
+  current value.
+- **Platforms.** Linux and Windows ship today. A platform-specific behaviour has an equivalent
+  or a named limitation. Do not rule out other platforms or clients without a reason.
+- **Contracts.** Wire changes go in `packages/contracts`, so the server and every client
+  follow.
+- **Migrations.** A Houston migration takes the next free id. An id never changes once merged.
+- **Network.** Apply the rule under "What Houston does not compromise on".
+- **Documentation.** The PR title describes user-visible behaviour. Update the `docs/user/`
+  page when usage changes.
 
 ## Terms
 
 Use the [glossary](docs/internals/glossary.md) consistently:
 
-- **Contributor agent:** the agent editing Houston. Contributor agents run in the installed
-  release built from `main`; check `HOUSTON_SESSION` before operations that could affect the
-  pane hosting it.
-- **Server:** the TypeScript server under `apps/server`, run by the host for one
-  **channel**. The installed `release` channel keeps its state in
-  `~/.houston/v2`; `dev` uses `~/.houston-dev/v2`.
-- **Thread:** a structured conversation with one agent. A **turn** is one request and its answer;
-  a **run** is the provider session that serves a thread.
-- **Side thread:** a read-only thread beside another one (an aside, a second opinion, a task
-  planner or reviewer). It never writes to its source.
-- **Orchestration:** agent-to-agent work through orchestration-v2 (`delegate_task`, subagents) and
-  the server's MCP toolkits.
+- **Contributor agent:** the agent editing Houston, usually running inside the installed
+  release. Check `HOUSTON_SESSION` before operations that could affect the pane hosting it.
+- **Server:** the TypeScript server under `apps/server`, run by the host for one **channel**.
+  The `release` channel keeps its state in `~/.houston/v2`; `dev` uses `~/.houston-dev/v2`.
+- **Thread:** a structured conversation with one agent. A **turn** is one request and its
+  answer; a **run** is the provider session that serves a thread.
+- **Side thread:** a read-only thread beside another one. It never writes to its source.
+- **Orchestration:** agent-to-agent work through orchestration-v2 (`delegate_task`, subagents)
+  and the server's MCP toolkits.
 - **Houston migration track:** Houston's own migration table and ids, applied after upstream's.
 
-<!-- Host and renderer terms (Theo): workspace, pane, drawer and renderer terms. -->
+## Verifying
 
-## Safety boundaries
-
-1. **Identify processes by channel.** Stop a server only by the PID its channel's
-   `server-runtime.json` names. Never use `pkill -f`, `pgrep | kill`, or a PID chosen by matching a
-   name, path or parent PID. Host code signals processes only through `crate::sys::pid`;
-   non-positive PIDs can broadcast signals, and casting `u32::MAX` to `pid_t` produces -1.
-2. **Protect installed state.** Never point a development server at `~/.houston` or
-   `~/.houston/v2`, and never open v1's database read-write. `--channel release` requires
-   explicit instruction. Tests use temporary directories and never the real home.
-3. **One server per channel.** Preserve upstream's server ownership lock; a second server for the
-   same base directory exits instead of sharing its database.
-4. **Never touch the host keyring.** Server tests use the in-memory secret store and keychain
-   layers; only `server.ts` provides the live ones. Do not run `gnome-keyring-daemon` (least of all
-   `--unlock`) on the host: it re-encrypts the user's real login keyring and locks them out.
-   Host tests that need a Secret Service run through `scripts/with-test-keyring.sh`.
-5. **Never touch the user's repositories by accident.** Server git commands that act for the
-   user neutralise user configuration that could reach refs outside their own worktree
-   (`rebase.updateRefs`, `push.followTags`, hooks, signing, submodule recursion), push only with a
-   lease to branches the server owns, and leave the user's checkout byte-identical.
-
-## Cross-surface checklist
-
-Before completing a change, identify which of these checks apply:
-
-- **Migrations:** a Houston migration takes the next free id on the Houston track. The Houston
-  runner applies every id a database has not recorded, in ascending order, so PRs that carry
-  Houston migrations may merge in any order; an id never changes once it has merged.
-- **Providers:** support each provider for a feature or refuse it by name; a refusal names the
-  provider and the missing capability.
-- **State transitions:** provide reversal and visibility, and settings with a visible current
-  value. Errors for limits name the limit, actual value and requested operation.
-- **Platforms:** Linux and Windows are supported release platforms. A platform-specific behaviour
-  has an equivalent elsewhere or a named limitation.
-- **Network:** a feature that sends anything off the machine can be disabled and sends nothing
-  while disabled, never sends credentials or user content to a destination the user did not
-  configure, and has user-facing text that is true about what it sends (it need not enumerate
-  every call).
-- **Documentation:** describe user-visible behaviour in the PR title used for release
-  notes. Update the relevant `docs/user/` page when usage changes.
-
-<!-- Host, renderer and installer items (Theo). -->
-
-## Development and verification
-
-The [development runbook](docs/operations/development.md) contains exact commands.
-
-- The server package is `houston`: run its tests with
-  `pnpm --filter @houston-app/cli exec vp test run <files>`. A filter that matches no package exits 0 without
-  running anything, and so does a `-t` pattern that matches no test, so confirm with
+- Run focused tests with `pnpm --filter @houston-app/cli exec vp test run <files>`. A filter
+  that matches no package, or a `-t` pattern that matches no test, exits 0; confirm with
   `--reporter=verbose` that a proof ran.
-- Tests come before code, and a bug fix has a regression test that fails before the fix. Fixtures
-  represent states the system can produce; composed fixtures are labelled as composed.
-- Server code that reaches a provider, GitHub, Notion, Slack or the secret store is tested against
-  replay fixtures, local fakes and the in-memory secret store, never the real service.
-- For desktop-host changes, run the package's typecheck and tests, then `cargo fmt`,
-  `cargo clippy --all-targets -- -D warnings` and `cargo test` in each native crate under
-  `apps/desktop/native` and `native`. On Linux, run heavy builds under `scripts/oom-shield.sh`,
-  with `nice -n 19` and `-j 3`. On Windows, limit Cargo to three jobs. Never run concurrent
-  Cargo workloads.
-- Diagnose failures using the discriminator appropriate to the failure mode in
-  [testing](docs/internals/testing.md); a standalone rerun is not sufficient for every case.
-- Push and PR CI runs the static guards, the workspace typecheck and suites, the renderer unit
-  and browser tests, and the native checks; `ci-gate` is the single aggregate check. Contributors
-  still run the full suites locally before every push. See [CI](docs/internals/ci.md).
+- Before a push, run `pnpm check:changed`. CI runs the full suites, and `ci-gate` is the single
+  aggregate check. Run a full suite locally when the change is broad.
+- A bug fix has a regression test that fails before the fix. Parsers, security boundaries,
+  persistence and migrations, concurrency and cross-platform paths get tests; copy and wiring
+  do not.
+- Code that reaches a provider, GitHub, Notion, Slack or the secret store runs against replay
+  fixtures, local fakes and the in-memory secret store, never the real service.
+- Native changes: run `cargo fmt`, `cargo clippy --all-targets -- -D warnings` and `cargo test`
+  in `apps/desktop/native` and `native`. On Linux, wrap heavy builds in
+  `scripts/oom-shield.sh` with `nice -n 19` and `-j 3`; on Windows, limit Cargo to three jobs.
+  Never run concurrent Cargo workloads.
+- Commands: [development runbook](docs/operations/development.md). Failure modes:
+  [testing](docs/internals/testing.md). Pipeline: [CI](docs/internals/ci.md).
 
 ## Pull requests and releases
 
-- All changes to `main` go through a PR, including documentation. Merge only with green
-  CI and completed local gates. Regenerate lockfiles and the licence inventory instead of
-  hand-merging them. Do not assume branch protection is configured; verify
-  repository settings when administering it.
+- Changes to `main` go through a PR, including documentation. Merge only with green CI and
+  completed local gates.
 - Use conventional PR titles that describe user-visible behaviour, for example
-  `fix(threads): a renamed thread keeps its name after a restart`. Release notes group the
-  items in each PR's `## Release notes` section; legacy titles are a fallback. Use
-  explicit `None` for internal-only changes. See the release runbook for categories.
-- Explain the problem and resulting change in the PR body. Omit generated-by footers
-  and agent session links. Keep one concern per commit. Destructive Git operations
-  require explicit authorization.
-- Only a release changes versions. Feature PRs must not edit the three version manifests.
-  The manually dispatched **Cut release** workflow uses `scripts/set-version.sh` to update
-  the three manifests (`apps/desktop`, `apps/server`, `apps/web`), commit, tag, build and
-  create a draft release. Stable cuts require the tip of `main`, an unused tag and a version newer than the
-  last stable release. See the [release runbook](docs/operations/release.md).
-- A manually pushed `v*` tag starts no workflow; releases are produced only by **Cut
-  release**. `build-installers.yml` builds selected OSes (both by default) and files nothing.
+  `fix(threads): a renamed thread keeps its name after a restart`.
+- Each PR body has a `## Release notes` section; use `None` for internal-only changes.
+- Explain the problem and the resulting change in the PR body. Omit generated-by footers and
+  agent session links. Keep one concern per commit.
+- Destructive Git operations require explicit authorization.
+- Regenerate lockfiles and the licence inventory instead of hand-merging them.
+- Only a release changes versions. Feature PRs leave the manifests of `apps/desktop`,
+  `apps/server` and `apps/web` alone; the **Cut release** workflow updates them with
+  `scripts/set-version.sh`.
+- Release runbook: [release](docs/operations/release.md).
 
 ## Documentation
 
-Use professional, concise English in all documentation, including Markdown and text files.
-Explain constraints and usage; avoid personal narrative, unsupported claims and repetition.
+Most code changes need no internal documentation change. If reading the code answers the
+question, leave it out.
 
-- `docs/user/`: task-oriented guidance for application users. Include relevant settings
-  paths; omit implementation details and descriptions of individual visual controls.
-- `docs/internals/`: architectural constraints, rationale and non-obvious implementation
-  risks. Do not duplicate field lists, control flow or file inventories. Rewrite obsolete
-  constraints instead of appending a competing account.
+- `docs/user/`: task guidance for application users, with the relevant settings paths.
+- `docs/internals/`: architectural constraints, rationale and non-obvious risks.
 - `docs/operations/`: maintainer runbooks for development, releases and the Linux testbed.
-- Keep documentation within the established tree. Do not add per-feature Markdown,
-  per-crate pages or notes files. `check-doc-hygiene.sh` also rejects diary content,
-  dates, phase numbering, session narrative and unrelated product references in docs.
-- Add new vocabulary to the glossary. A merged PR is the implementation record; do not
-  commit plans, research, audits, scratch files or completed implementation checklists.
-  Keep working material outside the tracked tree.
-- Track work in GitHub issues and proposals in Discussions, following
-  [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Architecture and style
+Rewrite obsolete text instead of appending to it. Do not commit plans, research, audits or
+scratch files; a merged PR is the implementation record. Add new vocabulary to the glossary.
+`scripts/check-doc-hygiene.sh` enforces the doc tree shape and rejects diary content, dates,
+phase numbering and session narrative. Track work in GitHub issues and proposals in
+Discussions, following [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Where code lives
 
 The server owns threads and agent runs independently of connected clients. See the
-[architecture overview](docs/internals/overview.md).
+[architecture overview](docs/internals/overview.md) and the
+[style guide](docs/internals/styleguide.md).
 
 - `apps/server`: the server; Houston's additions under `src/houston/`.
 - `apps/web`: the renderer.
@@ -200,35 +179,3 @@ The server owns threads and agent runs independently of connected clients. See t
 - `apps/desktop`: the Electron host, server supervision, desktop bridge and tray.
 - `apps/desktop/native` and `native`: the host's native helper crates.
 - `scripts/`: development, build, installation and safety checks.
-- Keep provider complexity at provider boundaries, server models testable and renderer
-  logic focused on presentation. Change only what the task requires.
-- Comments explain non-obvious usage and follow the comment hygiene budget. Tunable
-  constants need a short rationale; measure when their values affect performance.
-- Errors include the offending value and expected shape. Avoid unrelated product names
-  in code and comments; document the technical constraint instead.
-- Follow the [style guide](docs/internals/styleguide.md).
-
-<!-- Renderer composition and capture rules (Theo). -->
-
-### Motion
-
-The renderer ships in an Electron webview, so motion must stay on the compositor.
-
-- Name a role, never a raw value: `duration-(--motion-overlay-in)`, `ease-standard` or
-  `ease-exit`. The roles live in `apps/web/src/index.css` (`--motion-*`), mirrored for
-  script in `MOTION_ROLE_MS`/`MOTION_EASE` (`apps/web/src/motion/registry.ts`); a test keeps
-  them in step. `houston/no-raw-motion` flags raw durations, easings and `transition-all`.
-- Roles: `feedback` (hover, press, checked), `overlay` (menu, popover, tooltip, select),
-  `modal` (dialog, sheet), `toast`, `swap` (content replaced in place), `list` (row in or
-  out), `disclosure` (expand, collapse), `value` (a glyph or number that changes meaning).
-  Exits are faster than entrances and use `ease-exit`.
-- Animate only `transform` and `opacity`. No transitions on width, height, padding, margin,
-  flex-basis or inherited custom properties; no `backdrop-filter` on anything that moves;
-  `will-change` only while something moves. The exception is a surface that moves often and
-  repaints expensively: it keeps one permanent layer that no state toggles.
-- Keyboard highlights, typing, streaming text, timeline rows and thread or route switches
-  stay instant. Hover reveals fade opacity; they never toggle `display`.
-- Reduced motion (the system preference or the Appearance **Animations** switch) turns every
-  role to 0ms in CSS and `resolveMotion` returns `off` in script. Gate motion only through the
-  `motion-safe`/`motion-reduce` variants or `prefersReducedMotion`/`useReducedMotion`, never a
-  direct `prefers-reduced-motion` query.

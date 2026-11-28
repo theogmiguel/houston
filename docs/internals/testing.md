@@ -17,7 +17,8 @@ What the suites are, where new tests go, and how to read a failure. Commands and
 
 Rules:
 
-- Tests come before code. A bug fix gets a regression test that fails before the fix.
+- A bug fix gets a regression test that fails before the fix, and new logic where a silent
+  regression is costly gets tests.
   Fixtures represent states the system can produce; a composed fixture is labelled as
   composed.
 - A filter that matches no package, and a `-t` pattern that matches no test, exit 0 without
