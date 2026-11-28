@@ -40,12 +40,16 @@ import { WslBackendStatus } from "./WslBackendStatus";
 import { searchableSetting } from "./settingsSearch";
 import { EnvironmentIconChangeControl } from "./EnvironmentIconPicker";
 import { useIsPhone } from "../../mobile/usePhone";
+import { EnvironmentsMap } from "./EnvironmentsMap";
 import { LinkedEnvironmentsSettings } from "./LinkedEnvironmentsSettings";
+import { useMediaQuery } from "~/hooks/useMediaQuery";
+import { useT } from "~/i18n/useT";
 import { usePeerLinkHosts } from "~/state/peerLinks";
 import { LoadBalancingSettings } from "./LoadBalancingSettings";
 import { PortForwardingSetting } from "./PortForwardingSetting";
 import { PullRequestRoutingSettings } from "./PullRequestRoutingSettings";
 import { Input } from "../ui/input";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import {
   Dialog,
   DialogClose,
@@ -156,6 +160,7 @@ const DIGITS_ONLY = /^\d+$/u;
 
 /** Environments lists the machines this app connects to; access covers who may reach this one. */
 export function ConnectionsSettings({ view }: { readonly view: "environments" | "access" }) {
+  const t = useT();
   const hostBridge = window.hostBridge;
   const isPhone = useIsPhone();
   const { environments } = useEnvironments();
@@ -246,15 +251,34 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
   const [decidingPendingDeviceId, setDecidingPendingDeviceId] = useState<string | null>(null);
   const [addBackendDialogOpen, setAddBackendDialogOpen] = useState(false);
   const [routeTarget, setRouteTarget] = useState<EnvironmentPresentation | null>(null);
+  // An address the map already knows for the machine being added.
+  const [addBackendHost, setAddBackendHost] = useState("");
   const [savedBackendError, setSavedBackendError] = useState<string | null>(null);
   const handleAddBackendDialogOpenChange = (open: boolean) => {
     setAddBackendDialogOpen(open);
     if (open) {
       setRouteTarget(null);
+      setAddBackendHost("");
     } else {
       setSavedBackendError(null);
     }
   };
+  const openAddRoute = (target: EnvironmentPresentation) => {
+    setRouteTarget(target);
+    setAddBackendHost("");
+    setSavedBackendError(null);
+    setAddBackendDialogOpen(true);
+  };
+  const openAddEnvironment = (host = "") => {
+    setRouteTarget(null);
+    setAddBackendHost(host);
+    setSavedBackendError(null);
+    setAddBackendDialogOpen(true);
+  };
+  // The map is the page's main view where there is room; the list is its equivalent everywhere.
+  const roomForMap = useMediaQuery("md");
+  const [pickedEnvironmentsView, setPickedEnvironmentsView] = useState<"map" | "list" | null>(null);
+  const environmentsView = roomForMap ? (pickedEnvironmentsView ?? "map") : "list";
   const [removingSavedEnvironmentId, setRemovingSavedEnvironmentId] =
     useState<EnvironmentId | null>(null);
   const [isUpdatingDesktopServerExposure, setIsUpdatingDesktopServerExposure] = useState(false);
@@ -1482,6 +1506,7 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
     <AddEnvironmentDialog
       open={addBackendDialogOpen}
       routeTarget={routeTarget}
+      initialHost={addBackendHost}
       error={savedBackendError}
       savedEnvironments={savedEnvironments}
       onOpenChange={handleAddBackendDialogOpenChange}
@@ -1508,26 +1533,59 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
       <SettingsSection
         {...searchableSetting("remote-environments")}
         title="Environments"
+        titleAction={
+          roomForMap ? (
+            <ToggleGroup
+              aria-label={t("Show environments as")}
+              value={[environmentsView]}
+              onValueChange={(next) => {
+                const value = next[0];
+                if (value === "map" || value === "list") setPickedEnvironmentsView(value);
+              }}
+            >
+              <Toggle value="map">{t("Map")}</Toggle>
+              <Toggle value="list">{t("List")}</Toggle>
+            </ToggleGroup>
+          ) : null
+        }
         headerAction={
           savedServerUpdateTargets.length > 0 ? (
             <ServerUpdatesAction targets={savedServerUpdateTargets} variant="ghost-muted" />
           ) : null
         }
       >
-        {listedEnvironments.map((environment) => (
-          <SavedBackendListRow
-            key={environment.environmentId}
-            environment={environment}
-            removingEnvironmentId={removingSavedEnvironmentId}
-            onSetEnabled={handleSetSavedBackendEnabled}
-            onRemove={handleRemoveSavedBackend}
-            onAddRoute={(target) => {
-              setRouteTarget(target);
-              setSavedBackendError(null);
-              setAddBackendDialogOpen(true);
-            }}
+        {environmentsView === "map" ? (
+          <EnvironmentsMap
+            footerId={searchableSetting("linked-environments").id}
+            onAddEnvironment={openAddEnvironment}
+            renderSavedEnvironment={(environment) =>
+              listedEnvironments.some(
+                (listed) => listed.environmentId === environment.environmentId,
+              ) ? (
+                <SavedBackendListRow
+                  key={environment.environmentId}
+                  environment={environment}
+                  initialRoutesOpen
+                  removingEnvironmentId={removingSavedEnvironmentId}
+                  onSetEnabled={handleSetSavedBackendEnabled}
+                  onRemove={handleRemoveSavedBackend}
+                  onAddRoute={openAddRoute}
+                />
+              ) : null
+            }
           />
-        ))}
+        ) : (
+          listedEnvironments.map((environment) => (
+            <SavedBackendListRow
+              key={environment.environmentId}
+              environment={environment}
+              removingEnvironmentId={removingSavedEnvironmentId}
+              onSetEnabled={handleSetSavedBackendEnabled}
+              onRemove={handleRemoveSavedBackend}
+              onAddRoute={openAddRoute}
+            />
+          ))
+        )}
         {isPhone ? (
           <div className="flex flex-col gap-3 p-4">
             {listedEnvironments.length === 0 ? (
@@ -1538,14 +1596,16 @@ export function ConnectionsSettings({ view }: { readonly view: "environments" | 
         ) : null}
       </SettingsSection>
       {isPhone ? null : <div className="flex justify-center px-1">{addEnvironmentDialog}</div>}
-      {peerLinkHosts.map((environment, index) => (
-        <LinkedEnvironmentsSettings
-          key={environment.environmentId}
-          environmentId={environment.environmentId}
-          environmentLabel={peerLinkHosts.length > 1 ? environment.label : null}
-          isSearchTarget={index === 0}
-        />
-      ))}
+      {environmentsView === "list"
+        ? peerLinkHosts.map((environment, index) => (
+            <LinkedEnvironmentsSettings
+              key={environment.environmentId}
+              environmentId={environment.environmentId}
+              environmentLabel={peerLinkHosts.length > 1 ? environment.label : null}
+              isSearchTarget={index === 0}
+            />
+          ))
+        : null}
       <LoadBalancingSettings environments={loadBalancingEnvironments} />
       <PullRequestRoutingSettings environments={loadBalancingEnvironments} />
     </SettingsPageContainer>

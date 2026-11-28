@@ -1,6 +1,7 @@
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
 import { cva, type VariantProps } from "class-variance-authority";
+import { ChevronDownIcon } from "lucide-react";
 import type * as React from "react";
 
 import { cn } from "~/lib/utils";
@@ -131,7 +132,7 @@ const inlineButtonVariants = cva(
         muted: "text-muted-foreground hover:text-foreground",
         destructive: "text-destructive/80 hover:text-destructive",
         picker:
-          "gap-1 text-foreground decoration-from-font underline-offset-4 data-popup-open:underline",
+          "gap-1 border-b border-muted-foreground/35 border-dotted text-foreground decoration-from-font underline-offset-4 hover:border-muted-foreground/60 hover:no-underline data-popup-open:border-muted-foreground/60 data-popup-open:border-solid",
       },
     },
   },
@@ -154,4 +155,18 @@ export function InlineButton({
     props: mergeProps<"button">(defaultProps, props),
     render,
   });
+}
+
+/** A picker's inline trigger: the picker tone and the chevron that marks it as a menu. */
+export function InlinePickerButton({
+  className,
+  children,
+  ...props
+}: useRender.ComponentProps<"button">) {
+  return (
+    <InlineButton tone="picker" className={className} {...props}>
+      {children}
+      <ChevronDownIcon aria-hidden="true" className="size-3.5 shrink-0 opacity-60" />
+    </InlineButton>
+  );
 }

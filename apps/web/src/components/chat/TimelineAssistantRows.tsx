@@ -583,6 +583,7 @@ function AssistantChangedFilesSectionInner({
         files={checkpointFiles}
         totals={totals}
         workspaceRoot={ctx.workspaceRoot}
+        {...(ctx.threadRef === null ? {} : { threadRef: ctx.threadRef })}
         onOpenDiff={() => onOpenTurnDiff(turnSummary.runId, checkpointFiles[0]?.path)}
         onOpenFile={(filePath) => onOpenTurnDiff(turnSummary.runId, filePath)}
         onFileContextMenu={(filePath, event) =>

@@ -5,6 +5,7 @@ import {
   applyWslEnableSelection,
   applyWslOnlySelection,
   describeWslBackendStatus,
+  formatAccessTimestamp,
   isWslSettingsRowVisible,
   resolveShareablePairDeviceUrl,
   resolveTailscaleServeBaseUrl,
@@ -298,5 +299,23 @@ describe("describeWslBackendStatus", () => {
     expect(
       describeWslBackendStatus(state({ backendStatus: { phase: "stopped", reason: null } })),
     ).toBeNull();
+  });
+});
+
+describe("formatAccessTimestamp", () => {
+  const stamp = "2027-01-26T21:12:00.000Z";
+  const expected = (locale: string) =>
+    new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(
+      new Date(stamp),
+    );
+
+  it("follows the language it is given, not the system locale", () => {
+    expect(formatAccessTimestamp(stamp, "en")).toBe(expected("en"));
+    expect(formatAccessTimestamp(stamp, "pt-BR")).toBe(expected("pt-BR"));
+    expect(formatAccessTimestamp(stamp, "en")).not.toBe(formatAccessTimestamp(stamp, "pt-BR"));
+  });
+
+  it("returns a value that is not a date as it came", () => {
+    expect(formatAccessTimestamp("not a date", "en")).toBe("not a date");
   });
 });

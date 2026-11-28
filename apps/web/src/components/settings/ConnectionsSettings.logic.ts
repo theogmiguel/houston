@@ -221,17 +221,20 @@ export async function applyWslDistroSelection(input: {
   return await input.bridge.setWslDistro(input.nextDistro);
 }
 
-const accessTimestampFormatter = new Intl.DateTimeFormat(undefined, {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
+const accessTimestampFormatters = new Map<string | undefined, Intl.DateTimeFormat>();
 
-export function formatAccessTimestamp(value: string): string {
+/** `locale` is the app language; without it the system's locale decides. */
+export function formatAccessTimestamp(value: string, locale?: string): string {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
     return value;
   }
-  return accessTimestampFormatter.format(parsed);
+  let formatter = accessTimestampFormatters.get(locale);
+  if (formatter === undefined) {
+    formatter = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" });
+    accessTimestampFormatters.set(locale, formatter);
+  }
+  return formatter.format(parsed);
 }
 
 const BRACKETED_HOST_MATCH_PATTERN = /^\[([^\]]+)\](?::(\d+))?$/u;

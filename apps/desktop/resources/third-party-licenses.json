@@ -299,7 +299,7 @@
       "version": "source at commit 5b357b3b8",
       "license": "MIT",
       "repository": "https://github.com/pingdotgg/t3code",
-      "note": "Adapted source: portions of the thread server, provider adapters, orchestration, thread interface, workspace layout model, desktop host and Linux window-capture helpers are ported from this project.",
+      "note": "Adapted source: portions of the thread server, provider adapters, orchestration, thread interface, workspace layout model, desktop host, Linux window-capture helpers, batch environment linking and the Environments map (at 30e7a1f84) are ported from this project.",
       "textIds": [
         "195c926f7e6a72c1"
       ]

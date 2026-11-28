@@ -3366,7 +3366,10 @@ function commandInputFromClaudeTool(toolName: string, input: ClaudeNativeToolInp
 const CLAUDE_OPAQUE_BACKGROUND_TASK_KINDS: ReadonlyMap<
   string,
   Exclude<OrchestrationV2PendingBackgroundTask["kind"], "subagent">
-> = new Map([["local_bash", "command"]]);
+> = new Map([
+  ["local_bash", "command"],
+  ["monitor_ws", "monitor"],
+]);
 
 // Claude Code 2.1.292 defers its goal Stop hook for these subagent types.
 // local_bash tasks defer it through the opaque-task roster.

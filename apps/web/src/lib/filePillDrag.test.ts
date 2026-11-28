@@ -17,7 +17,7 @@ describe("filePillDragHandlers", () => {
     );
 
     expect(handlers?.draggable).toBe(true);
-    handlers?.onDragStart(event);
+    handlers?.onDragStart?.(event);
 
     expect(preventDefault).toHaveBeenCalledOnce();
     expect(startFileDrag).toHaveBeenCalledWith({
@@ -54,7 +54,7 @@ describe("filePillDragHandlers", () => {
       { bridge: { startFileDrag }, reportError },
     );
 
-    handlers?.onDragStart(event);
+    handlers?.onDragStart?.(event);
 
     await vi.waitFor(() =>
       expect(reportError).toHaveBeenCalledWith(

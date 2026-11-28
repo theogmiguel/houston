@@ -298,7 +298,8 @@ export function terminalCommandSlashItems(
   entries: ReadonlyArray<TerminalCommandEntry>,
 ): ReadonlyArray<Extract<ComposerCommandItem, { type: "terminal-command" }>> {
   return entries.map((entry) => ({
-    id: `terminal-command:${entry.action}`,
+    // One action can back more than one row, so the primary name keeps the id unique.
+    id: `terminal-command:${entry.names[0]}`,
     type: "terminal-command",
     entry,
     label: `/${entry.names[0]}`,

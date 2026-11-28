@@ -74,6 +74,13 @@ export class PeerLinks extends Context.Service<
     readonly enabled: Effect.Effect<boolean>;
     readonly link: (input: PeerLinkCreateInput) => Effect.Effect<PeerLink, PeerLinkError>;
     /**
+     * Links like `link`, except that a machine whose link has not expired is
+     * left as it is, with its pairing code unused.
+     */
+    readonly linkUnlessLinked: (
+      input: PeerLinkCreateInput,
+    ) => Effect.Effect<{ readonly link: PeerLink; readonly alreadyLinked: boolean }, PeerLinkError>;
+    /**
      * The environment answering at `url`, or nothing when it is not a usable
      * address or does not answer as Houston. Sends no credential.
      */
@@ -146,7 +153,8 @@ const peerOrigin = (url: string) => {
     return Effect.fail(
       new PeerLinkError({
         reason: "unreachable",
-        message: `${url} is not an http or https address.`,
+        // Never the address as given: it may hold a username, password or query.
+        message: "That address is not an http or https address.",
       }),
     );
   }
@@ -158,7 +166,7 @@ const peerOrigin = (url: string) => {
     return Effect.fail(
       new PeerLinkError({
         reason: "unreachable",
-        message: `${url} is plain http, which would send the link's credentials unencrypted. Use its https address, or its Tailscale address.`,
+        message: `${parsed.origin} is plain http, which would send the link's credentials unencrypted. Use its https address, or its Tailscale address.`,
       }),
     );
   }
@@ -382,12 +390,18 @@ const make = Effect.gen(function* () {
       const refusals = checked.flatMap((result) =>
         Result.isFailure(result) ? [result.failure.message] : [],
       );
+      const answeredAs = checked.flatMap((result) =>
+        Result.isSuccess(result) && Option.isSome(result.success.descriptor)
+          ? [result.success.descriptor.value.label]
+          : [],
+      )[0];
       return yield* new PeerLinkError({
         reason: "unreachable",
         message:
           refusals.length === checked.length
             ? `This environment could not reach ${name}: ${refusals.join(" ")}`
             : `This environment could not reach ${name} at ${urls.join(", ")}.`,
+        ...(answeredAs === undefined ? {} : { answeredAs }),
       });
     }
     // Each address is kept once, even when two spellings share an origin.
@@ -409,7 +423,10 @@ const make = Effect.gen(function* () {
     return { primary, peer: descriptor.value, origins };
   });
 
-  const link: PeerLinks["Service"]["link"] = Effect.fn("PeerLinks.link")(function* (input) {
+  const linkWith = Effect.fn("PeerLinks.link")(function* (
+    input: PeerLinkCreateInput,
+    keepLinked: boolean,
+  ) {
     if (!(yield* enabled)) {
       return yield* new PeerLinkError({ reason: "disabled", message: LINKED_ENVIRONMENTS_OFF });
     }
@@ -424,6 +441,13 @@ const make = Effect.gen(function* () {
             input.expectedEnvironmentId,
             input.expectedLabel ?? input.expectedEnvironmentId,
           );
+    if (keepLinked) {
+      const row = yield* readRow(peer.environmentId);
+      const stored = Option.isSome(row) ? yield* toLink(row.value) : undefined;
+      if (stored !== undefined && DateTime.isGreaterThan(stored.expiresAt, yield* DateTime.now)) {
+        return { link: stored, alreadyLinked: true };
+      }
+    }
     const self = yield* environment.getDescriptor;
     if (peer.environmentId === self.environmentId) {
       return yield* new PeerLinkError({
@@ -486,8 +510,13 @@ const make = Effect.gen(function* () {
     if (Option.isSome(previous) && previous.value.secret_name !== secretName) {
       yield* secrets.remove(previous.value.secret_name).pipe(Effect.ignore);
     }
-    return linked;
+    return { link: linked, alreadyLinked: false };
   });
+
+  const link: PeerLinks["Service"]["link"] = (input) =>
+    linkWith(input, false).pipe(Effect.map((result) => result.link));
+  const linkUnlessLinked: PeerLinks["Service"]["linkUnlessLinked"] = (input) =>
+    linkWith(input, true);
 
   const describeUrl: PeerLinks["Service"]["describe"] = (url) =>
     peerOrigin(url).pipe(
@@ -622,6 +651,7 @@ const make = Effect.gen(function* () {
   return PeerLinks.of({
     enabled,
     link,
+    linkUnlessLinked,
     describe: describeUrl,
     list,
     stored,

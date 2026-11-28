@@ -4,13 +4,16 @@ import {
   formatThreadLink,
   guessThreadLinkRef,
   percentDecodedThreadLinkId,
+  threadLinkCandidates,
   type ThreadLink,
-  unknownThreadLinkLabel,
 } from "@houston-app/shared/threadLinks";
 
 import { useThreadRefs, useThreadShell } from "../../state/entities";
+import { orchestrationEnvironment } from "../../state/orchestration";
+import { useEnvironmentQuery } from "../../state/query";
 import { UnresolvedChip } from "../contextChipParts";
 import { ThreadContextChip } from "../ThreadContextChip";
+import { resolveThreadLinkLookup } from "./MarkdownThreadLink.logic";
 
 /** `label` is the link's written text; an autolink has none. */
 export function MarkdownThreadLink(props: {
@@ -29,13 +32,38 @@ export function MarkdownThreadLink(props: {
   const refs = useThreadRefs(guess);
   const remote = useThreadShell(guess ? guessThreadLinkRef(props.link, refs) : null);
   const thread = local ?? remote;
-  if (thread === null) {
-    const unknown = unknownThreadLinkLabel(props.link, props.environmentId);
-    return <UnresolvedChip label={props.label ?? unknown} tooltip={unknown} />;
-  }
-  const ref = { environmentId: thread.environmentId, threadId: thread.id };
-  const title = thread.title.trim() || props.label || "Untitled thread";
-  return (
-    <ThreadContextChip record={{ ...ref, title }} copyMarkdown={formatThreadLink(ref, title)} />
+  const candidates = threadLinkCandidates(props.link, props.environmentId);
+  // Older settled threads leave the shell; ask the environment before calling one gone.
+  const lookup = useEnvironmentQuery(
+    thread === null
+      ? orchestrationEnvironment.threadTitles({
+          environmentId,
+          input: { threadIds: candidates.map((candidate) => candidate.threadId) },
+        })
+      : null,
   );
+  if (thread !== null) {
+    const ref = { environmentId: thread.environmentId, threadId: thread.id };
+    const title = thread.title.trim() || props.label || "Untitled thread";
+    return (
+      <ThreadContextChip record={{ ...ref, title }} copyMarkdown={formatThreadLink(ref, title)} />
+    );
+  }
+  const resolved = resolveThreadLinkLookup({
+    link: props.link,
+    messageEnvironmentId: props.environmentId,
+    candidates,
+    lookup,
+    label: props.label,
+  });
+  if (resolved.kind === "found") {
+    return (
+      <ThreadContextChip
+        record={{ ...resolved.ref, title: resolved.title }}
+        copyMarkdown={formatThreadLink(resolved.ref, resolved.title)}
+        available
+      />
+    );
+  }
+  return <UnresolvedChip label={resolved.label} tooltip={resolved.tooltip} />;
 }

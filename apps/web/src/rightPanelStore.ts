@@ -739,6 +739,15 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
 const WINDOWS_DRIVE_ROOT_SLASHES = /^[A-Za-z]:\/+$/;
 const TRAILING_SLASHES = /\/+$/;
 
+/** A workspace file surface's id, normalized as `openFile` stores it. */
+export function fileSurfaceId(path: string): `file:${string}` {
+  // Workspace entry paths use '/', including on Windows.
+  const relativePath = WINDOWS_DRIVE_ROOT_SLASHES.test(path)
+    ? path
+    : path.replace(TRAILING_SLASHES, "") || path;
+  return `file:${relativePath}`;
+}
+
 export const useRightPanelStore = create<RightPanelStoreState>()(
   persist(
     (set, get) => ({
@@ -935,14 +944,11 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             if (requestedPath === ".") {
               return upsertSurface(current, singletonSurface("files"));
             }
-            // Workspace entry paths use '/', including on Windows.
-            const relativePath = WINDOWS_DRIVE_ROOT_SLASHES.test(requestedPath)
-              ? requestedPath
-              : requestedPath.replace(TRAILING_SLASHES, "") || requestedPath;
+            const surfaceId = fileSurfaceId(requestedPath);
+            const relativePath = surfaceId.slice("file:".length);
             const withoutStandaloneExplorer = current.surfaces.filter(
               (surface) => surface.kind !== "files",
             );
-            const surfaceId = `file:${relativePath}` as const;
             const existing = withoutStandaloneExplorer.find(
               (surface): surface is Extract<RightPanelSurface, { kind: "file" }> =>
                 surface.id === surfaceId && surface.kind === "file",

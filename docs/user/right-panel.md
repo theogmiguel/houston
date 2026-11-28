@@ -8,7 +8,8 @@ surfaces open as a side pane or as tabs, as set in **Settings ▸ Appearance** (
 [Threads and workspaces](threads-and-workspaces.md#workspaces)).
 
 Tabs can be dragged to reorder, closed, maximized and restored. A tab's menu also closes
-the others, those to its right, or all of them.
+the others, those to its right, or all of them. A changed file, file chip or pull request chip
+opens its surface where you drop it in the layout.
 
 ## Files and editing
 
@@ -57,7 +58,8 @@ download, size or checksum check names the step that failed.
 - **Full screen** expands the page; `Esc` returns to the panel.
 - Browser tabs and their URLs are remembered per project. **Settings ▸ Browser** sets
   profiles, viewport, zoom, appearance, link target, search engine and whether agents may
-  drive browsers.
+  drive browsers. It also shows the one-time `sudo houston browser setup` command when the
+  environment's Linux host blocks the browser sandbox.
 
 ### Agent actions need consent
 

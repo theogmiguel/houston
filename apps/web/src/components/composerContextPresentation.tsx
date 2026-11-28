@@ -10,7 +10,7 @@ import { formatAttachmentSize } from "@houston-app/client-runtime/state/attachme
 import { videoMimeType } from "@houston-app/shared/video";
 import { MessageCircleIcon, MousePointerClickIcon } from "lucide-react";
 import { createContext, type MouseEvent, type ReactElement, type ReactNode, use } from "react";
-import type { EnvironmentId, ProjectId } from "@houston-app/contracts";
+import type { EnvironmentId, ProjectId, ScopedThreadRef } from "@houston-app/contracts";
 
 import type { ComposerFileAttachment, ComposerImageAttachment } from "~/composerDraftStore";
 import { composerFileNeedsReattach } from "~/composerDraftStore";
@@ -70,6 +70,8 @@ export type ComposerDraftContextRecord =
 
 export interface ComposerContextActions {
   environmentId: EnvironmentId | null;
+  /** The thread the draft belongs to; a chip's layout drag opens the file there. */
+  threadRef?: ScopedThreadRef | undefined;
   cwd?: string | undefined;
   /** The draft's project; dictation in an editor under the composer takes its vocabulary. */
   projectId?: ProjectId | undefined;
@@ -82,6 +84,7 @@ export interface ComposerContextActions {
 
 export const ComposerContextActionsContext = createContext<ComposerContextActions>({
   environmentId: null,
+  threadRef: undefined,
   expandImage: () => {},
   expandVideo: () => {},
   openFile: () => {},
@@ -278,6 +281,7 @@ function PullRequestContextChip(props: { record: ReviewCommentContext; kind: Con
       label={reviewCommentContextLabel(props.record)}
       kindLabel={pullRequestContextKindLabel(props.record)}
       kind={props.kind}
+      threadRef={actions.threadRef}
       onOpen={actions.openPullRequest}
     />
   );

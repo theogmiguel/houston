@@ -239,6 +239,7 @@ import * as InferenceServerRegistry from "./houston/inference/InferenceServerReg
 import * as InferenceRequests from "./houston/inference/InferenceRequests.ts";
 import * as InferenceStops from "./houston/inference/InferenceStops.ts";
 import * as HoustonTerminalShells from "./houston/terminalShells.ts";
+import * as HoustonPreviewBrowserHost from "./houston/previewBrowserHost.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
 import { repositoriesOf } from "./project/threadRepositories.ts";
@@ -2850,6 +2851,7 @@ export const layerWsRpc = (
             env: yield* HostProcess.Environment,
           });
         }),
+        [WS_METHODS.houstonPreviewBrowserHost]: () => HoustonPreviewBrowserHost.hostSetup,
         [WS_METHODS.peerLinksList]: (_input) =>
           peerLinks.list.pipe(Effect.map((links) => ({ links }))),
         [WS_METHODS.houstonPeerLinksSearch]: (input) => peerLinkSearch.search(input),

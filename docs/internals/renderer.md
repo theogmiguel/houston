@@ -174,6 +174,29 @@ renderer: the pick preload relays trusted key events and draft edits over IPC ta
 per-pick session id, and the renderer pushes recording state back. Events and state for another
 session are dropped on both sides.
 
+## Motion
+
+The renderer ships in an Electron webview, so motion must stay on the compositor.
+
+- Name a role, never a raw value: `duration-(--motion-overlay-in)`, `ease-standard` or
+  `ease-exit`. The roles live in `apps/web/src/index.css` (`--motion-*`), mirrored for
+  script in `MOTION_ROLE_MS`/`MOTION_EASE` (`apps/web/src/motion/registry.ts`); a test keeps
+  them in step. `houston/no-raw-motion` flags raw durations, easings and `transition-all`.
+- Roles: `feedback` (hover, press, checked), `overlay` (menu, popover, tooltip, select),
+  `modal` (dialog, sheet), `toast`, `swap` (content replaced in place), `list` (row in or
+  out), `disclosure` (expand, collapse), `value` (a glyph or number that changes meaning).
+  Exits are faster than entrances and use `ease-exit`.
+- Animate only `transform` and `opacity`. No transitions on width, height, padding, margin,
+  flex-basis or inherited custom properties; no `backdrop-filter` on anything that moves;
+  `will-change` only while something moves. The exception is a surface that moves often and
+  repaints expensively: it keeps one permanent layer that no state toggles.
+- Keyboard highlights, typing, streaming text, timeline rows and thread or route switches
+  stay instant. Hover reveals fade opacity; they never toggle `display`.
+- Reduced motion (the system preference or the Appearance **Animations** switch) turns every
+  role to 0ms in CSS and `resolveMotion` returns `off` in script. Gate motion only through the
+  `motion-safe`/`motion-reduce` variants or `prefersReducedMotion`/`useReducedMotion`, never a
+  direct `prefers-reduced-motion` query.
+
 ## Testing
 
 `pnpm --filter @houston-app/web test` runs the `unit` and `browser` projects from

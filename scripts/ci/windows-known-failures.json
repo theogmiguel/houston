@@ -66,6 +66,7 @@
     "src/provider/CodexInstallation.test.ts > reuses installed Codex 0.156.1 without downloading or taking ownership of it",
     "src/provider/CodexInstallation.test.ts > reuses installed Codex 0.156.2 without downloading or taking ownership of it",
     "src/provider/CodexInstallation.test.ts > reuses installed Codex 0.157.0 without downloading or taking ownership of it",
+    "src/provider/CodexInstallation.test.ts > updates an older supported managed installation to the pinned release on startup",
     "src/provider/CodexInstallation.test.ts > uses bundled Codex compatibility when the remote manifest omits its policy",
     "src/serviceLauncher.test.ts > service state persistence > a fresh launcher clears a restart deferred by houston update",
     "src/serviceLauncher.test.ts > service state persistence > commits only after the trial reports prepared",

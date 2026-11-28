@@ -157,7 +157,9 @@ as a card above the layout.
   **Split right** and **Split down** split its pane, and dragging a tab to a pane's edge does the
   same. Drag a tab between panes or onto another workspace to move it. Drag a pane's **+**
   button to place a new tab where you drop it: on a tab bar, at a pane's edge or at the
-  strip's edge. `Escape` cancels the drag.
+  strip's edge. Drag a changed file, a file chip or a pull request chip or badge to a pane's
+  edge to open its file or pull request surface there. A source whose surface this provider or
+  device cannot open does not drag. `Escape` cancels the drag.
 - Closing a tab closes that view only; the thread keeps its history, and an unsent draft keeps
   its text until you send it. Closing a draft with text offers **Reopen** in a notice.
   **Reopen closed tab** (its rebindable shortcut, or the command palette) brings back the most
@@ -355,9 +357,10 @@ The composer sends a message to the thread's provider. It accepts pasted images 
 `@` file references, slash commands and provider skills. **Rich text composer**, the send
 shortcut and skill visibility are in **Settings ▸ Chat**.
 
-In the desktop app, drag a file chip shown in the composer or a message out of the window to
-drop that file into the system file manager. Only files inside the thread's workspace can be
-dragged; a path that resolves outside it is refused.
+Drag a file chip shown in the composer or a message within the window to open its file
+surface where you drop it. In the desktop app, drag the same chip out of the window to drop the
+file into the system file manager. Only files inside the thread's workspace can be dragged; a
+path that resolves outside it is refused.
 
 A message can be sent while its attachments are still uploading: it appears as sending and the
 turn starts when the uploads finish. Answering a question or redirecting a pending approval
@@ -410,6 +413,7 @@ the provider, and an entry appears only when the thread supports it.
 | `/keybindings`                            | Keyboard shortcut settings                 |
 | `/config`                                 | Settings                                   |
 | `/status`, `/login`, `/logout`, `/doctor` | Provider status, health and sign-in        |
+| `/mcp`                                    | Provider settings for MCP servers          |
 | `/voice`                                  | Voice settings                             |
 
 `/terminal-setup`, `/statusline`, `/exit`, `/quit`, `/ide`, `/tui` and `/vim` work only in a

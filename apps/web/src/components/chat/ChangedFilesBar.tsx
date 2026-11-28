@@ -1,3 +1,4 @@
+import type { ScopedThreadRef } from "@houston-app/contracts";
 import type { ThreadCheckpointSummary } from "@houston-app/client-runtime/state/thread-checkpoints";
 import { checkpointFileTotals } from "@houston-app/client-runtime/state/thread-checkpoints";
 import { ChevronDownIcon, ChevronRightIcon, EllipsisIcon, FileIcon } from "lucide-react";
@@ -16,6 +17,7 @@ import {
   CHANGED_FILES_SEPARATOR_CLS,
   CHANGED_FILES_TOGGLE_CLS,
 } from "../ui/composer-anatomy-recipes";
+import { filePillDragHandlers } from "~/lib/filePillDrag";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { composerFloatingLayerProps } from "./composerEventScope";
 import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
@@ -139,11 +141,22 @@ export const ChangedFilesBar = memo(function ChangedFilesBar({
 export const ChangedFilesList = memo(function ChangedFilesList({
   summary,
   onReview,
-}: Pick<ChangedFilesBarProps, "summary" | "onReview">) {
+  threadRef,
+  workspaceRoot,
+}: Pick<ChangedFilesBarProps, "summary" | "onReview"> & {
+  readonly threadRef?: ScopedThreadRef | undefined;
+  readonly workspaceRoot?: string | undefined;
+}) {
   return (
     <ul data-changed-files-list="true" className={CHANGED_FILES_LIST_CLS}>
       {summary.files.map((file) => {
         const slash = file.path.lastIndexOf("/");
+        const drag = filePillDragHandlers({
+          path: file.path,
+          workspaceRoot,
+          ...(threadRef === undefined ? {} : { threadRef }),
+          title: file.path,
+        });
         return (
           <li key={file.path}>
             <button
@@ -151,6 +164,7 @@ export const ChangedFilesList = memo(function ChangedFilesList({
               onClick={onReview}
               className={CHANGED_FILES_ROW_CLS}
               aria-label={file.path}
+              {...drag}
             >
               <FileIcon aria-hidden className={CHANGED_FILES_ROW_ICON_CLS} />
               {slash >= 0 ? (
