@@ -10,7 +10,6 @@ import {
   ChevronRightIcon,
   EyeOffIcon,
   FolderPlusIcon,
-  LayoutGridIcon,
   SquarePenIcon,
   MoreHorizontalIcon,
   PinIcon,
@@ -1157,7 +1156,7 @@ export function ThreadSidebar({
                             onNewWorkspace: startCreatingWorkspace,
                           },
                         }
-                      : {})}
+                      : { onNewWorkspace: startCreatingWorkspace })}
                     projectFilter={
                       openProjectGroups.length > 1 ? (
                         <ProjectFilterPicker
@@ -1374,16 +1373,40 @@ function HiddenWorkspacesMenu({
   );
 }
 
+function NewWorkspaceButton({ onClick }: { onClick: () => void }) {
+  const t = useT();
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label={t("New workspace")}
+            onClick={onClick}
+            className={SIDEBAR_SECTION_ACTION_CLS}
+          />
+        }
+      >
+        <PlusIcon aria-hidden className="size-[15px]" />
+      </TooltipTrigger>
+      <TooltipPopup side="bottom">{t("New workspace")}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
 /**
- * The Workspaces label; its project filter and hidden-workspaces menu show on hover. The phone
- * page has no toolbar, so it passes `phoneControls` to keep view options, New workspace and Add
- * project in this header.
+ * The Workspaces label; its project filter, hidden-workspaces menu and New workspace show on
+ * hover. The phone page has no toolbar, so it passes `phoneControls` to keep view options, New
+ * workspace and Add project in this header.
  */
 export function SidebarWorkspacesHeader({
   hiddenWorkspaces = [],
   projectFilter = null,
+  onNewWorkspace,
   phoneControls,
 }: {
+  /** New workspace on the desktop header; the phone page passes it in `phoneControls`. */
+  onNewWorkspace?: () => void;
   hiddenWorkspaces?: ReadonlyArray<SidebarWorkspaceSection>;
   /** The project filter picker, when there is more than one project to choose from. */
   projectFilter?: ReactNode;
@@ -1414,23 +1437,11 @@ export function SidebarWorkspacesHeader({
                 onChange={phoneControls.onChange}
                 onReset={phoneControls.onReset}
               />
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      type="button"
-                      aria-label={t("New workspace")}
-                      onClick={phoneControls.onNewWorkspace}
-                      className={SIDEBAR_SECTION_ACTION_CLS}
-                    />
-                  }
-                >
-                  <PlusIcon aria-hidden className="size-[15px]" />
-                </TooltipTrigger>
-                <TooltipPopup side="bottom">{t("New workspace")}</TooltipPopup>
-              </Tooltip>
-              <SidebarAddProjectButton sectionAction />
+              <NewWorkspaceButton onClick={phoneControls.onNewWorkspace} />
+              <SidebarAddProjectButton />
             </>
+          ) : onNewWorkspace ? (
+            <NewWorkspaceButton onClick={onNewWorkspace} />
           ) : null}
         </>
       }
@@ -1438,8 +1449,8 @@ export function SidebarWorkspacesHeader({
   );
 }
 
-/** The quiet icon buttons beside the search field: new thread, new workspace, add project and view
- * options. New workspace also stays at the top of the view options menu. */
+/** The quiet icon buttons beside the search field: new thread and view options. New workspace is in
+ * the view options menu and on the Workspaces heading; Add project… is in the new-thread picker. */
 export function SidebarToolbarActions({
   options,
   onChange,
@@ -1469,22 +1480,6 @@ export function SidebarToolbarActions({
         </TooltipTrigger>
         <TooltipPopup side="bottom">{t("New thread")}</TooltipPopup>
       </Tooltip>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <button
-              type="button"
-              aria-label={t("New workspace")}
-              onClick={onNewWorkspace}
-              className={SIDEBAR_TOOLBAR_ACTION_CLS}
-            />
-          }
-        >
-          <LayoutGridIcon aria-hidden className="size-[15px]" />
-        </TooltipTrigger>
-        <TooltipPopup side="bottom">{t("New workspace")}</TooltipPopup>
-      </Tooltip>
-      <SidebarAddProjectButton />
       <SidebarOptionsMenu
         options={options}
         onChange={onChange}
@@ -1497,7 +1492,7 @@ export function SidebarToolbarActions({
 }
 
 /** Add project: opens the chooser for a folder, a clone or a new repository. */
-export function SidebarAddProjectButton({ sectionAction = false }: { sectionAction?: boolean }) {
+export function SidebarAddProjectButton() {
   const t = useT();
   return (
     <Tooltip>
@@ -1507,7 +1502,7 @@ export function SidebarAddProjectButton({ sectionAction = false }: { sectionActi
             type="button"
             aria-label={t("Add project")}
             onClick={() => openAddProjectDialog()}
-            className={sectionAction ? SIDEBAR_SECTION_ACTION_CLS : SIDEBAR_TOOLBAR_ACTION_CLS}
+            className={SIDEBAR_SECTION_ACTION_CLS}
           />
         }
       >
