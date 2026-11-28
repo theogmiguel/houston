@@ -94,6 +94,9 @@ describe("a held queued message", () => {
     expect(
       queueHeldPresentation(reason({ kind: "workspace_preparation" }), providerName).label,
     ).toBe("Held: The workspace could not be prepared");
+    expect(queueHeldPresentation(reason({ kind: "stopped_thread" }), providerName).label).toBe(
+      "Held: You stopped this thread",
+    );
     expect(queueHeldPresentation(reason({ kind: "background_work" }), providerName).label).toBe(
       "Held: Waiting for background work to finish",
     );

@@ -1108,7 +1108,12 @@ const make = Effect.gen(function* () {
               dispatchMode: { type: "defer_start", workspaceStrategy },
               createdBy: input.createdBy,
               creationSource: input.creationSource,
-              startOrigin: input.createdBy === "user" ? "user" : "automatic",
+              startOrigin:
+                input.initialMessage.scheduledTaskId !== undefined
+                  ? "automatic"
+                  : input.createdBy === "user"
+                    ? "user"
+                    : "automatic",
             })
             .pipe(
               // An agent's launch can land on a thread that a replay, or a concurrent

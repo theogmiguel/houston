@@ -88,6 +88,7 @@ import { recordThreadOpen } from "@houston-app/shared/paletteSearch";
 import { enterRunStartGate, type RunStartAdmission } from "../houston/runStart/RunStartGate.ts";
 import { limitsAdmission } from "../houston/runStart/LimitsAdmission.ts";
 import { LimitWindowRegistry } from "../houston/runStart/LimitWindowRegistry.ts";
+import { stoppedThreadAdmission } from "../houston/runStart/StoppedThreadAdmission.ts";
 import {
   backgroundWorkHoldsCompletion,
   derivePendingBackgroundWork,
@@ -1150,10 +1151,15 @@ function queuedRunModelSelection(
 /** A producer that omitted the origin still never lets a typed send be held. */
 export function startOriginForMessage(
   message:
-    | Pick<OrchestrationV2ConversationMessage, "createdBy" | "creationSource" | "idleCompaction">
+    | Pick<
+        OrchestrationV2ConversationMessage,
+        "createdBy" | "creationSource" | "idleCompaction" | "scheduledTaskId"
+      >
     | undefined,
 ): RunStartOrigin {
   if (message?.idleCompaction !== undefined) return "maintenance";
+  // A scheduled task runs without the user, even when a user created the task.
+  if (message?.scheduledTaskId !== undefined) return "automatic";
   if (message?.createdBy === "user") return "user";
   if (message?.creationSource === "provider") return "provider";
   return "automatic";
@@ -1163,6 +1169,8 @@ export function resolveRunStartOrigin(
   command: Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>,
 ): RunStartOrigin {
   if (command.startOrigin !== undefined) return command.startOrigin;
+  // A scheduled task runs without the user, even when a user created the task.
+  if (command.scheduledTaskId !== undefined) return "automatic";
   if (command.createdBy === "user") return "user";
   if (command.creationSource === "provider") return "provider";
   return "automatic";
@@ -1176,6 +1184,8 @@ interface RunStartAdmissionInput {
   readonly releasedUsageLimitHold?: boolean;
   readonly projection: Pick<OrchestrationV2ThreadProjection, "thread" | "runs" | "turnItems">;
   readonly now: DateTime.Utc;
+  /** Send now and Resume queue skip the stop hold; the user asked for this start themselves. */
+  readonly bypassStopHold?: boolean;
 }
 
 function usageLimitHoldsQueue(
@@ -1491,6 +1501,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       if (input.origin !== "automatic" || input.releasedUsageLimitHold === true)
         return { type: "start" as const };
       const settings = yield* serverSettings.getSettings.pipe(Effect.orDie);
+      // A user Stop holds later automatic starts first, before any limit window is read.
+      const stoppedThreadHold = input.bypassStopHold
+        ? null
+        : stoppedThreadAdmission({
+            origin: input.origin,
+            holdAgentMessagesAfterStop: settings.holdAgentMessagesAfterStop,
+            thread: input.projection.thread,
+          });
+      if (stoppedThreadHold !== null) return stoppedThreadHold;
       const registry = yield* Effect.serviceOption(LimitWindowRegistry);
       const windows = Option.isSome(registry)
         ? yield* registry.value.read(input.providerInstanceId)
@@ -7455,6 +7474,23 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     })) {
       yield* emit(events, command)(event);
     }
+    // The user is back: later automatic starts no longer wait for Resume.
+    if (
+      sentByUserFromClient &&
+      startsOrQueuesRun &&
+      !worktreeSetupUnresolved &&
+      projection.thread.heldAfterStop === true
+    ) {
+      yield* emit(
+        events,
+        command,
+      )({
+        type: "thread.metadata-updated",
+        threadId: command.threadId,
+        occurredAt: releasedAt,
+        payload: { ...projection.thread, heldAfterStop: false, updatedAt: releasedAt },
+      });
+    }
     if (shouldQueue) {
       if (queueTarget === undefined) return;
       if (pendingMergeBackTransfers.length > 0) {
@@ -13097,6 +13133,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           });
 
     const emitEvent = emit(events, command);
+    // Only the user's own Stop holds what the thread would do next; an agent's MCP stop does not.
+    if (command.requestedBy === "user" && projection.thread.heldAfterStop !== true) {
+      const { holdAgentMessagesAfterStop } = yield* serverSettings.getSettings.pipe(Effect.orDie);
+      if (holdAgentMessagesAfterStop) {
+        yield* emitEvent({
+          type: "thread.metadata-updated",
+          threadId: command.threadId,
+          occurredAt: now,
+          payload: { ...projection.thread, heldAfterStop: true, updatedAt: now },
+        });
+      }
+    }
     const interruptRequestItem: OrchestrationV2TurnItem = {
       id: idAllocator.derive.runSignalTurnItem({
         runId: run.id,
@@ -13634,6 +13682,22 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ),
       );
     if (projection.thread.deletedAt !== null) return undefined;
+    // Only the user's own Stop holds what the thread would do next; an agent's MCP stop does not.
+    if (command.requestedBy === "user" && projection.thread.heldAfterStop !== true) {
+      const { holdAgentMessagesAfterStop } = yield* serverSettings.getSettings.pipe(Effect.orDie);
+      if (holdAgentMessagesAfterStop) {
+        const now = yield* DateTime.now;
+        yield* emit(
+          events,
+          command,
+        )({
+          type: "thread.metadata-updated",
+          threadId: command.threadId,
+          occurredAt: now,
+          payload: { ...projection.thread, heldAfterStop: true, updatedAt: now },
+        });
+      }
+    }
     // Queued after the interrupt, since a thread's effects run in order.
     const stopDelegatedTasks =
       command.stopDelegatedTasks === false ||
@@ -15129,6 +15193,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             threadId: command.threadId,
             occurredAt: now,
             payload: projection.thread,
+          });
+        }
+        // Resume is the user returning: later automatic starts no longer wait.
+        if (command.type === "queue.resume" && projection.thread.heldAfterStop === true) {
+          yield* emit(
+            events,
+            command,
+          )({
+            type: "thread.metadata-updated",
+            threadId: command.threadId,
+            occurredAt: now,
+            payload: { ...projection.thread, heldAfterStop: false, updatedAt: now },
           });
         }
         break;

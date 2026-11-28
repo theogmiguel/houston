@@ -2767,6 +2767,7 @@ const make = Effect.gen(function* () {
             threadId: childThreadId,
             stopDelegatedTasks: false,
             reason,
+            requestedBy: "agent",
           })
           .pipe(
             Effect.mapError((error) =>
@@ -3362,6 +3363,7 @@ const make = Effect.gen(function* () {
             commandId,
             threadId: input.threadId,
             ...(input.reason === undefined ? {} : { reason: input.reason }),
+            requestedBy: "agent",
           })
           .pipe(Effect.catch(stopFailed));
         // A retry with the same clientRequestId repeats only the stops that failed.

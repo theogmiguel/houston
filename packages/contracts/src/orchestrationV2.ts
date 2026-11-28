@@ -509,6 +509,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
   snoozedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   lastSnoozeWakeAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecovery)),
+  /** The user pressed Stop; automatic starts wait until the user resumes or sends a message. */
+  heldAfterStop: Schema.optional(Schema.Boolean),
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
@@ -3006,6 +3008,8 @@ export const OrchestrationV2Command = Schema.Union([
     commandId: CommandId,
     threadId: ThreadId,
     reason: Schema.optional(Schema.String),
+    /** Who asked for the stop; only the user's own Stop holds later automatic starts. */
+    requestedBy: Schema.optional(Schema.Literals(["user", "agent"])),
     /**
      * False when the caller stops the thread's delegated tasks itself, as the server's tree walks
      * do under their caller's dispatch limit. Otherwise Stop also stops every task under the thread.
@@ -3357,6 +3361,8 @@ export const OrchestrationV2Command = Schema.Union([
     threadId: ThreadId,
     runId: RunId,
     reason: Schema.optional(Schema.String),
+    /** Who asked for the interrupt; only the user's own Stop holds later automatic starts. */
+    requestedBy: Schema.optional(Schema.Literals(["user", "agent"])),
     holdQueue: Schema.optional(Schema.Boolean),
   }),
   Schema.Struct({

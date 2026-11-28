@@ -324,6 +324,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.holdUnlimitedThreads !== DEFAULT_UNIFIED_SETTINGS.holdUnlimitedThreads
       ? ["Also hold threads that have not hit the limit"]
       : []),
+    ...(settings.holdAgentMessagesAfterStop !== DEFAULT_UNIFIED_SETTINGS.holdAgentMessagesAfterStop
+      ? ["Hold agent messages after Stop"]
+      : []),
     ...(!Equal.equals(settings.snoozePresets, DEFAULT_UNIFIED_SETTINGS.snoozePresets)
       ? ["Hold options"]
       : []),
@@ -485,6 +488,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
+      holdAgentMessagesAfterStop: DEFAULT_UNIFIED_SETTINGS.holdAgentMessagesAfterStop,
       snoozePresets: DEFAULT_UNIFIED_SETTINGS.snoozePresets,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
@@ -1307,6 +1311,43 @@ function ScopedCompactIdleThreadsRow() {
   );
 }
 
+export function HoldAgentMessagesAfterStopRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+
+  return (
+    <SettingsRow
+      serverScoped
+      settingKeys={["holdAgentMessagesAfterStop"]}
+      {...searchableSetting("hold-agent-messages-after-stop")}
+      description="After you press Stop, agent messages, scheduled tasks and merge-queue notes wait until you press Resume or send a message."
+      resetAction={
+        settings.holdAgentMessagesAfterStop !==
+        DEFAULT_UNIFIED_SETTINGS.holdAgentMessagesAfterStop ? (
+          <SettingResetButton
+            label="hold agent messages after Stop"
+            onClick={() =>
+              updateSettings({
+                holdAgentMessagesAfterStop: DEFAULT_UNIFIED_SETTINGS.holdAgentMessagesAfterStop,
+              })
+            }
+          />
+        ) : null
+      }
+      control={
+        <ScopedSwitch
+          settingKeys={["holdAgentMessagesAfterStop"]}
+          checked={settings.holdAgentMessagesAfterStop}
+          onCheckedChange={(checked) =>
+            updateSettings({ holdAgentMessagesAfterStop: Boolean(checked) })
+          }
+          aria-label="Hold agent messages after Stop"
+        />
+      }
+    />
+  );
+}
+
 export function ThreadsSettingsPanel() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -1460,6 +1501,10 @@ export function ThreadsSettingsPanel() {
   return (
     <SettingsPageContainer>
       <ProjectDefaultsSettings category="general" extraRows={extraNewThreadRows} />
+
+      <SettingsSection id="stopped-threads" title="Stopped threads">
+        <HoldAgentMessagesAfterStopRow />
+      </SettingsSection>
 
       <SettingsSection id="usage-limits" title="Usage limits">
         <SettingsRow

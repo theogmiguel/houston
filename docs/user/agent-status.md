@@ -50,6 +50,13 @@ you left off." When the provider had not yet received the stopped message, Resum
 that message again, with its context and attachments. A stopped compaction is not offered
 for Resume; run it again.
 
+With **Settings ▸ Threads ▸ Hold agent messages after Stop** on, a Stop you press also holds
+every automatic run the thread would start later: agent messages, scheduled tasks, merge-queue
+notes and anything else you did not start. Each held run waits in the composer's queued list
+with the reason, and **Send now** starts it at once. Press **Resume** or send a message to
+release them in order, behind your own run. A stop an agent makes through its MCP tools holds
+nothing, and provider output is never held.
+
 A message you sent that the provider had not confirmed receiving when Houston restarted waits
 in the queue instead of being cancelled. The agent may already have acted on it, so check
 before you release it. **Resume** releases it; another message you send runs first, then this

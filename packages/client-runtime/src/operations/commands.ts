@@ -846,6 +846,7 @@ export const interruptThreadTurn = Effect.fn("EnvironmentCommands.interruptThrea
         type: "thread.stop",
         commandId: yield* allocateCommandId(input),
         threadId,
+        requestedBy: "user",
       });
     }
   }
@@ -895,6 +896,7 @@ export const interruptThreadTurn = Effect.fn("EnvironmentCommands.interruptThrea
     commandId: yield* allocateCommandId(input),
     threadId,
     runId,
+    requestedBy: "user",
     holdQueue: true,
   });
 });

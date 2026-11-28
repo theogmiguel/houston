@@ -515,6 +515,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["usage quota rate limit reset recover continue"],
   },
   {
+    id: "hold-agent-messages-after-stop",
+    title: "Hold agent messages after Stop",
+    to: "/settings/threads",
+    searchTerms: ["stop resume automatic agent message scheduled task merge queue"],
+  },
+  {
     id: "linked-environments-beta",
     title: "Linked environments",
     to: "/settings/labs",

@@ -13,6 +13,7 @@ export const MessageDeliveryQueueHoldReasonKind = Schema.Literals([
   "workspace_preparation",
   "background_work",
   "context_compaction",
+  "stopped_thread",
 ]);
 export type MessageDeliveryQueueHoldReasonKind = typeof MessageDeliveryQueueHoldReasonKind.Type;
 

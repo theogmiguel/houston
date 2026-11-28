@@ -207,7 +207,12 @@ export function steerFollowUpCommand(input: {
     dispatchMode: { type: queued ? "queue_after_active" : "start_immediately" },
     createdBy: message.createdBy,
     creationSource: message.creationSource,
-    startOrigin: message.createdBy === "user" ? "user" : "automatic",
+    startOrigin:
+      message.scheduledTaskId !== undefined
+        ? "automatic"
+        : message.createdBy === "user"
+          ? "user"
+          : "automatic",
     ...(message.delegatedCompletion === undefined
       ? {}
       : { delegatedCompletion: message.delegatedCompletion }),
