@@ -4,7 +4,7 @@
 
 <h1 align="center">Houston</h1>
 
-<p align="center"><strong>Local-first mission control for coding agents on Linux and Windows.</strong></p>
+<p align="center"><strong>Mission control for coding agents.</strong></p>
 
 <p align="center">
   <img src=".github/assets/houston-hero.png" width="100%" alt="Houston with a thread next to the diff of its changes" />
@@ -30,8 +30,8 @@ server's orchestration tools.
 - **Workspace tools.** Git changes, files, an editor, a browser and pull requests open in the
   right panel next to the thread. Pull requests include a local merge queue.
 - **Session insights.** Thread status, notifications and usage estimates help track work.
-- **Local control plane.** Houston has no account or hosted control plane. Session state remains
-  local, and secrets managed by Houston are kept in files only your user can read.
+- **Local by default.** Houston needs no account. Session state stays on your machine, and
+  secrets managed by Houston are kept in files only your user can read.
 
 ## Supported agents
 
@@ -51,7 +51,7 @@ Download the current release from [GitHub Releases](https://github.com/theogmigu
 | Windows x86_64 | NSIS `.exe`        | Windows 10 or 11    |
 
 Linux and Windows receive official release packages. macOS and Windows ARM64 do not have
-official builds. Alpine, NixOS, BSD and other
+official builds yet. Alpine, NixOS, BSD and other
 non-glibc environments do not receive official packages; community or source builds are
 best effort.
 
@@ -75,9 +75,10 @@ The architecture is documented in [`docs/internals/overview.md`](docs/internals/
 
 ## Privacy and updates
 
-Local-first does not mean offline. Agent CLIs, Git and GitHub operations, browser and MCP
-integrations and model downloads use their respective network services when invoked. Houston has no hosted account; [Privacy and diagnostics](docs/user/privacy.md) describes usage and crash data. Its background
-update check queries GitHub, can be disabled, and never installs without an explicit click.
+Houston is local by default, not offline. Agent CLIs, Git and GitHub operations, browser and MCP
+integrations and model downloads use their respective network services when invoked. Houston needs
+no account; [Privacy and diagnostics](docs/user/privacy.md) describes usage and crash data. Its
+background update check queries GitHub, can be disabled, and never installs without an explicit click.
 
 ## Documentation
 

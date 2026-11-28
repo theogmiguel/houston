@@ -14,7 +14,8 @@ things at once.
   support for that feature is refused **by name**, never silently ignored.
 - UI work follows [`docs/internals/styleguide.md`](docs/internals/styleguide.md) — tokens
   over hex, the chrome constants over ad-hoc classes.
-- Deeper rules on how Houston is built live in [`AGENTS.md`](AGENTS.md); read it before a
+- [`AGENTS.md`](AGENTS.md) holds the project's working defaults and its few hard safety
+  rules; read it before a
   change that touches the server, the contracts, or an agent CLI's configuration.
 
 ## Local setup
@@ -62,9 +63,10 @@ Run the gates for whatever you touched.
 - `apps/` and `packages/`: the package's `typecheck` and its touched tests, for example
   `pnpm --filter @houston-app/cli exec vp test run <files>` for the server.
 
-**Before every push, and at the end of a work block** — the full suites. On Linux,
-run Cargo inside `scripts/oom-shield.sh`. On Windows, set `$env:CARGO_BUILD_JOBS = '3'`
-in PowerShell. Never run concurrent Cargo workloads.
+**Before a push** — run `pnpm check:changed`. CI runs the full suites, and `ci-gate` is the
+aggregate check. Run the full suites locally when the change is broad or a maintainer asks.
+On Linux, run Cargo inside `scripts/oom-shield.sh`. On Windows, set
+`$env:CARGO_BUILD_JOBS = '3'` in PowerShell. Never run concurrent Cargo workloads.
 
 **The workspace:** the exact commands, as CI runs them, are under "Full gate commands" in
 [`docs/operations/development.md`](docs/operations/development.md#full-gate-commands).
@@ -79,9 +81,9 @@ cargo test
 
 ## Tests
 
-Tests come before code. A bug fix gets a regression test that fails before the fix and
-passes after it — prefer a test that would actually catch the regression over one that
-only walks the happy path.
+A bug fix gets a regression test that fails before the fix and passes after it, and new logic
+where a silent regression is costly gets tests. Prefer a test that would actually catch the
+regression over one that only walks the happy path.
 
 ## Pull requests
 
