@@ -847,6 +847,15 @@ export const ClaudeSettings = makeProviderSettingsSchema(
         providerSettingsForm: { control: "switch", clearWhenEmpty: "persist" },
       }),
     ),
+    compactStaleThreadsOnWake: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.annotateKey({
+        title: "Compact stale threads on wake",
+        description:
+          "Compact a Claude thread first when a turn is about to start after its prompt cache expired and it is over Claude's auto-compact window. The waking message waits and runs unchanged. Other providers report no prompt-cache expiry and are not compacted.",
+        providerSettingsForm: { control: "switch", clearWhenEmpty: "persist" },
+      }),
+    ),
     autoCompactWindow: TrimmedString.check(
       Schema.isPattern(CLAUDE_AUTO_COMPACT_WINDOW_PATTERN),
     ).pipe(
@@ -882,6 +891,7 @@ export const ClaudeSettings = makeProviderSettingsSchema(
       "claudeInChrome",
       "claudeArtifacts",
       "leanDelegatedChildren",
+      "compactStaleThreadsOnWake",
       "autoCompactWindow",
       "idleCompaction",
       "launchArgs",
@@ -1725,6 +1735,24 @@ export const idleCompactionPatch = (settings: IdleCompactionSettings, mode: Idle
     : readsIdleCompactionModes(settings)
       ? { compactIdleThreads: mode }
       : { compactIdleThreads: mode === "beforeCacheExpires" };
+
+/**
+ * Whether a Claude instance compacts a stale thread before a waking turn starts. The switch is a
+ * Claude setting, so a non-Claude instance reads false and no compaction is attempted.
+ */
+export const resolveCompactStaleThreadsOnWake = (
+  settings: Pick<ServerSettings, "providerInstances">,
+  instanceId: ProviderInstanceId,
+): boolean => {
+  const instance = Object.hasOwn(settings.providerInstances, instanceId)
+    ? settings.providerInstances[instanceId]
+    : undefined;
+  if (instance !== undefined && instance.driver !== "claudeAgent") return false;
+  return decodeClaudeSettings(instance?.config ?? {}).pipe(
+    Option.map((config) => config.compactStaleThreadsOnWake),
+    Option.getOrElse(() => false),
+  );
+};
 
 export const resolveIdleCompaction = (
   settings: Pick<ServerSettings, "providerInstances" | "compactIdleThreads" | "idleCompaction">,

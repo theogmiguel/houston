@@ -114,6 +114,7 @@ const makeClaudeConfig = (overrides: Partial<ClaudeSettings>): ClaudeSettings =>
   claudeInChrome: true,
   claudeArtifacts: true,
   leanDelegatedChildren: false,
+  compactStaleThreadsOnWake: false,
   autoCompactWindow: "",
   idleCompaction: "default",
   ...overrides,

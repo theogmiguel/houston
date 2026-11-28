@@ -33,6 +33,26 @@ Houston does not read Claude's managed policy settings or the `autoCompactEnable
 Claude's global configuration file, so a window or an off switch set there is not shown.
 Other providers choose their own compaction point and Houston does not show it.
 
+## Compacting a stale thread before it wakes
+
+**Settings ▸ Providers ▸ Claude ▸ Compact stale threads on wake** is off by default. When it
+is on, a Claude thread whose context is at or above Claude's own auto-compact point and whose
+prompt cache has expired is compacted before its next turn starts, whatever woke it: your own
+message, an agent message, a delegated result, a usage-limit resume, a background completion,
+a restart note, a continuation, a pull-request update, an answered card or child question, a
+scheduled task, a task run, a Slack answer or a merge-queue update.
+
+The waking message is kept unchanged. It shows **Waiting for compaction**, waits for the
+compaction, then runs in its place. A warm thread, or one below the auto-compact point, starts
+directly. A second delivery of the same message creates no second compaction.
+
+Side threads, Claude's own sub-agent threads, turns the provider already started, steering, a
+fresh-context restart and a restart of an active run are not compacted this way. Other
+providers report no prompt-cache expiry, so no compaction is attempted for them; the setting
+appears only under Claude. With the switch off, the composer's own before-you-return
+compaction is unchanged, and a thread at or above the server's threshold is left to the server
+when the switch is on.
+
 ## Why a thread compacted
 
 The timeline's compaction row says why the thread compacted and how large its context was
@@ -42,6 +62,8 @@ before it did:
   provider prompt cache expired.
 - **Compacted when you returned** — Houston compacted before sending the message you left
   while the thread was idle.
+- **Compacted before …** — a stale thread compacted before the turn that woke it started, such
+  as a delegated result or a scheduled task.
 - **Compacted on request** — you asked for the compaction.
 - **Compacted by Claude at … (inside a long turn)** — Claude compacted on its own during a
   turn. The size is the context it held before compacting; Claude reports when it ran without

@@ -75,4 +75,13 @@ describe("compactionReasonTitle", () => {
     expect(compactionReasonTitle("onReturn", 241_000)).toBe("Compacted when you returned: 241K");
     expect(compactionReasonTitle("onRequest", undefined)).toBe("Compacted on request");
   });
+
+  it("names what woke a stale thread before its turn started", () => {
+    expect(compactionReasonTitle("wake:delegatedResult", 318_000)).toBe(
+      "Compacted before a delegated result: 318K",
+    );
+    expect(compactionReasonTitle("wake:scheduledTask", undefined)).toBe(
+      "Compacted before a scheduled task",
+    );
+  });
 });

@@ -12,6 +12,11 @@ export interface RunStartHold {
 
 export type RunStartAdmission = { readonly type: "start" } | RunStartHold;
 
+/** What the context step hands to the start step, or the hold that keeps the run waiting. */
+export type RunStartContext<Context> =
+  | { readonly type: "ready"; readonly context: Context }
+  | RunStartHold;
+
 export type RunStartGateOutcome = { readonly type: "started" } | RunStartHold;
 
 export interface RunStartGateInput {
@@ -21,8 +26,8 @@ export interface RunStartGateInput {
 export interface RunStartGateSteps<Context, E = never, R = never> {
   /** The first step that can hold: a limit window, a budget reserve or a load hold. */
   readonly admission: (input: RunStartGateInput) => Effect.Effect<RunStartAdmission, E, R>;
-  /** Prepare the run before it starts; a pass-through until the context work lands. */
-  readonly context: (input: RunStartGateInput) => Effect.Effect<Context, E, R>;
+  /** Prepare the run before it starts. A hold here also keeps the triggering message waiting. */
+  readonly context: (input: RunStartGateInput) => Effect.Effect<RunStartContext<Context>, E, R>;
   /** Hand the prepared context to the provider. */
   readonly start: (context: Context) => Effect.Effect<void, E, R>;
 }
@@ -45,24 +50,26 @@ export const runStartGate =
         : yield* steps.admission(input);
       if (admission.type === "hold") return admission;
       const context = yield* steps.context(input);
-      yield* steps.start(context);
+      if (context.type === "hold") return context;
+      yield* steps.start(context.context);
       return { type: "started" } as const;
     });
 
 /**
  * Ask the gate whether a start may proceed. The caller owns the start itself, because a start
- * is one transaction of domain events rather than a provider call.
+ * is one transaction of domain events rather than a provider call. The context step may hold the
+ * run after doing its own preparation, such as compacting a stale thread first.
  */
 // The enclosing dispatch or queue-start span already covers a start, so the gate adds no span.
 export const enterRunStartGate = Effect.fnUntraced(function* <E = never, R = never>(input: {
   readonly origin: RunStartOrigin;
   readonly admission: () => Effect.Effect<RunStartAdmission, E, R>;
-  readonly context: () => Effect.Effect<void, E, R>;
+  readonly context: () => Effect.Effect<RunStartHold | null, E, R>;
 }): Effect.gen.Return<RunStartAdmission, E, R> {
   const admission: RunStartAdmission = skipsAdmission(input.origin)
     ? { type: "start" }
     : yield* input.admission();
   if (admission.type === "hold") return admission;
-  yield* input.context();
-  return admission;
+  const contextHold = yield* input.context();
+  return contextHold ?? ({ type: "start" } as const);
 });

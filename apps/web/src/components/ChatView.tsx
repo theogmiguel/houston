@@ -80,10 +80,12 @@ import {
   type ScopedThreadRef,
   type ThreadId,
   ProviderInteractionMode,
+  resolveCompactStaleThreadsOnWake,
   resolveIdleCompaction,
   RuntimeMode,
   managedRuntimeModeDenial,
 } from "@houston-app/contracts";
+import { COMPACTION_SUGGESTION_MIN_TOKENS } from "@houston-app/shared/claudeCompaction";
 import {
   deriveProviderExtensionStatuses,
   deriveProviderSubagentStatus,
@@ -2724,12 +2726,16 @@ export default function ChatView(props: ChatViewProps) {
           ? t("Compaction is unavailable for this provider")
           : t("Compacting is unavailable right now")
     : null;
+  const compactionInstanceId = activeProviderInstanceId ?? ProviderInstanceId.make("claudeAgent");
+  // With server-side stale compaction on, the composer leaves a thread at or over the server's
+  // threshold to it, so the same send is never compacted twice.
+  const serverCompactionThreshold = resolveCompactStaleThreadsOnWake(settings, compactionInstanceId)
+    ? (activeContextWindow?.autoCompactThreshold ?? COMPACTION_SUGGESTION_MIN_TOKENS)
+    : Number.POSITIVE_INFINITY;
   const resumeCompactionTokens =
     activeContextWindow &&
-    resolveIdleCompaction(
-      settings,
-      activeProviderInstanceId ?? ProviderInstanceId.make("claudeAgent"),
-    ) !== "off" &&
+    resolveIdleCompaction(settings, compactionInstanceId) !== "off" &&
+    activeContextWindow.usedTokens < serverCompactionThreshold &&
     !resumeCompactionPermanentlyDismissed &&
     !nativeResumeCompactionDismissed &&
     !compactDisabled &&

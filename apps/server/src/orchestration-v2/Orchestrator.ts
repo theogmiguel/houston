@@ -25,6 +25,7 @@ import {
   type ChatAttachment,
   CommandId,
   compactionReasonForMessage,
+  IDLE_COMPACTION_TEXT,
   isCompactionCommandMessage,
   isCompactCommandText,
   isOrchestrationV2WorkActive,
@@ -80,13 +81,26 @@ import {
   TurnItemId,
   TrimmedNonEmptyString,
   managedRuntimeModeCeilingMessage,
+  resolveCompactStaleThreadsOnWake,
+  resolveIdleCompaction,
   type RunStartOrigin,
 } from "@houston-app/contracts";
 import { modelSelectionsEqual } from "@houston-app/shared/model";
 import { modelSwitchSince } from "./modelSwitch.ts";
 import { recordThreadOpen } from "@houston-app/shared/paletteSearch";
-import { enterRunStartGate, type RunStartAdmission } from "../houston/runStart/RunStartGate.ts";
+import {
+  enterRunStartGate,
+  type RunStartAdmission,
+  type RunStartHold,
+} from "../houston/runStart/RunStartGate.ts";
 import { limitsAdmission } from "../houston/runStart/LimitsAdmission.ts";
+import {
+  describeStaleWakeOneShot,
+  staleWakeCompactionCommandId,
+  staleWakeCompactionMessageId,
+  staleWakeOneShot,
+  type StaleWakeTrigger,
+} from "../houston/runStart/StaleWakeCompaction.ts";
 import { LimitWindowRegistry } from "../houston/runStart/LimitWindowRegistry.ts";
 import { stoppedThreadAdmission } from "../houston/runStart/StoppedThreadAdmission.ts";
 import {
@@ -1176,6 +1190,18 @@ export function resolveRunStartOrigin(
   return "automatic";
 }
 
+interface StaleCompactionStartInput {
+  readonly projection: Pick<
+    OrchestrationV2ThreadProjection,
+    "thread" | "messages" | "runs" | "providerThreads" | "providerTurns" | "turnItems"
+  >;
+  readonly trigger: StaleWakeTrigger;
+  readonly modelSelection: ModelSelection;
+  readonly events: Ref.Ref<Array<OrchestrationV2DomainEvent>>;
+  readonly effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>;
+  readonly now: DateTime.Utc;
+}
+
 interface RunStartAdmissionInput {
   readonly origin: RunStartOrigin;
   readonly providerInstanceId: ProviderInstanceId;
@@ -1184,8 +1210,8 @@ interface RunStartAdmissionInput {
   readonly releasedUsageLimitHold?: boolean;
   readonly projection: Pick<OrchestrationV2ThreadProjection, "thread" | "runs" | "turnItems">;
   readonly now: DateTime.Utc;
-  /** Send now and Resume queue skip the stop hold; the user asked for this start themselves. */
-  readonly bypassStopHold?: boolean;
+  /** Send now and Resume queue skip the admission holds; the user asked for this start themselves. */
+  readonly bypassAdmission?: boolean;
 }
 
 function usageLimitHoldsQueue(
@@ -1496,19 +1522,24 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
   // The single admission step every run start passes under the thread lock. Only automatic
   // work may be held; a typed send and provider output always start.
-  const admitRunStart = (input: RunStartAdmissionInput): Effect.Effect<RunStartAdmission> => {
+  const admitRunStart = <E = never, R = never>(
+    input: RunStartAdmissionInput,
+    context?: () => Effect.Effect<RunStartHold | null, E, R>,
+  ): Effect.Effect<RunStartAdmission, E | OrchestratorV2Error, R> => {
     const admission = Effect.fnUntraced(function* () {
-      if (input.origin !== "automatic" || input.releasedUsageLimitHold === true)
+      if (
+        input.origin !== "automatic" ||
+        input.releasedUsageLimitHold === true ||
+        input.bypassAdmission === true
+      )
         return { type: "start" as const };
       const settings = yield* serverSettings.getSettings.pipe(Effect.orDie);
       // A user Stop holds later automatic starts first, before any limit window is read.
-      const stoppedThreadHold = input.bypassStopHold
-        ? null
-        : stoppedThreadAdmission({
-            origin: input.origin,
-            holdAgentMessagesAfterStop: settings.holdAgentMessagesAfterStop,
-            thread: input.projection.thread,
-          });
+      const stoppedThreadHold = stoppedThreadAdmission({
+        origin: input.origin,
+        holdAgentMessagesAfterStop: settings.holdAgentMessagesAfterStop,
+        thread: input.projection.thread,
+      });
       if (stoppedThreadHold !== null) return stoppedThreadHold;
       const registry = yield* Effect.serviceOption(LimitWindowRegistry);
       const windows = Option.isSome(registry)
@@ -1530,7 +1561,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     return enterRunStartGate({
       origin: input.origin,
       admission,
-      context: () => Effect.void,
+      context: context ?? (() => Effect.succeed(null)),
     });
   };
 
@@ -2267,6 +2298,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     );
   });
 
+  // Assigned after dispatchMessage, which it calls to insert the compaction ahead of the wake.
+  let compactStaleBeforeStart = (_input: StaleCompactionStartInput) =>
+    Effect.die("stale wake compaction is not wired yet") as Effect.Effect<
+      RunStartHold | null,
+      OrchestratorV2Error
+    >;
+
   // A stale wake cancels itself and then lets the next queued run start; the ref keeps the
   // recursive call out of the function's own type inference.
   const startNextQueuedRunRef = yield* Ref.make<(threadId: ThreadId) => Effect.Effect<void, Error>>(
@@ -2317,17 +2355,50 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       };
       const now = yield* DateTime.now;
       const settings = yield* serverSettings.getSettings.pipe(Effect.orDie);
-      const admission =
-        options?.bypassAdmission === true
-          ? ({ type: "start" } as const)
-          : yield* admitRunStart({
-              origin: startOriginForMessage(queuedMessage),
-              providerInstanceId: queuedRun.providerInstanceId,
-              model: modelSelection.model,
-              releasedUsageLimitHold: queuedRun.releasedUsageLimitHold === true,
-              projection,
-              now,
-            });
+      const origin = startOriginForMessage(queuedMessage);
+      const admission = yield* admitRunStart(
+        {
+          origin,
+          providerInstanceId: queuedRun.providerInstanceId,
+          model: modelSelection.model,
+          releasedUsageLimitHold: queuedRun.releasedUsageLimitHold === true,
+          ...(options?.bypassAdmission === true ? { bypassAdmission: true } : {}),
+          projection,
+          now,
+        },
+        queuedMessage === undefined
+          ? undefined
+          : () =>
+              Effect.gen(function* () {
+                const events = yield* Ref.make<Array<OrchestrationV2DomainEvent>>([]);
+                const effects = yield* Ref.make<Array<PendingOrchestrationEffectV2>>([]);
+                const hold = yield* compactStaleBeforeStart({
+                  projection,
+                  trigger: {
+                    origin,
+                    messageId: queuedMessage.id,
+                    text: queuedMessage.text,
+                    attachments: queuedMessage.attachments,
+                    createdBy: queuedMessage.createdBy,
+                    creationSource: queuedMessage.creationSource,
+                    notification: queuedMessage.notification,
+                    delegatedCompletion: queuedMessage.delegatedCompletion,
+                    scheduledTaskId: queuedMessage.scheduledTaskId,
+                    senderThreadId: queuedMessage.senderThreadId,
+                    restartContinuationOfRunId: queuedRun.restartContinuationOfRunId,
+                    usageLimitContinuationOfRunId: queuedRun.usageLimitContinuationOfRunId,
+                  },
+                  modelSelection,
+                  events,
+                  effects,
+                  now,
+                });
+                if (hold !== null) {
+                  yield* writeSystemEvents(yield* Ref.get(events), yield* Ref.get(effects));
+                }
+                return hold;
+              }),
+      );
       if (admission.type === "hold") {
         yield* writeSystemEvents(
           holdRunEvents({
@@ -3360,7 +3431,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         .map((message) => message.id),
     );
     const now = yield* DateTime.now;
-    const released = held.filter((run) => unattended.has(run.userMessageId));
+    const released = held.filter(
+      (run) =>
+        // A compaction hold releases itself when the compaction it waits for finishes.
+        run.queueHeldReason?.kind === "context_compaction" || unattended.has(run.userMessageId),
+    );
     if (released.length === 0) return;
     yield* writeSystemEvents(
       releaseQueueHoldEvents({
@@ -7461,8 +7536,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             (run) =>
               run.status === "queued" &&
               run.queueHeld === true &&
-              // A limits hold waits for the reset or an explicit Send now, not any user send.
-              run.queueHeldReason?.kind !== "usage_limit",
+              // A limits or compaction hold waits for its own release, not any user send.
+              run.queueHeldReason?.kind !== "usage_limit" &&
+              run.queueHeldReason?.kind !== "context_compaction",
           )
         : [];
     const releasedAt = yield* DateTime.now;
@@ -7881,14 +7957,47 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       (transfer) => transfer.id !== pendingMergeBackTransfer?.id,
     );
     const now = yield* DateTime.now;
-    const admission = yield* admitRunStart({
-      origin: resolveRunStartOrigin(command),
-      providerInstanceId: modelSelection.instanceId,
-      model: modelSelection.model,
-      projection,
-      now,
-    });
+    const origin = resolveRunStartOrigin(command);
+    const admission = yield* admitRunStart(
+      {
+        origin,
+        providerInstanceId: modelSelection.instanceId,
+        model: modelSelection.model,
+        projection,
+        now,
+      },
+      () =>
+        compactStaleBeforeStart({
+          projection,
+          trigger: {
+            origin,
+            messageId: command.messageId,
+            text: dispatchText,
+            attachments: command.attachments,
+            createdBy: command.createdBy,
+            creationSource: command.creationSource,
+            commandId: command.commandId,
+            notification: command.notification,
+            delegatedCompletion,
+            scheduledTaskId: command.scheduledTaskId,
+            senderThreadId: command.senderThreadId,
+            restartContinuationOfRunId: command.restartContinuationOfRunId,
+            usageLimitContinuationOfRunId: command.usageLimitContinuationOfRunId,
+            manualContinuationOfRunId: command.manualContinuationOfRunId,
+            freshContext,
+          },
+          modelSelection,
+          events,
+          effects,
+          now,
+        }),
+    );
     const admissionHold = admission.type === "hold" ? admission : undefined;
+    if (admissionHold !== undefined) {
+      // The context step inserted the compaction's events; read them so the held run's ordinal
+      // and queue position follow it.
+      projection = yield* getProjectionWithPendingEvents(command.threadId, events);
+    }
     if (
       !modelSelectionsEqual(projection.thread.modelSelection, modelSelection) ||
       projection.thread.providerInstanceId !== modelSelection.instanceId
@@ -9416,6 +9525,82 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       request: { type: "provider-turn.start", runId },
     } satisfies PendingOrchestrationEffectV2;
     yield* Ref.update(effects, (existing) => [...existing, pendingEffect]);
+  });
+
+  // Runs on the per-start path, so it stays untraced: only the compaction it may dispatch is work.
+  compactStaleBeforeStart = Effect.fnUntraced(function* (input: StaleCompactionStartInput) {
+    const settings = yield* serverSettings.getSettings.pipe(Effect.orDie);
+    const oneShot = staleWakeOneShot({
+      projection: input.projection,
+      providerInstanceId: input.modelSelection.instanceId,
+      trigger: input.trigger,
+      nowMs: DateTime.toEpochMillis(input.now),
+      compactStaleThreadsOnWake: resolveCompactStaleThreadsOnWake(
+        settings,
+        input.modelSelection.instanceId,
+      ),
+      idleCompaction: resolveIdleCompaction(settings, input.modelSelection.instanceId),
+    });
+    if (oneShot === null) return null;
+    // The compaction is automatic work: never start one on a limited account, even when the
+    // waking turn is a typed send that admission does not hold.
+    if (input.trigger.origin !== "automatic") {
+      const registry = yield* Effect.serviceOption(LimitWindowRegistry);
+      const windows = Option.isSome(registry)
+        ? yield* registry.value.read(input.modelSelection.instanceId)
+        : [];
+      const limit = limitsAdmission({
+        origin: "automatic",
+        providerInstanceId: input.modelSelection.instanceId,
+        model: input.modelSelection.model,
+        windows,
+        holdUnlimitedThreads: settings.holdUnlimitedThreads,
+        runs: input.projection.runs,
+        turnItems: input.projection.turnItems,
+        snoozeLimitedThreads: settings.snoozeLimitedThreads,
+        nowMs: DateTime.toEpochMillis(input.now),
+      });
+      if (limit !== null) return null;
+    }
+    const hold: RunStartHold = {
+      type: "hold",
+      releaseAt: null,
+      reason: {
+        kind: "context_compaction",
+        message: `Waiting for compaction: this Claude thread holds ${oneShot.usedTokens} tokens, at or above its ${oneShot.thresholdTokens}-token auto-compact point, and its prompt cache expired. Houston compacts it before the waiting turn starts.`,
+        providerInstanceId: input.modelSelection.instanceId,
+      },
+    };
+    const compactionMessageId = staleWakeCompactionMessageId(input.trigger.messageId);
+    if (input.projection.messages.some((message) => message.id === compactionMessageId)) {
+      return hold;
+    }
+    yield* Effect.logInfo("Compacting a stale thread before its waking turn", {
+      threadId: input.projection.thread.id,
+      source: oneShot.source,
+      usedTokens: oneShot.usedTokens,
+      thresholdTokens: oneShot.thresholdTokens,
+      idleMs: oneShot.idleMs,
+      detail: describeStaleWakeOneShot(oneShot),
+    });
+    yield* dispatchMessage(
+      {
+        type: "message.dispatch",
+        commandId: CommandId.make(staleWakeCompactionCommandId(input.trigger.messageId)),
+        threadId: input.projection.thread.id,
+        messageId: MessageId.make(compactionMessageId),
+        text: IDLE_COMPACTION_TEXT,
+        attachments: [],
+        createdBy: "agent",
+        creationSource: "server",
+        compactionReason: oneShot.reason,
+        dispatchMode: { type: "start_immediately" },
+        startOrigin: "automatic",
+      },
+      input.events,
+      input.effects,
+    );
+    return hold;
   });
 
   const dispatchDelegatedTaskRequest = Effect.fn("orchestrationV2.dispatch.delegatedTaskRequest")(
@@ -11804,7 +11989,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     ) {
       const projection = yield* loadProjectionForCommand(
         command,
-        ["runs", "attempts", "nodes", "providerThreads", "turnItems"],
+        ["runs", "attempts", "nodes", "providerThreads", "providerTurns", "messages", "turnItems"],
         { turnItemTypes: ["command_execution"], turnItemRunId: command.runId },
       );
       const state = preparedRunState(command, projection);
@@ -11816,18 +12001,49 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         });
       }
       const now = yield* DateTime.now;
-      const admission = yield* admitRunStart({
-        origin:
-          state.run.delegatedTaskId !== undefined ||
-          projection.thread.lineage.relationshipToParent === "subagent"
-            ? "automatic"
-            : "user",
-        providerInstanceId: state.run.providerInstanceId,
-        model: state.run.modelSelection.model,
-        releasedUsageLimitHold: state.run.releasedUsageLimitHold === true,
-        projection,
-        now,
-      });
+      const origin: RunStartOrigin =
+        state.run.delegatedTaskId !== undefined ||
+        projection.thread.lineage.relationshipToParent === "subagent"
+          ? "automatic"
+          : "user";
+      const preparedMessage = projection.messages.find(
+        (message) => message.id === state.run.userMessageId,
+      );
+      const admission = yield* admitRunStart(
+        {
+          origin,
+          providerInstanceId: state.run.providerInstanceId,
+          model: state.run.modelSelection.model,
+          releasedUsageLimitHold: state.run.releasedUsageLimitHold === true,
+          projection,
+          now,
+        },
+        preparedMessage === undefined
+          ? undefined
+          : () =>
+              compactStaleBeforeStart({
+                projection,
+                trigger: {
+                  origin,
+                  messageId: preparedMessage.id,
+                  text: preparedMessage.text,
+                  attachments: preparedMessage.attachments,
+                  createdBy: preparedMessage.createdBy,
+                  creationSource: preparedMessage.creationSource,
+                  commandId: command.commandId,
+                  notification: preparedMessage.notification,
+                  delegatedCompletion: preparedMessage.delegatedCompletion,
+                  scheduledTaskId: preparedMessage.scheduledTaskId,
+                  senderThreadId: preparedMessage.senderThreadId,
+                  restartContinuationOfRunId: state.run.restartContinuationOfRunId,
+                  usageLimitContinuationOfRunId: state.run.usageLimitContinuationOfRunId,
+                },
+                modelSelection: state.run.modelSelection,
+                events,
+                effects,
+                now,
+              }),
+      );
       if (admission.type === "hold") {
         yield* emit(
           events,

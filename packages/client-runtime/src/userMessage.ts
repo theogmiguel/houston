@@ -4,6 +4,8 @@ import {
   type OrchestrationV2CreationSource,
   type OrchestrationV2IdleCompaction,
   ScheduledTaskId,
+  type WakeCompactionSource,
+  wakeCompactionSource,
 } from "@houston-app/contracts";
 import { formatTokens } from "@houston-app/shared/usageFormat";
 import { isAttachmentOnlyBootstrapPrompt } from "@houston-app/shared/composerContextReferences";
@@ -25,13 +27,35 @@ export const COMPACTION_REASON_TITLES = {
   beforeCacheExpires: "Compacted before the cache expired",
   onReturn: "Compacted when you returned",
   onRequest: "Compacted on request",
-} satisfies Record<OrchestrationV2CompactionReason, string>;
+} as const;
+
+/** What woke a stale thread that Houston compacted before its turn could start. */
+export const WAKE_COMPACTION_TITLES = {
+  agentMessage: "Compacted before an agent message",
+  delegatedResult: "Compacted before a delegated result",
+  limitResume: "Compacted before resuming after a usage limit",
+  backgroundCompletion: "Compacted before a background completion",
+  restartNote: "Compacted before a restart note",
+  manualContinuation: "Compacted before your continuation",
+  userMessage: "Compacted before your message",
+  pullRequestWatch: "Compacted before a pull request update",
+  cardAnswer: "Compacted before a card answer",
+  childQuestionAnswer: "Compacted before a child question answer",
+  scheduledTask: "Compacted before a scheduled task",
+  taskRun: "Compacted before a task run",
+  slackAnswer: "Compacted before a Slack answer",
+  mergeQueueNote: "Compacted before a merge-queue update",
+} satisfies Record<WakeCompactionSource, string>;
 
 export function compactionReasonTitle(
   reason: OrchestrationV2CompactionReason,
   beforeTokenCount: number | undefined,
 ): string {
-  const title = COMPACTION_REASON_TITLES[reason];
+  const source = wakeCompactionSource(reason);
+  const title =
+    source === null
+      ? COMPACTION_REASON_TITLES[reason as keyof typeof COMPACTION_REASON_TITLES]
+      : WAKE_COMPACTION_TITLES[source];
   return beforeTokenCount === undefined ? title : `${title}: ${formatTokens(beforeTokenCount)}`;
 }
 

@@ -100,6 +100,9 @@ describe("a held queued message", () => {
     expect(queueHeldPresentation(reason({ kind: "background_work" }), providerName).label).toBe(
       "Held: Waiting for background work to finish",
     );
+    expect(queueHeldPresentation(reason({ kind: "context_compaction" }), providerName).label).toBe(
+      "Held: Waiting for compaction",
+    );
   });
 
   it("does not invent a provider name when the reason names none", () => {

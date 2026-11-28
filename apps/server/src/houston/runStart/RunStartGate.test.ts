@@ -28,7 +28,10 @@ describe("runStartGate", () => {
           Ref.update(steps, (seen) => [...seen, "admission"]).pipe(
             Effect.as({ type: "start" as const }),
           ),
-        context: () => Ref.update(steps, (seen) => [...seen, "context"]).pipe(Effect.as("context")),
+        context: () =>
+          Ref.update(steps, (seen) => [...seen, "context"]).pipe(
+            Effect.as({ type: "ready" as const, context: "context" }),
+          ),
         start: () => Ref.update(steps, (seen) => [...seen, "start"]),
       })({ origin: "automatic" });
       assert.deepEqual(yield* Ref.get(steps), ["admission", "context", "start"]);
@@ -41,7 +44,10 @@ describe("runStartGate", () => {
       const outcome = yield* runStartGate({
         admission: () =>
           Ref.update(steps, (seen) => [...seen, "admission"]).pipe(Effect.as(limitHold)),
-        context: () => Ref.update(steps, (seen) => [...seen, "context"]).pipe(Effect.as(null)),
+        context: () =>
+          Ref.update(steps, (seen) => [...seen, "context"]).pipe(
+            Effect.as({ type: "ready" as const, context: null }),
+          ),
         start: () => Ref.update(steps, (seen) => [...seen, "start"]),
       })({ origin: "automatic" });
       assert.deepEqual(outcome, limitHold);
@@ -56,7 +62,10 @@ describe("runStartGate", () => {
         yield* runStartGate({
           admission: () =>
             Ref.update(steps, (seen) => [...seen, "admission"]).pipe(Effect.as(limitHold)),
-          context: () => Ref.update(steps, (seen) => [...seen, "context"]).pipe(Effect.as(null)),
+          context: () =>
+            Ref.update(steps, (seen) => [...seen, "context"]).pipe(
+              Effect.as({ type: "ready" as const, context: null }),
+            ),
           start: () => Ref.update(steps, (seen) => [...seen, "start"]),
         })({ origin });
         assert.deepEqual(yield* Ref.get(steps), ["context", "start"]);
@@ -73,6 +82,22 @@ describe("runStartGate", () => {
 });
 
 describe("enterRunStartGate", () => {
+  it.effect("runs the context step after admission and returns its hold", () =>
+    Effect.gen(function* () {
+      const steps = yield* Ref.make<ReadonlyArray<string>>([]);
+      const outcome = yield* enterRunStartGate({
+        origin: "automatic",
+        admission: () =>
+          Ref.update(steps, (seen) => [...seen, "admission"]).pipe(
+            Effect.as<RunStartAdmission>({ type: "start" }),
+          ),
+        context: () => Ref.update(steps, (seen) => [...seen, "context"]).pipe(Effect.as(limitHold)),
+      });
+      assert.deepEqual(outcome, limitHold);
+      assert.deepEqual(yield* Ref.get(steps), ["admission", "context"]);
+    }),
+  );
+
   it.effect("runs the context step only after admission admits", () =>
     Effect.gen(function* () {
       const outcome = yield* enterRunStartGate({

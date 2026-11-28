@@ -578,6 +578,7 @@ interface CompactionMessageFields {
   readonly createdBy?: OrchestrationV2Actor | undefined;
   readonly creationSource?: OrchestrationV2CreationSource | undefined;
   readonly idleCompaction?: OrchestrationV2IdleCompaction | undefined;
+  readonly compactionReason?: OrchestrationV2CompactionReason | undefined;
 }
 
 /** A prompt that only asks the provider to compact, so its turn is the compaction itself. */
@@ -628,6 +629,13 @@ export function idleCompactionOf(
 ): OrchestrationV2IdleCompaction | undefined {
   if (!isCompactionCommandMessage(message)) return undefined;
   if (message.idleCompaction !== undefined) return message.idleCompaction;
+  // A wake compaction carries its own reason; only the two idle modes have an idle label.
+  if (
+    message.compactionReason !== undefined &&
+    message.compactionReason !== "beforeCacheExpires" &&
+    message.compactionReason !== "onReturn"
+  )
+    return undefined;
   // Servers before `idleCompaction` marked their own as agent-created.
   return message.createdBy === "agent" && message.creationSource === "server"
     ? "beforeCacheExpires"
