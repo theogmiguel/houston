@@ -203,6 +203,13 @@ export function FleetDetails(props: FleetDetailsProps) {
       role="group"
       aria-label={t("Details")}
       className={cn("min-h-20", DETAILS_PANEL_CLS)}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || selection === null || event.target !== panel.current) return;
+        // The dialog closes on a document Escape listener, so the panel keeps this one.
+        event.stopPropagation();
+        event.preventDefault();
+        onSelect(null);
+      }}
     >
       {pair ? (
         <div className={SECTION}>
@@ -457,11 +464,23 @@ function StackDetails({
           <div className="w-56">
             <Input
               size="compact"
-              type="search"
+              type="text"
+              role="searchbox"
               value={query}
               aria-label={t("Filter these machines by name")}
               placeholder={t("Filter by name")}
               onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "Escape" || event.defaultPrevented) return;
+                if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+                // An Escape that cancels an IME composition belongs to the IME.
+                const composing = event.nativeEvent.isComposing || event.keyCode === 229;
+                if (!composing && !query && !event.repeat) return;
+                event.stopPropagation();
+                if (composing) return;
+                event.preventDefault();
+                setQuery("");
+              }}
             />
           </div>
           {needle === "" ? null : (

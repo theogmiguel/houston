@@ -862,8 +862,11 @@ function FleetCanvas({
     if (event.key === "+" || event.key === "=") zoom(1.25);
     else if (event.key === "-") zoom(0.8);
     else if (event.key === "0") fit();
-    else if (event.key === "Escape") onSelect(null);
-    else return;
+    else if (event.key === "Escape" && selection !== null) {
+      // The dialog closes on a document Escape listener, so the map keeps this one.
+      event.stopPropagation();
+      onSelect(null);
+    } else return;
     event.preventDefault();
   };
 
@@ -887,7 +890,9 @@ function FleetCanvas({
             </InputGroupAddon>
             <InputGroupInput
               size="compact"
-              type="search"
+              type="text"
+              role="searchbox"
+              enterKeyHint="search"
               value={query}
               aria-label={t("Find a machine on the map")}
               placeholder={t("Find a machine")}
@@ -895,10 +900,16 @@ function FleetCanvas({
               autoComplete="off"
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
+                // An Enter or Escape that belongs to an IME must not drive the map or close Settings.
+                if (event.nativeEvent.isComposing || event.keyCode === 229) {
+                  event.stopPropagation();
+                  return;
+                }
                 if (event.key === "Enter") {
                   event.preventDefault();
                   goToFirstMatch();
                 } else if (event.key === "Escape" && query !== "") {
+                  event.preventDefault();
                   event.stopPropagation();
                   setQuery("");
                 }
@@ -991,6 +1002,12 @@ function FleetCanvas({
         onPointerCancel={(event) => endDrag(event, true)}
         onLostPointerCapture={(event) => endDrag(event, true)}
         onKeyDown={onKeyDown}
+        // Safari does not focus a clicked button, so its keys would skip the map.
+        onClick={(event) =>
+          (event.target as Element)
+            .closest<HTMLElement>("button[data-fleet-item]")
+            ?.focus({ preventScroll: true })
+        }
       >
         {view === null ? null : (
           <div
@@ -1014,7 +1031,7 @@ function FleetCanvas({
         )}
       </div>
       {/* Below the canvas, not over it: nothing on the map can end up under the controls. */}
-      <div className={cn("flex items-end justify-end gap-3 px-3 pb-2", MAP_CONTROLS_BAR_CLS)}>
+      <div className={cn("flex items-center justify-end gap-3 px-3 py-1", MAP_CONTROLS_BAR_CLS)}>
         <div className={cn("flex shrink-0 items-center gap-1 p-0.5", MAP_ZOOM_GROUP_CLS)}>
           <Button
             size="icon-xs"
