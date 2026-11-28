@@ -79,11 +79,8 @@ export function limitWindowState(record: LimitWindowRecord, nowMs: number): Limi
   if (record.resetAt !== null) {
     const resetMs = Date.parse(record.resetAt);
     if (!Number.isFinite(resetMs)) return { active: false, overdue: false, releaseAt: null };
-    return {
-      active: resetMs > nowMs,
-      overdue: nowMs > resetMs + OVERDUE_GRACE_MS,
-      releaseAt: record.resetAt,
-    };
+    // A timed hold ends at its reset; only a no-reset test release can outlive its release.
+    return { active: resetMs > nowMs, overdue: false, releaseAt: record.resetAt };
   }
   const observedMs = Date.parse(record.observedAt);
   const recent = Number.isFinite(observedMs) && nowMs - observedMs < MAX_HOLD_WITHOUT_RESET_MS;

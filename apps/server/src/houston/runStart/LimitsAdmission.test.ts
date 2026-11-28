@@ -125,13 +125,15 @@ const windowRecord = (overrides: Partial<LimitWindowRecord> = {}): LimitWindowRe
 describe("account limit windows", () => {
   const nowMs = DateTime.toEpochMillis(now);
 
-  it("is active while the reported reset is ahead and overdue after 15 minutes", () => {
+  it("is active while the reported reset is ahead and never overdue for a timed window", () => {
     assert.deepEqual(limitWindowState(windowRecord(), nowMs), {
       active: true,
       overdue: false,
       releaseAt: "2026-01-01T01:00:00.000Z",
     });
-    assert.isTrue(limitWindowState(windowRecord(), Date.parse("2026-01-01T01:20:00.000Z")).overdue);
+    const afterReset = limitWindowState(windowRecord(), Date.parse("2026-01-01T01:20:00.000Z"));
+    assert.isFalse(afterReset.active);
+    assert.isFalse(afterReset.overdue);
     assert.isFalse(
       limitWindowState(windowRecord({ resetAt: "2025-12-31T23:00:00.000Z" }), nowMs).active,
     );

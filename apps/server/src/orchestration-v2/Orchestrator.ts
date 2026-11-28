@@ -616,6 +616,7 @@ function drainsQueuedRunsAfterDispatch(command: OrchestrationV2ServerCommand): b
   return (
     command.type === "queue.resume" ||
     command.type === "queued-run.start" ||
+    command.type === "queued-run.release" ||
     (command.type === "message.dispatch" &&
       command.createdBy === "user" &&
       (command.creationSource === "web" || command.creationSource === "mobile") &&
@@ -672,6 +673,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "run.interrupt":
     case "queued-message.promote-to-steer":
     case "queued-run.start":
+    case "queued-run.release":
     case "queue.resume":
     case "queued-run.reorder":
     case "queued-run.cancel":
@@ -1527,11 +1529,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     context?: () => Effect.Effect<RunStartHold | null, E, R>,
   ): Effect.Effect<RunStartAdmission, E | OrchestratorV2Error, R> => {
     const admission = Effect.fnUntraced(function* () {
-      if (
-        input.origin !== "automatic" ||
-        input.releasedUsageLimitHold === true ||
-        input.bypassAdmission === true
-      )
+      if (input.origin !== "automatic" || input.bypassAdmission === true)
         return { type: "start" as const };
       const settings = yield* serverSettings.getSettings.pipe(Effect.orDie);
       // A user Stop holds later automatic starts first, before any limit window is read.
@@ -1541,6 +1539,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         thread: input.projection.thread,
       });
       if (stoppedThreadHold !== null) return stoppedThreadHold;
+      // A released limits hold starts, but a Stop still holds it.
+      if (input.releasedUsageLimitHold === true) return { type: "start" as const };
       const registry = yield* Effect.serviceOption(LimitWindowRegistry);
       const windows = Option.isSome(registry)
         ? yield* registry.value.read(input.providerInstanceId)
@@ -2355,7 +2355,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       };
       const now = yield* DateTime.now;
       const settings = yield* serverSettings.getSettings.pipe(Effect.orDie);
-      const origin = startOriginForMessage(queuedMessage);
+      const origin = queuedRun.startOrigin ?? startOriginForMessage(queuedMessage);
       const admission = yield* admitRunStart(
         {
           origin,
@@ -2411,10 +2411,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         );
         return;
       }
-      // A limited provider would fail and consume every waiting message. The setting replaces
-      // this whole-queue hold with a per-run hold for automatic work only.
+      // A limited provider would fail and consume every waiting message. The per-run hold above
+      // covers an automatic run with a reported reset; everything else keeps the whole-queue hold.
       if (
-        !settings.snoozeLimitedThreads &&
+        options?.bypassAdmission !== true &&
+        queuedRun.releasedUsageLimitHold !== true &&
         usageLimitHoldsQueue(projection, queuedRun.providerInstanceId, DateTime.toEpochMillis(now))
       ) {
         yield* writeSystemEvents(
@@ -7717,6 +7718,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         userMessageId: command.messageId,
         rootNodeId,
         activeAttemptId: attemptId,
+        startOrigin: resolveRunStartOrigin(command),
         status: "queued",
         ...(backgroundWaitReason !== undefined
           ? { queueHeld: true, queueHeldReason: backgroundWaitReason }
@@ -8229,6 +8231,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         userMessageId: command.messageId,
         rootNodeId,
         activeAttemptId: attemptId,
+        startOrigin: resolveRunStartOrigin(command),
         status: admissionHold
           ? "queued"
           : dispatchMode.type === "defer_start"
@@ -9032,6 +9035,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       userMessageId: command.messageId,
       rootNodeId,
       activeAttemptId: attemptId,
+      startOrigin: resolveRunStartOrigin(command),
       status: "starting",
       queuePosition: null,
       requestedAt: now,
@@ -11889,7 +11893,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       .pipe(Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause })));
 
   const loadProjectionForCommand = <K extends ProjectionRecordField>(
-    command: OrchestrationV2Command,
+    command: OrchestrationV2ServerCommand,
     fields: ReadonlyArray<K>,
     filter?: ProjectionRecordFilter,
   ) =>
@@ -15316,6 +15320,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         );
         break;
       case "queued-run.start":
+      case "queued-run.release":
       case "queue.resume": {
         const projection = yield* loadProjectionForCommand(
           command,
@@ -15329,7 +15334,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             cause: `Thread ${command.threadId} is not active.`,
           });
         }
-        const selectedRunId = command.type === "queued-run.start" ? command.runId : undefined;
+        const isRelease = command.type === "queued-run.release";
+        const selectedRunId =
+          command.type === "queued-run.start" || isRelease ? command.runId : undefined;
         const selectedRun =
           selectedRunId === undefined
             ? undefined
@@ -15337,7 +15344,20 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         // Send now is the user's explicit start of a held item, including a sub-agent result
         // or a notification that normally only starts on its own.
         const selectedRunHeld = selectedRun?.queueHeld === true;
-        if (selectedRunId !== undefined) {
+        if (isRelease && selectedRun?.queueHeldReason?.kind !== "usage_limit") {
+          // A hold already released by another sweep: a harmless no-op keeps the command receipted.
+          yield* emit(
+            events,
+            command,
+          )({
+            type: "thread.metadata-updated",
+            threadId: command.threadId,
+            occurredAt: yield* DateTime.now,
+            payload: projection.thread,
+          });
+          break;
+        }
+        if (!isRelease && selectedRunId !== undefined) {
           const selectedMessage = projection.messages.find(
             (message) => message.id === selectedRun?.userMessageId,
           );
@@ -15361,12 +15381,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         const targetInstanceId =
           command.type === "queued-run.start" && command.modelSelection !== undefined
             ? command.modelSelection.instanceId
-            : nextRun === undefined
-              ? projection.thread.providerInstanceId
-              : queuedRunModelSelection(projection, nextRun).instanceId;
+            : command.type === "queued-run.release" && selectedRun !== undefined
+              ? selectedRun.modelSelection.instanceId
+              : nextRun === undefined
+                ? projection.thread.providerInstanceId
+                : queuedRunModelSelection(projection, nextRun).instanceId;
         const now = yield* DateTime.now;
-        // Send now overrides the limit; Resume queue is refused only while the reset is ahead.
+        // Send now and a server release override the limit; Resume queue is refused while ahead.
         if (
+          !isRelease &&
           command.type !== "queued-run.start" &&
           usageLimitHoldsQueue(projection, targetInstanceId, DateTime.toEpochMillis(now))
         ) {
@@ -15377,26 +15400,30 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           });
         }
         const queued = projection.runs.filter((run) => run.status === "queued");
-        // The banner starts the thread's whole limits hold together; a queued row's Send now
-        // releases only its own held usage-limit item.
-        const releasesUsageLimitHold =
-          command.type === "queued-run.start" &&
-          command.releaseThreadHolds === true &&
+        // The banner and a server release start the thread's whole limits hold together; a
+        // queued row's Send now releases only its own held usage-limit item. Stop and
+        // compaction holds are never released here.
+        const threadHoldsReleased =
           selectedRun?.queueHeld === true &&
-          selectedRun.queueHeldReason?.kind === "usage_limit";
-        const singleUsageLimitStart =
-          command.type === "queued-run.start" &&
-          !releasesUsageLimitHold &&
+          selectedRun.queueHeldReason?.kind === "usage_limit" &&
+          ((command.type === "queued-run.start" && command.releaseThreadHolds === true) ||
+            (command.type === "queued-run.release" && command.releaseThreadHolds === true));
+        const singleUsageLimitRelease =
           selectedRun?.queueHeld === true &&
-          selectedRun.queueHeldReason?.kind === "usage_limit";
-        const releasedRuns =
-          singleUsageLimitStart && selectedRun !== undefined ? [selectedRun] : queued;
+          selectedRun.queueHeldReason?.kind === "usage_limit" &&
+          (command.type === "queued-run.release" ||
+            (command.type === "queued-run.start" && command.releaseThreadHolds !== true));
+        const releasedRuns = threadHoldsReleased
+          ? queued.filter((run) => run.queueHeldReason?.kind === "usage_limit")
+          : singleUsageLimitRelease && selectedRun !== undefined
+            ? [selectedRun]
+            : queued;
         for (const event of releaseQueueHoldEvents({
           threadId: command.threadId,
           runs: releasedRuns,
           messages: projection.messages,
           occurredAt: now,
-          markUsageLimitReleased: releasesUsageLimitHold,
+          markUsageLimitReleased: threadHoldsReleased || singleUsageLimitRelease,
         })) {
           yield* emit(events, command)(event);
         }
@@ -15571,10 +15598,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     if (drainsQueuedRunsAfterDispatch(command)) {
       yield* mapDispatchError(command)(
         startNextQueuedRun(commandThreadId(command), {
-          ...(command.type === "queued-run.start"
+          ...(command.type === "queued-run.start" || command.type === "queued-run.release"
             ? {
                 queuedRunId: command.runId,
-                ...(command.modelSelection === undefined
+                ...(command.type !== "queued-run.start" || command.modelSelection === undefined
                   ? {}
                   : { modelSelection: command.modelSelection }),
               }
@@ -15795,10 +15822,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     ) {
       yield* mapDispatchError(command)(
         startNextQueuedRun(commandThreadId(command), {
-          ...(command.type === "queued-run.start"
+          ...(command.type === "queued-run.start" || command.type === "queued-run.release"
             ? {
                 queuedRunId: command.runId,
-                ...(command.modelSelection === undefined
+                ...(command.type !== "queued-run.start" || command.modelSelection === undefined
                   ? {}
                   : { modelSelection: command.modelSelection }),
               }

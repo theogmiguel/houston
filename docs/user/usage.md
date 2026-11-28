@@ -67,7 +67,8 @@ resumes. A message you type, a Slack answer and a task run you start are never h
 wait behind a held item. **Send now** starts a held item at once.
 
 At the reported reset, **Resume after usage limits** starts its continuation first and the held
-items follow in queue order; without it, the held items start at the reset. A limit whose reset
+items follow in queue order; without it, the held items start at the reset. A reset release does
+not end a **Stop**: after you press Stop, automatic starts still wait for Resume or a message. A limit whose reset
 time the provider does not report is not held, and its error says that the provider did not
 report when the limit resets.
 
@@ -82,8 +83,9 @@ While a hold exists, Houston asks that provider for its own usage reading every 
 sends nothing else; the reading goes only to the provider instance you configured. When no reset
 time is known, or the reset passed but the provider still refuses, Houston releases one held item
 as a test after 15, then 30, then every 60 minutes. A successful test releases the rest in queue
-order; a limit failure waits and retries. A hold 15 minutes past its expected release, or after
-three failed tests, is marked overdue. The state survives a server restart. Providers that report
+order; a limit failure waits and retries. A hold with no reported reset is marked overdue after
+three failed tests or 15 minutes past its next test release; a hold with a reset time ends at
+that reset. The state survives a server restart. Providers that report
 no limit windows cannot be held this way and are named in the setting's description; Antigravity
 is one. One provider account used from two channels, or from the Windows Subsystem for Linux
 backend, is tracked separately by each server, so a limit seen in one is not known to the other.

@@ -772,6 +772,8 @@ export const OrchestrationV2Run = Schema.Struct({
   queueHeldReason: Schema.optional(Schema.NullOr(MessageDeliveryQueueHoldReason)),
   /** The user released this thread's usage-limit hold explicitly, so admission must not re-hold it. */
   releasedUsageLimitHold: Schema.optional(Schema.Boolean),
+  /** Who asked for this queued run; kept so a drain does not re-derive it from the message. */
+  startOrigin: Schema.optionalKey(RunStartOrigin),
   requestedAt: Schema.DateTimeUtc,
   startedAt: Schema.NullOr(Schema.DateTimeUtc),
   completedAt: Schema.NullOr(Schema.DateTimeUtc),
@@ -3530,6 +3532,15 @@ export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
 
 // Excluded from dispatchCommand so only the server can send these.
 const OrchestrationV2InternalCommand = Schema.Union([
+  /** A server release of due usage-limit holds; user Resume and Send now use their own commands. */
+  Schema.Struct({
+    type: Schema.Literal("queued-run.release"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    runId: RunId,
+    /** Release every held usage-limit item on the thread, not only this run. */
+    releaseThreadHolds: Schema.optionalKey(Schema.Boolean),
+  }),
   /** A Slack answer, fenced by the server; a client could otherwise send it unfenced. */
   HoustonSlackAnswerCommand,
   /** A merge queue notice; a client could otherwise post one into any thread. */

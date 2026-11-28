@@ -11,6 +11,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
+import { limitReleaseCommandId } from "../houston/runStart/LimitWindowRegistry.ts";
 
 const MAX_OVERDUE_ARM_MS = 24 * 60 * 60 * 1000;
 
@@ -142,7 +143,7 @@ const makeSweep = Effect.gen(function* () {
     }
     // A reset that passed without auto-resume releasing the queue: start the held automatic
     // work in its queue order instead of leaving it held forever.
-    if (preferences.snoozeLimitedThreads) {
+    if (preferences.snoozeLimitedThreads || preferences.holdUnlimitedThreads) {
       const heldThreadIds = yield* projections.getRecoveryThreadIds("queued-runs");
       for (const threadId of heldThreadIds) {
         const held = yield* projections.getHeldQueuedRuns(threadId);
@@ -163,22 +164,28 @@ const makeSweep = Effect.gen(function* () {
           shell.limitRecovery?.autoResume !== false;
         if (autoResumeOwns) continue;
         acted = true;
-        yield* threads
-          .dispatch({
-            type: "queue.resume",
-            commandId: CommandId.make(
-              `limit-release:${threadId}:${due[0]?.queueHeldReason?.releaseAt ?? nowMs}`,
-            ),
-            threadId,
-          })
-          .pipe(
-            Effect.catchCause((cause) =>
-              Effect.logWarning("orchestration-v2.limit-recovery.release-held-failed", {
+        for (const run of due) {
+          yield* threads
+            .dispatch({
+              type: "queued-run.release",
+              commandId: limitReleaseCommandId({
+                prefix: "limit-release",
                 threadId,
-                cause,
+                runId: run.id,
+                occurrence: `${run.queueHeldReason?.releaseAt ?? ""}:${nowMs}`,
               }),
-            ),
-          );
+              threadId,
+              runId: run.id,
+            })
+            .pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("orchestration-v2.limit-recovery.release-held-failed", {
+                  threadId,
+                  cause,
+                }),
+              ),
+            );
+        }
       }
     }
     // A sweep that acted, or failed to, re-checks on the next tick.

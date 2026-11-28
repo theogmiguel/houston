@@ -248,6 +248,86 @@ function AboutVersionSection() {
   );
 }
 
+/** The settings a default restore writes, exposed so a test can prove every row is covered. */
+export function settingsRestoreDefaultsPatch() {
+  return {
+    appearanceContrast: DEFAULT_UNIFIED_SETTINGS.appearanceContrast,
+    diffColorScheme: DEFAULT_UNIFIED_SETTINGS.diffColorScheme,
+    chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth,
+    effortDisplay: DEFAULT_UNIFIED_SETTINGS.effortDisplay,
+    mathRenderingEnabled: DEFAULT_UNIFIED_SETTINGS.mathRenderingEnabled,
+    language: DEFAULT_UNIFIED_SETTINGS.language,
+    timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
+    notificationMode: DEFAULT_UNIFIED_SETTINGS.notificationMode,
+    inAppNotificationsEnabled: DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled,
+    wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
+    persistComposerContextStrip: DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip,
+    diffFilesCollapsed: DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed,
+    diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
+    diffLayout: DEFAULT_UNIFIED_SETTINGS.diffLayout,
+    proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
+    showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
+    composerRichTextEnabled: DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled,
+    sendShortcut: DEFAULT_UNIFIED_SETTINGS.sendShortcut,
+    followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
+    contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
+    environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
+    glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
+    animationsEnabled: DEFAULT_UNIFIED_SETTINGS.animationsEnabled,
+    sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
+    sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
+    sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
+    sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
+    sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
+    autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
+    snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
+    holdUnlimitedThreads: DEFAULT_UNIFIED_SETTINGS.holdUnlimitedThreads,
+    holdAgentMessagesAfterStop: DEFAULT_UNIFIED_SETTINGS.holdAgentMessagesAfterStop,
+    snoozePresets: DEFAULT_UNIFIED_SETTINGS.snoozePresets,
+    responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
+    enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
+    continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
+    keepAwakeWhileAgentsWork: DEFAULT_UNIFIED_SETTINGS.keepAwakeWhileAgentsWork,
+    backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
+    backgroundActivityProfile: DEFAULT_UNIFIED_SETTINGS.backgroundActivityProfile,
+    automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
+    providerHealthRefreshInterval: DEFAULT_UNIFIED_SETTINGS.providerHealthRefreshInterval,
+    defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
+    newWorktreesStartFromOrigin: DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
+    addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
+    hostFolderCloneLayout: DEFAULT_UNIFIED_SETTINGS.hostFolderCloneLayout,
+    confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
+    confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
+    confirmThreadUnpin: DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin,
+    confirmQuit: DEFAULT_UNIFIED_SETTINGS.confirmQuit,
+    textGenerationModelSelection: DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
+    textGenerationModelSelectionExplicit: false,
+    threadTitleInstructions: DEFAULT_UNIFIED_SETTINGS.threadTitleInstructions,
+    fontFamilySans: DEFAULT_UNIFIED_SETTINGS.fontFamilySans,
+    fontFamilyComposer: DEFAULT_UNIFIED_SETTINGS.fontFamilyComposer,
+    fontFamilyCode: DEFAULT_UNIFIED_SETTINGS.fontFamilyCode,
+    fontFamilyTerminal: DEFAULT_UNIFIED_SETTINGS.fontFamilyTerminal,
+    fontSizeInterface: DEFAULT_UNIFIED_SETTINGS.fontSizeInterface,
+    fontSizePrompt: DEFAULT_UNIFIED_SETTINGS.fontSizePrompt,
+    fontSizeCode: DEFAULT_UNIFIED_SETTINGS.fontSizeCode,
+    fontSizeTerminal: DEFAULT_UNIFIED_SETTINGS.fontSizeTerminal,
+    fontSmoothing: DEFAULT_UNIFIED_SETTINGS.fontSmoothing,
+    ...RESET_THREAD_DETAILS_ITEMS,
+    browserDefaultViewport: DEFAULT_UNIFIED_SETTINGS.browserDefaultViewport,
+    browserDefaultZoomFactor: DEFAULT_UNIFIED_SETTINGS.browserDefaultZoomFactor,
+    browserDefaultAppearance: DEFAULT_UNIFIED_SETTINGS.browserDefaultAppearance,
+    browserRecordingFrameRate: DEFAULT_UNIFIED_SETTINGS.browserRecordingFrameRate,
+    browserRecordingShowKeyPresses: DEFAULT_UNIFIED_SETTINGS.browserRecordingShowKeyPresses,
+    browserRecordingShowMousePresses: DEFAULT_UNIFIED_SETTINGS.browserRecordingShowMousePresses,
+    browserLinkTarget: DEFAULT_UNIFIED_SETTINGS.browserLinkTarget,
+    browserSearchEngine: DEFAULT_UNIFIED_SETTINGS.browserSearchEngine,
+    browserCustomSearchUrl: DEFAULT_UNIFIED_SETTINGS.browserCustomSearchUrl,
+    browserAutoShowFloatingPreview: DEFAULT_UNIFIED_SETTINGS.browserAutoShowFloatingPreview,
+    pullRequestLinksOpenInApp: DEFAULT_UNIFIED_SETTINGS.pullRequestLinksOpenInApp,
+    enableAgentBrowserAccess: DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess,
+  } as const;
+}
+
 export function useSettingsRestore(onRestored?: () => void) {
   const {
     theme,
@@ -457,81 +537,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       notifyThemeRestoreFailure();
       return;
     }
-    updateSettings({
-      appearanceContrast: DEFAULT_UNIFIED_SETTINGS.appearanceContrast,
-      diffColorScheme: DEFAULT_UNIFIED_SETTINGS.diffColorScheme,
-      chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth,
-      effortDisplay: DEFAULT_UNIFIED_SETTINGS.effortDisplay,
-      mathRenderingEnabled: DEFAULT_UNIFIED_SETTINGS.mathRenderingEnabled,
-      language: DEFAULT_UNIFIED_SETTINGS.language,
-      timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
-      notificationMode: DEFAULT_UNIFIED_SETTINGS.notificationMode,
-      inAppNotificationsEnabled: DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled,
-      wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
-      persistComposerContextStrip: DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip,
-      diffFilesCollapsed: DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed,
-      diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
-      diffLayout: DEFAULT_UNIFIED_SETTINGS.diffLayout,
-      proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
-      showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
-      composerRichTextEnabled: DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled,
-      sendShortcut: DEFAULT_UNIFIED_SETTINGS.sendShortcut,
-      followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
-      contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
-      environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
-      glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
-      animationsEnabled: DEFAULT_UNIFIED_SETTINGS.animationsEnabled,
-      sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
-      sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
-      sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
-      sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
-      sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
-      autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
-      snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
-      holdAgentMessagesAfterStop: DEFAULT_UNIFIED_SETTINGS.holdAgentMessagesAfterStop,
-      snoozePresets: DEFAULT_UNIFIED_SETTINGS.snoozePresets,
-      responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
-      enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
-      continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
-      keepAwakeWhileAgentsWork: DEFAULT_UNIFIED_SETTINGS.keepAwakeWhileAgentsWork,
-      backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
-      backgroundActivityProfile: DEFAULT_UNIFIED_SETTINGS.backgroundActivityProfile,
-      automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
-      providerHealthRefreshInterval: DEFAULT_UNIFIED_SETTINGS.providerHealthRefreshInterval,
-      defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
-      newWorktreesStartFromOrigin: DEFAULT_UNIFIED_SETTINGS.newWorktreesStartFromOrigin,
-      addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
-      hostFolderCloneLayout: DEFAULT_UNIFIED_SETTINGS.hostFolderCloneLayout,
-      confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
-      confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
-      confirmThreadUnpin: DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin,
-      confirmQuit: DEFAULT_UNIFIED_SETTINGS.confirmQuit,
-      textGenerationModelSelection: DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
-      textGenerationModelSelectionExplicit: false,
-      threadTitleInstructions: DEFAULT_UNIFIED_SETTINGS.threadTitleInstructions,
-      fontFamilySans: DEFAULT_UNIFIED_SETTINGS.fontFamilySans,
-      fontFamilyComposer: DEFAULT_UNIFIED_SETTINGS.fontFamilyComposer,
-      fontFamilyCode: DEFAULT_UNIFIED_SETTINGS.fontFamilyCode,
-      fontFamilyTerminal: DEFAULT_UNIFIED_SETTINGS.fontFamilyTerminal,
-      fontSizeInterface: DEFAULT_UNIFIED_SETTINGS.fontSizeInterface,
-      fontSizePrompt: DEFAULT_UNIFIED_SETTINGS.fontSizePrompt,
-      fontSizeCode: DEFAULT_UNIFIED_SETTINGS.fontSizeCode,
-      fontSizeTerminal: DEFAULT_UNIFIED_SETTINGS.fontSizeTerminal,
-      fontSmoothing: DEFAULT_UNIFIED_SETTINGS.fontSmoothing,
-      ...RESET_THREAD_DETAILS_ITEMS,
-      browserDefaultViewport: DEFAULT_UNIFIED_SETTINGS.browserDefaultViewport,
-      browserDefaultZoomFactor: DEFAULT_UNIFIED_SETTINGS.browserDefaultZoomFactor,
-      browserDefaultAppearance: DEFAULT_UNIFIED_SETTINGS.browserDefaultAppearance,
-      browserRecordingFrameRate: DEFAULT_UNIFIED_SETTINGS.browserRecordingFrameRate,
-      browserRecordingShowKeyPresses: DEFAULT_UNIFIED_SETTINGS.browserRecordingShowKeyPresses,
-      browserRecordingShowMousePresses: DEFAULT_UNIFIED_SETTINGS.browserRecordingShowMousePresses,
-      browserLinkTarget: DEFAULT_UNIFIED_SETTINGS.browserLinkTarget,
-      browserSearchEngine: DEFAULT_UNIFIED_SETTINGS.browserSearchEngine,
-      browserCustomSearchUrl: DEFAULT_UNIFIED_SETTINGS.browserCustomSearchUrl,
-      browserAutoShowFloatingPreview: DEFAULT_UNIFIED_SETTINGS.browserAutoShowFloatingPreview,
-      pullRequestLinksOpenInApp: DEFAULT_UNIFIED_SETTINGS.pullRequestLinksOpenInApp,
-      enableAgentBrowserAccess: DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess,
-    });
+    updateSettings(settingsRestoreDefaultsPatch());
     onRestored?.();
   };
 
@@ -1348,6 +1354,40 @@ export function HoldAgentMessagesAfterStopRow() {
   );
 }
 
+export function HoldUnlimitedThreadsRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+
+  return (
+    <SettingsRow
+      serverScoped
+      {...searchableSetting("hold-unlimited-threads")}
+      description="Hold automatic turns and new sub-agents on every thread of a provider instance inside a known limit window. Antigravity reports no limit windows, so its threads are not held this way."
+      settingKeys={["holdUnlimitedThreads"]}
+      resetAction={
+        settings.holdUnlimitedThreads !== DEFAULT_UNIFIED_SETTINGS.holdUnlimitedThreads ? (
+          <SettingResetButton
+            label="hold threads that have not hit the limit"
+            onClick={() =>
+              updateSettings({
+                holdUnlimitedThreads: DEFAULT_UNIFIED_SETTINGS.holdUnlimitedThreads,
+              })
+            }
+          />
+        ) : null
+      }
+      control={
+        <ScopedSwitch
+          settingKeys={["holdUnlimitedThreads"]}
+          checked={settings.holdUnlimitedThreads}
+          onCheckedChange={(checked) => updateSettings({ holdUnlimitedThreads: Boolean(checked) })}
+          aria-label="Also hold threads that have not hit the limit"
+        />
+      }
+    />
+  );
+}
+
 export function ThreadsSettingsPanel() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -1539,22 +1579,7 @@ export function ThreadsSettingsPanel() {
             />
           }
         />
-        <SettingsRow
-          serverScoped
-          {...searchableSetting("hold-unlimited-threads")}
-          description="Hold automatic turns and new sub-agents on every thread of a provider instance inside a known limit window. Antigravity reports no limit windows, so its threads are not held this way."
-          settingKeys={["holdUnlimitedThreads"]}
-          control={
-            <ScopedSwitch
-              settingKeys={["holdUnlimitedThreads"]}
-              checked={settings.holdUnlimitedThreads}
-              onCheckedChange={(checked) =>
-                updateSettings({ holdUnlimitedThreads: Boolean(checked) })
-              }
-              aria-label="Also hold threads that have not hit the limit"
-            />
-          }
-        />
+        <HoldUnlimitedThreadsRow />
         {!isProjectScope ? <SnoozePresetsRow /> : null}
       </SettingsSection>
 

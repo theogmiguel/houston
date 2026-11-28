@@ -6,6 +6,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ThreadId,
+  TurnItemId,
 } from "@houston-app/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -48,13 +49,21 @@ const layerTest = ThreadManagementService.layer.pipe(
         {
           databaseLayer: layerDatabase,
           runEffectWorker: false,
-          settings: { snoozeLimitedThreads: true, holdUnlimitedThreads: true },
+          settings: {
+            snoozeLimitedThreads: true,
+            holdUnlimitedThreads: true,
+            holdAgentMessagesAfterStop: true,
+          },
         },
       ),
     ),
   ),
   Layer.provideMerge(
-    ServerSettings.layerTest({ snoozeLimitedThreads: true, holdUnlimitedThreads: true }),
+    ServerSettings.layerTest({
+      snoozeLimitedThreads: true,
+      holdUnlimitedThreads: true,
+      holdAgentMessagesAfterStop: true,
+    }),
   ),
   Layer.provideMerge(CommandReceiptStore.layer.pipe(Layer.provide(layerDatabase))),
 );
@@ -326,6 +335,239 @@ it.layer(layerTest)("account limit hold", (it) => {
       assert.equal(remaining?.status, "queued");
       assert.isTrue(remaining?.queueHeld === true);
       assert.isFalse(remaining?.releasedUsageLimitHold === true);
+    }),
+  );
+
+  it.effect("a server release leaves a Stop hold and a compaction hold in place", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const eventSink = yield* EventSink.EventSinkV2;
+      const registry = yield* LimitWindowRegistryModule.LimitWindowRegistry;
+      const now = yield* DateTime.now;
+      yield* registry.recordFailure({
+        providerInstanceId: instanceId,
+        model: null,
+        resetAt: DateTime.formatIso(DateTime.add(now, { hours: 1 })),
+        now,
+      });
+      const threadId = ThreadId.make("thread:account-limit-stop-and-compaction");
+      yield* createThread(threadId);
+      for (const key of ["first", "second", "third"]) {
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make(`send:${threadId}:${key}`),
+          threadId,
+          messageId: MessageId.make(`message:${threadId}:${key}`),
+          text: key,
+          attachments: [],
+          dispatchMode: { type: "start_immediately" },
+          createdBy: "agent",
+          creationSource: "server",
+          startOrigin: "automatic",
+        });
+      }
+      const held = yield* orchestrator.getThreadProjection(threadId);
+      const ordered = held.runs
+        .filter((run) => run.status === "queued" && run.queueHeld === true)
+        .toSorted(
+          (left, right) =>
+            (left.queuePosition ?? left.ordinal) - (right.queuePosition ?? right.ordinal),
+        );
+      assert.lengthOf(ordered, 3);
+      const compactionRun = ordered[2]!;
+      yield* eventSink.write({
+        events: [
+          {
+            id: EventId.make(`stop:${threadId}`),
+            type: "thread.metadata-updated",
+            threadId,
+            occurredAt: now,
+            payload: { ...held.thread, heldAfterStop: true, updatedAt: now },
+          },
+          {
+            id: EventId.make(`compaction:${threadId}`),
+            type: "run.updated",
+            threadId,
+            runId: compactionRun.id,
+            occurredAt: now,
+            payload: {
+              ...compactionRun,
+              queueHeld: true,
+              queueHeldReason: {
+                kind: "context_compaction",
+                message: "Compacting first.",
+                providerInstanceId: instanceId,
+              },
+            },
+          },
+        ],
+      });
+
+      yield* orchestrator.dispatch({
+        type: "queued-run.release",
+        commandId: CommandId.make(`release:${threadId}`),
+        threadId,
+        runId: ordered[0]!.id,
+        releaseThreadHolds: true,
+      });
+
+      const after = yield* orchestrator.getThreadProjection(threadId);
+      assert.isTrue(after.thread.heldAfterStop === true);
+      const first = after.runs.find((run) => run.id === ordered[0]!.id);
+      assert.equal(first?.status, "queued");
+      assert.equal(first?.queueHeldReason?.kind, "stopped_thread");
+      const compaction = after.runs.find((run) => run.id === compactionRun.id);
+      assert.equal(compaction?.status, "queued");
+      assert.equal(compaction?.queueHeldReason?.kind, "context_compaction");
+    }),
+  );
+
+  it.effect("a queued message keeps the start origin its producer set", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const eventSink = yield* EventSink.EventSinkV2;
+      const registry = yield* LimitWindowRegistryModule.LimitWindowRegistry;
+      const now = yield* DateTime.now;
+      yield* registry.recordFailure({
+        providerInstanceId: instanceId,
+        model: null,
+        resetAt: DateTime.formatIso(DateTime.add(now, { hours: 1 })),
+        now,
+      });
+      const threadId = ThreadId.make("thread:account-limit-queued-origin");
+      yield* createThread(threadId);
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make(`active:${threadId}`),
+        threadId,
+        messageId: MessageId.make(`active-message:${threadId}`),
+        text: "Active",
+        attachments: [],
+        dispatchMode: { type: "start_immediately" },
+        createdBy: "user",
+        creationSource: "web",
+        startOrigin: "user",
+      });
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make(`queued:${threadId}`),
+        threadId,
+        messageId: MessageId.make(`queued-message:${threadId}`),
+        text: "Review findings",
+        attachments: [],
+        dispatchMode: { type: "queue_after_active" },
+        createdBy: "user",
+        creationSource: "server",
+        startOrigin: "automatic",
+      });
+      const active = (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+        (run) => run.userMessageId === `active-message:${threadId}`,
+      )!;
+      const completedAt = yield* DateTime.now;
+      yield* eventSink.write({
+        events: [
+          {
+            id: EventId.make(`done:${threadId}`),
+            type: "run.updated",
+            threadId,
+            occurredAt: completedAt,
+            payload: { ...active, status: "completed", completedAt },
+          },
+        ],
+      });
+      yield* orchestrator.resumeQueuedRuns;
+      const after = yield* orchestrator.getThreadProjection(threadId);
+      const queued = after.runs.find((run) => run.userMessageId === `queued-message:${threadId}`);
+      assert.equal(queued?.startOrigin, "automatic");
+      assert.equal(queued?.status, "queued");
+      assert.isTrue(queued?.queueHeld === true);
+    }),
+  );
+
+  it.effect("a no-reset failure keeps the whole queue held with the setting on", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const eventSink = yield* EventSink.EventSinkV2;
+      const threadId = ThreadId.make("thread:account-limit-no-reset-queue");
+      yield* createThread(threadId);
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make(`active:${threadId}`),
+        threadId,
+        messageId: MessageId.make(`active-message:${threadId}`),
+        text: "Active",
+        attachments: [],
+        dispatchMode: { type: "start_immediately" },
+        createdBy: "user",
+        creationSource: "web",
+      });
+      for (const key of ["first", "second"]) {
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make(`queued:${threadId}:${key}`),
+          threadId,
+          messageId: MessageId.make(`queued-message:${threadId}:${key}`),
+          text: key,
+          attachments: [],
+          dispatchMode: { type: "queue_after_active" },
+          createdBy: "user",
+          creationSource: "web",
+        });
+      }
+      const active = (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+        (run) => run.userMessageId === `active-message:${threadId}`,
+      )!;
+      const failedAt = yield* DateTime.now;
+      yield* eventSink.write({
+        events: [
+          {
+            id: EventId.make(`error:${threadId}`),
+            type: "turn-item.updated",
+            threadId,
+            runId: active.id,
+            nodeId: active.rootNodeId!,
+            occurredAt: failedAt,
+            payload: {
+              id: TurnItemId.make("error-item"),
+              type: "error",
+              threadId,
+              runId: active.id,
+              nodeId: active.rootNodeId,
+              providerThreadId: active.providerThreadId,
+              providerTurnId: null,
+              nativeItemRef: null,
+              parentItemId: null,
+              ordinal: 2,
+              status: "failed",
+              title: "Usage limit",
+              startedAt: failedAt,
+              completedAt: failedAt,
+              updatedAt: failedAt,
+              failure: {
+                class: "usage_limit",
+                message: "Usage limit reached",
+                code: "usage_limit",
+                retryable: null,
+              },
+            },
+          },
+          {
+            id: EventId.make(`failed:${threadId}`),
+            type: "run.updated",
+            threadId,
+            runId: active.id,
+            occurredAt: failedAt,
+            payload: { ...active, status: "failed", completedAt: failedAt },
+          },
+        ],
+      });
+      yield* orchestrator.resumeQueuedRuns;
+      const after = yield* orchestrator.getThreadProjection(threadId);
+      const queued = after.runs.filter((run) => run.status === "queued");
+      assert.lengthOf(queued, 2);
+      assert.isTrue(queued.every((run) => run.queueHeld === true));
+      assert.isTrue(queued.every((run) => run.queueHeldReason?.kind === "usage_limit"));
+      assert.isFalse(after.runs.some((run) => run.status === "starting"));
     }),
   );
 });

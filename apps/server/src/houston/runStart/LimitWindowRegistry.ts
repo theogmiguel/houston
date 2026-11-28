@@ -1,4 +1,4 @@
-import type { ProviderInstanceId } from "@houston-app/contracts";
+import { CommandId, type ProviderInstanceId } from "@houston-app/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -58,7 +58,7 @@ export interface LimitWindowRegistryShape {
     readonly scope: string;
     readonly now: DateTime.Utc;
   }) => Effect.Effect<string | null>;
-  readonly clear: (providerInstanceId: ProviderInstanceId) => Effect.Effect<void>;
+  readonly clear: (providerInstanceId: ProviderInstanceId, scope?: string) => Effect.Effect<void>;
 }
 
 export class LimitWindowRegistry extends Context.Service<
@@ -82,6 +82,16 @@ function toRecord(row: typeof Record.Type): LimitWindowRecord {
 
 const toIso = (now: DateTime.Utc) => DateTime.formatIso(now);
 
+/** A unique id per release occurrence, so a second release is not a replayed receipt. */
+export function limitReleaseCommandId(input: {
+  readonly prefix: string;
+  readonly threadId: string;
+  readonly runId: string;
+  readonly occurrence: string;
+}): CommandId {
+  return CommandId.make(`${input.prefix}:${input.threadId}:${input.runId}:${input.occurrence}`);
+}
+
 /** 15 minutes, then 30, then every 60 while no reset time is known. */
 export function nextTestReleaseAt(observedAtMs: number, attempt: number): number {
   const delayMinutes = attempt <= 0 ? 15 : attempt === 1 ? 30 : 60;
@@ -104,12 +114,18 @@ export const layer = Layer.effect(
       return records;
     });
 
-    const list: LimitWindowRegistryShape["list"] = reload.pipe(Effect.orDie);
+    // The cache is the read path: admission runs under the thread lock, and one server owns
+    // the channel's database, so a full SELECT per automatic start is avoidable.
+    const list: LimitWindowRegistryShape["list"] = Ref.get(cache).pipe(
+      Effect.map((records) => Array.from(records.values())),
+    );
 
     const read: LimitWindowRegistryShape["read"] = (providerInstanceId) =>
-      list.pipe(
+      Ref.get(cache).pipe(
         Effect.map((records) =>
-          records.filter((record) => record.providerInstanceId === providerInstanceId),
+          Array.from(records.values()).filter(
+            (record) => record.providerInstanceId === providerInstanceId,
+          ),
         ),
       );
 
@@ -161,7 +177,8 @@ export const layer = Layer.effect(
       "LimitWindowRegistry.recordFailure",
     )(function* (input) {
       const records = yield* read(input.providerInstanceId);
-      const scope = input.model ?? "*";
+      // A provider failure carries no model-only marker, so it holds the whole account.
+      const scope = "*";
       const existing = records.find((record) => record.scope === scope);
       // A new reset (or a first failure) starts the test-release schedule over.
       const sameWindow =
@@ -232,8 +249,8 @@ export const layer = Layer.effect(
       return nextTestAt;
     }, Effect.orDie);
 
-    const clear: LimitWindowRegistryShape["clear"] = (providerInstanceId) =>
-      remove(providerInstanceId);
+    const clear: LimitWindowRegistryShape["clear"] = (providerInstanceId, scope) =>
+      remove(providerInstanceId, scope);
 
     yield* reload;
     return LimitWindowRegistry.of({

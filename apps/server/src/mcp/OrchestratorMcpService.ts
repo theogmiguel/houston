@@ -115,6 +115,7 @@ import { repositoriesOf } from "../project/threadRepositories.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { returnsHeldTaskAtOnce } from "./heldTaskResult.ts";
 import {
   clientModeCeiling,
   type McpInvocationScope,
@@ -2633,7 +2634,7 @@ const make = Effect.gen(function* () {
 
       const initial = yield* readTask(scope, taskId, false, true);
       // A held task returns at once in both modes; the parent is woken when the child finishes.
-      if (initial.status === "queued") return initial;
+      if (returnsHeldTaskAtOnce(initial)) return initial;
       if (input.mode !== "wait") {
         return initial;
       }
