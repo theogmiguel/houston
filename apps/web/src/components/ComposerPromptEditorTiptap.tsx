@@ -272,7 +272,12 @@ const ComposerMentionExtension = Node.create({
 function ComposerMentionNodeView({ node }: NodeViewProps) {
   const actions = use(ComposerContextActionsContext);
   const path = (node.attrs.path as string) ?? "";
-  const drag = filePillDragHandlers({ path, workspaceRoot: actions.cwd });
+  const drag = filePillDragHandlers({
+    path,
+    workspaceRoot: actions.cwd,
+    ...(actions.threadRef === undefined ? {} : { threadRef: actions.threadRef }),
+    title: basenameOfPath(path),
+  });
   const chip = (
     <ContextChip
       kind={documentChipKindForFileName(path) ?? "mention"}

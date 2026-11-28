@@ -843,6 +843,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const previewFile = composerFiles.find((file) => file.id === previewFileId);
   const composerContextActions = {
     environmentId,
+    threadRef: routeThreadRef,
     cwd: gitCwd ?? undefined,
     projectId: activeProjectId ?? undefined,
     expandImage: (imageId: string) => {
@@ -3917,7 +3918,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         {showChangedFilesTray && changedFiles !== null ? (
           <div data-composer-changes-tray="true" className={CHANGED_FILES_TRAY_CLS}>
             {changesExpanded ? (
-              <ChangedFilesList summary={changedFiles.summary} onReview={changedFiles.onReview} />
+              <ChangedFilesList
+                summary={changedFiles.summary}
+                onReview={changedFiles.onReview}
+                threadRef={routeThreadRef}
+                workspaceRoot={gitCwd ?? undefined}
+              />
             ) : null}
             <div className={CHANGED_FILES_TRAY_ROW_CLS}>
               <ChangedFilesBar

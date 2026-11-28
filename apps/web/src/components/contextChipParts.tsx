@@ -1,4 +1,8 @@
-import type { EnvironmentId, PullRequestContextMetadata } from "@houston-app/contracts";
+import type {
+  EnvironmentId,
+  PullRequestContextMetadata,
+  ScopedThreadRef,
+} from "@houston-app/contracts";
 import { CircleDashedIcon, FilmIcon, ImageIcon } from "lucide-react";
 import {
   useEffect,
@@ -20,6 +24,7 @@ import { ContextChip, ContextChipLabel, type ContextChipKind } from "./ContextCh
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { PullRequestLinkPreview } from "./pullRequest/PullRequestLinkPreview";
+import { usePullRequestSurfaceDrag } from "~/layout/surfaceDrag";
 import { usePullRequestPreviewTarget } from "~/lib/openPullRequestLink";
 
 export const PULL_REQUEST_CHIP_KINDS = {
@@ -106,9 +111,18 @@ export function PullRequestChip(props: {
   kindLabel: string;
   kind: ContextChipKind;
   copyMarkdown?: string;
+  threadRef?: ScopedThreadRef | undefined;
   onOpen: (event: MouseEvent<HTMLElement>, url: string) => void;
 }) {
   const previewTarget = usePullRequestPreviewTarget(props.environmentId, props.metadata.url);
+  const drag = usePullRequestSurfaceDrag({
+    threadRef: props.threadRef,
+    environmentId: props.environmentId,
+    url: props.metadata.url,
+    title: props.metadata.title.trim()
+      ? `#${props.metadata.number} ${props.metadata.title}`
+      : `#${props.metadata.number}`,
+  });
   const displayState =
     props.metadata.state === "open" && props.metadata.isDraft ? "draft" : props.metadata.state;
   const StateIcon = PULL_REQUEST_PRESENTATION[displayState].Icon;
@@ -120,6 +134,7 @@ export function PullRequestChip(props: {
       data-markdown-copy={props.copyMarkdown}
       onClick={(event) => props.onOpen(event, props.metadata.url)}
       onAuxClick={(event) => props.onOpen(event, props.metadata.url)}
+      {...drag}
     >
       <StateIcon />
       <ContextChipLabel>{props.label}</ContextChipLabel>

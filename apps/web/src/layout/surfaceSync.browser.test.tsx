@@ -24,7 +24,7 @@ import {
   type LayoutState,
 } from "./layoutModel";
 import { useLayoutStore } from "./layoutStore";
-import { useLayoutSurfaceSync } from "./surfaceSync";
+import { requestLayoutSurfacePlacement, useLayoutSurfaceSync } from "./surfaceSync";
 
 const threadRef = scopeThreadRef(EnvironmentId.make("local"), ThreadId.make("t1"));
 
@@ -71,6 +71,26 @@ describe("surfaceSync", () => {
 
     await vi.waitFor(() => expect(surfaceIds()).toEqual(["diff"]));
     expect(findLayoutTab(layout(), (tab) => tab.id === "t1")).not.toBeNull();
+  });
+
+  it("opens a surface in a stacked pane beside the pane it was dropped on", async () => {
+    seed([[[["t1", "t2"]]]]);
+    await using _host = await render(<SyncHost />);
+    const chat = findLayoutTab(layout(), (tab) => tab.id === "t1")!;
+
+    requestLayoutSurfacePlacement(threadRef, {
+      kind: "split",
+      paneId: chat.pane.id,
+      side: "down",
+      exact: true,
+    });
+    useRightPanelStore.getState().open(threadRef, "diff");
+
+    await vi.waitFor(() => expect(surfaceIds()).toEqual(["diff"]));
+    const surface = findLayoutSurfaceTabs(layout(), threadRef)[0]!;
+    expect(surface.pane.id).not.toBe(chat.pane.id);
+    expect(surface.column.id).toBe(chat.column.id);
+    expect(layout().workspaces[0]!.columns).toHaveLength(1);
   });
 
   it("keeps a surface tab when its chat tab closes", async () => {

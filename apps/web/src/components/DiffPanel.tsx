@@ -1825,6 +1825,10 @@ export default function DiffPanel({
                           setActiveDiffPath({ key: diffSelectionKey, path });
                           revealDiffFile(path);
                         }}
+                        {...(threadRef === null ? {} : { threadRef })}
+                        {...(activeCwd === null || activeCwd === undefined
+                          ? {}
+                          : { workspaceRoot: activeCwd })}
                         {...(isWorkingTreeSelection
                           ? { fileState: fileListState, onStageToggle: toggleStageForPath }
                           : {})}

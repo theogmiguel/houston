@@ -1,4 +1,4 @@
-import type { OrchestrationV2CheckpointFileTotals } from "@houston-app/contracts";
+import type { OrchestrationV2CheckpointFileTotals, ScopedThreadRef } from "@houston-app/contracts";
 import { useSyncLayout } from "@legendapp/list/react";
 import { ChevronRightIcon, FileIcon, PencilIcon } from "lucide-react";
 import { useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
@@ -30,17 +30,24 @@ export interface TimelineChangeFile {
 export function TimelineFileChip({
   file,
   workspaceRoot,
+  threadRef,
   onOpen,
   onContextMenu,
 }: {
   readonly file: TimelineChangeFile;
   readonly workspaceRoot?: string | undefined;
+  readonly threadRef?: ScopedThreadRef | undefined;
   readonly onOpen: () => void;
   readonly onContextMenu?: ((event: ReactMouseEvent<HTMLButtonElement>) => void) | undefined;
 }) {
   const t = useT();
   const label = formatWorkspaceRelativePath(file.path, workspaceRoot);
-  const drag = filePillDragHandlers({ path: file.path, workspaceRoot });
+  const drag = filePillDragHandlers({
+    path: file.path,
+    workspaceRoot,
+    ...(threadRef === undefined ? {} : { threadRef }),
+    title: label,
+  });
   return (
     <button
       type="button"
@@ -73,6 +80,7 @@ export function TimelineChangesRow({
   files,
   totals,
   workspaceRoot,
+  threadRef,
   onOpenDiff,
   onOpenFile,
   onFileContextMenu,
@@ -82,6 +90,7 @@ export function TimelineChangesRow({
   readonly files: ReadonlyArray<TimelineChangeFile>;
   readonly totals: Pick<OrchestrationV2CheckpointFileTotals, "count" | "additions" | "deletions">;
   readonly workspaceRoot?: string | undefined;
+  readonly threadRef?: ScopedThreadRef | undefined;
   readonly onOpenDiff?: (() => void) | undefined;
   readonly onOpenFile: (path: string) => void;
   readonly onFileContextMenu?:
@@ -151,6 +160,7 @@ export function TimelineChangesRow({
                   key={file.path}
                   file={file}
                   workspaceRoot={workspaceRoot}
+                  {...(threadRef === undefined ? {} : { threadRef })}
                   onOpen={() => onOpenFile(file.path)}
                   {...(onFileContextMenu === undefined
                     ? {}

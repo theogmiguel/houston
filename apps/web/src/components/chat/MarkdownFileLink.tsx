@@ -325,7 +325,12 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
     canOpenInPanel,
   });
   const chipKind = documentChipKindForFileName(iconPath) ?? "mention";
-  const drag = filePillDragHandlers({ path: workspaceRelativePath, workspaceRoot });
+  const drag = filePillDragHandlers({
+    path: workspaceRelativePath,
+    workspaceRoot,
+    ...(threadRef === undefined ? {} : { threadRef }),
+    title: label,
+  });
 
   return (
     <Tooltip>

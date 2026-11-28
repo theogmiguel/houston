@@ -65,19 +65,34 @@ export function beginLayoutThreadDrag(
   source: Extract<LayoutDragSource, { kind: "thread" }>,
   options: { onStart?: () => void } = {},
 ): void {
-  beginLayoutPointerDrag(event, source, null, options.onStart);
+  beginLayoutPointerDrag(event, source, null, options);
+}
+
+/**
+ * Start dragging a surface a chip or badge shows (a file, a pull request) with the same gesture
+ * as a tab. Dropping it on a pane opens the surface there. A file chip whose surface has a
+ * native drag start passes `onLeaveWindow`: leaving the window hands the same pointer drag to
+ * the file manager.
+ */
+export function beginLayoutSurfaceDrag(
+  event: ReactPointerEvent,
+  source: Extract<LayoutDragSource, { kind: "surface" }>,
+  options: { onLeaveWindow?: () => void } = {},
+): void {
+  beginLayoutPointerDrag(event, source, null, options);
 }
 
 function beginLayoutPointerDrag(
   event: ReactPointerEvent,
   source: LayoutDragSource,
   sidebarSource: TabDragSource | null,
-  onStart?: () => void,
+  options: { onStart?: () => void; onLeaveWindow?: () => void } = {},
 ): void {
   if (event.button !== 0 || event.pointerType === "touch") return;
   const start = { x: event.clientX, y: event.clientY };
   const pointerId = event.pointerId;
   let started = false;
+  let leftWindow = false;
   let last = start;
 
   const move = (moveEvent: PointerEvent) => {
@@ -87,10 +102,16 @@ function beginLayoutPointerDrag(
         return;
       }
       started = true;
-      onStart?.();
+      options.onStart?.();
     }
     moveEvent.preventDefault();
     const point = { x: moveEvent.clientX, y: moveEvent.clientY };
+    if (source.kind === "surface" && !leftWindow && outsideWindow(point)) {
+      leftWindow = true;
+      finish(false);
+      options.onLeaveWindow?.();
+      return;
+    }
     last = point;
     if (source.kind === "thread") {
       moveThreadContextDrag(point, { title: source.title ?? "Thread", count: 1 });
@@ -149,4 +170,9 @@ function beginLayoutPointerDrag(
   window.addEventListener("pointercancel", cancel, true);
   window.addEventListener("keydown", key, true);
   window.addEventListener("blur", cancel);
+}
+
+/** A pointer held past the window's edge: the OS drag (the file manager) takes it. */
+function outsideWindow(point: { x: number; y: number }): boolean {
+  return point.x < 0 || point.y < 0 || point.x > window.innerWidth || point.y > window.innerHeight;
 }
