@@ -224,6 +224,31 @@ export function CommandPaletteVirtualizedResults(props: CommandPaletteVirtualize
   );
 }
 
+/** Rows that stay under the list while it scrolls and filters. `startIndex` is the first row's
+ * place in the palette's item order, so the arrow keys reach them after the last list row. */
+export function CommandPaletteFixedRows(props: {
+  items: ReadonlyArray<CommandPaletteActionItem | CommandPaletteSubmenuItem>;
+  startIndex: number;
+  highlightedItemValue: string | null;
+  keybindings: ResolvedKeybindingsConfig;
+  onExecuteItem: (item: CommandPaletteActionItem | CommandPaletteSubmenuItem) => void;
+}) {
+  return (
+    <div className="shrink-0 border-t border-border p-2" data-slot="command-fixed-rows">
+      {props.items.map((item, offset) => (
+        <CommandPaletteResultRow
+          key={item.value}
+          index={props.startIndex + offset}
+          item={item}
+          keybindings={props.keybindings}
+          isActive={props.highlightedItemValue === item.value}
+          onExecuteItem={props.onExecuteItem}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function CommandPaletteTitleIcon(props: { children: ReactNode }) {
   return <span className="flex h-5 shrink-0 items-center self-start pt-0.5">{props.children}</span>;
 }

@@ -92,7 +92,12 @@ export function CommandPalette({ children }: { children: ReactNode }) {
                 ? "Search project contents"
                 : "Command palette"
           }
-          className={cn("overflow-hidden", state.mode === "content" && "h-105")}
+          className={cn(
+            // Fixed rows add their own height (two rows, padding and a rule: 88px), so the list
+            // above them shows as many rows as a palette without them.
+            "overflow-hidden has-[[data-slot=command-fixed-rows]]:max-h-127",
+            state.mode === "content" && "h-105",
+          )}
           data-command-palette="true"
           data-palette-mode={state.mode}
           data-testid="command-palette"

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import { page } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 import {
   EnvironmentId,
   ProjectId,
@@ -49,6 +49,11 @@ vi.mock("../hooks/useScratchProject", () => ({
     scratchWorkspaceRootFor: () => "/home/user/.houston/v2/scratch",
     startScratchThread: async () => undefined,
   }),
+}));
+const openAddProjectDialog = vi.hoisted(() => vi.fn());
+vi.mock("./AddProjectDialog", async (original) => ({
+  ...(await original<typeof import("./AddProjectDialog")>()),
+  openAddProjectDialog,
 }));
 vi.mock("../hooks/useNewProject", () => ({ useNewProject: () => async () => undefined }));
 vi.mock("../hooks/useHandleNewThread", () => ({
@@ -343,5 +348,73 @@ describe("command palette availability", () => {
     await expect
       .element(page.getByText("Search project contents", { exact: true }))
       .toBeInTheDocument();
+  });
+});
+
+describe("new-thread project picker", () => {
+  const fixedRow = (name: string) =>
+    document.querySelector<HTMLElement>(
+      `[data-slot="command-fixed-rows"] [data-slot="command-item"][data-active]`,
+    )?.textContent === name;
+
+  async function openPicker(): Promise<void> {
+    await act(() => openCommandPalette({ open: "new-thread-in" }));
+    await expect.element(page.getByPlaceholder("Search...")).toHaveFocus();
+  }
+
+  it("keeps Add project… and No project under the list, after the projects in arrow order", async () => {
+    resetPalette();
+    activeUser();
+    state.projects = [realProject, scratchProject];
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+    await openPicker();
+
+    await expect.element(page.getByText("atlas-api", { exact: true })).toBeInTheDocument();
+    const fixed = document.querySelector<HTMLElement>('[data-slot="command-fixed-rows"]')!;
+    expect(
+      Array.from(fixed.querySelectorAll('[data-slot="command-item"]'), (row) => row.textContent),
+    ).toEqual(["Add project…", expect.stringMatching(/^No project/)]);
+    expect(fixed.textContent).not.toContain("atlas-api");
+    expect(fixed.closest('[data-slot="command-list"]')).toBeNull();
+    await expect.poll(() => fixed.querySelector("[data-active]")).toBeNull();
+
+    // The first press shows the highlight on the first project; the next ones leave the list.
+    await userEvent.keyboard("{ArrowDown}");
+    await expect
+      .poll(() => document.querySelector('[data-slot="command-list"] [data-active]')?.textContent)
+      .toContain("atlas-api");
+    await userEvent.keyboard("{ArrowDown}");
+    await expect.poll(() => fixedRow("Add project…")).toBe(true);
+    await userEvent.keyboard("{ArrowDown}");
+    await expect
+      .poll(() => fixed.querySelector("[data-active]")?.textContent)
+      .toMatch(/^No project/);
+    await userEvent.keyboard("{ArrowUp}");
+    await expect.poll(() => fixedRow("Add project…")).toBe(true);
+  });
+
+  it("answers a search with no match by selecting Add project…", async () => {
+    resetPalette();
+    activeUser();
+    openAddProjectDialog.mockClear();
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+    await openPicker();
+
+    await userEvent.fill(page.getByPlaceholder("Search..."), "zzz");
+    await expect.element(page.getByText('No project matches "zzz".')).toBeInTheDocument();
+    expect(page.getByText("atlas-api", { exact: true }).elements()).toHaveLength(0);
+    await expect.poll(() => fixedRow("Add project…")).toBe(true);
+
+    await userEvent.keyboard("{Enter}");
+    await expect.poll(() => openAddProjectDialog.mock.calls.length).toBe(1);
+  });
+
+  it("selects Add project… when there is no project to list", async () => {
+    resetPalette();
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+    await openPicker();
+
+    await expect.element(page.getByText("No projects yet.")).toBeInTheDocument();
+    await expect.poll(() => fixedRow("Add project…")).toBe(true);
   });
 });

@@ -205,7 +205,6 @@ import {
   buildLinkedThreadActionItems,
   buildCommandPaletteRows,
   enumerateCommandPaletteItems,
-  newThreadNoProjectIndex,
   findHighlightedCommandPaletteItem,
   type CommandPaletteActionItem,
   type CommandPaletteOpenIntent,
@@ -255,6 +254,7 @@ import { openAddProjectDialog } from "./AddProjectDialog";
 import { useCommandPaletteThreadItems } from "./CommandPaletteThreadItems";
 import { useCommandPaletteThemeItems } from "./CommandPaletteThemeItems";
 import {
+  CommandPaletteFixedRows,
   CommandPaletteVirtualizedResults,
   scrollCommandPaletteRowIntoView,
 } from "./CommandPaletteResults";
@@ -318,6 +318,7 @@ function openIntentView(intent: CommandPaletteOpenIntent | null): CommandPalette
 
 const NEW_THREAD_NO_PROJECT_VALUE = "new-thread-in:no-project";
 const NEW_THREAD_ADD_PROJECT_VALUE = "new-thread-in:add-project";
+const NEW_THREAD_FIXED_GROUP = "new-thread-in:fixed";
 
 /** The palette's content for its mode; CommandPaletteShell loads it on demand. */
 export function CommandPaletteBody(props: {
@@ -985,53 +986,34 @@ function OpenCommandPaletteDialog(props: {
           await (opensInNewTab ? runInNewLayoutTab(startThread) : startThread());
         },
       });
-      if (scratchTargetEnvironmentId === null) {
-        return [...projectItems, newThreadAddProjectItem];
-      }
-
-      const noProjectIndex = newThreadNoProjectIndex(
-        projectPickerEntries.map(({ group, targetProject, isPreferred }) => ({
-          isScratch: isScratchProject(
-            targetProject,
-            scratchWorkspaceRootFor(targetProject.environmentId),
-          ),
-          pinned: group.pinned,
-          isPreferred,
-        })),
-      );
-      return [
-        ...projectItems.slice(0, noProjectIndex),
-        {
-          kind: "action" as const,
-          value: NEW_THREAD_NO_PROJECT_VALUE,
-          searchTerms: ["no project", "without project", "none"],
-          title: "No project",
-          icon: <MessageSquareDashedIcon className={ITEM_ICON_CLASS} />,
-          shortcutCommand: "chat.newWithoutProject" as const,
-          run: () =>
-            opensInNewTab
-              ? runInNewLayoutTab(() => startScratchThread(scratchTargetEnvironmentId))
-              : startScratchThread(scratchTargetEnvironmentId),
-        },
-        ...projectItems.slice(noProjectIndex),
-        newThreadAddProjectItem,
-      ];
+      return projectItems;
     })(),
     rowOrderKey("new-thread-in"),
     true,
   );
   // Jump shortcuts follow the rows as shown, so a pin cannot move a number to another row.
-  const projectJumpItems = new Map(
-    enumerateCommandPaletteItems(
-      openingOrderThreadItems.filter(
-        (item) =>
-          item.value !== NEW_THREAD_NO_PROJECT_VALUE && item.value !== NEW_THREAD_ADD_PROJECT_VALUE,
-      ),
-    ).map((item) => [item.value, item] as const),
-  );
-  const projectThreadItems = openingOrderThreadItems.map(
-    (item) => projectJumpItems.get(item.value) ?? item,
-  );
+  const projectThreadItems = enumerateCommandPaletteItems(openingOrderThreadItems);
+  // The actions under the project list: they stay in place while the projects scroll and filter.
+  // Add project… leads so that a search with no match opens it on Enter.
+  const newThreadFixedItems: CommandPaletteActionItem[] = [
+    newThreadAddProjectItem,
+    ...(scratchTargetEnvironmentId === null
+      ? []
+      : [
+          {
+            kind: "action" as const,
+            value: NEW_THREAD_NO_PROJECT_VALUE,
+            searchTerms: ["no project", "without project", "none"],
+            title: "No project",
+            icon: <MessageSquareDashedIcon className={ITEM_ICON_CLASS} />,
+            shortcutCommand: "chat.newWithoutProject" as const,
+            run: () =>
+              opensInNewTab
+                ? runInNewLayoutTab(() => startScratchThread(scratchTargetEnvironmentId))
+                : startScratchThread(scratchTargetEnvironmentId),
+          },
+        ]),
+  ];
 
   const {
     threadItems: allThreadItems,
@@ -1916,21 +1898,16 @@ function OpenCommandPaletteDialog(props: {
       });
     },
   }));
-  const activeGroups =
-    currentView?.groups[0]?.value === NEW_THREAD_IN_GROUP
-      ? [
-          {
-            value: NEW_THREAD_IN_GROUP,
-            label: t("Projects"),
-            // Every project archived and no "No project" home leaves only adding one.
-            items: projectThreadItems.length > 0 ? projectThreadItems : [addProjectAction],
-          },
-        ]
-      : currentView?.groups[0]?.value === "themes"
-        ? changeThemeItem.groups
-        : currentView?.groups[0]?.value === "appearance"
-          ? changeAppearanceItem.groups
-          : (currentView?.groups ?? rootGroups);
+  const isNewThreadInView = currentView?.groups[0]?.value === NEW_THREAD_IN_GROUP;
+  const activeGroups = isNewThreadInView
+    ? projectThreadItems.length > 0
+      ? [{ value: NEW_THREAD_IN_GROUP, label: t("Projects"), items: projectThreadItems }]
+      : []
+    : currentView?.groups[0]?.value === "themes"
+      ? changeThemeItem.groups
+      : currentView?.groups[0]?.value === "appearance"
+        ? changeAppearanceItem.groups
+        : (currentView?.groups ?? rootGroups);
 
   const isLinkedThreadSearch =
     linkedThreadSearch?.linkedThreads !== undefined && deferredQuery === linkedThreadSearch.query;
@@ -1938,7 +1915,8 @@ function OpenCommandPaletteDialog(props: {
     activeGroups,
     query: deferredQuery,
     isInSubmenu: currentView !== null,
-    ...(deferredQuery.trim().length > 0
+    // The project picker answers a search with no match by offering Add project…, not other results.
+    ...(deferredQuery.trim().length > 0 && !isNewThreadInView
       ? {
           allOptions: {
             rootGroups,
@@ -2649,7 +2627,17 @@ function OpenCommandPaletteDialog(props: {
   } else if (isAddProjectBrowseView) {
     displayedGroups = relativePathNeedsActiveProject ? [] : addProjectFolderGroups;
   }
-  const resultRows = buildCommandPaletteRows(displayedGroups);
+  // The fixed rows follow the project rows in keyboard order but render under the list.
+  const fixedItems =
+    isNewThreadInView && displayedGroups === filteredGroups ? newThreadFixedItems : [];
+  const navigableGroups: CommandPaletteView["groups"] =
+    fixedItems.length > 0
+      ? [...displayedGroups, { value: NEW_THREAD_FIXED_GROUP, label: "", items: fixedItems }]
+      : displayedGroups;
+  const resultRows = buildCommandPaletteRows(navigableGroups);
+  const listRows =
+    fixedItems.length > 0 ? resultRows.rows.slice(0, -fixedItems.length) : resultRows.rows;
+  const fixedItemStartIndex = resultRows.itemValues.length - fixedItems.length;
   const autoHighlightsFirstRow =
     !isBrowsing && !isRemoteProjectCloneFlow && newProjectFlow === null && !isAddProjectBrowseView;
 
@@ -2724,7 +2712,7 @@ function OpenCommandPaletteDialog(props: {
     });
     if (command === "thread.pin") {
       const highlightedItem = findHighlightedCommandPaletteItem(
-        displayedGroups,
+        navigableGroups,
         highlightedItemValue ??
           (autoHighlightsFirstRow ? (resultRows.itemValues[0] ?? null) : null),
       );
@@ -2745,7 +2733,7 @@ function OpenCommandPaletteDialog(props: {
         command === "chat.newWithoutProject");
     const matchingItem =
       isJump || isNewThread
-        ? displayedGroups
+        ? navigableGroups
             .flatMap((group) => group.items)
             .find((item) => item.shortcutCommand === command)
         : undefined;
@@ -2890,7 +2878,7 @@ function OpenCommandPaletteDialog(props: {
     // Virtualization may unmount the highlighted row; handle Enter directly instead of Base UI's click.
     if (event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
       const highlightedItem = findHighlightedCommandPaletteItem(
-        displayedGroups,
+        navigableGroups,
         highlightedItemValue ?? firstItemValue ?? null,
       );
       if (highlightedItem) {
@@ -3223,7 +3211,11 @@ function OpenCommandPaletteDialog(props: {
             highlightClearedRef.current = false;
             setHighlightedItemValue(typeof value === "string" ? value : null);
             const rowIndex = resultRows.rowIndexByItemIndex[eventDetails.index];
-            if (eventDetails.reason === "keyboard" && rowIndex !== undefined) {
+            if (
+              eventDetails.reason === "keyboard" &&
+              rowIndex !== undefined &&
+              rowIndex < listRows.length
+            ) {
               scrollCommandPaletteRowIntoView(resultListRef.current, rowIndex);
             }
           }}
@@ -3282,7 +3274,7 @@ function OpenCommandPaletteDialog(props: {
             </div>
           ) : null}
           <CommandPaletteVirtualizedResults
-            rows={resultRows.rows}
+            rows={listRows}
             listRef={resultListRef}
             highlightedItemValue={highlightedItemValue}
             isActionsOnly={isActionsOnly}
@@ -3297,10 +3289,29 @@ function OpenCommandPaletteDialog(props: {
                 }
               : addProjectCloneFlow?.step === "confirm"
                 ? { emptyStateMessage: "Choose a destination path and press Enter to clone." }
-                : addProjectResultEmptyStateMessage === undefined
-                  ? {}
-                  : { emptyStateMessage: addProjectResultEmptyStateMessage })}
+                : fixedItems.length > 0
+                  ? {
+                      emptyStateMessage:
+                        deferredQuery.trim().length > 0
+                          ? `No project matches "${deferredQuery.trim()}".`
+                          : "No projects yet.",
+                    }
+                  : addProjectResultEmptyStateMessage === undefined
+                    ? {}
+                    : { emptyStateMessage: addProjectResultEmptyStateMessage })}
           />
+          {fixedItems.length > 0 ? (
+            <CommandPaletteFixedRows
+              items={fixedItems}
+              startIndex={fixedItemStartIndex}
+              // With no project row, Enter runs the first fixed row, so it shows as selected.
+              highlightedItemValue={
+                highlightedItemValue ?? (listRows.length === 0 ? fixedItems[0]!.value : null)
+              }
+              keybindings={keybindings}
+              onExecuteItem={executeItem}
+            />
+          ) : null}
         </CommandPaletteContent>
       </Swap>
     </>
