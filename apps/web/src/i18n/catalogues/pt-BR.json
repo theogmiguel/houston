@@ -1262,5 +1262,7 @@
   "Linked from 1 machine": "Vinculado a partir de 1 máquina",
   "Linked from {count} machines": "Vinculado a partir de {count} máquinas",
   "Links to 1 machine": "Vincula a 1 máquina",
-  "Links to {count} machines": "Vincula a {count} máquinas"
+  "Links to {count} machines": "Vincula a {count} máquinas",
+  "No other machines": "Nenhuma outra máquina",
+  "Not supported": "Não suportado"
 }

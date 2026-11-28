@@ -1262,5 +1262,7 @@
   "Linked from 1 machine": "Linked from 1 machine",
   "Linked from {count} machines": "Linked from {count} machines",
   "Links to 1 machine": "Links to 1 machine",
-  "Links to {count} machines": "Links to {count} machines"
+  "Links to {count} machines": "Links to {count} machines",
+  "No other machines": "No other machines",
+  "Not supported": "Not supported"
 }

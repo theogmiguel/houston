@@ -771,14 +771,15 @@ describe("layoutFleetGraph", () => {
       ["c", "a"],
     ].map(([from, to]) => {
       const { badge, d } = geometry(from!, to!);
-      // On the link's own vertical run, between the two machines it joins.
+      // Beside the link's own vertical run, never on it, between the two machines it joins.
       const run = samplePath(d).filter(
         (point) => point.y > badge!.y && point.y < badge!.y + badge!.height,
       );
       expect(run.length).toBeGreaterThan(0);
       for (const point of run) {
-        expect(point.x).toBeGreaterThan(badge!.x);
-        expect(point.x).toBeLessThan(badge!.x + badge!.width);
+        const clear = badge!.side === 1 ? badge!.x - point.x : point.x - (badge!.x + badge!.width);
+        expect(clear).toBeGreaterThanOrEqual(0);
+        expect(clear).toBeLessThanOrEqual(8);
       }
       const ends = [layout.nodes.get(node(from!))!, layout.nodes.get(node(to!))!];
       expect(badge!.y).toBeGreaterThan(Math.min(...ends.map((rect) => rect.y)));
@@ -795,6 +796,14 @@ describe("layoutFleetGraph", () => {
         }
       }
     }
+  });
+
+  it("is as wide as the client alone when no other machine is drawn, so the fit centres it", () => {
+    const layout = layoutFleetGraph(build([]));
+    const client = layout.nodes.get(FLEET_CLIENT_NODE_ID)!;
+    expect(layout.width).toBe(client.width);
+    const view = fitFleetLayout(layout, { width: 800, height: 300 });
+    expect(view.x + client.x * view.scale + (client.width * view.scale) / 2).toBeCloseTo(400);
   });
 
   it("runs links between environments left of them and links to other machines right", () => {

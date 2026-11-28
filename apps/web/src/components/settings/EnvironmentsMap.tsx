@@ -255,6 +255,13 @@ const ROUTE_STYLES: Record<
   idle: { wire: "text-muted-foreground/40", width: 1, dash: "4 4", pill: "border-dashed" },
 };
 
+/** Below this a route's own name no longer fits whole, so its kind stands in for it. */
+const ROUTE_NAME_FULL_WIDTH = 100;
+/** Below this the client's label keeps the room its icon would take. */
+const CLIENT_ICON_MIN_WIDTH = 140;
+/** Below this the longest card status no longer fits whole, so a shorter wording stands in. */
+const STATUS_FULL_WIDTH = 160;
+
 function routeKindLabel(kind: ConnectionRouteKind, t: Translate): string {
   switch (kind) {
     case "loopback":
@@ -1632,7 +1639,11 @@ function FleetScene({
               fadeName(!routeLit(edge)),
             )}
           >
-            <span className="truncate">{edge.routeLabel ?? routeKindLabel(edge.routeKind, t)}</span>
+            <span className="truncate">
+              {pill.width < ROUTE_NAME_FULL_WIDTH
+                ? routeKindLabel(edge.routeKind, t)
+                : (edge.routeLabel ?? routeKindLabel(edge.routeKind, t))}
+            </span>
           </span>
         );
       })}
@@ -1875,7 +1886,9 @@ function FleetScene({
               {...focusProps(target, rect, node.label)}
               className={cn(nodeClass(node.id), "gap-2 px-3.5", MAP_CLIENT_NODE_CLS)}
             >
-              <ClientIcon aria-hidden className={cn("size-4 shrink-0", MAP_MUTED_CLS)} />
+              {rect.width < CLIENT_ICON_MIN_WIDTH ? null : (
+                <ClientIcon aria-hidden className={cn("size-4 shrink-0", MAP_MUTED_CLS)} />
+              )}
               <span className={cn("truncate", MAP_CLIENT_LABEL_CLS)}>{node.label}</span>
             </button>
           );
@@ -1940,7 +1953,7 @@ function FleetScene({
                       ? linkInCount(incoming.length, t)
                       : isQuietHealth(first.health)
                         ? t(accessConfig[first.link.access].label)
-                        : `${t(accessConfig[first.link.access].label)} · ${healthLabel(first.health, t)}`}
+                        : healthLabel(first.health, t)}
                   </span>
                 )}
               </span>
@@ -1970,11 +1983,15 @@ function FleetScene({
         }
         const environment = environmentById.get(node.id);
         const routes = routeEdges.filter((edge) => edge.to === node.id);
-        const status = environmentStatusText(
+        const fullStatus = environmentStatusText(
           node,
           links.filter((edge) => edge.from === node.id).length,
           t,
         );
+        const status =
+          rect.width < STATUS_FULL_WIDTH && fullStatus === t("Client not supported")
+            ? t("Not supported")
+            : fullStatus;
         // The card's state is short; the name carries the reason and what it leaves unknown.
         const spoken =
           node.phase === "connected"

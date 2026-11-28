@@ -8,7 +8,7 @@ import { LegendList } from "@legendapp/list/react";
 import { type ReactNode, useRef, useState } from "react";
 
 import { environmentCatalog } from "~/connection/catalog";
-import { type Translate, useT } from "~/i18n/useT";
+import { type Translate, useLocale, useT } from "~/i18n/useT";
 import { cn } from "~/lib/utils";
 import type { EnvironmentPresentation } from "~/state/environments";
 import { peerLinkEnvironment } from "~/state/peerLinks";
@@ -292,9 +292,11 @@ function FleetSummary({
               : null
         }
       >
-        {summary.links !== null
-          ? `${machineCountText(machines, t)}, ${linksSummaryText(summary.links, t)}`
-          : machineCountText(machines, t)}
+        {machines === 0
+          ? t("No other machines")
+          : summary.links !== null
+            ? `${machineCountText(machines, t)}, ${linksSummaryText(summary.links, t)}`
+            : machineCountText(machines, t)}
       </Heading>
     </div>
   );
@@ -311,6 +313,7 @@ function LinkButton({
   readonly onSelect: (focus: FleetFocus) => void;
 }) {
   const t = useT();
+  const locale = useLocale();
   const attention = linkNeedsAttention(edge.health);
   return (
     <li>
@@ -337,7 +340,7 @@ function LinkButton({
           {attention
             ? healthLabel(edge.health, t)
             : t("Expires {date}", {
-                date: formatAccessTimestamp(DateTime.formatIso(edge.link.expiresAt)),
+                date: formatAccessTimestamp(DateTime.formatIso(edge.link.expiresAt), locale),
               })}
         </span>
       </button>
@@ -767,13 +770,14 @@ function LinkDetails({
   readonly onLinkBack?: () => void;
 }) {
   const t = useT();
+  const locale = useLocale();
   const { link, health } = edge;
   const canUnlink = useAtomValue(
     peerLinkEnvironment.unlink.permissionAtom(edge.sourceEnvironmentId),
   );
   const { busy, forget } = useForgetPeerLink(edge.sourceEnvironmentId, link);
   const access = accessConfig[link.access];
-  const when = (value: DateTime.Utc) => formatAccessTimestamp(DateTime.formatIso(value));
+  const when = (value: DateTime.Utc) => formatAccessTimestamp(DateTime.formatIso(value), locale);
   return (
     <div>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">

@@ -751,22 +751,22 @@ interface FleetMetrics {
 }
 
 const REGULAR: FleetMetrics = {
-  app: 136,
-  wire: 72,
-  pill: 82,
+  app: 160,
+  wire: 64,
+  pill: 108,
   pillGap: 20,
-  card: 164,
+  card: 192,
   target: 188,
-  linkRun: 92,
+  linkRun: 80,
   laneFirst: 24,
   betweenFirst: 16,
   betweenLast: 6,
 };
 /** The least each measure can be with its text still whole: a narrow settings column. */
 const COMPACT: FleetMetrics = {
-  app: 124,
+  app: 128,
   wire: 28,
-  pill: 72,
+  pill: 88,
   pillGap: 14,
   card: 148,
   target: 146,
@@ -777,11 +777,11 @@ const COMPACT: FleetMetrics = {
 };
 /** Past this the map is enlarged instead: longer wires would only pull the columns apart. */
 const ROOMY: FleetMetrics = {
-  app: 148,
+  app: 172,
   wire: 112,
-  pill: 88,
+  pill: 116,
   pillGap: 26,
-  card: 180,
+  card: 208,
   target: 220,
   linkRun: 132,
   laneFirst: 24,
@@ -811,7 +811,7 @@ const FRAME_PAD = 8;
 const TRAY_GAP = 4;
 /** Narrower than this a machine's name no longer reads, so a tray gives up a column instead. */
 const CHIP_MIN_WIDTH = 60;
-const GROUP_GAP = 28;
+const GROUP_GAP = 36;
 const BAY_GAP = 12;
 const LANE_STEP = 14;
 const LANE_CLEARANCE = 10;
@@ -828,7 +828,7 @@ const BETWEEN = { step: 14 };
  */
 const LINK_PORT = { first: 10, pitch: FLEET_LANE_PITCH, margin: 4 };
 const CORNER = 8;
-const BADGE = { width: 120, height: 20, overhang: 5, gap: 4 };
+const BADGE = { width: 152, height: 20, gap: 4 };
 
 /** Horizontal, a vertical run at `viaX`, then horizontal again, with rounded turns. */
 function elbowPath(x0: number, y0: number, viaX: number, x1: number, y1: number): string {
@@ -1544,7 +1544,7 @@ function layoutFleetGraphAt(
     }
     if (!down) gaps.reverse();
     const place = (at: number, side: 1 | -1): FleetLinkBadge => ({
-      x: side === 1 ? x - BADGE.overhang : x + BADGE.overhang - BADGE.width,
+      x: side === 1 ? x + BADGE.gap : x - BADGE.gap - BADGE.width,
       y: at - BADGE.height / 2,
       width: BADGE.width,
       height: BADGE.height,
@@ -1591,6 +1591,9 @@ function layoutFleetGraphAt(
       badge: clear ?? { ...options[0]!, onDemand: true },
     });
   }
+
+  // With nothing to the right of it the client is the whole map, so the fit centres it.
+  if (column.length === 0 && placed.length === 0) width = CLIENT_SIZE.width;
 
   return {
     nodes,
