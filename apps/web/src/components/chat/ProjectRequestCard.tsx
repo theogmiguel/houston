@@ -83,6 +83,11 @@ function PendingProjectRequestForm(props: {
   const adding = props.adding || submitting;
   const shownError =
     error ?? (item.projectRequestStatus === "failed" ? (item.failure ?? null) : null);
+  // A path that cannot register will not register on a second click either;
+  // every other answer failure may be transient and must stay retryable.
+  const cannotRetry =
+    shownError !== null &&
+    shownError.includes("is not a folder on this computer. Expected an existing folder.");
 
   const send = async (decision: "approve" | "decline") => {
     if (inFlight.current || adding) return;
@@ -146,7 +151,7 @@ function PendingProjectRequestForm(props: {
             </TooltipPopup>
           </Tooltip>
         </div>
-        <Button type="submit" disabled={adding || shownError !== null}>
+        <Button type="submit" disabled={adding || cannotRetry}>
           {adding ? (
             <>
               <Spinner size="xs" aria-hidden />

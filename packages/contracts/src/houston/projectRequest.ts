@@ -78,6 +78,8 @@ const HOUSTON_PROJECT_REQUEST_FAILURE_MESSAGES = {
   not_found: "This add-project request no longer exists.",
   already_answered: "This add-project request was already answered.",
   agent_stopped: "The agent that asked has stopped, so this project can't be added from here.",
+  call_dropped:
+    "The agent is no longer waiting for this answer, so the request was cancelled. Ask it to try again.",
   record_failed: "Could not record the add-project answer.",
 } as const;
 

@@ -17,6 +17,7 @@ import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as TestClock from "effect/testing/TestClock";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -92,6 +93,10 @@ const withService = <A, E>(
   options: {
     readonly runStatus?: "running" | "cancelled";
     readonly failRecheck?: boolean;
+    readonly gateCreate?: {
+      readonly started: Deferred.Deferred<void>;
+      readonly release: Deferred.Deferred<void>;
+    };
   },
   body: (harness: Harness) => Effect.Effect<A, E>,
 ) =>
@@ -156,7 +161,11 @@ const withService = <A, E>(
         }),
         Layer.mock(ProjectService.ProjectService)({
           create: (input) =>
-            Effect.sync(() => {
+            Effect.gen(function* () {
+              if (options.gateCreate !== undefined) {
+                yield* Deferred.succeed(options.gateCreate.started, undefined);
+                yield* Deferred.await(options.gateCreate.release);
+              }
               created.push(input);
               const value = project({
                 id: input.projectId,
@@ -358,3 +367,83 @@ describe("ProjectRequests", () => {
     ),
   );
 });
+
+it.effect(
+  "an approval after the waiting call is gone settles the card instead of leaving it adding",
+  () =>
+    withService({}, (harness) =>
+      Effect.gen(function* () {
+        const running = yield* request(harness.service, {
+          workspaceRoot: harness.existing,
+        }).pipe(Effect.forkChild);
+        const id = yield* Deferred.await(harness.cardReady);
+        yield* Fiber.interrupt(running);
+
+        const error = yield* harness.service
+          .answer({ threadId, turnItemId: id, answer: { type: "approve" } })
+          .pipe(Effect.flip);
+        expect(error.reason).toBe("call_dropped");
+        expect(harness.cards.get(id)?.projectRequestStatus).toBe("cancelled");
+        expect(harness.created).toHaveLength(0);
+      }),
+    ),
+);
+
+it.live("an interrupted adding card is settled without a second answer", () =>
+  Effect.gen(function* () {
+    const started = yield* Deferred.make<void>();
+    const release = yield* Deferred.make<void>();
+    yield* withService({ gateCreate: { started, release } }, (harness) =>
+      Effect.gen(function* () {
+        const running = yield* request(harness.service, {
+          workspaceRoot: harness.existing,
+        }).pipe(Effect.forkChild);
+        const id = yield* Deferred.await(harness.cardReady);
+        yield* harness.service.answer({
+          threadId,
+          turnItemId: id,
+          answer: { type: "approve" },
+        });
+        yield* Deferred.await(started);
+        yield* Fiber.interrupt(running);
+
+        expect(harness.cards.get(id)?.projectRequestStatus).toBe("cancelled");
+        const error = yield* harness.service
+          .answer({ threadId, turnItemId: id, answer: { type: "approve" } })
+          .pipe(Effect.flip);
+        expect(error.reason).toBe("already_answered");
+        expect(harness.created).toHaveLength(0);
+      }),
+    );
+  }),
+);
+
+it.effect("the wait timeout does not cancel a card whose creation already started", () =>
+  Effect.gen(function* () {
+    const started = yield* Deferred.make<void>();
+    const release = yield* Deferred.make<void>();
+    yield* withService({ gateCreate: { started, release } }, (harness) =>
+      Effect.gen(function* () {
+        const running = yield* request(harness.service, {
+          workspaceRoot: harness.existing,
+        }).pipe(Effect.forkChild);
+        const id = yield* Deferred.await(harness.cardReady);
+        yield* harness.service.answer({
+          threadId,
+          turnItemId: id,
+          answer: { type: "approve" },
+        });
+        yield* TestClock.adjust("500 millis");
+        yield* Deferred.await(started);
+        yield* TestClock.adjust("11 minutes");
+
+        expect(harness.cards.get(id)?.projectRequestStatus).toBe("adding");
+
+        yield* Deferred.succeed(release, undefined);
+        const project = yield* Fiber.join(running);
+        expect(project.workspaceRoot).toBe(harness.existing);
+        expect(harness.cards.get(id)?.projectRequestStatus).toBe("added");
+      }),
+    );
+  }),
+);

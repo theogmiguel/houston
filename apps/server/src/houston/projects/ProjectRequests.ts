@@ -28,6 +28,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Ref from "effect/Ref";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 
 import * as HostProcess from "@houston-app/shared/HostProcess";
@@ -282,6 +283,47 @@ const make = Effect.gen(function* () {
     );
 
   const requestLocks = yield* KeyedLock.make<TurnItemId>();
+  const waiterCounts = yield* Ref.make<ReadonlyMap<TurnItemId, number>>(new Map());
+
+  const hasWaiter = (turnItemId: TurnItemId) =>
+    Ref.get(waiterCounts).pipe(Effect.map((counts) => (counts.get(turnItemId) ?? 0) > 0));
+
+  /** Keeps an answer from approving a card that no fiber is left to execute. */
+  const withWaiter = <A, E, R>(
+    threadId: ThreadId,
+    turnItemId: TurnItemId,
+    effect: Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E, R> =>
+    Effect.acquireUseRelease(
+      Ref.update(waiterCounts, (counts) => {
+        const next = new Map(counts);
+        next.set(turnItemId, (counts.get(turnItemId) ?? 0) + 1);
+        return next;
+      }),
+      () => effect,
+      () =>
+        Effect.gen(function* () {
+          const remaining = yield* Ref.modify(waiterCounts, (counts) => {
+            const next = new Map(counts);
+            const left = (counts.get(turnItemId) ?? 1) - 1;
+            if (left > 0) next.set(turnItemId, left);
+            else next.delete(turnItemId);
+            return [left, next];
+          });
+          if (remaining > 0) return;
+          // The last waiter left while the approved creation owned the card:
+          // settle it so an `adding` spinner cannot outlive its call.
+          const card = yield* readCard(threadId, turnItemId).pipe(
+            Effect.orElseSucceed(() => undefined),
+          );
+          if (card?.projectRequestStatus !== "adding") return;
+          const target = recordCard(card);
+          if (target === undefined) return;
+          yield* record(target, "cancelled", {
+            failure: "The agent stopped waiting before the project was added.",
+          }).pipe(Effect.ignore);
+        }),
+    );
 
   const execute = <R>(
     card: ProjectRequestItem,
@@ -334,18 +376,12 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  const waitForDecision = Effect.fn("ProjectRequests.waitForDecision")(function* <R>(
+  const waitUntilDecided = Effect.fn("ProjectRequests.waitUntilDecided")(function* (
     initial: ProjectRequestItem,
-    recheck: Effect.Effect<void, OrchestratorMcpFailure, R>,
-    payload: Pick<ProjectRequestInput<never>, "defaultModelSelection" | "scripts">,
   ) {
     let card = initial;
     while (true) {
-      if (card.projectRequestStatus === "added" && card.projectId !== undefined) {
-        return yield* projectFor(card.projectId);
-      }
-      if (card.projectRequestStatus === "adding") return yield* execute(card, recheck, payload);
-      if (card.projectRequestStatus !== "pending") return yield* rejection(card);
+      if (card.projectRequestStatus !== "pending") return card;
       const records = yield* threads
         .getThreadRecords(card.threadId, ["runs"], { messageRoles: [] })
         .pipe(Effect.mapError(() => failure("The thread's runs could not be read.")));
@@ -358,7 +394,7 @@ const make = Effect.gen(function* () {
             Effect.catch(() => Effect.void),
           );
         }
-        return yield* refused(rejection({ ...card, projectRequestStatus: "cancelled" }).message);
+        return { ...card, projectRequestStatus: "cancelled" } as ProjectRequestItem;
       }
       yield* Effect.sleep(POLL_INTERVAL);
       const next = yield* readCard(card.threadId, card.id).pipe(Effect.mapError(recordFailure));
@@ -367,16 +403,36 @@ const make = Effect.gen(function* () {
     }
   });
 
+  const settle = <R>(
+    card: ProjectRequestItem,
+    recheck: Effect.Effect<void, OrchestratorMcpFailure, R>,
+    payload: Pick<ProjectRequestInput<never>, "defaultModelSelection" | "scripts">,
+  ) => {
+    if (card.projectRequestStatus === "adding") return execute(card, recheck, payload);
+    if (card.projectRequestStatus === "added" && card.projectId !== undefined) {
+      return projectFor(card.projectId);
+    }
+    return Effect.fail(rejection(card));
+  };
+
   const waitWithTimeout = Effect.fn("ProjectRequests.waitWithTimeout")(function* <R>(
     card: ProjectRequestItem,
     recheck: Effect.Effect<void, OrchestratorMcpFailure, R>,
     payload: Pick<ProjectRequestInput<never>, "defaultModelSelection" | "scripts">,
   ) {
-    const settled = yield* waitForDecision(card, recheck, payload).pipe(
-      Effect.timeoutOption(WAIT_TIMEOUT),
-    );
-    if (Option.isSome(settled)) return settled.value;
-    const target = recordCard(card);
+    const decided = yield* waitUntilDecided(card).pipe(Effect.timeoutOption(WAIT_TIMEOUT));
+    if (Option.isSome(decided)) return yield* settle(decided.value, recheck, payload);
+    // An approval may have landed as the wait timed out. Never interrupt the
+    // one approved creation: settle whatever the card now says, and cancel
+    // only a card that is still waiting for the user.
+    const current = yield* readCard(card.threadId, card.id).pipe(Effect.mapError(recordFailure));
+    if (current === undefined) {
+      return yield* refused("This add-project request no longer exists.");
+    }
+    if (current.projectRequestStatus !== "pending") {
+      return yield* settle(current, recheck, payload);
+    }
+    const target = recordCard(current);
     if (target !== undefined) {
       yield* record(target, "cancelled").pipe(
         Effect.mapError(recordFailure),
@@ -407,7 +463,11 @@ const make = Effect.gen(function* () {
       };
       const existing = yield* readCard(threadId, turnItemId).pipe(Effect.mapError(recordFailure));
       if (existing !== undefined) {
-        return yield* waitWithTimeout(existing, input.recheck, payload);
+        return yield* withWaiter(
+          threadId,
+          turnItemId,
+          waitWithTimeout(existing, input.recheck, payload),
+        );
       }
       const reason = plainText(input.reason);
       if (reason.length === 0) {
@@ -440,11 +500,19 @@ const make = Effect.gen(function* () {
         reason,
         ...folder,
       };
-      yield* record(ask, "pending").pipe(Effect.mapError(recordFailure));
-      const pending = yield* readCard(threadId, turnItemId).pipe(Effect.mapError(recordFailure));
-      if (pending === undefined)
-        return yield* failure("The add-project request could not be read.");
-      return yield* waitWithTimeout(pending, input.recheck, payload);
+      return yield* withWaiter(
+        threadId,
+        turnItemId,
+        Effect.gen(function* () {
+          yield* record(ask, "pending").pipe(Effect.mapError(recordFailure));
+          const pending = yield* readCard(threadId, turnItemId).pipe(
+            Effect.mapError(recordFailure),
+          );
+          if (pending === undefined)
+            return yield* failure("The add-project request could not be read.");
+          return yield* waitWithTimeout(pending, input.recheck, payload);
+        }),
+      );
     },
   );
 
@@ -456,8 +524,32 @@ const make = Effect.gen(function* () {
       if (card === undefined || card.runId === null || card.nodeId === null) {
         return yield* new HoustonProjectRequestError({ reason: "not_found" });
       }
+      const target = recordCard(card);
+      if (target === undefined) {
+        return yield* new HoustonProjectRequestError({ reason: "not_found" });
+      }
+      const liveWaiter = yield* hasWaiter(card.id);
+      if (card.projectRequestStatus === "adding") {
+        if (liveWaiter) {
+          return yield* new HoustonProjectRequestError({ reason: "already_answered" });
+        }
+        yield* record(target, "cancelled").pipe(
+          Effect.mapError(
+            (cause) => new HoustonProjectRequestError({ reason: "record_failed", cause }),
+          ),
+        );
+        return yield* new HoustonProjectRequestError({ reason: "call_dropped" });
+      }
       if (card.projectRequestStatus !== "pending") {
         return yield* new HoustonProjectRequestError({ reason: "already_answered" });
+      }
+      if (input.answer.type === "approve" && !liveWaiter) {
+        yield* record(target, "cancelled").pipe(
+          Effect.mapError(
+            (cause) => new HoustonProjectRequestError({ reason: "record_failed", cause }),
+          ),
+        );
+        return yield* new HoustonProjectRequestError({ reason: "call_dropped" });
       }
       const records = yield* threads
         .getThreadRecords(input.threadId, ["runs"], { messageRoles: [] })
@@ -469,10 +561,6 @@ const make = Effect.gen(function* () {
       const run = records.runs.find((candidate) => candidate.id === card.runId);
       if (run === undefined || ThreadManagementService.isTerminalRunStatus(run.status)) {
         return yield* new HoustonProjectRequestError({ reason: "agent_stopped" });
-      }
-      const target = recordCard(card);
-      if (target === undefined) {
-        return yield* new HoustonProjectRequestError({ reason: "not_found" });
       }
       yield* record(target, input.answer.type === "approve" ? "adding" : "declined");
     },
