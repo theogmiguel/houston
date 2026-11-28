@@ -1,20 +1,31 @@
 import { useAtomValue } from "@effect/atom-react";
+import { linkBackOffer, type LinkBackOffer } from "@houston-app/client-runtime/link-batch";
 import {
   linkableMachines,
   linkedEnvironmentNames,
   offersLinkedEnvironments,
 } from "@houston-app/client-runtime/link-request";
 import { createPeerLinkEnvironmentAtoms } from "@houston-app/client-runtime/state/peerLinks";
-import { AuthAccessReadScope, type EnvironmentId } from "@houston-app/contracts";
+import {
+  AuthAccessReadScope,
+  AuthAccessWriteScope,
+  type EnvironmentId,
+} from "@houston-app/contracts";
 import { Atom } from "effect/reactivity";
 
 import { connectionAtomRuntime } from "../connection/runtime";
+import { environmentAtomList, environmentIdsKey } from "./environmentAtomList";
 import { useEnvironmentIdentities, useEnvironments } from "./environments";
 import { environmentPresentations } from "./presentation";
 import { useEnvironmentQuery } from "./query";
 import { useEnvironmentsWithScope } from "./session";
 
 export const peerLinkEnvironment = createPeerLinkEnvironmentAtoms(connectionAtomRuntime);
+
+/** Each environment's link list as the settings list loads it, in the order of the ids. */
+export const peerLinkListsAtom = environmentAtomList("peer-links:lists", (environmentId) =>
+  peerLinkEnvironment.list({ environmentId, input: {} }),
+);
 
 /** Whether `environmentId` offers links, so its threads may name another machine. */
 export const offersLinkedEnvironmentsAtom = Atom.family((environmentId: EnvironmentId) =>
@@ -74,4 +85,62 @@ export function useLinkableMachines(environmentId: EnvironmentId, enabled: boole
     threadEnvironmentId: environmentId,
     links: links.data?.links ?? [],
   });
+}
+
+const NOT_OFFERED: LinkBackOffer = { kind: "hidden" };
+
+/**
+ * Whether linking `sourceId` to each of `targetIds` can also link that machine back, and the
+ * source as the reverse link names it. Only machines that could link back are asked for their
+ * links, and only while `enabled`: listing asks every machine they link to whether it answers.
+ */
+export function useLinkBackOffers(
+  sourceId: EnvironmentId,
+  targetIds: ReadonlyArray<EnvironmentId>,
+  enabled: boolean,
+) {
+  const { environments } = useEnvironments();
+  const writable = useEnvironmentsWithScope(environments, AuthAccessWriteScope);
+  const source = linkableMachines({ environments, threadEnvironmentId: null, links: [] }).find(
+    (machine) => machine.environmentId === sourceId,
+  );
+  const wanted = new Set(targetIds);
+  const targets = environments.filter((environment) => wanted.has(environment.environmentId));
+  const listed = targets
+    .filter(
+      (target) =>
+        enabled &&
+        target.connection.phase === "connected" &&
+        offersLinkedEnvironments(target.serverConfig) &&
+        writable.has(target.environmentId),
+    )
+    .map((target) => target.environmentId);
+  const lists = useAtomValue(peerLinkListsAtom(environmentIdsKey(listed)));
+  const offers = new Map<EnvironmentId, LinkBackOffer>();
+  for (const target of targets) {
+    if (source === undefined) break;
+    const list = lists[listed.indexOf(target.environmentId)];
+    offers.set(
+      target.environmentId,
+      linkBackOffer({
+        source: {
+          environmentId: sourceId,
+          connected: source.connected,
+          writable: writable.has(sourceId),
+          urls: source.urls,
+        },
+        target: {
+          connected: target.connection.phase === "connected",
+          offersLinks: offersLinkedEnvironments(target.serverConfig),
+          writable: writable.has(target.environmentId),
+          links: list?._tag === "Success" ? list.value.links : null,
+        },
+      }),
+    );
+  }
+  return {
+    source: source ?? null,
+    offerFor: (targetId: EnvironmentId | null): LinkBackOffer =>
+      (targetId === null ? undefined : offers.get(targetId)) ?? NOT_OFFERED,
+  };
 }

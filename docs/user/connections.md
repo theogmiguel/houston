@@ -62,6 +62,9 @@ control. Its access limits what agents here may do there; **Full access** is req
 this window to that machine from a search result. Nothing is sent to a linked machine while the
 beta is off.
 
+To link many machines at once, or to see how machines reach and link to each other, see
+[Remote access](remote-access.md).
+
 When you search the command palette, each linked machine receives the text you typed, once per
 search, and answers with its matching thread titles and message excerpts. Nothing else leaves
 this machine: no files, thread contents or credentials. A machine that is slow or does not
