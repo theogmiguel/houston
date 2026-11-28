@@ -248,6 +248,13 @@ export const hiddenFromSubagents = (): boolean => {
   return scope?.thread?.subagent !== true;
 };
 
+/** `McpSchema.EnabledWhen` for tools only a linked environment's own session may see or call. */
+export const hiddenUnlessLinkedSession = (): boolean => {
+  const fiber = Fiber.getCurrent();
+  const scope = fiber && Context.getOrUndefined(fiber.context, McpInvocationContext);
+  return scope?.client?.linked === true;
+};
+
 /** `McpSchema.EnabledWhen` for tools that only serve links, hidden while the beta is off. */
 export const hiddenWhileLinksOff = (): boolean => {
   const fiber = Fiber.getCurrent();

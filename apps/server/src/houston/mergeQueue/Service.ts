@@ -46,6 +46,8 @@ import {
   type QueueRow,
 } from "./rules.ts";
 import { HoustonMergeQueueStore } from "./Store.ts";
+import { ThreadRepositoryResolver } from "../../project/threadRepositories.ts";
+import * as HoustonTaskFolders from "../worktrees/TaskFolders.ts";
 import { HoustonMergeQueueThreads } from "./Threads.ts";
 import { HoustonMergeVerifier } from "./Verifier.ts";
 
@@ -106,6 +108,8 @@ const make = Effect.gen(function* () {
   const landing = yield* HoustonMergeLanding;
   const verifier = yield* HoustonMergeVerifier;
   const threads = yield* HoustonMergeQueueThreads;
+  const repositoryResolver = yield* ThreadRepositoryResolver;
+  const taskFolders = yield* HoustonTaskFolders.HoustonTaskFolders;
 
   // The head each pull request failed at when it was dequeued, so an agent cannot retry it by
   // dequeue and enqueue (AD-107). Kept in memory, so a server restart forgets it.
@@ -189,6 +193,22 @@ const make = Effect.gen(function* () {
   )(function* (input, ownerThreadId) {
     const operation = "houston.mergeQueue.enqueue";
     const target = yield* projects.target(operation, input.projectId);
+    if (ownerThreadId !== undefined) {
+      const owner = (yield* threads.list(target.projectId)).find(
+        (thread) => thread.id === ownerThreadId,
+      );
+      const folder =
+        owner?.worktreePath == null
+          ? null
+          : yield* taskFolders.find(owner.worktreePath).pipe(Effect.orElseSucceed(() => null));
+      if (folder !== null && folder.repositories.length > 1) {
+        return yield* refuse(
+          "unsupported",
+          operation,
+          `thread ${ownerThreadId} works in ${folder.repositories.length} repositories in a task folder; the merge queue stays single-repository`,
+        );
+      }
+    }
     let number: number;
     if (typeof input.pullRequest === "number") {
       number = input.pullRequest;
@@ -414,6 +434,17 @@ const make = Effect.gen(function* () {
       );
     }
     const threadId = `merge-queue-${yield* randomUuidV4}`;
+    const repositories = yield* repositoryResolver.list({
+      projectId: project.projectId,
+      workspaceRoot: project.workspaceRoot,
+    });
+    if (repositories.length > 1) {
+      return yield* refuse(
+        "unsupported",
+        operation,
+        `thread ${threadId} cannot start: project ${project.projectId} covers ${repositories.length} repositories and the merge queue stays single-repository`,
+      );
+    }
     const worktreePath = yield* projects.managedWorktreeOf(project, row.headRef);
     // The thread runs the pull request's own code, so its mode is the user's, not the queue's.
     const runtimeMode =

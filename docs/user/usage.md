@@ -51,7 +51,9 @@ applies to both cache lifetimes.
 **Limits** shows the subscription windows each provider reports: remaining allowance,
 reset time and whether you are ahead of, on or under pace. It also shows shared or external
 usage, such as ChatGPT shared usage, when the provider exposes it. A provider that reports
-no limits is omitted rather than shown as unlimited.
+no limits is omitted rather than shown as unlimited. Antigravity reports no limits through
+its ACP runtime, so it is omitted; Houston does not use your Google sign-in outside it. Its
+tokens and cost still come from Antigravity's local history.
 
 Limits come from the provider account. Houston does not throttle, stop or extend a provider
 limit; a limited thread is reported and can be held or resumed from **Settings ▸ Threads**

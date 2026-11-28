@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - the containment check is purely lexical and must not add a Path requirement to the runtime policy.
 import {
   isRuntimeModeAbove,
   managedRuntimeModeCeilingMessage,
@@ -8,10 +9,10 @@ import {
   RuntimeMode,
   ThreadId,
 } from "@houston-app/contracts";
+import * as NodePath from "node:path";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
@@ -19,6 +20,8 @@ import { HoustonBotThreads } from "../houston/bots/botThreads.ts";
 import { HoustonReadOnlyThreads, hasReadOnlyRun, readOnlyPolicy } from "../houston/sideThreads.ts";
 import * as ProviderAdapter from "@houston-app/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
+import { isThreadProjectNotFoundError, repositoriesOf } from "../project/threadRepositories.ts";
+import * as HoustonTaskFolders from "../houston/worktrees/TaskFolders.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 
@@ -61,9 +64,29 @@ export class RuntimePolicyAboveCeilingError extends Schema.TaggedError<RuntimePo
 
 export const isRuntimePolicyAboveCeilingError = Schema.is(RuntimePolicyAboveCeilingError);
 
+/** A provider would start a turn unable to read repositories the project covers. */
+export class RuntimePolicyUnreachableRepositoriesError extends Schema.TaggedError<RuntimePolicyUnreachableRepositoriesError>()(
+  "RuntimePolicyUnreachableRepositoriesError",
+  {
+    threadId: ThreadId,
+    provider: Schema.String,
+    missingCapability: Schema.String,
+    folders: Schema.Array(Schema.String),
+  },
+) {
+  override get message(): string {
+    return `Provider ${this.provider} cannot start thread ${this.threadId}: ${this.missingCapability}. It cannot reach ${this.folders.join(", ")}; expected a provider that reads additional directories.`;
+  }
+}
+
+export const isRuntimePolicyUnreachableRepositoriesError = Schema.is(
+  RuntimePolicyUnreachableRepositoriesError,
+);
+
 export const RuntimePolicyV2Error = Schema.Union([
   RuntimePolicyResolveError,
   RuntimePolicyAboveCeilingError,
+  RuntimePolicyUnreachableRepositoriesError,
 ]);
 export type RuntimePolicyV2Error = typeof RuntimePolicyV2Error.Type;
 
@@ -156,6 +179,7 @@ export const layerFromProjectStore: Layer.Layer<
   Effect.gen(function* () {
     const projects = yield* ProjectStore.ProjectStoreV2;
     const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
+    const taskFolders = yield* HoustonTaskFolders.HoustonTaskFolders;
     // The same ceiling the orchestrator enforces, fixed for the server's life.
     const { managedPolicy } = yield* ServerSettings.ServerSettingsService;
     const maxRuntimeMode = managedPolicy?.limits?.maxRuntimeMode;
@@ -167,35 +191,59 @@ export const layerFromProjectStore: Layer.Layer<
           instance === undefined
             ? undefined
             : (yield* instance.snapshot.getSnapshot).supportedRuntimeModes;
-        const cwd =
-          input.thread.worktreePath ??
-          (yield* projects.get(input.thread.projectId).pipe(
-            Effect.mapError(
-              (cause) =>
-                new RuntimePolicyResolveError({
-                  projectId: input.thread.projectId,
-                  providerInstanceId: input.modelSelection.instanceId,
-                  cause,
-                }),
-            ),
-            Effect.flatMap(
-              Option.match({
-                onNone: () =>
-                  Effect.fail(
+        const repositories = yield* repositoriesOf(
+          input.thread,
+          projects.get(input.thread.projectId),
+        ).pipe(
+          Effect.mapError(
+            (cause) =>
+              new RuntimePolicyResolveError({
+                projectId: input.thread.projectId,
+                providerInstanceId: input.modelSelection.instanceId,
+                cause: isThreadProjectNotFoundError(cause) ? "Project not found." : cause,
+              }),
+          ),
+        );
+        // A task folder is the thread's cwd; its repository worktrees sit inside it.
+        const taskFolder =
+          input.thread.worktreePath === null
+            ? null
+            : yield* taskFolders.find(input.thread.worktreePath).pipe(
+                Effect.mapError(
+                  (cause) =>
                     new RuntimePolicyResolveError({
                       projectId: input.thread.projectId,
                       providerInstanceId: input.modelSelection.instanceId,
-                      cause: "Project not found.",
+                      cause,
                     }),
-                  ),
-                onSome: (project) => Effect.succeed(project.workspaceRoot),
-              }),
-            ),
-          ));
+                ),
+              );
+        const cwd = taskFolder?.folderPath ?? repositories[0].root;
+        const directories =
+          taskFolder === null
+            ? repositories.map((repository) => repository.root)
+            : taskFolder.repositories.map((repository) => repository.worktreePath);
+        const outsideCwd = directories.filter((directory) => {
+          if (directory === cwd) return false;
+          const relative = NodePath.relative(cwd, directory);
+          return relative !== "" && (relative.startsWith("..") || NodePath.isAbsolute(relative));
+        });
+        if (
+          outsideCwd.length > 0 &&
+          instance?.orchestrationAdapter.supportsAdditionalDirectories !== true
+        ) {
+          return yield* new RuntimePolicyUnreachableRepositoriesError({
+            threadId: input.thread.id,
+            provider: instance?.driverKind ?? input.modelSelection.instanceId,
+            missingCapability: "reading directories outside its cwd",
+            folders: outsideCwd,
+          });
+        }
         return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
           runtimeMode: providerRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
           interactionMode: input.thread.interactionMode,
           cwd,
+          directories,
           ...(maxRuntimeMode === undefined ? {} : { maxRuntimeMode }),
         });
       }),

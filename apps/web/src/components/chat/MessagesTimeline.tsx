@@ -7,7 +7,13 @@ import { DiffStatLabel } from "./DiffStatLabel";
 import { MarkdownFindContext } from "./markdownFindContext";
 import { useRegisterChatCanvasTimeline } from "./ChatCanvasContext";
 import { WorkLogBlock } from "./WorkLog";
-import { FOOTER_GAP_CLASS, PACKED_GAP_CLASS, turnOrInTurnGap } from "./timelineSpacing";
+import {
+  FOOTER_GAP_CLASS,
+  FOOTER_TURN_GAP_CLASS,
+  PACKED_GAP_CLASS,
+  turnOrInTurnGap,
+  USER_MESSAGE_GAP_CLASS,
+} from "./timelineSpacing";
 import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import type { WorktreeSetupSnapshot } from "@houston-app/contracts";
 import { deriveTimelineMinimapItems } from "./timelineMinimapItems";
@@ -31,6 +37,7 @@ import { useStableCallback } from "~/hooks/useStableCallback";
 const NOOP_USE_ARTIFACT_TEMPLATE = () => {};
 const EMPTY_PENDING_APPROVALS: ReadonlyArray<PendingApproval> = [];
 const EMPTY_RESPONDING_REQUEST_IDS: TimelineRowSharedState["respondingRequestIds"] = [];
+const EMPTY_MCP_SIGN_IN_TIMES: ReadonlyMap<string, string> = new Map();
 
 const NOOP_OPEN_ATTACHMENT = (_attachment: ChatFileAttachment) => {};
 
@@ -465,6 +472,19 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const [playingAudioRows, setPlayingAudioRows] = useState<ReadonlyMap<HTMLAudioElement, string>>(
     () => new Map(),
   );
+  const [mcpSignInState, setMcpSignInState] = useState<{
+    readonly threadKey: string;
+    readonly times: ReadonlyMap<string, string>;
+  }>(() => ({ threadKey: listIdentityKey, times: new Map() }));
+  const mcpSignInTimes =
+    mcpSignInState.threadKey === listIdentityKey ? mcpSignInState.times : EMPTY_MCP_SIGN_IN_TIMES;
+  const onMcpSignedIn = useStableCallback((server: string, signedInAt: string) => {
+    setMcpSignInState((previous) => {
+      const times = new Map(previous.threadKey === listIdentityKey ? previous.times : []);
+      times.set(server, signedInAt);
+      return { threadKey: listIdentityKey, times };
+    });
+  });
   const [fullscreenAppRowId, setFullscreenAppRowId] = useState<string | null>(null);
   let paintedExpandedRunIds = expandedRunIds;
   let paintedExpandedWorkGroupIds = expandedWorkGroupIds;
@@ -1097,6 +1117,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
     onToggleAttemptFold,
     onToggleWorkGroup,
     onToggleWorkEntry: suspendEndScrollMaintenanceForDisclosure,
+    mcpSignInTimes,
+    onMcpSignedIn,
     onCancelWorktreeSetup: onCancelWorktreeSetup ?? null,
     retryableWorkspacePreparationRunIds,
     onRetryWorkspacePreparation: onRetryWorkspacePreparation ?? null,
@@ -1500,10 +1522,10 @@ function getItemType(item: MessagesTimelineRow) {
 function rowBottomPadding(row: TimelineRow) {
   if (row.kind === "message" && row.groupedWithNext) return PACKED_GAP_CLASS;
   if (row.kind === "message" && row.message.role === "assistant" && row.showAssistantMeta) {
-    return FOOTER_GAP_CLASS;
+    return row.leadsToTurn ? FOOTER_TURN_GAP_CLASS : FOOTER_GAP_CLASS;
   }
-  // A user message keeps the hover actions' line under its bubble, so its own gap is that line.
-  if (row.kind === "message" && row.message.role === "user") return "pb-0";
+  // A user message keeps the line of its time and buttons under the bubble, then leaves a short gap.
+  if (row.kind === "message" && row.message.role === "user") return USER_MESSAGE_GAP_CLASS;
   return turnOrInTurnGap(row.leadsToTurn);
 }
 

@@ -82,6 +82,8 @@ import {
   TrashIcon,
 } from "lucide-react";
 import { openThreadFind } from "./chat/threadFindStore";
+import { AddEnvironmentDialog } from "./settings/AddEnvironmentDialog";
+import { LinkedSearchStatus } from "./ui/command-result-meta";
 import {
   useDeferredValue,
   useEffect,
@@ -416,6 +418,8 @@ function OpenCommandPaletteDialog(props: {
     reportFailure: false,
   });
   const { environments } = useEnvironments();
+  const [linkedAddEnvironmentHost, setLinkedAddEnvironmentHost] = useState<string | null>(null);
+  const [linkedAddEnvironmentError, setLinkedAddEnvironmentError] = useState<string | null>(null);
   const desktopLocalBootstraps = useDesktopLocalBootstraps();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
@@ -970,9 +974,15 @@ function OpenCommandPaletteDialog(props: {
   const {
     threadItems: allThreadItems,
     threadMessageItems,
+    linkedMachineItems,
+    linkedSearch,
     now: searchNow,
     isSearchPending: isThreadSearchPending,
-  } = useCommandPaletteThreadItems({ activeThread: activeThread ?? null, threadSearchQuery });
+  } = useCommandPaletteThreadItems({
+    activeThread: activeThread ?? null,
+    threadSearchQuery,
+    onRequestAddEnvironment: setLinkedAddEnvironmentHost,
+  });
   // Recent means used recently: written in or opened, whichever is later. The
   // open thread would always lead that list, so it is left out.
   const activeThreadValue = activeThread
@@ -1907,6 +1917,7 @@ function OpenCommandPaletteDialog(props: {
           })
         : allThreadItems,
     threadMessageItems: isLinkedThreadSearch ? [] : threadMessageItems,
+    linkedMachineItems: isLinkedThreadSearch ? [] : linkedMachineItems,
     now: searchNow,
   });
 
@@ -2993,6 +3004,20 @@ function OpenCommandPaletteDialog(props: {
             : undefined
           : "Open";
 
+  const linkedFooter =
+    linkedSearch.isSearching || linkedSearch.failed.length > 0 ? (
+      <LinkedSearchStatus
+        searchingLabels={
+          linkedSearch.isSearching
+            ? linkedSearch.machines
+                .filter((machine) => machine.status === "searching")
+                .map((machine) => machine.label)
+            : []
+        }
+        failed={linkedSearch.failed.map(({ label, status }) => ({ label, status }))}
+        onRetry={linkedSearch.retry}
+      />
+    ) : null;
   const footerTrailing = canOpenProjectFromFileManager ? (
     <CommandFooterAction
       disabled={isPickingProjectFolder}
@@ -3002,6 +3027,8 @@ function OpenCommandPaletteDialog(props: {
     >
       {`Open in ${fileManagerName}`}
     </CommandFooterAction>
+  ) : linkedFooter !== null ? (
+    linkedFooter
   ) : isThreadSearchPending && !isLinkedThreadSearch && !isBrowsing ? (
     // In the footer, so the list keeps its height while message results may
     // still arrive below it.
@@ -3012,114 +3039,136 @@ function OpenCommandPaletteDialog(props: {
     isBrowsing,
     relativePathNeedsActiveProject,
     isThreadSearchPending,
+    linkedMachinesSearching: linkedSearch.isSearching,
+    linkedMachinesFailed: linkedSearch.failed.length > 0,
   });
 
   // Browsing mode edits the query in place; swapping the view would remount the
   // input and drop its caret and focus mid-edit.
   const viewKey = `${viewStack.length}-${browseGeneration}-${newProjectFlow ? "new-project" : (addProjectCloneFlow?.step ?? "none")}`;
 
+  const linkedAddEnvironmentDialog =
+    linkedAddEnvironmentHost === null ? null : (
+      <AddEnvironmentDialog
+        open
+        initialHost={linkedAddEnvironmentHost}
+        routeTarget={null}
+        error={linkedAddEnvironmentError}
+        savedEnvironments={environments}
+        onOpenChange={(open) => {
+          if (open) return;
+          setLinkedAddEnvironmentHost(null);
+          setLinkedAddEnvironmentError(null);
+        }}
+        onErrorChange={setLinkedAddEnvironmentError}
+      />
+    );
+
   return (
-    <Swap swapKey={viewKey}>
-      <CommandPaletteContent
-        aria-label="Command palette"
-        autoHighlight={autoHighlightsFirstRow ? "always" : false}
-        footerActionLabel={footerActionLabel}
-        footerTrailing={footerTrailing}
-        inputAccessory={inputAccessory}
-        inputEndAddon={inputAccessory === null ? <Kbd>Esc</Kbd> : undefined}
-        inputProps={{
-          className: hasHighlightedNewProjectItem
-            ? "*:data-[slot=autocomplete-input]:pe-38!"
-            : addProjectCloneFlow?.step === "repository" || newProjectFlow !== null
-              ? "*:data-[slot=autocomplete-input]:pe-32!"
+    <>
+      {linkedAddEnvironmentDialog}
+      <Swap swapKey={viewKey}>
+        <CommandPaletteContent
+          aria-label="Command palette"
+          autoHighlight={autoHighlightsFirstRow ? "always" : false}
+          footerActionLabel={footerActionLabel}
+          footerTrailing={footerTrailing}
+          inputAccessory={inputAccessory}
+          inputEndAddon={inputAccessory === null ? <Kbd>Esc</Kbd> : undefined}
+          inputProps={{
+            className: hasHighlightedNewProjectItem
+              ? "*:data-[slot=autocomplete-input]:pe-38!"
+              : addProjectCloneFlow?.step === "repository" || newProjectFlow !== null
+                ? "*:data-[slot=autocomplete-input]:pe-32!"
+                : isBrowsing
+                  ? browseInputEndPaddingClass({
+                      willCreateProjectPath,
+                      hasHighlightedBrowseItem,
+                    })
+                  : undefined,
+            placeholder: inputPlaceholder,
+            ...(isSubmenu
+              ? {
+                  startAddon: (
+                    <button
+                      type="button"
+                      className="flex cursor-pointer items-center"
+                      aria-label="Back"
+                      onClick={popView}
+                    >
+                      <ArrowLeftIcon />
+                    </button>
+                  ),
+                }
               : isBrowsing
-                ? browseInputEndPaddingClass({
-                    willCreateProjectPath,
-                    hasHighlightedBrowseItem,
-                  })
-                : undefined,
-          placeholder: inputPlaceholder,
-          ...(isSubmenu
-            ? {
-                startAddon: (
-                  <button
-                    type="button"
-                    className="flex cursor-pointer items-center"
-                    aria-label="Back"
-                    onClick={popView}
-                  >
-                    <ArrowLeftIcon />
-                  </button>
-                ),
-              }
-            : isBrowsing
-              ? { startAddon: <FolderPlusIcon /> }
-              : {}),
-          onKeyDown: handleKeyDown,
-        }}
-        mode="none"
-        items={resultRows.itemValues}
-        virtualized
-        onItemHighlighted={(value, eventDetails) => {
-          if (eventDetails.reason === "none" && highlightClearedRef.current) return;
-          highlightClearedRef.current = false;
-          setHighlightedItemValue(typeof value === "string" ? value : null);
-          const rowIndex = resultRows.rowIndexByItemIndex[eventDetails.index];
-          if (eventDetails.reason === "keyboard" && rowIndex !== undefined) {
-            scrollCommandPaletteRowIntoView(resultListRef.current, rowIndex);
-          }
-        }}
-        onValueChange={handleQueryChange}
-        showBackHint={isSubmenu}
-        value={query}
-      >
-        {newProjectPathPreview !== null ? (
-          <NewProjectSummary
-            name={newProjectName}
-            pathPreview={newProjectPathPreview}
-            projectsRoot={newProjectsRoot}
-            environmentLabel={newProjectEnvironmentLabel}
-          />
-        ) : null}
-        {addProjectCloneFlow?.step === "confirm" ? (
-          <RemoteRepositorySummary
-            source={addProjectCloneFlow.source}
-            title={
-              addProjectCloneFlow.repository?.nameWithOwner ?? addProjectCloneFlow.repositoryInput
+                ? { startAddon: <FolderPlusIcon /> }
+                : {}),
+            onKeyDown: handleKeyDown,
+          }}
+          mode="none"
+          items={resultRows.itemValues}
+          virtualized
+          onItemHighlighted={(value, eventDetails) => {
+            if (eventDetails.reason === "none" && highlightClearedRef.current) return;
+            highlightClearedRef.current = false;
+            setHighlightedItemValue(typeof value === "string" ? value : null);
+            const rowIndex = resultRows.rowIndexByItemIndex[eventDetails.index];
+            if (eventDetails.reason === "keyboard" && rowIndex !== undefined) {
+              scrollCommandPaletteRowIntoView(resultListRef.current, rowIndex);
             }
-            description={addProjectCloneFlow.repository?.url ?? addProjectCloneFlow.remoteUrl}
-          />
-        ) : null}
-        {browseAccessError ? (
-          <div role="alert" className="px-4 py-3 text-sm text-muted-foreground">
-            {browseAccessError}
-          </div>
-        ) : isBrowsePending && browseResult === null ? (
-          <div role="status" className="px-4 py-3 text-sm text-muted-foreground">
-            Loading folders...
-          </div>
-        ) : null}
-        <CommandPaletteVirtualizedResults
-          rows={resultRows.rows}
-          listRef={resultListRef}
-          highlightedItemValue={highlightedItemValue}
-          isActionsOnly={isActionsOnly}
-          keybindings={keybindings}
-          onExecuteItem={executeItem}
-          {...(addProjectCloneFlow?.step === "repository"
-            ? {
-                emptyStateMessage:
-                  addProjectCloneFlow.source === "url"
-                    ? "Enter a Git clone URL and press Enter to continue."
-                    : "Enter a repository path and press Enter to look it up.",
+          }}
+          onValueChange={handleQueryChange}
+          showBackHint={isSubmenu}
+          value={query}
+        >
+          {newProjectPathPreview !== null ? (
+            <NewProjectSummary
+              name={newProjectName}
+              pathPreview={newProjectPathPreview}
+              projectsRoot={newProjectsRoot}
+              environmentLabel={newProjectEnvironmentLabel}
+            />
+          ) : null}
+          {addProjectCloneFlow?.step === "confirm" ? (
+            <RemoteRepositorySummary
+              source={addProjectCloneFlow.source}
+              title={
+                addProjectCloneFlow.repository?.nameWithOwner ?? addProjectCloneFlow.repositoryInput
               }
-            : addProjectCloneFlow?.step === "confirm"
-              ? { emptyStateMessage: "Choose a destination path and press Enter to clone." }
-              : emptyStateMessage === undefined
-                ? {}
-                : { emptyStateMessage })}
-        />
-      </CommandPaletteContent>
-    </Swap>
+              description={addProjectCloneFlow.repository?.url ?? addProjectCloneFlow.remoteUrl}
+            />
+          ) : null}
+          {browseAccessError ? (
+            <div role="alert" className="px-4 py-3 text-sm text-muted-foreground">
+              {browseAccessError}
+            </div>
+          ) : isBrowsePending && browseResult === null ? (
+            <div role="status" className="px-4 py-3 text-sm text-muted-foreground">
+              Loading folders...
+            </div>
+          ) : null}
+          <CommandPaletteVirtualizedResults
+            rows={resultRows.rows}
+            listRef={resultListRef}
+            highlightedItemValue={highlightedItemValue}
+            isActionsOnly={isActionsOnly}
+            keybindings={keybindings}
+            onExecuteItem={executeItem}
+            {...(addProjectCloneFlow?.step === "repository"
+              ? {
+                  emptyStateMessage:
+                    addProjectCloneFlow.source === "url"
+                      ? "Enter a Git clone URL and press Enter to continue."
+                      : "Enter a repository path and press Enter to look it up.",
+                }
+              : addProjectCloneFlow?.step === "confirm"
+                ? { emptyStateMessage: "Choose a destination path and press Enter to clone." }
+                : emptyStateMessage === undefined
+                  ? {}
+                  : { emptyStateMessage })}
+          />
+        </CommandPaletteContent>
+      </Swap>
+    </>
   );
 }

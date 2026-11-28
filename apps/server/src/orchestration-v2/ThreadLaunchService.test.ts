@@ -1230,6 +1230,151 @@ it.effect("shows the fetch diagnosis when preparing a worktree from origin fails
   }).pipe(Effect.provide(harness.layer));
 });
 
+it.effect("uses the local base ref and reports its short sha when fetching from origin fails", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const git = yield* GitVcsDriver.GitVcsDriver;
+    const directory = yield* fs.makeTempDirectoryScoped({ prefix: "launch-stale-base-" });
+    const cwd = `${directory}/repo`;
+    const missingRemote = `${directory}/missing.git`;
+    const worktreePath = `${directory}/worktree`;
+    yield* fs.makeDirectory(cwd);
+    const command = (at: string, args: string[]) =>
+      git.execute({ operation: "launch-test", cwd: at, args });
+    yield* command(cwd, ["init", "-b", "main"]);
+    yield* command(cwd, ["config", "user.name", "Test"]);
+    yield* command(cwd, ["config", "user.email", "test@example.test"]);
+    yield* command(cwd, ["commit", "--allow-empty", "-m", "initial"]);
+    const localHead = (yield* command(cwd, ["rev-parse", "HEAD"])).stdout.trim();
+    yield* command(cwd, ["remote", "add", "origin", missingRemote]);
+    yield* command(cwd, ["update-ref", "refs/remotes/origin/main", localHead]);
+
+    const harness = makeHarness({
+      hasCommit: ({ refName }) =>
+        command(cwd, ["rev-parse", "--verify", `${refName}^{commit}`]).pipe(
+          Effect.as(true),
+          Effect.orElseSucceed(() => false),
+        ),
+      git: {
+        resolveWorktreeBaseRemote: (input) => git.resolveWorktreeBaseRemote({ ...input, cwd }),
+        resolveCommit: (input) => git.resolveCommit({ ...input, cwd }),
+        hasRefNamed: () => Effect.succeed(false),
+      },
+      fetchWorktreeBaseCommit: (input) => git.fetchWorktreeBaseCommit({ ...input, cwd }),
+      createWorktree: (input, options) =>
+        git.createWorktree({ ...input, cwd, path: worktreePath }, options),
+    });
+    yield* Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+      const launched = yield* launches.launch(
+        launchInput({
+          command: "command:launch:stale-base",
+          thread: "thread:launch:stale-base",
+          message: "Start from origin",
+          workspace: {
+            type: "worktree",
+            baseRef: "origin/main",
+            branch: "feature",
+            startFromOrigin: true,
+          },
+        }),
+      );
+      const projection = yield* preparationSettled(launched.threadId);
+      assert.equal(projection.thread.worktreePath, worktreePath);
+      assert.equal((yield* command(worktreePath, ["rev-parse", "HEAD"])).stdout.trim(), localHead);
+      const fetchStage = (yield* tracker.get(launched.threadId))?.stages.find(
+        (stage) => stage.id === "fetch",
+      );
+      assert.equal(fetchStage?.status, "skipped");
+      assert.include(fetchStage?.detail ?? "", localHead.slice(0, 7));
+      assert.include(fetchStage?.detail ?? "", "may be stale");
+    }).pipe(Effect.provide(harness.layer));
+  }).pipe(
+    Effect.provide(
+      GitVcsDriver.layer.pipe(
+        Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "launch-stale-git-" })),
+        Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      ),
+    ),
+  ),
+);
+
+it.effect(
+  "includes git stderr and the command when the fetch fails and no local base ref exists",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const git = yield* GitVcsDriver.GitVcsDriver;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "launch-missing-base-" });
+      const cwd = `${directory}/repo`;
+      const missingRemote = `${directory}/missing.git`;
+      const worktreePath = `${directory}/worktree`;
+      yield* fs.makeDirectory(cwd);
+      const command = (at: string, args: string[]) =>
+        git.execute({ operation: "launch-test", cwd: at, args });
+      yield* command(cwd, ["init", "-b", "main"]);
+      yield* command(cwd, ["config", "user.name", "Test"]);
+      yield* command(cwd, ["config", "user.email", "test@example.test"]);
+      yield* command(cwd, ["commit", "--allow-empty", "-m", "initial"]);
+      yield* command(cwd, ["remote", "add", "origin", missingRemote]);
+
+      const harness = makeHarness({
+        hasCommit: ({ refName }) =>
+          command(cwd, ["rev-parse", "--verify", `${refName}^{commit}`]).pipe(
+            Effect.as(true),
+            Effect.orElseSucceed(() => false),
+          ),
+        git: {
+          resolveWorktreeBaseRemote: (input) => git.resolveWorktreeBaseRemote({ ...input, cwd }),
+          resolveCommit: (input) => git.resolveCommit({ ...input, cwd }),
+          hasRefNamed: () => Effect.succeed(false),
+        },
+        fetchWorktreeBaseCommit: (input) => git.fetchWorktreeBaseCommit({ ...input, cwd }),
+        createWorktree: (input, options) =>
+          git.createWorktree({ ...input, cwd, path: worktreePath }, options),
+      });
+      yield* Effect.gen(function* () {
+        const launches = yield* ThreadLaunch.ThreadLaunchService;
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const launched = yield* launches.launch(
+          launchInput({
+            command: "command:launch:missing-base",
+            thread: "thread:launch:missing-base",
+            message: "Start from origin",
+            workspace: {
+              type: "worktree",
+              baseRef: "origin/main",
+              branch: "feature",
+              startFromOrigin: true,
+            },
+          }),
+        );
+        yield* threads.streamStoredEventsFrom({ threadId: launched.threadId }).pipe(
+          Stream.filter(
+            (stored) =>
+              stored.event.type === "run.updated" && stored.event.payload.status === "failed",
+          ),
+          Stream.runHead,
+        );
+        const projection = yield* threads.getThreadProjection(launched.threadId);
+        const message =
+          projection.turnItems.find((item) => item.type === "error")?.failure.message ?? "";
+        assert.include(message, "does not appear to be a git repository");
+        assert.include(message, "git fetch");
+        assert.equal(projection.thread.worktreePath, null);
+        assert.equal(harness.createWorktree.mock.calls.length, 0);
+      }).pipe(Effect.provide(harness.layer));
+    }).pipe(
+      Effect.provide(
+        GitVcsDriver.layer.pipe(
+          Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "launch-missing-git-" })),
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        ),
+      ),
+    ),
+);
+
 it.effect("rejects a preparation retry after the project disables its provider", () => {
   let fetchAttempts = 0;
   const harness = makeHarness({

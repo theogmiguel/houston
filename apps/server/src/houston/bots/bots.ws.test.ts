@@ -70,6 +70,8 @@ import * as OtlpEndpointCheck from "../../observability/OtlpEndpointCheck.ts";
 import * as PairingGrantStore from "../../auth/PairingGrantStore.ts";
 import * as PeerLinkRequests from "../../peer/PeerLinkRequests.ts";
 import * as PeerLinks from "../../peer/PeerLinks.ts";
+import * as PeerLinkPairing from "../peerLinkPairing.ts";
+import * as PeerLinkSearch from "../peerLinkSearch.ts";
 import * as PortScanner from "../../preview/PortScanner.ts";
 import * as PreviewAutomationBroker from "../../mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "../../preview/Manager.ts";
@@ -139,6 +141,8 @@ import * as HoustonSlackService from "../slack/Service.ts";
 import * as HoustonSlackV1Import from "../slack/V1Import.ts";
 import * as HoustonIssueV1Import from "../../issue/V1Import.ts";
 import * as HoustonMergeQueueService from "../mergeQueue/Service.ts";
+import * as HoustonProjectRepositories from "../projects/ProjectRepositoriesService.ts";
+import * as McpSignIn from "../mcpSignIn.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import { layerJsonWithoutEcho } from "../rpcSerialization.ts";
 import {
@@ -201,11 +205,15 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(HoustonSlackV1Import.HoustonSlackV1Import)({}),
   Layer.mock(HoustonIssueV1Import.HoustonIssueV1Import)({}),
   Layer.mock(HoustonMergeQueueService.HoustonMergeQueueService)({}),
+  Layer.mock(HoustonProjectRepositories.HoustonProjectRepositories)({}),
   Layer.mock(McpAppRequests.McpAppRequests)({}),
+  Layer.mock(McpSignIn.McpSignIn)({}),
   Layer.mock(OtlpEndpointCheck.OtlpEndpointCheck)({}),
   Layer.mock(PairingGrantStore.PairingGrantStore)({}),
   Layer.mock(PeerLinks.PeerLinks)({}),
   Layer.mock(PeerLinkRequests.PeerLinkRequests)({}),
+  Layer.mock(PeerLinkPairing.PeerLinkPairing)({}),
+  Layer.mock(PeerLinkSearch.PeerLinkSearch)({}),
   Layer.mock(PortScanner.PortDiscovery)({ trackAgent: () => () => undefined }),
   Layer.mock(PreviewManager.PreviewManager)({}),
   Layer.mock(ProcessDiagnostics.ProcessDiagnostics)({}),

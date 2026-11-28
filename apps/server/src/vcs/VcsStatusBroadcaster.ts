@@ -34,6 +34,9 @@ import * as ServerSettings from "../serverSettings.ts";
 
 const VCS_STATUS_REFRESH_FAILURE_BASE_DELAY = Duration.seconds(30);
 const VCS_STATUS_REFRESH_FAILURE_MAX_DELAY = Duration.minutes(15);
+// Eight fetch loops at the 30s interval keep a project's repositories refreshed without opening a
+// remote read more often than once per four seconds on average.
+const VCS_STATUS_MAX_REMOTE_POLLERS = 8;
 const MAX_FAILURE_DIAGNOSTIC_VALUES = 8;
 const MAX_FAILURE_DIAGNOSTIC_VALUE_LENGTH = 128;
 
@@ -202,6 +205,12 @@ function remoteRefreshFailureDelay(
   return Duration.max(configuredInterval, cappedBackoff);
 }
 
+/** The concurrent remote pollers one server runs; past it, a repository reads local status only. */
+export class VcsStatusRemotePollerLimit extends Context.Reference<number>(
+  "houston/vcs/VcsStatusBroadcaster/VcsStatusRemotePollerLimit",
+  { defaultValue: () => VCS_STATUS_MAX_REMOTE_POLLERS },
+) {}
+
 export class VcsStatusBroadcaster extends Context.Service<
   VcsStatusBroadcaster,
   {
@@ -264,6 +273,26 @@ export const make = Effect.gen(function* () {
   const withRemoteWriteLock = <A, E, R>(cwd: string, effect: Effect.Effect<A, E, R>) =>
     remoteWriteLocks.withLock(cwd, effect);
   const pollersRef = yield* SynchronizedRef.make(new Map<string, ActiveRemotePoller>());
+  const pollerLimit = yield* VcsStatusRemotePollerLimit;
+  // Repositories that wanted a remote poller while the limit was reached, with the count at the
+  // request, so their status can say which limit dropped them to local reads.
+  const cappedPollersRef = yield* Ref.make(
+    new Map<string, { readonly limit: number; readonly count: number }>(),
+  );
+
+  const withPollingLimit = Effect.fn("VcsStatusBroadcaster.withPollingLimit")(function* (
+    cwd: string,
+    local: VcsStatusLocalResult,
+  ) {
+    const capped = yield* Ref.get(cappedPollersRef);
+    const entry = capped.get(cwd);
+    return entry === undefined
+      ? local
+      : {
+          ...local,
+          remotePollingLimit: { limit: entry.limit, count: entry.count, repository: cwd },
+        };
+  });
 
   const getCachedStatus = Effect.fn("VcsStatusBroadcaster.getCachedStatus")(function* (
     cwd: string,
@@ -272,7 +301,8 @@ export const make = Effect.gen(function* () {
   });
 
   const updateCachedLocalStatus = Effect.fn("VcsStatusBroadcaster.updateCachedLocalStatus")(
-    function* (cwd: string, local: VcsStatusLocalResult, options?: { publish?: boolean }) {
+    function* (cwd: string, rawLocal: VcsStatusLocalResult, options?: { publish?: boolean }) {
+      const local = yield* withPollingLimit(cwd, rawLocal);
       const nextLocal = { fingerprint: fingerprintStatusPart(local), value: local };
       const [localChanged, branchChanged, remoteCleared] = yield* Ref.modify(cacheRef, (cache) => {
         const previous = cache.get(cwd) ?? { local: null, remote: null };
@@ -654,7 +684,7 @@ export const make = Effect.gen(function* () {
     demandCwd: string,
     refreshImmediately: boolean,
   ) {
-    yield* SynchronizedRef.modifyEffect(pollersRef, (activePollers) => {
+    const retained = yield* SynchronizedRef.modifyEffect(pollersRef, (activePollers) => {
       const existing = activePollers.get(cwd);
       if (existing) {
         return Ref.update(existing.demandCwds, (demandCwds) => {
@@ -668,9 +698,13 @@ export const make = Effect.gen(function* () {
               ...existing,
               subscriberCount: existing.subscriberCount + 1,
             });
-            return [undefined, nextPollers] as const;
+            return [true, nextPollers] as const;
           }),
         );
+      }
+
+      if (activePollers.size >= pollerLimit) {
+        return Effect.succeed([false, activePollers] as const);
       }
 
       return Ref.make<ReadonlyMap<string, number>>(new Map([[demandCwd, 1]])).pipe(
@@ -684,12 +718,18 @@ export const make = Effect.gen(function* () {
                 subscriberCount: 1,
                 demandCwds,
               });
-              return [undefined, nextPollers] as const;
+              return [true, nextPollers] as const;
             }),
           ),
         ),
       );
     });
+    yield* Ref.update(cappedPollersRef, (capped) => {
+      const next = new Map(capped);
+      if (retained) next.delete(cwd);
+      return next;
+    });
+    return retained;
   });
 
   const releaseRemotePoller = Effect.fn("VcsStatusBroadcaster.releaseRemotePoller")(function* (
@@ -743,11 +783,17 @@ export const make = Effect.gen(function* () {
         const cachedStatus = yield* getCachedStatus(cwd);
         const initialRemote = cachedStatus?.remote?.value ?? null;
         if (input.includeRemote !== false) {
-          yield* retainRemotePoller(
+          const retained = yield* retainRemotePoller(
             cwd,
             input.cwd,
             cachedStatus?.remote === null || cachedStatus?.remote === undefined,
           );
+          if (!retained) {
+            const count = (yield* SynchronizedRef.get(pollersRef)).size + 1;
+            yield* Ref.update(cappedPollersRef, (capped) =>
+              new Map(capped).set(cwd, { limit: pollerLimit, count }),
+            );
+          }
         }
         const release =
           input.includeRemote === false
@@ -757,7 +803,7 @@ export const make = Effect.gen(function* () {
         return Stream.concat(
           Stream.make({
             _tag: "snapshot" as const,
-            local: initialLocal,
+            local: yield* withPollingLimit(cwd, initialLocal),
             remote: initialRemote,
           }),
           Stream.fromSubscription(subscription).pipe(

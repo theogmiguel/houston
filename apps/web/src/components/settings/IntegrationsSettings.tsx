@@ -115,6 +115,7 @@ import {
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { useSettingsScope } from "./SettingsScopeContext";
+import { BrowserHostSetupNotice } from "./BrowserHostSetupNotice";
 import { BrowserImportWizard, type WizardTarget } from "./BrowserImportWizard";
 import type { ImportOutcome } from "./browserImportWizard.logic";
 
@@ -1597,11 +1598,13 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
 }
 
 export function BrowserSettingsPanel() {
+  const { environment } = useSettingsScope();
   const desktopOnly = !isDesktopHost;
   const desktopOnlyMessage = desktopOnly ? "Only available in the desktop app." : undefined;
 
   return (
     <SettingsPageContainer>
+      <BrowserHostSetupNotice environmentId={environment?.environmentId ?? null} />
       <SettingsSection id="browser-links" title="Links">
         <SettingsUnavailableGroup message={desktopOnlyMessage}>
           <BrowserLinkTargetSetting disabled={desktopOnly} />

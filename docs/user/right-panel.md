@@ -57,7 +57,8 @@ download, size or checksum check names the step that failed.
 - **Full screen** expands the page; `Esc` returns to the panel.
 - Browser tabs and their URLs are remembered per project. **Settings ▸ Browser** sets
   profiles, viewport, zoom, appearance, link target, search engine and whether agents may
-  drive browsers.
+  drive browsers. It also shows the one-time `sudo houston browser setup` command when the
+  environment's Linux host blocks the browser sandbox.
 
 ### Agent actions need consent
 

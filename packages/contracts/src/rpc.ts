@@ -88,6 +88,14 @@ import {
   HoustonAccessPendingDeviceDecision,
   HoustonAccessPendingDeviceError,
 } from "./houston/access.ts";
+import {
+  HoustonProjectRepositoriesInput,
+  HoustonProjectRepositoriesResult,
+  HoustonProjectRepositoryError,
+  HoustonProjectRepositoryIgnoreInput,
+  HoustonProjectRepositoryTrackInput,
+  HoustonProjectRepositoryUntrackInput,
+} from "./houston/projects.ts";
 import { ClientActivityReportInput } from "./background.ts";
 import {
   FilesystemGetMetadataInput,
@@ -188,7 +196,17 @@ import {
   HoustonDatabaseReclaimError,
   HoustonDatabaseReclaimResult,
 } from "./houston/databaseReclaim.ts";
+import { PeerLinkPairClientInput, PeerLinkPairClientResult } from "./houston/peerLinkPairing.ts";
+import { PeerLinkSearchEvent, PeerLinkSearchInput } from "./houston/peerLinkSearch.ts";
 import { TerminalShells } from "./houston/terminalShells.ts";
+import { HoustonPreviewBrowserHost } from "./houston/previewBrowserHost.ts";
+import {
+  HoustonMcpSignInCompleteInput,
+  HoustonMcpSignInCompleteResult,
+  HoustonMcpSignInError,
+  HoustonMcpSignInStartInput,
+  HoustonMcpSignInStartResult,
+} from "./houston/mcpSignIn.ts";
 import {
   HoustonReviewAnchorLinesInput,
   HoustonReviewAnchorMapResult,
@@ -703,6 +721,9 @@ export const WS_METHODS = {
   houstonTasksSettingsSet: "houston.tasks.settings.set",
   houstonDatabaseReclaim: "houston.database.reclaim",
   houstonTerminalShells: "houston.terminal.shells",
+  houstonPreviewBrowserHost: "houston.preview.browserHost",
+  houstonMcpSignInStart: "houston.mcpSignIn.start",
+  houstonMcpSignInComplete: "houston.mcpSignIn.complete",
   houstonTasksImportV1Status: "houston.tasks.importV1.status",
   houstonTasksImportV1Run: "houston.tasks.importV1.run",
   houstonTasksStart: "houston.tasks.start",
@@ -756,6 +777,10 @@ export const WS_METHODS = {
   houstonMergeQueueHandToThread: "houston.mergeQueue.handToThread",
   houstonMergeQueueRevert: "houston.mergeQueue.revert",
   houstonMergeQueueAcknowledge: "houston.mergeQueue.acknowledge",
+  houstonProjectsRepositoriesList: "houston.projects.repositories.list",
+  houstonProjectsRepositoriesTrack: "houston.projects.repositories.track",
+  houstonProjectsRepositoriesUntrack: "houston.projects.repositories.untrack",
+  houstonProjectsRepositoriesIgnore: "houston.projects.repositories.ignore",
   houstonInferenceSubscribe: "houston.inference.subscribe",
   houstonInferenceRefresh: "houston.inference.refresh",
   houstonInferenceSave: "houston.inference.save",
@@ -812,6 +837,8 @@ export const WS_METHODS = {
   peerLinksLink: "peerLinks.link",
   peerLinksUnlink: "peerLinks.unlink",
   peerLinksAnswerRequest: "peerLinks.answerRequest",
+  houstonPeerLinksSearch: "houston.peerLinks.search",
+  houstonPeerLinksPairClient: "houston.peerLinks.pairClient",
   serverUpdateSettings: "server.updateSettings",
   serverDiscoverSourceControl: "server.discoverSourceControl",
   serverSearchAcpRegistry: "server.searchAcpRegistry",
@@ -1125,6 +1152,24 @@ const WsHoustonTerminalShellsRpc = Rpc.make(WS_METHODS.houstonTerminalShells, {
   error: EnvironmentAuthorizationError,
 });
 
+const WsHoustonPreviewBrowserHostRpc = Rpc.make(WS_METHODS.houstonPreviewBrowserHost, {
+  payload: Schema.Struct({}),
+  success: HoustonPreviewBrowserHost,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsHoustonMcpSignInStartRpc = Rpc.make(WS_METHODS.houstonMcpSignInStart, {
+  payload: HoustonMcpSignInStartInput,
+  success: HoustonMcpSignInStartResult,
+  error: Schema.Union([HoustonMcpSignInError, EnvironmentAuthorizationError]),
+});
+
+const WsHoustonMcpSignInCompleteRpc = Rpc.make(WS_METHODS.houstonMcpSignInComplete, {
+  payload: HoustonMcpSignInCompleteInput,
+  success: HoustonMcpSignInCompleteResult,
+  error: Schema.Union([HoustonMcpSignInError, EnvironmentAuthorizationError]),
+});
+
 const WsServerGetDatabaseStorageRpc = Rpc.make(WS_METHODS.serverGetDatabaseStorage, {
   payload: Schema.Struct({}),
   success: Schema.NullOr(DatabaseStorageStatus),
@@ -1153,6 +1198,19 @@ const WsPeerLinksUnlinkRpc = Rpc.make(WS_METHODS.peerLinksUnlink, {
 const WsPeerLinksAnswerRequestRpc = Rpc.make(WS_METHODS.peerLinksAnswerRequest, {
   payload: PeerLinkRequestAnswerInput,
   error: Schema.Union([PeerLinkRequestError, EnvironmentAuthorizationError]),
+});
+
+const WsHoustonPeerLinksPairClientRpc = Rpc.make(WS_METHODS.houstonPeerLinksPairClient, {
+  payload: PeerLinkPairClientInput,
+  success: PeerLinkPairClientResult,
+  error: Schema.Union([PeerLinkError, EnvironmentAuthorizationError]),
+});
+
+const WsHoustonPeerLinksSearchRpc = Rpc.make(WS_METHODS.houstonPeerLinksSearch, {
+  payload: PeerLinkSearchInput,
+  success: PeerLinkSearchEvent,
+  stream: true,
+  error: Schema.Union([PeerLinkError, EnvironmentAuthorizationError]),
 });
 
 const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSettings, {
@@ -2120,6 +2178,44 @@ const WsHoustonTasksSubscribeRpc = Rpc.make(WS_METHODS.houstonTasksSubscribe, {
   error: HoustonTaskRpcError,
   stream: true,
 });
+
+const HoustonProjectRepositoryRpcError = Schema.Union([
+  HoustonProjectRepositoryError,
+  EnvironmentAuthorizationError,
+]);
+
+const WsHoustonProjectsRepositoriesListRpc = Rpc.make(WS_METHODS.houstonProjectsRepositoriesList, {
+  payload: HoustonProjectRepositoriesInput,
+  success: HoustonProjectRepositoriesResult,
+  error: HoustonProjectRepositoryRpcError,
+});
+
+const WsHoustonProjectsRepositoriesTrackRpc = Rpc.make(
+  WS_METHODS.houstonProjectsRepositoriesTrack,
+  {
+    payload: HoustonProjectRepositoryTrackInput,
+    success: HoustonProjectRepositoriesResult,
+    error: HoustonProjectRepositoryRpcError,
+  },
+);
+
+const WsHoustonProjectsRepositoriesUntrackRpc = Rpc.make(
+  WS_METHODS.houstonProjectsRepositoriesUntrack,
+  {
+    payload: HoustonProjectRepositoryUntrackInput,
+    success: HoustonProjectRepositoriesResult,
+    error: HoustonProjectRepositoryRpcError,
+  },
+);
+
+const WsHoustonProjectsRepositoriesIgnoreRpc = Rpc.make(
+  WS_METHODS.houstonProjectsRepositoriesIgnore,
+  {
+    payload: HoustonProjectRepositoryIgnoreInput,
+    success: HoustonProjectRepositoriesResult,
+    error: HoustonProjectRepositoryRpcError,
+  },
+);
 
 const WsHoustonTasksGetRpc = Rpc.make(WS_METHODS.houstonTasksGet, {
   payload: HoustonTaskGetInput,
@@ -3277,6 +3373,11 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonTasksSettingsSetRpc,
   WsHoustonDatabaseReclaimRpc,
   WsHoustonTerminalShellsRpc,
+  WsHoustonPreviewBrowserHostRpc,
+  WsHoustonMcpSignInStartRpc,
+  WsHoustonMcpSignInCompleteRpc,
+  WsHoustonPeerLinksSearchRpc,
+  WsHoustonPeerLinksPairClientRpc,
   WsHoustonTasksImportV1StatusRpc,
   WsHoustonTasksImportV1RunRpc,
   WsHoustonTasksStartRpc,
@@ -3330,6 +3431,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonMergeQueueHandToThreadRpc,
   WsHoustonMergeQueueRevertRpc,
   WsHoustonMergeQueueAcknowledgeRpc,
+  WsHoustonProjectsRepositoriesListRpc,
+  WsHoustonProjectsRepositoriesTrackRpc,
+  WsHoustonProjectsRepositoriesUntrackRpc,
+  WsHoustonProjectsRepositoriesIgnoreRpc,
   WsHoustonInferenceSubscribeRpc,
   WsHoustonInferenceRefreshRpc,
   WsHoustonInferenceSaveRpc,

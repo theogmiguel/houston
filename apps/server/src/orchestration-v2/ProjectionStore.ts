@@ -269,6 +269,11 @@ export interface ProjectionCheckpointCaptureContext {
   readonly scope: OrchestrationV2CheckpointScope | undefined;
   readonly providerThread: OrchestrationV2ProviderThread | undefined;
   readonly readyCheckpointOrdinals: ReadonlyArray<number>;
+  /** The repository scopes of a task folder's root scope, with what they already hold. */
+  readonly childScopes: ReadonlyArray<{
+    readonly scope: OrchestrationV2CheckpointScope;
+    readonly readyCheckpointOrdinals: ReadonlyArray<number>;
+  }>;
   /** Side chats share their parent's worktree and never snapshot it. */
   readonly sideChat: boolean;
 }
@@ -293,6 +298,12 @@ export interface ProjectionCheckpointRollbackContext {
   readonly runsToRollback: ReadonlyArray<OrchestrationV2Run>;
   readonly rootNodes: ReadonlyArray<OrchestrationV2ExecutionNode>;
   readonly staleCheckpoints: ReadonlyArray<OrchestrationV2Checkpoint>;
+  /** The repository scopes under this root scope with their checkpoints at the target ordinal. */
+  readonly childScopes: ReadonlyArray<{
+    readonly scope: OrchestrationV2CheckpointScope;
+    readonly checkpoint: OrchestrationV2Checkpoint | undefined;
+    readonly staleCheckpoints: ReadonlyArray<OrchestrationV2Checkpoint>;
+  }>;
 }
 
 export interface ProjectionProviderControlContext {
@@ -5402,6 +5413,25 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             FROM orchestration_v2_projection_checkpoints
             WHERE thread_id = ${threadId} AND scope_id = ${target.scopeId} AND status = 'ready'`,
             ]);
+            const childScopeRows = yield* sql<PayloadRow>`
+          SELECT payload_json FROM orchestration_v2_projection_checkpoint_scopes
+          WHERE thread_id = ${threadId} AND parent_scope_id = ${target.scopeId}
+          ORDER BY ordinal_within_parent ASC`;
+            const childScopeList = yield* decodeRows(
+              decodeCheckpointScopePayload,
+              threadId,
+            )(childScopeRows);
+            const childReadyRows =
+              childScopeList.length === 0
+                ? []
+                : yield* sql<{ readonly scope_id: string; readonly ordinal: number }>`
+          SELECT scope_id, ordinal_within_scope AS ordinal
+          FROM orchestration_v2_projection_checkpoints
+          WHERE thread_id = ${threadId} AND status = 'ready'
+            AND scope_id IN (${sql.in(
+              "scope_id",
+              childScopeList.map((scope) => scope.id),
+            )})`;
             return {
               run,
               rootNode:
@@ -5417,6 +5447,12 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   ? undefined
                   : yield* decodeProviderThreadPayload(providerRows[0].payload_json),
               readyCheckpointOrdinals: readyRows.map(({ ordinal }) => ordinal),
+              childScopes: childScopeList.map((childScope) => ({
+                scope: childScope,
+                readyCheckpointOrdinals: childReadyRows
+                  .filter((row) => row.scope_id === childScope.id)
+                  .map((row) => row.ordinal),
+              })),
               sideChat: threadRows[0].side_chat === 1,
             };
           }),
@@ -5466,6 +5502,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               runsToRollback: [],
               rootNodes: [],
               staleCheckpoints: [],
+              childScopes: [],
             };
             if (
               providerThread === undefined ||
@@ -5524,6 +5561,38 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               OR run_attempt_id = ${targetAttempt?.id ?? null})
             ORDER BY provider_thread_id ASC, ordinal ASC`,
             ]);
+            const childScopeRows = yield* sql<PayloadRow>`
+          SELECT payload_json FROM orchestration_v2_projection_checkpoint_scopes
+          WHERE thread_id = ${threadId} AND parent_scope_id = ${scope.id}
+          ORDER BY ordinal_within_parent ASC`;
+            const childScopes = yield* Effect.forEach(
+              yield* decodeRows(decodeCheckpointScopePayload, threadId)(childScopeRows),
+              (childScope) =>
+                Effect.gen(function* () {
+                  const [childTargetRows, childStaleRows] = yield* Effect.all([
+                    sql<PayloadRow>`SELECT payload_json FROM orchestration_v2_projection_checkpoints
+              WHERE thread_id = ${threadId} AND scope_id = ${childScope.id}
+                AND status = 'ready' AND app_run_ordinal = ${targetOrdinal}
+              ORDER BY ordinal_within_scope DESC LIMIT 1`,
+                    sql<PayloadRow>`SELECT payload_json FROM orchestration_v2_projection_checkpoints
+              WHERE thread_id = ${threadId} AND scope_id = ${childScope.id} AND status = 'ready'
+                AND app_run_ordinal > ${targetOrdinal}
+              ORDER BY ordinal_within_scope ASC`,
+                  ]);
+                  const childTarget = yield* decodeRows(
+                    decodeCheckpointPayload,
+                    threadId,
+                  )(childTargetRows);
+                  return {
+                    scope: childScope,
+                    checkpoint: childTarget[0],
+                    staleCheckpoints: yield* decodeRows(
+                      decodeCheckpointPayload,
+                      threadId,
+                    )(childStaleRows),
+                  };
+                }),
+            );
             return {
               ...context,
               targetAttempt,
@@ -5536,6 +5605,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               rootNodes: yield* decodeRows(decodeNodePayload, threadId)(nodeRows),
               providerTurns: yield* decodeRows(decodeProviderTurnPayload, threadId)(turnRows),
               staleCheckpoints: yield* decodeRows(decodeCheckpointPayload, threadId)(staleRows),
+              childScopes,
             };
           }),
         )

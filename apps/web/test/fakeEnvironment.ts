@@ -51,6 +51,7 @@ import {
   type UsageSource,
   type UsageSummary,
   type UsageSummaryInput,
+  type HoustonProjectRepository,
   type VcsStatusLocalResult,
   type VcsStatusRemoteResult,
 } from "@houston-app/contracts";
@@ -578,6 +579,7 @@ let vcsStatusFixture: {
   readonly remote: VcsStatusRemoteResult | null;
 } | null = null;
 let workspaceFilesFixture = false;
+let projectRepositoriesFixture: ReadonlyArray<HoustonProjectRepository> | null = null;
 let pullRequestListFixture: {
   readonly entries: ReadonlyArray<PullRequestListEntry>;
   readonly viewers?: Readonly<Record<string, string>>;
@@ -700,6 +702,16 @@ const handlers: Record<string, (input: never) => unknown> = {
         };
       },
     ),
+  [WS_METHODS.houstonProjectsRepositoriesList]: (input: never) => {
+    if (projectRepositoriesFixture === null) return Effect.never;
+    const { projectId } = input as { readonly projectId: ProjectId };
+    return Effect.succeed({
+      projectId,
+      repositories: projectRepositoriesFixture,
+      ignored: [],
+      notices: [],
+    });
+  },
   [WS_METHODS.pullRequestsList]: (input: never) => {
     if (pullRequestListFixture === null) return Effect.never;
     const { state } = input as { state: "all" | "open" | "closed" | "merged" };
@@ -902,6 +914,8 @@ export function installFakeEnvironment(
       readonly local: VcsStatusLocalResult;
       readonly remote: VcsStatusRemoteResult | null;
     };
+    /** The repositories the project covers, for the composer's worktree choice. */
+    readonly repositories?: ReadonlyArray<HoustonProjectRepository>;
     /** Composed rows the pull request list answers with; every state reads the same rows. */
     readonly pullRequests?: {
       readonly entries: ReadonlyArray<PullRequestListEntry>;
@@ -922,6 +936,7 @@ export function installFakeEnvironment(
   projectTitle = options.projectTitle ?? project.title;
   vcsStatusFixture = options.vcsStatus ?? null;
   workspaceFilesFixture = options.workspaceFiles === true;
+  projectRepositoriesFixture = options.repositories ?? null;
   pullRequestListFixture = options.pullRequests ?? null;
   usageFixture = options.usage ?? null;
   const models = options.providerModels ?? defaultProviderModels;
@@ -951,6 +966,7 @@ export function installFakeEnvironment(
       projectTitle = project.title;
       vcsStatusFixture = null;
       workspaceFilesFixture = false;
+      projectRepositoriesFixture = null;
       pullRequestListFixture = null;
       usageFixture = null;
       gitActionRequests.length = 0;

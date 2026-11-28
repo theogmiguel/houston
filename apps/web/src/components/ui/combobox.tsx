@@ -213,11 +213,14 @@ function ComboboxItem({
   className,
   children,
   density = "default",
+  dividerAbove = false,
   hideIndicator: _hideIndicator = false,
   selectedFill = true,
   ...props
 }: ComboboxPrimitive.Item.Props & {
   density?: "default" | "compact" | "two-line" | "phone";
+  /** Draws a separator above the row, for the last group of actions in a list. */
+  dividerAbove?: boolean;
   hideIndicator?: boolean;
   /** Off for rows that mark selection themselves, so a fill only means hover or highlight. */
   selectedFill?: boolean;
@@ -230,6 +233,7 @@ function ComboboxItem({
         density === "two-line" && "min-h-11 py-1.5 sm:min-h-11",
         // A phone sheet row: a 44px target, edge to edge, content on the 16px gutter.
         density === "phone" && "min-h-11 rounded-none px-4 sm:min-h-11",
+        dividerAbove && "mt-1 border-border/70 border-t",
         selectedFill && "data-selected:bg-foreground/[0.06]",
         className,
       )}

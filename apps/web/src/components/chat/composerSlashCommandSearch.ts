@@ -5,12 +5,13 @@ import {
   scoreQueryMatch,
 } from "@houston-app/shared/searchRanking";
 
+import type { TerminalCommandEntry } from "../../composerTerminalCommands";
 import type { ComposerCommandItem } from "./ComposerCommandMenu";
 import { scoreProviderSkill } from "../../providerSkillSearch";
 
 type SlashSearchItem = Extract<
   ComposerCommandItem,
-  { type: "slash-command" | "provider-slash-command" | "skill" }
+  { type: "slash-command" | "terminal-command" | "provider-slash-command" | "skill" }
 >;
 
 export type SlashCommandSectionId = "houston" | "provider" | "skills";
@@ -29,13 +30,17 @@ const SLASH_COMMAND_SECTION_ORDER: ReadonlyArray<SlashCommandSectionId> = [
 
 function isSlashSearchItem(item: ComposerCommandItem): item is SlashSearchItem {
   return (
-    item.type === "slash-command" || item.type === "provider-slash-command" || item.type === "skill"
+    item.type === "slash-command" ||
+    item.type === "terminal-command" ||
+    item.type === "provider-slash-command" ||
+    item.type === "skill"
   );
 }
 
 export function slashCommandSectionId(item: SlashSearchItem): SlashCommandSectionId {
   switch (item.type) {
     case "slash-command":
+    case "terminal-command":
       return "houston";
     case "provider-slash-command":
       return "provider";
@@ -105,10 +110,31 @@ function scoreSlashCommandItem(item: SlashSearchItem, query: string): number | n
   }
 
   const primaryValue =
-    item.type === "slash-command" ? item.command.toLowerCase() : item.command.name.toLowerCase();
+    item.type === "slash-command"
+      ? item.command.toLowerCase()
+      : item.type === "terminal-command"
+        ? item.entry.names[0].toLowerCase()
+        : item.command.name.toLowerCase();
   const description = item.description.toLowerCase();
+  const aliasValues =
+    item.type === "provider-slash-command"
+      ? (item.command.aliases ?? []).map((alias) => alias.toLowerCase())
+      : item.type === "terminal-command"
+        ? item.entry.names.slice(1).map((alias) => alias.toLowerCase())
+        : [];
 
   const scores = [
+    ...aliasValues.map((value) =>
+      scoreQueryMatch({
+        value,
+        query,
+        exactBase: 1,
+        prefixBase: 3,
+        boundaryBase: 5,
+        includesBase: 7,
+        boundaryMarkers: ["-", "_", "/"],
+      }),
+    ),
     scoreQueryMatch({
       value: primaryValue,
       query,
@@ -165,9 +191,11 @@ export function searchSlashCommandItems(
         tieBreaker:
           item.type === "slash-command"
             ? `0\u0000${item.command}`
-            : item.type === "provider-slash-command"
-              ? `1\u0000${item.command.name}\u0000${item.provider}`
-              : `2\u0000${item.skill.name}\u0000${item.provider}`,
+            : item.type === "terminal-command"
+              ? `0\u0001${item.entry.names[0]}`
+              : item.type === "provider-slash-command"
+                ? `1\u0000${item.command.name}\u0000${item.provider}`
+                : `2\u0000${item.skill.name}\u0000${item.provider}`,
       },
       Number.POSITIVE_INFINITY,
     );
@@ -263,4 +291,18 @@ export function builtInSlashCommandItems(input: {
         ] as const)
       : []),
   ];
+}
+
+/** Menu items for the terminal command names Houston answers with its own action. */
+export function terminalCommandSlashItems(
+  entries: ReadonlyArray<TerminalCommandEntry>,
+): ReadonlyArray<Extract<ComposerCommandItem, { type: "terminal-command" }>> {
+  return entries.map((entry) => ({
+    // One action can back more than one row, so the primary name keeps the id unique.
+    id: `terminal-command:${entry.names[0]}`,
+    type: "terminal-command",
+    entry,
+    label: `/${entry.names[0]}`,
+    description: entry.description,
+  }));
 }

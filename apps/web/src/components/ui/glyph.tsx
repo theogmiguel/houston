@@ -4,6 +4,7 @@ import { cn } from "~/lib/utils";
 
 const TONE_CLASS = {
   muted: "text-muted-foreground",
+  success: "text-success-foreground",
   warning: "text-(--warn-ink)",
   danger: "text-error-foreground",
 } as const;

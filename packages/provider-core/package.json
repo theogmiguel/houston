@@ -75,6 +75,10 @@
       "types": "./src/server/McpProviderSessions.ts",
       "import": "./src/server/McpProviderSessions.ts"
     },
+    "./server/houston/mcpSignIn": {
+      "types": "./src/server/houston/mcpSignIn.ts",
+      "import": "./src/server/houston/mcpSignIn.ts"
+    },
     "./server/mcpSession": {
       "types": "./src/server/mcpSession.ts",
       "import": "./src/server/mcpSession.ts"

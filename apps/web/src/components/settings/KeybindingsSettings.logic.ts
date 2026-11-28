@@ -418,6 +418,8 @@ export function commandLabel(command: KeybindingCommand): string {
   if (command === "thread.attentionNext") return "Thread: Next Thread Needing Attention";
   if (command === "thread.attentionPrevious") return "Thread: Previous Thread Needing Attention";
   if (command === "preview.focusUrl") return "Preview: Focus URL";
+  if (command === "terminal.next") return "Terminal: Next Terminal";
+  if (command === "terminal.previous") return "Terminal: Previous Terminal";
   const raw = String(command);
   if (raw.startsWith("script.") && raw.endsWith(".run")) {
     return `Run Script: ${titleCaseCommandSegment(raw.slice("script.".length, -".run".length))}`;

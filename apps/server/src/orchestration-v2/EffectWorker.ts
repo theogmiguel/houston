@@ -8,8 +8,10 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Metric from "effect/Metric";
 import * as Option from "effect/Option";
+import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as SqlError from "effect/sql/SqlError";
 
 import {
   increment,
@@ -714,6 +716,16 @@ export class OrchestrationEffectWorkerError extends Schema.TaggedError<Orchestra
 
 const isOrchestrationEffectWorkerError = Schema.is(OrchestrationEffectWorkerError);
 
+// Only a lock timeout proves that nothing committed, so only it repeats the same write.
+const isLockTimeout = (error: EffectOutbox.EffectOutboxError) =>
+  SqlError.isSqlError(error.cause) && error.cause.reason._tag === "LockTimeoutError";
+// Each try holds the event loop for busy_timeout (5 s); three match the ingestor's event writes.
+const SETTLEMENT_LOCK_RETRIES = 2;
+// busy_timeout as persistence/Sqlite.ts sets it; named in the warning about a kept settlement.
+const SETTLEMENT_LOCK_WAIT_MS = 5_000;
+// The pause between two such tries lets the server answer clients, which drop it after 15 s.
+const SETTLEMENT_LOCK_BACKOFF = Schedule.exponential("500 millis");
+
 export interface OrchestrationEffectWorkerV2Shape {
   readonly awaitWork: Effect.Effect<void>;
   readonly runOnce: Effect.Effect<boolean, OrchestrationEffectWorkerError>;
@@ -758,77 +770,160 @@ export const layerWithOptions = (
             }),
           ),
         );
+      type Recover = (cause: Cause.Cause<unknown>) => Effect.Effect<void>;
+      interface Settlement {
+        readonly effect: EffectOutbox.OrchestrationEffectV2;
+        readonly write: Effect.Effect<boolean, EffectOutbox.EffectOutboxError>;
+        /** Runs when the write fails for another reason than a lock. */
+        readonly recover: Recover;
+      }
+      // A running row blocks its thread until a restart, so settlements that outlast the retries
+      // stay here and the next run writes them before it claims.
+      const unwritten = new Map<string, Settlement>();
+      const keepUnwritten = (settlement: Settlement) =>
+        Effect.sync(() => {
+          unwritten.set(settlement.effect.id, settlement);
+        });
+      const hasLockTimeout = (cause: Cause.Cause<EffectOutbox.EffectOutboxError>) =>
+        Option.exists(Cause.findErrorOption(cause), isLockTimeout);
+      /** False when the worker no longer holds the claim. A kept settlement fails the run, so the daemon cools off. */
+      const settle = (settlement: Settlement) =>
+        settlement.write.pipe(
+          Effect.retry({
+            while: isLockTimeout,
+            times: SETTLEMENT_LOCK_RETRIES,
+            schedule: SETTLEMENT_LOCK_BACKOFF,
+          }),
+          // Claim recovery runs uninterruptibly; a shutdown must not wait for a backoff there.
+          Effect.interruptible,
+          Effect.onError((cause) =>
+            hasLockTimeout(cause) ? Effect.void : settlement.recover(cause),
+          ),
+          Effect.catchIf(isLockTimeout, (error) =>
+            Effect.gen(function* () {
+              yield* keepUnwritten(settlement);
+              yield* Effect.logWarning("Effect settlement kept until the database lock is free", {
+                effectId: settlement.effect.id,
+                effectType: settlement.effect.request.type,
+                operation: error.operation,
+                tries: SETTLEMENT_LOCK_RETRIES + 1,
+                lockWaitMsPerTry: SETTLEMENT_LOCK_WAIT_MS,
+                keptSettlements: unwritten.size,
+              });
+              return yield* new OrchestrationEffectWorkerError({
+                operation: "settle",
+                effectId: settlement.effect.id,
+                cause: error,
+              });
+            }),
+          ),
+        );
+      const writeUnwritten = Effect.suspend(() =>
+        Effect.forEach(
+          Array.from(unwritten.values()),
+          (settlement) =>
+            Effect.suspend(() =>
+              // Another fiber of this worker may have taken it since.
+              unwritten.delete(settlement.effect.id)
+                ? settlement.write.pipe(
+                    Effect.tap((written) =>
+                      written
+                        ? Effect.logInfo("Wrote the kept effect settlement", {
+                            effectId: settlement.effect.id,
+                            effectType: settlement.effect.request.type,
+                            keptSettlements: unwritten.size,
+                          })
+                        : Effect.void,
+                    ),
+                    Effect.onError((cause) =>
+                      Cause.hasInterruptsOnly(cause) || hasLockTimeout(cause)
+                        ? keepUnwritten(settlement)
+                        : settlement.recover(cause),
+                    ),
+                  )
+                : Effect.void,
+            ),
+          { discard: true },
+        ),
+      );
+
       const requeueClaim = (
         effect: EffectOutbox.OrchestrationEffectV2,
         cause: Cause.Cause<unknown>,
-      ) =>
+      ): Effect.Effect<void> =>
         Cause.hasInterruptsOnly(cause)
           ? Effect.void
-          : outbox
-              .retry({
-                effectId: effect.id,
-                workerId,
-                error: `Worker failed before settling the claimed effect: ${Cause.pretty(cause)}`,
-                delayMs: 0,
-              })
-              .pipe(
-                Effect.flatMap((requeued) =>
-                  requeued
-                    ? Effect.logWarning("Requeued effect after unexpected worker failure", {
-                        effectId: effect.id,
-                        effectType: effect.request.type,
-                      })
-                    : Effect.logWarning("Could not requeue effect after worker lost its lease", {
-                        effectId: effect.id,
-                        effectType: effect.request.type,
-                      }),
+          : settle({
+              effect,
+              write: outbox
+                .retry({
+                  effectId: effect.id,
+                  workerId,
+                  attemptCount: effect.attemptCount,
+                  error: `Worker failed before settling the claimed effect: ${Cause.pretty(cause)}`,
+                  delayMs: 0,
+                })
+                .pipe(
+                  Effect.tap((requeued) =>
+                    requeued
+                      ? Effect.logWarning("Requeued effect after unexpected worker failure", {
+                          effectId: effect.id,
+                          effectType: effect.request.type,
+                        })
+                      : Effect.logWarning("Could not requeue effect after worker lost its lease", {
+                          effectId: effect.id,
+                          effectType: effect.request.type,
+                        }),
+                  ),
                 ),
-                Effect.catchCause((requeueCause) =>
-                  Effect.logError("Failed to requeue effect after unexpected worker failure", {
-                    effectId: effect.id,
-                    effectType: effect.request.type,
-                    error: Cause.pretty(requeueCause),
-                  }),
-                ),
-              );
+              recover: (requeueCause) =>
+                Cause.hasInterruptsOnly(requeueCause)
+                  ? Effect.void
+                  : Effect.logError("Failed to requeue effect after unexpected worker failure", {
+                      effectId: effect.id,
+                      effectType: effect.request.type,
+                      error: Cause.pretty(requeueCause),
+                    }),
+            }).pipe(Effect.ignoreCause);
       const terminalizeClaim = (
         effect: EffectOutbox.OrchestrationEffectV2,
         cause: Cause.Cause<unknown>,
-      ) => {
-        if (Cause.hasInterruptsOnly(cause)) return Effect.void;
-        return outbox
-          .fail({
-            effectId: effect.id,
-            workerId,
-            error: `Worker failed to settle a process-bound effect after execution started: ${Cause.pretty(cause)}`,
-          })
-          .pipe(
-            Effect.flatMap((failed) =>
-              failed
-                ? Effect.logError("Terminalized process-bound effect after settlement failure", {
-                    effectId: effect.id,
-                    effectType: effect.request.type,
-                  })
-                : Effect.logWarning(
-                    "Could not terminalize process-bound effect after worker lost its lease",
-                    {
-                      effectId: effect.id,
-                      effectType: effect.request.type,
-                    },
-                  ),
-            ),
-            Effect.catchCause((failCause) =>
-              Effect.logError(
-                "Failed to terminalize process-bound effect after settlement failure",
-                {
+      ): Effect.Effect<void> =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.void
+          : settle({
+              effect,
+              write: outbox
+                .fail({
                   effectId: effect.id,
-                  effectType: effect.request.type,
-                  error: Cause.pretty(failCause),
-                },
-              ),
-            ),
-          );
-      };
+                  workerId,
+                  error: `Worker failed to settle a process-bound effect after execution started: ${Cause.pretty(cause)}`,
+                })
+                .pipe(
+                  Effect.tap((failed) =>
+                    failed
+                      ? Effect.logError(
+                          "Terminalized process-bound effect after settlement failure",
+                          { effectId: effect.id, effectType: effect.request.type },
+                        )
+                      : Effect.logWarning(
+                          "Could not terminalize process-bound effect after worker lost its lease",
+                          { effectId: effect.id, effectType: effect.request.type },
+                        ),
+                  ),
+                ),
+              recover: (failCause) =>
+                Cause.hasInterruptsOnly(failCause)
+                  ? Effect.void
+                  : Effect.logError(
+                      "Failed to terminalize process-bound effect after settlement failure",
+                      {
+                        effectId: effect.id,
+                        effectType: effect.request.type,
+                        error: Cause.pretty(failCause),
+                      },
+                    ),
+            }).pipe(Effect.ignoreCause);
       const recoverPostSuccessSettlement = (
         effect: EffectOutbox.OrchestrationEffectV2,
         cause: Cause.Cause<unknown>,
@@ -842,6 +937,7 @@ export const layerWithOptions = (
       // The worker probes for work repeatedly, including when the outbox is empty.
       const runOnce = Effect.fnUntraced(
         function* (excludeRestartContinuations = false) {
+          yield* writeUnwritten;
           const claimExit = yield* Effect.exit(
             outbox.claimNext({ workerId, excludeRestartContinuations }),
           );
@@ -902,18 +998,21 @@ export const layerWithOptions = (
             return true;
           }
           if (Exit.isSuccess(exit)) {
+            const recover: Recover = (cause) => recoverPostSuccessSettlement(effect, cause);
+            const completed = yield* settle({
+              effect,
+              write: outbox.succeed({ effectId: effect.id, workerId }),
+              recover,
+            });
+            if (completed) return true;
             return yield* Effect.gen(function* () {
-              const completed = yield* outbox.succeed({ effectId: effect.id, workerId });
-              if (!completed) {
-                if (yield* wasCancelled(effect.id)) return true;
-                return yield* new OrchestrationEffectWorkerError({
-                  operation: "complete",
-                  effectId: effect.id,
-                  cause: "The worker no longer owns the effect lease.",
-                });
-              }
-              return true;
-            }).pipe(Effect.onError((cause) => recoverPostSuccessSettlement(effect, cause)));
+              if (yield* wasCancelled(effect.id)) return true;
+              return yield* new OrchestrationEffectWorkerError({
+                operation: "complete",
+                effectId: effect.id,
+                cause: "The worker no longer owns the effect lease.",
+              });
+            }).pipe(Effect.onError((cause) => recover(cause)));
           }
 
           const error = Cause.pretty(exit.cause);
@@ -925,22 +1024,32 @@ export const layerWithOptions = (
             nonRetryable,
             error,
           });
-          const updated = nonRetryable
-            ? yield* outbox
-                .succeed({ effectId: effect.id, workerId })
-                .pipe(Effect.onError((cause) => terminalizeClaim(effect, cause)))
-            : effect.attemptCount >= maxAttempts
-              ? yield* outbox
-                  .fail({ effectId: effect.id, workerId, error })
-                  .pipe(Effect.onError((cause) => terminalizeClaim(effect, cause)))
-              : yield* outbox
-                  .retry({
-                    effectId: effect.id,
-                    workerId,
-                    error,
-                    delayMs: Math.min(30_000, 100 * 2 ** Math.max(0, effect.attemptCount - 1)),
-                  })
-                  .pipe(Effect.onError((cause) => requeueClaim(effect, cause)));
+          const terminalize: Recover = (cause) => terminalizeClaim(effect, cause);
+          const updated = yield* settle(
+            nonRetryable
+              ? {
+                  effect,
+                  write: outbox.succeed({ effectId: effect.id, workerId }),
+                  recover: terminalize,
+                }
+              : effect.attemptCount >= maxAttempts
+                ? {
+                    effect,
+                    write: outbox.fail({ effectId: effect.id, workerId, error }),
+                    recover: terminalize,
+                  }
+                : {
+                    effect,
+                    write: outbox.retry({
+                      effectId: effect.id,
+                      workerId,
+                      attemptCount: effect.attemptCount,
+                      error,
+                      delayMs: Math.min(30_000, 100 * 2 ** Math.max(0, effect.attemptCount - 1)),
+                    }),
+                    recover: (cause) => requeueClaim(effect, cause),
+                  },
+          );
           if (!updated) {
             if (yield* wasCancelled(effect.id)) return true;
             return yield* new OrchestrationEffectWorkerError({

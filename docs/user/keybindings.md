@@ -25,6 +25,7 @@ Keybindings are stored by the server, so they apply to the environment you are e
 | `Ctrl+Shift+B`                  | Toggle thread details                                                                                   |
 | `Ctrl+T`                        | New right-panel surface (panel open)                                                                    |
 | `Ctrl+W`                        | Close terminal or right-panel tab                                                                       |
+| `Ctrl+PageDown` / `Ctrl+PageUp` | Next / previous terminal in the focused group (in a terminal)                                           |
 | `Ctrl+D`                        | Toggle diff (outside a terminal)                                                                        |
 | `Ctrl+P`                        | File picker                                                                                             |
 | `Ctrl+Alt+V`                    | Dictate in the composer                                                                                 |

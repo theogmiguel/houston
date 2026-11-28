@@ -63,6 +63,10 @@ export class GitWorkflowService extends Context.Service<
       readonly cwd: string;
       readonly refName: string;
     }) => Effect.Effect<boolean, GitCommandError>;
+    readonly resolveCommit: (input: {
+      readonly cwd: string;
+      readonly revision: string;
+    }) => Effect.Effect<{ readonly commitSha: string }, GitCommandError>;
     readonly status: (
       input: VcsStatusInput,
     ) => Effect.Effect<VcsStatusResult, GitManagerServiceError>;
@@ -377,6 +381,11 @@ export const make = Effect.gen(function* () {
             ),
             Effect.map((result) => result.stdout.trim().length > 0),
           );
+    }),
+    resolveCommit: Effect.fn("GitWorkflowService.resolveCommit")(function (input) {
+      return ensureGitCommand("GitWorkflowService.resolveCommit", input.cwd).pipe(
+        Effect.andThen(git.resolveCommit(input)),
+      );
     }),
     status: Effect.fn("GitWorkflowService.status")(function (input) {
       return detectGitRepositoryForStatus("GitWorkflowService.status", input.cwd).pipe(

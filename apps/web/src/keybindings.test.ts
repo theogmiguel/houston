@@ -16,6 +16,8 @@ import {
   formatShortcutLabel,
   isRichTextBoldShortcut,
   isTerminalNewShortcut,
+  isTerminalNextShortcut,
+  isTerminalPreviousShortcut,
   isTerminalSplitShortcut,
   resolveChatShortcutCommand,
   resolveShortcutCommand,
@@ -316,6 +318,46 @@ describe("split/new/close terminal shortcuts", () => {
         platform: "Win32",
         context: { terminalOpen: true, terminalFocus: false },
       }),
+    );
+  });
+});
+
+describe("terminal next and previous defaults", () => {
+  it.each([
+    ["Linux x86_64", { ctrlKey: true }],
+    ["Win32", { ctrlKey: true }],
+    ["MacIntel", { metaKey: true }],
+  ])("bind Mod+PageDown and Mod+PageUp inside a terminal on %s", (platform, modifier) => {
+    const options = { platform, context: { terminalFocus: true, terminalOpen: true } };
+    const next = event({ key: "PageDown", ...modifier });
+    const previous = event({ key: "PageUp", ...modifier });
+
+    assert.isTrue(isTerminalNextShortcut(next, DEFAULT_RESOLVED_KEYBINDINGS, options));
+    assert.isTrue(isTerminalPreviousShortcut(previous, DEFAULT_RESOLVED_KEYBINDINGS, options));
+    assert.strictEqual(
+      resolveShortcutCommand(next, DEFAULT_RESOLVED_KEYBINDINGS, options),
+      "terminal.next",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(previous, DEFAULT_RESOLVED_KEYBINDINGS, options),
+      "terminal.previous",
+    );
+  });
+
+  it("claims each chord exactly once and leaves it free outside a terminal", () => {
+    const inTerminal = { platform: "Linux x86_64", context: { terminalFocus: true } };
+    for (const command of ["terminal.next", "terminal.previous"] as const) {
+      assert.lengthOf(
+        effectiveShortcutsForCommand(DEFAULT_RESOLVED_KEYBINDINGS, command, inTerminal),
+        1,
+      );
+    }
+    assert.isNull(
+      resolveShortcutCommand(
+        event({ key: "PageDown", ctrlKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "Linux x86_64", context: { terminalFocus: false } },
+      ),
     );
   });
 });

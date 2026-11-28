@@ -8,7 +8,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
-import type * as Path from "effect/Path";
+import * as Path from "effect/Path";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { SCAN_CACHE_FILE_NAME } from "./usage/usageScanCache.ts";
@@ -350,6 +350,12 @@ const cleanupFixture = (
     let sessionLiveChecks = 0;
     let onLiveCheck: Effect.Effect<void> = Effect.void;
     let outboxStatus: string | null = null;
+    let taskFolderRow: {
+      folder_path: string;
+      project_id: string;
+      repositories_json: string;
+    } | null = null;
+    let taskFolderDeletes = 0;
     let fullStatusCalls = 0;
     let snapshotReads = 0;
     let terminalListener: ((event: TerminalMetadataStreamEvent) => Effect.Effect<void>) | undefined;
@@ -427,9 +433,17 @@ const cleanupFixture = (
       Effect.provideService(Orchestrator.OrchestratorV2, {
         streamDomainEvents: Stream.suspend(() => events),
       } as unknown as Orchestrator.OrchestratorV2["Service"]),
-      Effect.provideService(SqlClient.SqlClient, ((strings: TemplateStringsArray) =>
-        Effect.sync(() =>
-          openSessionCwd !== null && strings.join("").includes("projection_provider_sessions")
+      Effect.provideService(SqlClient.SqlClient, ((strings: TemplateStringsArray) => {
+        const query = strings.join("");
+        if (query.includes("houston_task_folders")) {
+          if (query.trimStart().startsWith("DELETE")) {
+            taskFolderDeletes++;
+            return Effect.succeed([]);
+          }
+          return Effect.succeed(taskFolderRow === null ? [] : [taskFolderRow]);
+        }
+        return Effect.sync(() =>
+          openSessionCwd !== null && query.includes("projection_provider_sessions")
             ? [
                 {
                   payload_json: JSON.stringify({
@@ -446,20 +460,21 @@ const cleanupFixture = (
                   }),
                 },
               ]
-            : outboxStatus !== null && strings.join("").includes("orchestration_v2_effect_outbox")
+            : outboxStatus !== null && query.includes("orchestration_v2_effect_outbox")
               ? [{ status: outboxStatus }]
-              : strings.join("").includes("deleted_at IS NOT NULL")
+              : query.includes("deleted_at IS NOT NULL")
                 ? deletedThreads.map((thread) => ({
                     payload_json: JSON.stringify(thread),
                     workspaceRoot: repo,
                   }))
-                : strings.join("").includes('AS "worktreePath"')
+                : query.includes('AS "worktreePath"')
                   ? [
                       ...threads.flatMap((thread) => thread.worktreePath ?? []),
                       ...storedWorktreePaths,
                     ].map((worktreePath) => ({ worktreePath }))
                   : [],
-        )) as unknown as SqlClient.SqlClient),
+        );
+      }) as unknown as SqlClient.SqlClient),
       Effect.provideService(GitManager.GitManager, {
         invalidateStatus: () => Effect.void,
       } as unknown as GitManager.GitManager["Service"]),
@@ -524,6 +539,10 @@ const cleanupFixture = (
       setOutboxStatus: (status: string | null) => {
         outboxStatus = status;
       },
+      setTaskFolder: (row: typeof taskFolderRow) => {
+        taskFolderRow = row;
+      },
+      taskFolderDeletes: () => taskFolderDeletes,
       setDeletedThreads: (next: OrchestrationV2ThreadShell[]) => {
         deletedThreads = next;
       },
@@ -1185,6 +1204,134 @@ describe("deleted thread worktrees", () => {
         });
         expect(yield* fixture.fs.exists(fixture.worktree)).toBe(false);
       }).pipe(Effect.provide(cleanupTestLayer), Effect.scoped),
+  );
+
+  it.effect(
+    "removes every worktree of a deleted thread's task folder and keeps their branches",
+    () =>
+      Effect.gen(function* () {
+        yield* TestClock.setTime(NOW_MS);
+        const fixture = yield* cleanupFixture({
+          ...DEFAULT_SERVER_SETTINGS.storageCleanup,
+          worktreeAfterDays: null,
+          worktreeOnDelete: true,
+        });
+        const { command, fs, config } = fixture;
+        const path = yield* Path.Path;
+        const repositoriesRoot = yield* fs.makeTempDirectoryScoped({
+          prefix: "cleanup-task-repos-",
+        });
+        const api = path.join(repositoriesRoot, "api");
+        const web = path.join(repositoriesRoot, "web");
+        for (const repository of [api, web]) {
+          yield* fs.makeDirectory(repository, { recursive: true });
+          yield* command(repository, ["init", "-b", "main"]);
+          yield* command(repository, ["config", "user.email", "cleanup@example.test"]);
+          yield* command(repository, ["config", "user.name", "Cleanup test"]);
+          yield* fs.writeFileString(path.join(repository, "tracked.txt"), "original\n");
+          yield* command(repository, ["add", "."]);
+          yield* command(repository, ["commit", "-m", "initial"]);
+        }
+        const root = path.join(config.worktreesDir, "task-folder");
+        yield* fs.makeDirectory(root, { recursive: true });
+        yield* command(api, ["worktree", "add", "-b", "task-branch", path.join(root, "api")]);
+        yield* command(web, ["worktree", "add", "-b", "task-branch", path.join(root, "web")]);
+        const owner = shell({
+          branch: "task-branch",
+          worktreePath: root,
+          deletedAt: at(-DAY_MS),
+        });
+        fixture.setThreads([]);
+        fixture.setDeletedThreads([owner]);
+        fixture.setStoredWorktreePaths([]);
+        fixture.setTaskFolder({
+          folder_path: root,
+          project_id: owner.projectId,
+          repositories_json: JSON.stringify([
+            {
+              key: "api",
+              projectPath: api,
+              worktreePath: path.join(root, "api"),
+              branch: "task-branch",
+            },
+            {
+              key: "web",
+              projectPath: web,
+              worktreePath: path.join(root, "web"),
+              branch: "task-branch",
+            },
+          ]),
+        });
+        const report = yield* fixture.service.runNow;
+        expect(report.entries[0]).toMatchObject({
+          threadId: owner.id,
+          outcome: "removed",
+          reason: "Thread was deleted",
+        });
+        expect(yield* fs.exists(path.join(root, "api"))).toBe(false);
+        expect(yield* fs.exists(path.join(root, "web"))).toBe(false);
+        expect(yield* fs.exists(root)).toBe(false);
+        expect(fixture.taskFolderDeletes()).toBe(1);
+        // The original checkouts and their branch remain.
+        for (const repository of [api, web]) {
+          const branches = yield* command(repository, ["branch", "--list", "task-branch"]);
+          expect(branches.stdout).toContain("task-branch");
+        }
+      }).pipe(Effect.provide(cleanupTestLayer), Effect.scoped),
+  );
+
+  it.effect("keeps a task folder that holds files which exist only there", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(NOW_MS);
+      const fixture = yield* cleanupFixture({
+        ...DEFAULT_SERVER_SETTINGS.storageCleanup,
+        worktreeAfterDays: null,
+        worktreeOnDelete: true,
+      });
+      const { command, fs, config } = fixture;
+      const path = yield* Path.Path;
+      const repositoriesRoot = yield* fs.makeTempDirectoryScoped({ prefix: "cleanup-task-repos-" });
+      const api = path.join(repositoriesRoot, "api");
+      yield* fs.makeDirectory(api, { recursive: true });
+      yield* command(api, ["init", "-b", "main"]);
+      yield* command(api, ["config", "user.email", "cleanup@example.test"]);
+      yield* command(api, ["config", "user.name", "Cleanup test"]);
+      yield* fs.writeFileString(path.join(api, "tracked.txt"), "original\n");
+      yield* command(api, ["add", "."]);
+      yield* command(api, ["commit", "-m", "initial"]);
+      const root = path.join(config.worktreesDir, "task-folder");
+      yield* fs.makeDirectory(root, { recursive: true });
+      yield* command(api, ["worktree", "add", "-b", "task-branch", path.join(root, "api")]);
+      yield* fs.writeFileString(path.join(root, "notes.md"), "only here\n");
+      const owner = shell({
+        branch: "task-branch",
+        worktreePath: root,
+        deletedAt: at(-DAY_MS),
+      });
+      fixture.setThreads([]);
+      fixture.setDeletedThreads([owner]);
+      fixture.setStoredWorktreePaths([]);
+      fixture.setTaskFolder({
+        folder_path: root,
+        project_id: owner.projectId,
+        repositories_json: JSON.stringify([
+          {
+            key: "api",
+            projectPath: api,
+            worktreePath: path.join(root, "api"),
+            branch: "task-branch",
+          },
+        ]),
+      });
+      const report = yield* fixture.service.runNow;
+      expect(report.entries[0]).toMatchObject({
+        threadId: owner.id,
+        outcome: "kept",
+      });
+      expect(report.entries[0]!.reason).toContain("notes.md");
+      expect(yield* fs.exists(path.join(root, "notes.md"))).toBe(true);
+      expect(fixture.taskFolderDeletes()).toBe(0);
+    }).pipe(Effect.provide(cleanupTestLayer), Effect.scoped),
   );
 
   it.effect("applies the remaining subagent's rules when deletion cleanup is off", () =>

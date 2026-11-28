@@ -33,6 +33,10 @@ export function createPeerLinkEnvironmentAtoms<R, E>(
       onSuccess: ({ environmentId }, registry) =>
         Effect.sync(() => registry.refresh(list({ environmentId, input: {} }))),
     }),
+    pairClient: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:peer-links:pair-client",
+      tag: WS_METHODS.houstonPeerLinksPairClient,
+    }),
     unlink: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:peer-links:unlink",
       tag: WS_METHODS.peerLinksUnlink,

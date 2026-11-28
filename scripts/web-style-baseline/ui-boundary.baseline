@@ -53,7 +53,7 @@
 10 apps/web/src/components/chat/ComposerUsageLimits.tsx
 38 apps/web/src/components/chat/ContextWindowMeter.tsx
 10 apps/web/src/components/chat/DiffStatLabel.tsx
-17 apps/web/src/components/chat/DraftHeroHeadline.tsx
+16 apps/web/src/components/chat/DraftHeroHeadline.tsx
 5 apps/web/src/components/chat/DraftHeroProjectHeading.tsx
 1 apps/web/src/components/chat/DraftProjectName.tsx
 4 apps/web/src/components/chat/EffortGlyph.tsx

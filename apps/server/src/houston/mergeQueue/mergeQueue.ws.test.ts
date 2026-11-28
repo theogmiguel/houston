@@ -62,6 +62,7 @@ import * as Keybindings from "../../keybindings.ts";
 import * as KnownWorkspaces from "../../workspace/KnownWorkspaces.ts";
 import * as ManagedProjectFolders from "../../project/ManagedProjectFolders.ts";
 import * as McpAppRequests from "../../mcpApps/McpAppRequests.ts";
+import * as McpSignIn from "../mcpSignIn.ts";
 import * as ModelManifest from "../../provider/ModelManifest.ts";
 import * as NpmRelease from "../../cloud/npmRelease.ts";
 import * as OrchestrationEventStore from "../../persistence/OrchestrationEventStore.ts";
@@ -69,6 +70,8 @@ import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as OtlpEndpointCheck from "../../observability/OtlpEndpointCheck.ts";
 import * as PairingGrantStore from "../../auth/PairingGrantStore.ts";
 import * as PeerLinkRequests from "../../peer/PeerLinkRequests.ts";
+import * as PeerLinkSearch from "../peerLinkSearch.ts";
+import * as PeerLinkPairing from "../peerLinkPairing.ts";
 import * as PeerLinks from "../../peer/PeerLinks.ts";
 import * as PortScanner from "../../preview/PortScanner.ts";
 import * as PreviewAutomationBroker from "../../mcp/PreviewAutomationBroker.ts";
@@ -129,6 +132,7 @@ import * as HoustonSlackV1Import from "../slack/V1Import.ts";
 import * as HoustonTaskRuns from "../tasks/TaskRuns.ts";
 import * as HoustonTaskService from "../tasks/TaskService.ts";
 import * as HoustonTaskV1Import from "../tasks/V1Import.ts";
+import * as HoustonProjectRepositories from "../projects/ProjectRepositoriesService.ts";
 import {
   createProject,
   entryOf,
@@ -180,17 +184,21 @@ const layerUnusedRpcServices = Layer.mergeAll(
   Layer.mock(HoustonSlackV1Import.HoustonSlackV1Import)({}),
   Layer.mock(KnownWorkspaces.KnownWorkspaces)({}),
   Layer.mock(McpAppRequests.McpAppRequests)({}),
+  Layer.mock(McpSignIn.McpSignIn)({}),
   Layer.mock(OrchestrationEventStore.OrchestrationEventStore)({}),
   Layer.mock(Orchestrator.OrchestratorV2)({}),
   Layer.mock(OtlpEndpointCheck.OtlpEndpointCheck)({}),
   Layer.mock(PairingGrantStore.PairingGrantStore)({}),
   Layer.mock(PeerLinks.PeerLinks)({}),
+  Layer.mock(PeerLinkSearch.PeerLinkSearch)({}),
+  Layer.mock(PeerLinkPairing.PeerLinkPairing)({}),
   Layer.mock(PeerLinkRequests.PeerLinkRequests)({}),
   Layer.mock(PortScanner.PortDiscovery)({ trackAgent: () => () => undefined }),
   Layer.mock(PreviewManager.PreviewManager)({}),
   Layer.mock(ProcessDiagnostics.ProcessDiagnostics)({}),
   Layer.mock(ProcessResourceMonitor.ProcessResourceMonitor)({}),
   Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({}),
+  Layer.mock(HoustonProjectRepositories.HoustonProjectRepositories)({}),
   Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({}),
   Layer.mock(ProviderAuthService.ProviderAuthService)({}),
   Layer.mock(ProviderMaintenanceRunner.ProviderMaintenanceRunner)({}),

@@ -10,6 +10,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   ProviderDriverKind,
   ProviderInstanceId,
+  ProviderThreadId,
   ProjectId,
   IssueTrackerKind,
   SecretProviderId,
@@ -213,6 +214,59 @@ it.effect("allows issue reads but requires a source-control grant before comment
     );
     yield* writer[WS_METHODS.issuesComment](comment);
     expect(comments).toEqual(["Repro attached."]);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("requires providers-manage scope before an MCP server sign-in", () =>
+  Effect.gen(function* () {
+    const tested = [WS_METHODS.houstonMcpSignInStart, WS_METHODS.houstonMcpSignInComplete] as const;
+    const group = WsRpcGroup.omit(
+      ...[...WsRpcGroup.requests.keys()].filter(
+        (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, (typeof tested)[number]> =>
+          !(tested as ReadonlyArray<string>).includes(tag),
+      ),
+    );
+    let handled = 0;
+    const iso = "2026-01-01T00:00:00.000Z";
+    const handlers = Layer.mergeAll(
+      group.toLayerHandler(WS_METHODS.houstonMcpSignInStart, () =>
+        Effect.sync(() => {
+          handled++;
+          return { authorizationUrl: null, signedInAt: iso };
+        }),
+      ),
+      group.toLayerHandler(WS_METHODS.houstonMcpSignInComplete, () =>
+        Effect.sync(() => {
+          handled++;
+          return { signedInAt: iso };
+        }),
+      ),
+    );
+    const payload = {
+      threadId: ThreadId.make("thread-mcp-sign-in"),
+      providerThreadId: ProviderThreadId.make("provider-thread-mcp-sign-in"),
+      server: "notion",
+    };
+    const reader = yield* RpcTest.makeClient(group).pipe(
+      Effect.provide(Layer.merge(handlers, RpcAuthorization.layer([AuthOrchestrationReadScope]))),
+    );
+    expect(
+      yield* reader[WS_METHODS.houstonMcpSignInStart](payload).pipe(Effect.flip),
+    ).toMatchObject({
+      _tag: "EnvironmentAuthorizationError",
+      requiredPermission: AuthProvidersManageScope,
+    });
+    expect(handled).toBe(0);
+
+    const manager = yield* RpcTest.makeClient(group).pipe(
+      Effect.provide(Layer.merge(handlers, RpcAuthorization.layer([AuthProvidersManageScope]))),
+    );
+    yield* manager[WS_METHODS.houstonMcpSignInStart](payload);
+    yield* manager[WS_METHODS.houstonMcpSignInComplete]({
+      ...payload,
+      callbackUrl: "http://127.0.0.1:1/callback?code=a&state=b",
+    });
+    expect(handled).toBe(2);
   }).pipe(Effect.scoped),
 );
 
