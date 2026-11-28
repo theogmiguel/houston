@@ -25,6 +25,23 @@ older keychain entry is removed.
 request sharing** chooses which trusted environments may read or act on pull requests with
 this machine's credentials.
 
+### Map and list
+
+The Environments section shows the environments as a **Map** or a **List**; choose with the
+toggle beside its title. The map draws this device, each environment it can reach and the
+machines they are linked to. A line from this device to an environment is a saved route, and
+its state tells whether the route is in use, on standby or offline. A line between two
+machines is a link, and a machine each way is drawn as one two-way link. Machines linked
+from the same environments are grouped into a stack that opens to list them.
+
+Select a machine, a link or a stack to open its details below the map. The details hold the
+same controls as the list: reconnect, routes, access, unlink and **Add environment**. The
+list stays the full equivalent of the map, and below a window width of 768 px only the list
+is shown.
+
+Drag the plus on an environment onto another machine to link them, or select several
+machines with Shift and **Link several…**. Escape clears the search, then the selection.
+
 ### Port forwarding
 
 A thread can run a dev server or another TCP service in a remote environment and reach it from
@@ -67,7 +84,8 @@ pick one access level for all of them and confirm once. A machine can be ticked 
 connected to it with a session that may create pairing codes there and has an address another
 machine can reach; the list says why when it cannot. Each machine reports its own result, the
 ones that failed stay ticked so you can retry only those, and machines already linked are left
-as they are.
+as they are. **Also link each machine back** makes each link run both ways, so agents there can
+work on this machine too; a machine that cannot link back is named and stays one-way.
 
 For machines this app is not connected to, put one `<address> <pairing-code>` per line in a file
 (create each code with `houston pair` on that machine) and run
