@@ -19,6 +19,7 @@ import {
 } from "./CommandPalette.logic";
 import {
   CommandCollection,
+  CommandFixedRows,
   CommandGroup,
   CommandGroupLabel,
   CommandItem,
@@ -234,7 +235,7 @@ export function CommandPaletteFixedRows(props: {
   onExecuteItem: (item: CommandPaletteActionItem | CommandPaletteSubmenuItem) => void;
 }) {
   return (
-    <div className="shrink-0 border-t border-border p-2" data-slot="command-fixed-rows">
+    <CommandFixedRows>
       {props.items.map((item, offset) => (
         <CommandPaletteResultRow
           key={item.value}
@@ -245,7 +246,7 @@ export function CommandPaletteFixedRows(props: {
           onExecuteItem={props.onExecuteItem}
         />
       ))}
-    </div>
+    </CommandFixedRows>
   );
 }
 

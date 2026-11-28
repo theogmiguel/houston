@@ -169,6 +169,17 @@ function CommandFooter({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
+/** Rows that stay under the list while it scrolls and filters. */
+function CommandFixedRows({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      className={cn("shrink-0 border-t border-border p-2", className)}
+      data-slot="command-fixed-rows"
+      {...props}
+    />
+  );
+}
+
 /** Names the folder a picker is listing, with a link to the setting that chooses it. */
 function CommandScopeBar({
   title,
@@ -230,6 +241,7 @@ function CommandFooterAction({
 export {
   Command,
   CommandCollection,
+  CommandFixedRows,
   CommandFooter,
   CommandFooterAction,
   CommandGroup,
