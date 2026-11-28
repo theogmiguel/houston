@@ -101,8 +101,10 @@ import {
   staleWakeOneShot,
   type StaleWakeTrigger,
 } from "../houston/runStart/StaleWakeCompaction.ts";
+import { loadAdmission, liveReservations } from "../houston/runStart/LoadAdmission.ts";
 import { LimitWindowRegistry } from "../houston/runStart/LimitWindowRegistry.ts";
 import { stoppedThreadAdmission } from "../houston/runStart/StoppedThreadAdmission.ts";
+import * as ThreadMemory from "../houston/memory/ThreadMemory.ts";
 import {
   backgroundWorkHoldsCompletion,
   derivePendingBackgroundWork,
@@ -699,6 +701,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
       return command.parentThreadId;
     case "secret_request.record":
     case "link_request.record":
+    case "project_request.record":
       return command.threadId;
     case "thread.fork":
     case "thread.merge_back":
@@ -1214,6 +1217,8 @@ interface RunStartAdmissionInput {
   readonly now: DateTime.Utc;
   /** Send now and Resume queue skip the admission holds; the user asked for this start themselves. */
   readonly bypassAdmission?: boolean;
+  /** New automatic work may wait for memory; a result or notice delivered to a parent never does. */
+  readonly loadGoverned?: boolean;
 }
 
 function usageLimitHoldsQueue(
@@ -1524,6 +1529,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
   // The single admission step every run start passes under the thread lock. Only automatic
   // work may be held; a typed send and provider output always start.
+  const loadReservations = yield* Ref.make<ReadonlyMap<string, number>>(new Map());
+  let nextLoadReservation = 0;
   const admitRunStart = <E = never, R = never>(
     input: RunStartAdmissionInput,
     context?: () => Effect.Effect<RunStartHold | null, E, R>,
@@ -1545,7 +1552,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const windows = Option.isSome(registry)
         ? yield* registry.value.read(input.providerInstanceId)
         : [];
-      const hold = limitsAdmission({
+      const limitHold = limitsAdmission({
         origin: input.origin,
         providerInstanceId: input.providerInstanceId,
         model: input.model,
@@ -1556,7 +1563,42 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         snoozeLimitedThreads: settings.snoozeLimitedThreads,
         nowMs: DateTime.toEpochMillis(input.now),
       });
-      return hold ?? ({ type: "start" } as const);
+      if (limitHold !== null) return limitHold;
+      if (input.loadGoverned === false || !settings.holdNewSubagentsUnderLoad)
+        return { type: "start" } as const;
+      const nowMs = DateTime.toEpochMillis(input.now);
+      const memory = yield* Effect.serviceOption(ThreadMemory.ThreadMemory);
+      const machine = Option.isSome(memory)
+        ? yield* memory.value.read([]).pipe(
+            Effect.map((sample) => sample.machine),
+            Effect.catchCause(() => Effect.succeed(null)),
+          )
+        : null;
+      const activeRuns = yield* projectionStore
+        .countActiveRuns()
+        .pipe(Effect.catchCause(() => Effect.succeed(0)));
+      // Take the reservation inside the ref update so parallel delegations cannot both see a slot.
+      return yield* Ref.modify(
+        loadReservations,
+        (current): readonly [RunStartAdmission, ReadonlyMap<string, number>] => {
+          const reservations = liveReservations(current, nowMs);
+          const outcome: RunStartAdmission = loadAdmission({
+            origin: input.origin,
+            governed: true,
+            bypass: false,
+            settings: {
+              holdNewSubagentsUnderLoad: settings.holdNewSubagentsUnderLoad,
+              concurrentRuns: settings.concurrentRuns,
+            },
+            machine,
+            activeRuns,
+            reservations: reservations.size,
+          });
+          if (outcome.type === "hold") return [outcome, reservations];
+          const id = `load-reservation:${nextLoadReservation++}`;
+          return [outcome, new Map(reservations).set(id, nowMs)];
+        },
+      );
     });
     return enterRunStartGate({
       origin: input.origin,
@@ -2363,6 +2405,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           model: modelSelection.model,
           releasedUsageLimitHold: queuedRun.releasedUsageLimitHold === true,
           ...(options?.bypassAdmission === true ? { bypassAdmission: true } : {}),
+          loadGoverned:
+            queuedMessage?.delegatedCompletion === undefined &&
+            queuedMessage?.notification === undefined,
           projection,
           now,
         },
@@ -7965,6 +8010,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         origin,
         providerInstanceId: modelSelection.instanceId,
         model: modelSelection.model,
+        loadGoverned:
+          command.delegatedCompletion === undefined && command.notification === undefined,
         projection,
         now,
       },
@@ -9854,6 +9901,40 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           cause: `Delegated child thread ${childThreadId} did not create a run.`,
         });
       }
+      // A new child held for memory has no run.updated yet, so record its wait on the task here.
+      if (childRun.status === "queued" && childRun.queueHeldReason?.kind === "load") {
+        const holdReason = childRun.queueHeldReason;
+        yield* emitEvent({
+          type: "subagent.updated",
+          threadId: command.parentThreadId,
+          runId: parentRun.id,
+          nodeId: taskNodeId,
+          driver: targetAdapter.driver,
+          providerInstanceId: command.modelSelection.instanceId,
+          occurredAt: now,
+          payload: { ...task, status: "waiting", holdReason, updatedAt: now },
+        });
+        yield* emitEvent({
+          type: "node.updated",
+          threadId: command.parentThreadId,
+          runId: parentRun.id,
+          nodeId: taskNodeId,
+          driver: targetAdapter.driver,
+          providerInstanceId: command.modelSelection.instanceId,
+          occurredAt: now,
+          payload: { ...taskNode, status: "waiting" },
+        });
+        yield* emitEvent({
+          type: "turn-item.updated",
+          threadId: command.parentThreadId,
+          runId: parentRun.id,
+          nodeId: taskNodeId,
+          driver: targetAdapter.driver,
+          providerInstanceId: command.modelSelection.instanceId,
+          occurredAt: now,
+          payload: { ...taskTurnItem, status: "waiting", updatedAt: now },
+        });
+      }
       const spawnTransferId = yield* mapDispatchError(command)(
         idAllocator.allocate.contextTransfer({
           sourceThreadId: command.parentThreadId,
@@ -9972,7 +10053,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       title: child.title,
       completionWake: "always",
       completionDelivery: { state: "pending", observedByRunId: null },
-      status: run.status === "queued" ? (run.queueHeld === true ? "idle" : "pending") : "running",
+      status:
+        run.status === "queued"
+          ? run.queueHeld === true && run.queueHeldReason?.kind === "load"
+            ? "waiting"
+            : run.queueHeld === true
+              ? "idle"
+              : "pending"
+          : "running",
+      holdReason:
+        run.status === "queued" && run.queueHeldReason?.kind === "load"
+          ? run.queueHeldReason
+          : null,
       progress: undefined,
       result: null,
       startedAt: now,
@@ -10714,6 +10806,105 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ...(command.placeholder === undefined ? {} : { placeholder: command.placeholder }),
             ...(command.delivery === undefined ? {} : { delivery: command.delivery }),
             secretStatus: command.secretStatus,
+          };
+      yield* emit(
+        events,
+        command,
+      )({
+        type: "turn-item.updated",
+        threadId: command.threadId,
+        runId: command.runId,
+        nodeId: command.nodeId,
+        providerInstanceId: run.providerInstanceId,
+        occurredAt: now,
+        payload: turnItem,
+      });
+    },
+  );
+
+  /**
+   * Records the one add-project card an agent asked the user to approve.
+   * The folder and reason were resolved before the card, and the answer only
+   * moves its status; the waiting tool performs the approved creation.
+   */
+  const dispatchProjectRequestRecord = Effect.fn("orchestrationV2.dispatch.projectRequestRecord")(
+    function* (
+      command: Extract<OrchestrationV2InternalCommand, { readonly type: "project_request.record" }>,
+      events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    ) {
+      const projection = yield* projectionStore
+        .getThreadRecords(
+          command.threadId,
+          ["runs", "nodes", "turnItems", "attempts", "providerTurns"],
+          { turnItemTypes: ["project_request"], messageRoles: [] },
+        )
+        .pipe(
+          Effect.mapError(
+            (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+          ),
+        );
+      const run = projection.runs.find((candidate) => candidate.id === command.runId);
+      if (run === undefined || run.rootNodeId !== command.nodeId) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Node ${command.nodeId} is not the root of run ${command.runId}.`,
+        });
+      }
+      const existing = projection.turnItems.find((item) => item.id === command.turnItemId);
+      if (existing !== undefined && existing.type !== "project_request") {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Turn item ${command.turnItemId} is not a project request.`,
+        });
+      }
+      if (existing !== undefined && existing.runId !== command.runId) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Project request ${command.turnItemId} belongs to another run.`,
+        });
+      }
+      const now = yield* DateTime.now;
+      const unchanged =
+        existing !== undefined &&
+        existing.projectRequestStatus === command.projectRequestStatus &&
+        existing.projectId === command.projectId &&
+        existing.failure === command.failure;
+      const waiting =
+        command.projectRequestStatus === "pending" || command.projectRequestStatus === "adding";
+      const turnItem: OrchestrationV2TurnItem = unchanged
+        ? existing
+        : {
+            id: command.turnItemId,
+            threadId: command.threadId,
+            runId: command.runId,
+            nodeId: command.nodeId,
+            providerThreadId: run.providerThreadId,
+            providerTurnId: providerTurnForRun(projection, run)?.id ?? null,
+            nativeItemRef: null,
+            parentItemId: null,
+            ordinal: existing?.ordinal ?? (yield* nextTurnItemOrdinal(projection)),
+            status: waiting
+              ? "waiting"
+              : command.projectRequestStatus === "added"
+                ? "completed"
+                : command.projectRequestStatus === "failed"
+                  ? "failed"
+                  : "cancelled",
+            title: command.title,
+            startedAt: existing?.startedAt ?? now,
+            completedAt: waiting ? null : now,
+            updatedAt: now,
+            type: "project_request",
+            reason: command.reason,
+            workspaceRoot: command.workspaceRoot,
+            createsFolder: command.createsFolder,
+            createsRepository: command.createsRepository,
+            projectRequestStatus: command.projectRequestStatus,
+            ...(command.projectId === undefined ? {} : { projectId: command.projectId }),
+            ...(command.failure === undefined ? {} : { failure: command.failure }),
           };
       yield* emit(
         events,
@@ -12019,6 +12210,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           providerInstanceId: state.run.providerInstanceId,
           model: state.run.modelSelection.model,
           releasedUsageLimitHold: state.run.releasedUsageLimitHold === true,
+          loadGoverned:
+            preparedMessage === undefined ||
+            (preparedMessage.delegatedCompletion === undefined &&
+              preparedMessage.notification === undefined),
           projection,
           now,
         },
@@ -14461,15 +14656,27 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       if (terminalStatus === null) {
         if (childRun.delegatedTaskId === undefined || childRun.id !== options.syncRunId) return;
         const task = options.task;
+        const holdReason =
+          childRun.status === "queued" &&
+          childRun.queueHeld === true &&
+          childRun.queueHeldReason?.kind === "load"
+            ? childRun.queueHeldReason
+            : null;
         const status: OrchestrationV2Subagent["status"] =
           childRun.status === "queued"
-            ? childRun.queueHeld === true
-              ? "idle"
-              : "pending"
+            ? holdReason !== null
+              ? "waiting"
+              : childRun.queueHeld === true
+                ? "idle"
+                : "pending"
             : childRun.status === "waiting"
               ? "waiting"
               : "running";
-        if (task.result !== null || task.status === status) return;
+        if (
+          task.result !== null ||
+          (task.status === status && (task.holdReason ?? null) === holdReason)
+        )
+          return;
         const parent = yield* projectionStore.getThreadRecords(
           childControls.thread.lineage.parentThreadId,
           ["nodes", "turnItems"],
@@ -14491,7 +14698,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           {
             ...scope,
             type: "subagent.updated",
-            payload: { ...task, status, completedAt: null, updatedAt: now },
+            payload: { ...task, status, holdReason, completedAt: null, updatedAt: now },
           },
           ...(node === undefined
             ? []
@@ -14589,6 +14796,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...task,
         providerThreadId: childRun.providerThreadId,
         status: terminalStatus,
+        holdReason: null,
         result: result.text,
         completedAt: now,
         updatedAt: now,
@@ -15526,6 +15734,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "link_request.record":
         yield* dispatchLinkRequestRecord(command, events, effects);
+        break;
+      case "project_request.record":
+        yield* dispatchProjectRequestRecord(command, events);
         break;
       case "houston.aside.start":
         // A side thread's content (a review's digest quotes) never leaves it for another thread.

@@ -191,6 +191,7 @@ export function ThreadCard({
   runningSubagents = 0,
   treeParent,
   onOpen,
+  onOpenThread,
   onSelect,
   onClose,
   onHold,
@@ -220,6 +221,8 @@ export function ThreadCard({
   /** The row id of the workspace this row sits under, for arrow-key navigation. */
   treeParent?: string | undefined;
   onOpen: () => void;
+  /** Opens the thread from its title when the row's own click does something else. */
+  onOpenThread?: (() => void) | undefined;
   onSelect: (input: { shiftKey: boolean; toggleKey: boolean }) => void;
   onClose: () => void;
   onHold: (preset: Pick<SnoozePreset, "snoozedUntil">) => void;
@@ -235,6 +238,7 @@ export function ThreadCard({
   handleNewThread?: NewThreadHandler | undefined;
 }) {
   const t = useT();
+  const openThread = onOpenThread ?? onOpen;
   const [renaming, setRenaming] = useState(false);
   const [actionsHovered, setActionsHovered] = useState(false);
   const [holdMenuOpen, setHoldMenuOpen] = useState(false);
@@ -605,7 +609,7 @@ export function ThreadCard({
                   }
                   // The second click of a double-click renames; it must not open the thread again.
                   if (isTrailingDoubleClick(event.detail)) return;
-                  onOpen();
+                  openThread();
                 }}
                 onDoubleClick={(event) => {
                   event.preventDefault();

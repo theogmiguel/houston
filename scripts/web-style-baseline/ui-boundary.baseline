@@ -76,6 +76,7 @@
 1 apps/web/src/components/chat/OpenInPicker.tsx
 5 apps/web/src/components/chat/PanelLayoutControls.tsx
 2 apps/web/src/components/chat/PierreEntryIcon.tsx
+14 apps/web/src/components/chat/ProjectRequestCard.tsx
 14 apps/web/src/components/chat/ProposedPlanCard.tsx
 16 apps/web/src/components/chat/ProviderInstanceIcon.tsx
 3 apps/web/src/components/chat/ProviderModelPicker.tsx

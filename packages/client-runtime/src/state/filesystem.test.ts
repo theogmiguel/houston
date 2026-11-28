@@ -5,6 +5,7 @@ import {
   createBrowseNavigationCoordinator,
   getFilesystemBrowsePath,
   getFilesystemBrowseTabCompletion,
+  isFilesystemNameQuery,
   resolveFilesystemReadAccess,
 } from "./filesystem.ts";
 
@@ -79,6 +80,33 @@ describe("filesystem browse model", () => {
     });
     expect(getFilesystemBrowsePath("C:\\Users\\test", "MacIntel").isBrowsing).toBe(false);
     expect(getFilesystemBrowsePath("~/projects/", "", false).isBrowsing).toBe(false);
+  });
+
+  it("tells a folder name to search for apart from a path to list", () => {
+    expect(isFilesystemNameQuery("houston")).toBe(true);
+    expect(isFilesystemNameQuery("  houston  ")).toBe(true);
+    expect(isFilesystemNameQuery("houston/repo")).toBe(true);
+    expect(isFilesystemNameQuery("")).toBe(false);
+    expect(isFilesystemNameQuery("~/projects")).toBe(false);
+    expect(isFilesystemNameQuery("/projects")).toBe(false);
+    expect(isFilesystemNameQuery("./projects")).toBe(false);
+    expect(isFilesystemNameQuery("..\\projects")).toBe(false);
+  });
+
+  it("treats both Windows slashes and drive letters as paths", () => {
+    expect(isFilesystemNameQuery("C:\\dev\\repo", "Win32")).toBe(false);
+    expect(isFilesystemNameQuery("C:/dev/repo", "Win32")).toBe(false);
+    expect(isFilesystemNameQuery("dev\\repo", "Win32")).toBe(true);
+    expect(getFilesystemBrowsePath("C:/dev/repo", "Win32")).toMatchObject({
+      isBrowsing: true,
+      directoryPath: "C:/dev/",
+      filterQuery: "repo",
+    });
+    expect(getFilesystemBrowsePath("C:\\dev\\repo\\", "Win32")).toMatchObject({
+      isBrowsing: true,
+      directoryPath: "C:\\dev\\repo\\",
+      filterQuery: "",
+    });
   });
 
   it("completes Tab like a shell", () => {

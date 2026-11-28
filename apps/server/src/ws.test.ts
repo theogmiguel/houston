@@ -12,6 +12,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   WS_METHODS,
+  WsHoustonThreadMemorySubscribeRpc,
   WsServerRefreshProvidersRpc,
   WsSubscribeServerConfigRpc,
   type OrchestrationV2StoredEvent,
@@ -28,6 +29,9 @@ import * as Exit from "effect/Exit";
 import * as Cause from "effect/Cause";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as FileSystem from "effect/FileSystem";
+import * as PlatformError from "effect/PlatformError";
+import * as HostProcess from "@houston-app/shared/HostProcess";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
@@ -60,6 +64,7 @@ import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as HostResources from "./resourceTelemetry/HostResources.ts";
+import * as ThreadMemory from "./houston/memory/ThreadMemory.ts";
 import * as ManagedProjectFolders from "./project/ManagedProjectFolders.ts";
 import * as ScratchThreadPromotion from "./project/ScratchThreadPromotion.ts";
 import * as McpAppRequests from "./mcpApps/McpAppRequests.ts";
@@ -1268,6 +1273,7 @@ it.effect("on-demand clients get provider config without workspace snapshots", (
         Layer.fresh(layerConfigSources),
         Layer.mock(PreviewAutomationBroker.PreviewAutomationBroker)({}),
         Layer.mock(ServerBrowser.ServerBrowser)({}),
+        Layer.succeed(HostProcess.Platform, "linux"),
       ),
     ),
     Effect.scoped,
@@ -1507,4 +1513,150 @@ it.effect.each([
     );
     assert.deepEqual((error as { reason?: string }).reason, reason);
   }).pipe(Effect.scoped, Effect.provide(ReplayTestLayer)),
+);
+
+it.effect("thread memory streams the machine's memory left for the requested thread", () =>
+  Effect.gen(function* () {
+    const serverPid = process.pid;
+    const childPid = serverPid + 1;
+    const gib = 1024 * 1024;
+    const stat = (pid: number, ppid: number, startTime: number) =>
+      `${pid} (agent) S ${ppid} 1 1 0 -1 4194560 0 0 0 0 0 0 0 0 0 0 0 0 ${startTime}\n`;
+    const files = new Map<string, string>([
+      [`/proc/${serverPid}/stat`, stat(serverPid, 0, 1)],
+      [`/proc/${childPid}/stat`, stat(childPid, serverPid, 2)],
+      [`/proc/${childPid}/status`, "Name:\tagent\nVmRSS:\t  1572864 kB\n"],
+      [`/proc/${childPid}/environ`, "PATH=/usr/bin\0HOUSTON_THREAD_ID=thread:memory\0"],
+      ["/proc/meminfo", "MemTotal: 31457280 kB\nMemAvailable: 16986931 kB\n"],
+    ]);
+    const missing = (path: string, method: string) =>
+      Effect.fail(
+        PlatformError.systemError({
+          _tag: "NotFound",
+          module: "FileSystem",
+          method,
+          pathOrDescriptor: path,
+        }),
+      );
+    const fs = FileSystem.makeNoop({
+      readDirectory: (path: string) =>
+        path === "/proc"
+          ? Effect.succeed([String(serverPid), String(childPid)])
+          : missing(path, "readDirectory"),
+      readFileString: (path: string) => {
+        const contents = files.get(path);
+        return contents === undefined ? missing(path, "readFileString") : Effect.succeed(contents);
+      },
+    });
+    const threadMemoryLayer = ThreadMemory.layer.pipe(
+      Layer.provide(Layer.succeed(HostProcess.Platform, "linux")),
+      Layer.provide(Layer.succeed(FileSystem.FileSystem, fs)),
+    );
+    const rpcServices = Layer.mergeAll(
+      layerUnusedConfigRpcServices,
+      Layer.mock(ExternalLauncher.ExternalLauncher)({
+        resolveAvailableEditors: () => Effect.succeed([]),
+        // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
+        resolveFileManagerRevealKind: () => Effect.succeed(undefined),
+      }),
+      Layer.mock(ProviderRegistry.ProviderRegistry)({
+        getProviders: Effect.succeed([]),
+        streamChanges: Stream.never,
+      }),
+      Layer.mock(UsageLimitSources.UsageLimitSources)({
+        current: Effect.succeed([]),
+        streamChanges: Stream.make([]),
+      }),
+      Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({ resolveTargets: () => Effect.succeed([]) }),
+      Layer.mock(DirectEndpoints.DirectEndpoints)({
+        resolve: () => Effect.succeed([]),
+        resolveAvailable: () => Effect.succeed([]),
+      }),
+      Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+        scratchRoot: Effect.succeedNone,
+        namedProjectsRoot: process.cwd(),
+      }),
+      Layer.mock(ScratchThreadPromotion.ScratchThreadPromotion)({}),
+      Layer.mock(ServerEnvironment.ServerEnvironment)({
+        getDescriptor: Effect.succeed({
+          environmentId: EnvironmentId.make("thread-memory-test"),
+          label: "Thread memory test",
+          platform: { os: "linux", arch: "x64" },
+          serverVersion: "0.0.0",
+          capabilities: { repositoryIdentity: false },
+        }),
+      }),
+      Layer.mock(EnvironmentAuth.EnvironmentAuth)({
+        getDescriptor: () =>
+          Effect.succeed({
+            policy: "loopback-browser",
+            bootstrapMethods: [],
+            sessionMethods: ["browser-session-cookie"],
+            sessionCookieName: "thread-memory-test-session",
+          }),
+      }),
+    );
+    const responses = yield* Queue.unbounded<unknown>();
+    const server = yield* RpcServer.makeNoSerialization(
+      RpcGroup.make(WsHoustonThreadMemorySubscribeRpc),
+      {
+        ...WS_RPC_SERVER_OPTIONS,
+        onFromServer: (response) =>
+          response._tag === "Chunk"
+            ? Effect.forEach(response.values, (value) => Queue.offer(responses, value), {
+                discard: true,
+              })
+            : response._tag === "Exit"
+              ? Queue.offer(
+                  responses,
+                  response.exit._tag === "Success"
+                    ? response.exit.value
+                    : { failed: response.exit },
+                )
+              : Effect.void,
+      },
+    ).pipe(
+      Effect.provide(
+        layerWsRpc(
+          {
+            sessionId: AuthSessionId.make("thread-memory-test"),
+            subject: "thread-memory-test",
+            method: "browser-session-cookie",
+            scopes: ["orchestration:read"],
+          },
+          yield* ServerBrowser.ServerBrowser,
+          () => Effect.void,
+        ).pipe(Layer.provide(Layer.mergeAll(rpcServices, threadMemoryLayer))),
+      ),
+    );
+    const requestId = RpcMessage.RequestId("thread-memory");
+    yield* server.write(0, {
+      _tag: "Request",
+      id: requestId,
+      tag: WS_METHODS.houstonThreadMemorySubscribe,
+      payload: { threadId: ThreadId.make("thread:memory") },
+      headers: Headers.empty,
+    });
+    const sample = (yield* Queue.take(responses)) as {
+      readonly machine: { readonly leftPercent: number; readonly usedBytes: number } | null;
+      readonly thread: { readonly residentBytes: number; readonly subagentCount: number } | null;
+      readonly unreadable: ReadonlyArray<string>;
+    };
+    assert.equal(sample.machine?.leftPercent, 54);
+    assert.equal(sample.machine?.usedBytes, Math.floor(30 * gib * 1024 - 16986931 * 1024));
+    assert.deepEqual(sample.thread, { residentBytes: 1572864 * 1024, subagentCount: 0 });
+    assert.deepEqual(sample.unreadable, []);
+    yield* server.write(0, { _tag: "Ack", requestId });
+    yield* server.write(0, { _tag: "Interrupt", requestId, interruptors: [] });
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        Layer.fresh(layerConfigSources),
+        Layer.mock(PreviewAutomationBroker.PreviewAutomationBroker)({}),
+        Layer.mock(ServerBrowser.ServerBrowser)({}),
+        Layer.succeed(HostProcess.Platform, "linux"),
+      ),
+    ),
+    Effect.scoped,
+  ),
 );

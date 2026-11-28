@@ -112,6 +112,18 @@ export const SidebarAutoSettleAfterDays = Schema.Number.check(
 export type SidebarAutoSettleAfterDays = typeof SidebarAutoSettleAfterDays.Type;
 const DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS: SidebarAutoSettleAfterDays = 3;
 
+export const MIN_CONCURRENT_RUNS = 1;
+export const MAX_CONCURRENT_RUNS = 32;
+/** Auto computes the ceiling from RAM; a number pins it. */
+export const ConcurrentRuns = Schema.Union([
+  Schema.Literal("auto"),
+  Schema.Int.check(
+    Schema.isBetween({ minimum: MIN_CONCURRENT_RUNS, maximum: MAX_CONCURRENT_RUNS }),
+  ),
+]);
+export type ConcurrentRuns = typeof ConcurrentRuns.Type;
+const DEFAULT_CONCURRENT_RUNS: ConcurrentRuns = "auto";
+
 export const MAX_SNOOZE_PRESET_MINUTES = 30 * 24 * 60;
 export const MAX_SNOOZE_PRESETS = 8;
 export const SnoozePresetDay = Schema.Literals([
@@ -402,6 +414,8 @@ export const ClientSettingsSchema = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed("off" as const)),
   ),
   inAppNotificationsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Per device: one notice and one reminder when a thread waits for the user, whatever the mode. */
+  notifyWhenThreadWaits: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   diffColorScheme: DiffColorScheme.pipe(
     Schema.withDecodingDefault(Effect.succeed("red-green" as const)),
   ),
@@ -516,6 +530,10 @@ export const ClientSettingsSchema = Schema.Struct({
   planModeEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   contextWindowMeterEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   composerRichTextEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /** Off makes a text selection ordinary: no floating comment button and no Tab stop. */
+  showCommentButtonOnSelection: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
   sendShortcut: Schema.Literals(["enter", "mod-enter-multiline", "mod-enter"]).pipe(
     Schema.withDecodingDefault(Effect.succeed("enter")),
   ),
@@ -1485,6 +1503,11 @@ export const ServerSettings = Schema.Struct({
   holdAgentMessagesAfterStop: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
+  /** Hold new sub-agent work while runs reach the ceiling or memory pressure is high. */
+  holdNewSubagentsUnderLoad: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  concurrentRuns: ConcurrentRuns.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_CONCURRENT_RUNS)),
+  ),
   autoResumeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   snoozePresets: SnoozePresetSettings.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SNOOZE_PRESETS)),
@@ -1958,6 +1981,8 @@ export const ServerSettingsPatch = Schema.Struct({
   snoozeLimitedThreads: Schema.optionalKey(Schema.Boolean),
   holdUnlimitedThreads: Schema.optionalKey(Schema.Boolean),
   holdAgentMessagesAfterStop: Schema.optionalKey(Schema.Boolean),
+  holdNewSubagentsUnderLoad: Schema.optionalKey(Schema.Boolean),
+  concurrentRuns: Schema.optionalKey(ConcurrentRuns),
   snoozePresets: Schema.optionalKey(SnoozePresetSettings),
   hiddenThreadTags: Schema.optionalKey(Schema.Array(Schema.String)),
   hideTaggedThreads: Schema.optionalKey(Schema.Boolean),
@@ -2093,6 +2118,7 @@ export function requiredScopesForProjectMutation(
 export const ClientSettingsPatch = Schema.Struct({
   notificationMode: Schema.optionalKey(NotificationMode),
   inAppNotificationsEnabled: Schema.optionalKey(Schema.Boolean),
+  notifyWhenThreadWaits: Schema.optionalKey(Schema.Boolean),
   diffColorScheme: Schema.optionalKey(DiffColorScheme),
   chatWidth: Schema.optionalKey(ChatWidth),
   effortDisplay: Schema.optionalKey(EffortDisplay),
@@ -2142,6 +2168,7 @@ export const ClientSettingsPatch = Schema.Struct({
   planModeEnabled: Schema.optionalKey(Schema.Boolean),
   contextWindowMeterEnabled: Schema.optionalKey(Schema.Boolean),
   composerRichTextEnabled: Schema.optionalKey(Schema.Boolean),
+  showCommentButtonOnSelection: Schema.optionalKey(Schema.Boolean),
   sendShortcut: Schema.optionalKey(Schema.Literals(["enter", "mod-enter-multiline", "mod-enter"])),
   followUpBehavior: Schema.optionalKey(Schema.Literals(["queue", "steer"])),
   proactivePanelsEnabled: Schema.optionalKey(Schema.Boolean),

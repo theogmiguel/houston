@@ -17,7 +17,7 @@ Search Settings by feature or setting name. `Esc` clears an active search.
 
 - **Sidebar** — group matching repositories across environments, and order projects.
 - **Notifications** — thread notifications with a style (notifications, sound, both or
-  off), and in-app notifications.
+  off), in-app notifications, and a notice when a thread waits for you.
 - **Confirmations** — ask before unpinning, archiving or deleting a thread, and, in the
   desktop app, whether the quit shortcut quits directly or waits for a second press.
 - **Background** — **Keep in tray**, shown when the desktop has a working tray.
@@ -66,6 +66,11 @@ imported; VS Code theme files can be imported. See [Appearance](appearance.md).
 
 The rich-text composer, the send shortcut, whether skills appear in the `/` menu, and
 **Follow-up behavior** for a message sent while an agent is working.
+
+**Comment button on selection** (on by default) shows the floating comment button when you
+select text in a response. Turn it off to make a selection ordinary: no button appears, and
+Tab does not move focus to it. Commenting on a selection is then unavailable from the
+selection itself; there is no other comment action to bind.
 
 ## Voice
 
@@ -143,6 +148,15 @@ inside a known limit window, including new sub-agents. See [Usage](usage.md).
 other automatic runs after you press Stop. They wait in the thread's queued list until you press
 Resume or send a message; **Send now** starts one at once. Off by default. See
 [Agent status](agent-status.md).
+
+**Hold new sub-agents under load** waits new sub-agent work while too many runs are active or
+memory is short. **Concurrent runs** is Auto by default and picks the ceiling from installed
+memory, or can be set from 1 to 32; the row shows the current value and how many runs are
+active. A message you type always starts, and so does a result delivered to a parent thread.
+See [Usage](usage.md) for the causes, release order and the Windows and WSL limits.
+
+**Add project base directory** is the folder the Add folder browser searches after the
+parents of registered projects. Empty means your home folder.
 
 **Text generation fallback** chooses where background writing goes when its model cannot
 run. **Any provider** (the default) tries an instance marked as running local models first,

@@ -12,6 +12,9 @@ import { primaryServerKeybindingsAtom } from "../state/server";
 
 const state = vi.hoisted(() => ({
   browseData: undefined as unknown,
+  folderSearchData: undefined as unknown,
+  folderSearchPending: false,
+  folderSearchError: null as string | null,
   linkedSearch: {
     enabled: false,
     machines: [],
@@ -111,11 +114,42 @@ vi.mock("../state/filesystem", async (original) => ({
 }));
 vi.mock("../state/query", async (original) => ({
   ...(await original<typeof import("../state/query")>()),
-  useEnvironmentQuery: () => ({ data: state.browseData, isLoading: false }),
+  useEnvironmentQuery: (atom: { readonly label?: ReadonlyArray<string> } | null) => {
+    const isFolderSearch =
+      atom?.label?.some((label) =>
+        label.startsWith("environment-data:filesystem:search-folders"),
+      ) ?? false;
+    return isFolderSearch
+      ? {
+          data: state.folderSearchData,
+          dataUpdatedAt: 0,
+          error: state.folderSearchError,
+          failure: null,
+          isPending: state.folderSearchPending,
+          isSuccess: state.folderSearchData !== undefined,
+          refresh: () => undefined,
+        }
+      : {
+          data: state.browseData,
+          dataUpdatedAt: 0,
+          error: null,
+          failure: null,
+          isPending: false,
+          isSuccess: state.browseData !== undefined,
+          refresh: () => undefined,
+        };
+  },
 }));
 vi.mock("./settings/useAvailableSettingsSearchItems", () => ({
   useAvailableSettingsSearchItems: () => [],
 }));
+
+function resetAddProjectState() {
+  state.browseData = undefined;
+  state.folderSearchData = undefined;
+  state.folderSearchPending = false;
+  state.folderSearchError = null;
+}
 
 // The real palette and Base UI input must agree that confirming composition is typing.
 describe.each(["repository", "folder", "destination"] as const)("add-project %s", (step) => {
@@ -176,8 +210,19 @@ it("keeps the caret in place when an edit briefly makes the folder path not a pa
 });
 
 describe("add folder path mode", () => {
-  it("starts browsing from the add-project base folder under StrictMode", async () => {
+  it("starts with places to start instead of listing the base folder", async () => {
+    resetAddProjectState();
     state.browseData = undefined;
+    state.folderSearchData = {
+      places: [
+        { kind: "home", label: "Home", path: "/home/me" },
+        { kind: "project-parent", label: "dev", path: "/home/me/dev" },
+        { kind: "base", label: "Base folder", path: "/workspace/" },
+      ],
+      folders: [],
+      truncated: false,
+      scannedEntries: 0,
+    };
     await using _screen = await render(
       <StrictMode>
         <CommandPalette>{null}</CommandPalette>
@@ -187,7 +232,72 @@ describe("add folder path mode", () => {
       openCommandPalette({ open: "add-project", addProject: { action: "open-folder" } }),
     );
 
-    await expect.element(page.getByRole("combobox")).toHaveValue("/workspace/");
+    await expect.element(page.getByRole("combobox")).toHaveValue("");
+    await expect.element(page.getByText("Places to start", { exact: true })).toBeInTheDocument();
+    await expect.element(page.getByText("/home/me/dev", { exact: true })).toBeInTheDocument();
+    await expect
+      .element(page.getByRole("button", { name: "Change base folder" }))
+      .toBeInTheDocument();
+  });
+
+  it("finds a folder by name and shows its full path", async () => {
+    resetAddProjectState();
+    state.browseData = undefined;
+    state.folderSearchData = {
+      places: [],
+      folders: [
+        { name: "houston", path: "/home/me/dev/houston", gitRepository: true },
+        { name: "houston", path: "/home/me/clients/houston", gitRepository: false },
+      ],
+      truncated: false,
+      scannedEntries: 12,
+    };
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+    await act(() =>
+      openCommandPalette({ open: "add-project", addProject: { action: "open-folder" } }),
+    );
+
+    await page.getByRole("combobox").fill("hou");
+    await expect.element(page.getByText("/home/me/dev/houston", { exact: true })).toBeVisible();
+    await expect.element(page.getByText("/home/me/clients/houston", { exact: true })).toBeVisible();
+  });
+
+  it("says when no folder matches, and keeps errors apart", async () => {
+    resetAddProjectState();
+    state.browseData = undefined;
+    state.folderSearchData = { places: [], folders: [], truncated: false, scannedEntries: 3 };
+    state.folderSearchError = null;
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+    await act(() =>
+      openCommandPalette({ open: "add-project", addProject: { action: "open-folder" } }),
+    );
+
+    await page.getByRole("combobox").fill("nothing");
+    await expect
+      .element(page.getByText('No folders match "nothing".', { exact: true }))
+      .toBeInTheDocument();
+
+    state.folderSearchError = "The folder search failed.";
+    await page.getByRole("combobox").fill("nothing else");
+    await expect
+      .element(page.getByText("The folder search failed.", { exact: true }))
+      .toBeInTheDocument();
+    state.folderSearchError = null;
+  });
+
+  it("keeps the searching state visible while the query settles", async () => {
+    resetAddProjectState();
+    state.browseData = undefined;
+    state.folderSearchData = undefined;
+    state.folderSearchPending = true;
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+    await act(() =>
+      openCommandPalette({ open: "add-project", addProject: { action: "open-folder" } }),
+    );
+
+    await page.getByRole("combobox").fill("hou");
+    await expect.element(page.getByText("Searching folders…", { exact: true })).toBeVisible();
+    state.folderSearchPending = false;
   });
 
   it("does not create a folder when Enter confirms a path that does not exist", async () => {

@@ -83,6 +83,8 @@ export function queueHeldPresentation(
                 ? "You stopped this thread"
                 : reason.kind === "context_compaction"
                   ? "Waiting for compaction"
-                  : "Waiting for background work to finish";
+                  : reason.kind === "load"
+                    ? "Waiting for memory"
+                    : "Waiting for background work to finish";
   return { label: `Held: ${text}`, detail: reason.message, tone: "warning" };
 }

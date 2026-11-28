@@ -79,3 +79,89 @@ export function createThreadNotificationGate<Key>(
     },
   };
 }
+
+export const WAITING_NOTICE_REMINDER_MS = 30 * 60_000;
+export const WAITING_NOTICE_TITLE_MAX_CHARS = 120;
+const WAITING_NOTICE_WHITESPACE = /\s+/g;
+
+export type WaitingNoticeKind = "question" | "approval";
+/** How the existing input notice already handled this request, if it did. */
+export type WaitingNoticeExistingOutcome = "announced" | "sound" | "none";
+
+export interface WaitingNoticeRequest {
+  readonly key: string;
+  readonly kind: WaitingNoticeKind;
+  /** A bounded, plain-text thread title. */
+  readonly title: string;
+  readonly existingOutcome: WaitingNoticeExistingOutcome;
+}
+
+export interface WaitingNotice {
+  readonly key: string;
+  readonly kind: WaitingNoticeKind;
+  readonly title: string;
+  readonly reminder: boolean;
+  /** The mode already played a sound for this request, so do not play another. */
+  readonly playSound: boolean;
+}
+
+export function waitingRequestKind(
+  request: { readonly kind: string } | null | undefined,
+): WaitingNoticeKind | null {
+  if (request === null || request === undefined || request.kind === "auth_refresh") return null;
+  return request.kind === "user_input" ? "question" : "approval";
+}
+
+/** One plain line, bounded so an agent-written title cannot carry more than a label. */
+export function boundedWaitNoticeText(text: string): string {
+  const plain = text.replace(WAITING_NOTICE_WHITESPACE, " ").trim();
+  if (plain.length === 0) return "Untitled thread";
+  return Array.from(plain).slice(0, WAITING_NOTICE_TITLE_MAX_CHARS).join("");
+}
+
+/**
+ * Announces each pending request once, and reminds once if it is still pending after thirty
+ * minutes. A request the existing input notice announced keeps that notice as its only one.
+ */
+export function createWaitingNoticeTracker<Key extends string = string>(
+  notify: (notice: WaitingNotice) => void,
+  reminderMs: number = WAITING_NOTICE_REMINDER_MS,
+) {
+  const tracked = new Map<Key, { readonly timer: ReturnType<typeof setTimeout> }>();
+  const cancel = (key: Key) => {
+    clearTimeout(tracked.get(key)?.timer);
+    tracked.delete(key);
+  };
+  return {
+    sync(requests: ReadonlyArray<WaitingNoticeRequest>): void {
+      const seen = new Set<string>();
+      for (const request of requests) {
+        seen.add(request.key);
+        if (tracked.has(request.key as Key)) continue;
+        if (request.existingOutcome !== "announced") {
+          notify({
+            key: request.key,
+            kind: request.kind,
+            title: request.title,
+            reminder: false,
+            playSound: request.existingOutcome === "none",
+          });
+        }
+        const timer = setTimeout(() => {
+          notify({
+            key: request.key,
+            kind: request.kind,
+            title: request.title,
+            reminder: true,
+            playSound: true,
+          });
+        }, reminderMs);
+        tracked.set(request.key as Key, { timer });
+      }
+      for (const key of tracked.keys()) if (!seen.has(key)) cancel(key);
+    },
+    clear(): void {
+      for (const key of tracked.keys()) cancel(key);
+    },
+  };
+}

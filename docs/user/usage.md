@@ -90,6 +90,55 @@ no limit windows cannot be held this way and are named in the setting's descript
 is one. One provider account used from two channels, or from the Windows Subsystem for Linux
 backend, is tracked separately by each server, so a limit seen in one is not known to the other.
 
+## Load
+
+**Hold new sub-agents under load**, in **Settings ▸ Threads**, makes new sub-agent work wait
+instead of starting when too many runs are active or the machine is short of memory. It is off
+by default. Held work is a delegated child, a thread an agent launches, a new round sent to a
+sub-agent and a sub-agent's continuation. A message you type, a task run you start and a result
+delivered to a parent thread always start.
+
+**Concurrent runs** is **Auto** by default and sets the ceiling from installed memory: one run
+per 6 GB, so 5 on a 30 GB machine and 2 on 16 GB. You can set 1 to 32. The row shows the current
+value and how many runs are active. A run counts while it is starting, running, or waiting on
+something other than you; a run waiting on your answer does not count.
+
+A held sub-agent shows **Waiting**, and its tooltip names the reason: how many runs are active
+against the ceiling, or the share of memory available. A held sub-agent creates no worktree
+while it waits, and `delegate_task` returns `status: "queued"` with the reason.
+
+Houston releases held work oldest first, one start every 20 seconds, while the count is below
+the ceiling and memory has room. Turning the row off releases it in the same order and pace.
+A hold older than 30 minutes is marked overdue and its parent receives one message saying the
+child still waits and can be cancelled.
+
+Memory pressure is the machine's available memory against its total; swap use alone never
+counts as pressure. Below 10% available is high pressure. An unreadable memory reading is
+skipped, logged once, and treated as no pressure. On Windows Houston reads only available
+physical memory, so there is no pressure signal there and the ceiling alone holds work. The WSL
+backend is a separate machine: it sees only its own virtual machine, so its ceiling and pressure
+do not describe Windows or another Houston server on the same computer.
+
+## Memory
+
+Turn on **Memory** in the thread details checklist to see the machine's memory left in the
+thread details card. The row reads like every other usage row: the bar and percentage are the
+share of machine memory still available, and a low value takes the same emphasis as a low usage
+limit. The tooltip shows the used and total memory and, when the server can attribute it, the
+memory held by this thread's agent and its sub-agents.
+
+The server samples memory only while the row is visible, about every five seconds, and stops
+when the thread details card closes. On Linux the machine figures come from `/proc/meminfo` and
+honour the agents' slice limit when it is readable; a cgroup limit is never treated as swap
+pressure. Agent memory is the resident memory of the thread's agent process tree, including its
+sub-agents. A process shared by several threads is counted once, never as a separate figure for
+each.
+
+Windows reports available physical memory from the operating system, so there is no memory
+pressure signal there and the thread's own share is not shown. The WSL backend is a separate
+machine: its figures describe only its own virtual machine, not Windows or another Houston
+server on the same computer. Nothing about processes, paths or prompts leaves the machine.
+
 ## Breakdowns
 
 The breakdown groups usage by model or by time, with tokens, cost and share. The year view

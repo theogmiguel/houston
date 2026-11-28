@@ -37,7 +37,7 @@ registry agents do not report retries, so this limit does not apply to them.
 
 A child thread that is delegated work reports to its parent as well as appearing in its own
 tab. Its question or approval request shows in the parent's pending approvals; the parent
-answers there.
+answers there. With **Show Needs you** on, the parent's row answers it in place as well.
 
 Background work ends with the agent process that started it. When a Claude process exits on its
 own while its thread is idle, Houston records the background work it took with it, and a thread

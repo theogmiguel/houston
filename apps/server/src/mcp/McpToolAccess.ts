@@ -284,6 +284,21 @@ export const either = <P, A, E, R, A2, E2, R2>(
 const fullAccessRequired =
   "Changing projects or environment settings needs a live full-access/default calling thread or a full-access client.";
 
+const environmentCaller = (
+  options:
+    | {
+        readonly linkedCallers?: "allowed";
+      }
+    | undefined,
+) =>
+  orchestratingCaller.pipe(
+    Effect.tap((caller) =>
+      options?.linkedCallers === "allowed"
+        ? Effect.void
+        : assertNotLinked(caller, "change projects or environment settings"),
+    ),
+  );
+
 /** Recheck after waits before writing; caller modes may have changed. */
 export const writesEnvironment = <P, A, E, R>(
   handle: (
@@ -298,12 +313,7 @@ export const writesEnvironment = <P, A, E, R>(
     readonly linkedCallers?: "allowed";
   },
 ) => {
-  const check = orchestratingCaller.pipe(
-    Effect.tap((caller) =>
-      options?.linkedCallers === "allowed"
-        ? Effect.void
-        : assertNotLinked(caller, "change projects or environment settings"),
-    ),
+  const check = environmentCaller(options).pipe(
     Effect.tap((caller) => assertFullAccess(caller, fullAccessRequired)),
   );
   return declare(
@@ -315,6 +325,37 @@ export const writesEnvironment = <P, A, E, R>(
       ),
   );
 };
+
+/**
+ * Like `writesEnvironment`, but a live thread below full access may ask its
+ * user for this one call. The handler decides: with full access it writes as
+ * before; otherwise it shows a request and, after approval, rechecks `check`
+ * before the single write.
+ */
+export const writesEnvironmentAllowingApproval = <P, A, E, R>(
+  handle: (
+    params: P,
+    check: Effect.Effect<Caller, OrchestratorMcpFailure, CheckServices>,
+    caller: Caller,
+  ) => Effect.Effect<A, E, R>,
+  options?: {
+    readonly linkedCallers?: "allowed";
+  },
+) => {
+  const check = environmentCaller(options);
+  return declare(
+    (params: P) => check.pipe(Effect.flatMap((caller) => handle(params, check, caller))),
+    // A call that leaves for a linked environment keeps today's rule: the linked
+    // environment has no thread of this caller to show a card in, so only full
+    // access may send it.
+    () =>
+      orchestratingCaller.pipe(
+        Effect.tap((caller) => assertFullAccess(caller, fullAccessRequired)),
+      ),
+  );
+};
+
+export { hasFullAccess } from "./threadAccess.ts";
 
 type CheckServices = Effect.Services<typeof orchestratingCaller>;
 

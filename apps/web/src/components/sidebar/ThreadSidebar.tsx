@@ -120,6 +120,7 @@ import {
   planWorkspaceDeletion,
   workspaceDeletionMessage,
 } from "./workspaceDeletion";
+import { useNeedsYouAnswer } from "./needsYouAnswer";
 import type { NeedsYouEntry } from "./needsYouSection";
 import { buildNeedsYouEntries, isNeedsYouThread } from "./needsYouSection";
 import {
@@ -166,6 +167,8 @@ import { EMPTY_PROVIDER_ENTRIES, sidebarProviderEntriesAtom } from "./sidebarPro
 import { THREAD_JUMP_HINT_SHOW_DELAY_MS, useSnoozeWakeClock } from "../Sidebar.logic";
 import { resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
+import { NeedsYouAnswerBlock } from "../ui/needs-you-answer";
+import { needsYouAnswerKey } from "../ui/needs-you-answer-model";
 import { SidebarContent, SidebarHeader, useSidebar, useSidebarVisibility } from "../ui/sidebar";
 import { ThreadCard, HighlightedText } from "./ThreadCard";
 import type { ThreadActionMenuWorkspaceInput } from "../../hooks/useThreadActionMenu";
@@ -1606,8 +1609,17 @@ export function SidebarNeedsYouSection({
   handleNewThread?: NewThreadHandler | undefined;
 }) {
   const t = useT();
+  const [openThreadKey, setOpenThreadKey] = useState<string | null>(null);
   // Nothing needs the user: the section is not a permanent empty shelf on the rail.
   if (entries.length === 0) return null;
+  const openEntry =
+    openThreadKey === null
+      ? null
+      : (entries.find(
+          (entry) =>
+            scopedThreadKey(scopeThreadRef(entry.thread.environmentId, entry.thread.id)) ===
+            openThreadKey,
+        ) ?? null);
   return (
     <section
       aria-label={t("Needs you")}
@@ -1622,38 +1634,58 @@ export function SidebarNeedsYouSection({
         </span>
       </div>
       <div className={SIDEBAR_NEEDS_YOU_SECTION_CLS}>
-        {entries.map(({ thread }) => (
-          <ThreadCard
-            key={thread.id}
-            workspaceId={null}
-            thread={thread}
-            query=""
-            providerEntries={
-              providerEntriesByEnvironment.get(thread.environmentId) ?? EMPTY_PROVIDER_ENTRIES
-            }
-            nowIso={nowIso}
-            focused={false}
-            selected={selection.selectedThreadKeys.has(
-              scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-            )}
-            dragging={dragging?.threadId === thread.id}
-            runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
-            projectTitle={projectTitleOf(thread)}
-            onOpen={() => onOpenThread(thread)}
-            onSelect={(input) => onSelectThread(thread, input)}
-            onClose={() => onCloseThread(thread)}
-            onHold={(preset) => onHoldThread(thread, preset)}
-            onPickHoldTime={onPickHoldTime}
-            onRename={(title) => onRenameThread(thread, title)}
-            onSetAutoClose={(enabled) => onSetAutoClose(thread, enabled)}
-            onDropOnThread={() => {}}
-            workspaceMove={workspaceMoveFor?.(thread)}
-            handleNewThread={handleNewThread}
-          />
-        ))}
+        {entries.map((entry) => {
+          const { thread } = entry;
+          const key = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
+          const open = openEntry === entry;
+          return (
+            <div key={thread.id} className="flex flex-col">
+              <ThreadCard
+                workspaceId={null}
+                thread={thread}
+                query=""
+                providerEntries={
+                  providerEntriesByEnvironment.get(thread.environmentId) ?? EMPTY_PROVIDER_ENTRIES
+                }
+                nowIso={nowIso}
+                focused={false}
+                selected={selection.selectedThreadKeys.has(key)}
+                dragging={dragging?.threadId === thread.id}
+                runningSubagents={runningSubagents.get(subagentParentKey(thread)) ?? 0}
+                projectTitle={projectTitleOf(thread)}
+                onOpen={
+                  entry.group === "back"
+                    ? () => onOpenThread(thread)
+                    : () => setOpenThreadKey(open ? null : key)
+                }
+                onOpenThread={() => onOpenThread(thread)}
+                onSelect={(input) => onSelectThread(thread, input)}
+                onClose={() => onCloseThread(thread)}
+                onHold={(preset) => onHoldThread(thread, preset)}
+                onPickHoldTime={onPickHoldTime}
+                onRename={(title) => onRenameThread(thread, title)}
+                onSetAutoClose={(enabled) => onSetAutoClose(thread, enabled)}
+                onDropOnThread={() => {}}
+                workspaceMove={workspaceMoveFor?.(thread)}
+                handleNewThread={handleNewThread}
+              />
+              {open ? (
+                <div className="ps-3 pe-2">
+                  <NeedsYouAnswerRow entry={entry} />
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
     </section>
   );
+}
+
+function NeedsYouAnswerRow({ entry }: { entry: NeedsYouEntry }) {
+  const answer = useNeedsYouAnswer(entry);
+  if (answer === null) return null;
+  return <NeedsYouAnswerBlock key={needsYouAnswerKey(answer)} view={answer} />;
 }
 
 /** One layout workspace: its heading, then the threads whose chat tab it holds. */

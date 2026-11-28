@@ -266,9 +266,19 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 />
               ) : null}
 
-              {visible.usage || (props.sheet === true && props.open === true) ? (
+              {visible.usage || visible.memory || (props.sheet === true && props.open === true) ? (
                 <>
-                  <ThreadDetailsUsage {...props.usage} />
+                  <ThreadDetailsUsage
+                    {...props.usage}
+                    memory={
+                      visible.memory
+                        ? {
+                            environmentId: props.environmentId,
+                            threadId: props.threadId,
+                          }
+                        : null
+                    }
+                  />
                   <ThreadDetailsLastRequest
                     environmentId={props.environmentId}
                     threadId={props.threadId}

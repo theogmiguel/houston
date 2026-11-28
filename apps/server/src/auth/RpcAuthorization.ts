@@ -90,6 +90,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverGetDatabaseStorage]: AuthOrchestrationReadScope,
   [WS_METHODS.houstonDatabaseReclaim]: AuthSettingsWriteScope,
   [WS_METHODS.houstonTerminalShells]: AuthOrchestrationReadScope,
+  [WS_METHODS.houstonThreadMemorySubscribe]: AuthOrchestrationReadScope,
   [WS_METHODS.houstonPreviewBrowserHost]: AuthOrchestrationReadScope,
   // An MCP sign-in stores a credential for the agent, as an account sign-in does.
   [WS_METHODS.houstonMcpSignInStart]: AuthProvidersManageScope,
@@ -124,6 +125,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverReportClientActivity]: AuthOrchestrationReadScope,
   [WS_METHODS.scheduledTasksSubscribe]: AuthOrchestrationReadScope,
   [WS_METHODS.secretsAnswerRequest]: AuthOrchestrationOperateScope,
+  [WS_METHODS.houstonProjectRequestAnswer]: AuthOrchestrationOperateScope,
   // Delivery logs hold request bodies, so they need the same scope as the URL.
   [WS_METHODS.scheduledTasksListWebhookDeliveries]: AuthOrchestrationOperateScope,
   [WS_METHODS.scheduledTasksGetWebhookDelivery]: AuthOrchestrationOperateScope,
@@ -166,6 +168,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.houstonProjectsRepositoriesTrack]: AuthOrchestrationOperateScope,
   [WS_METHODS.houstonProjectsRepositoriesUntrack]: AuthOrchestrationOperateScope,
   [WS_METHODS.houstonProjectsRepositoriesIgnore]: AuthOrchestrationOperateScope,
+  [WS_METHODS.houstonProjectsSearchFolders]: AuthFilesystemReadScope,
   [WS_METHODS.projectsListIgnoredFiles]: AuthFilesystemReadScope,
   [WS_METHODS.projectsReadFile]: AuthFilesystemReadScope,
   [WS_METHODS.projectsSearchContents]: AuthFilesystemReadScope,

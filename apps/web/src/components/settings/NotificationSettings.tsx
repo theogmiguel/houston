@@ -17,6 +17,7 @@ type NotificationMode = keyof typeof NOTIFICATION_MODE_LABELS;
 
 export function NotificationSettings() {
   const mode = useScopedSettings((settings) => settings.notificationMode);
+  const waitWhenThreadWaits = useScopedSettings((settings) => settings.notifyWhenThreadWaits);
   const updateSettings = useUpdateScopedSettings();
   const [permissionMessage, setPermissionMessage] = useState<string | null>(null);
   const [requesting, setRequesting] = useState(false);
@@ -86,6 +87,19 @@ export function NotificationSettings() {
               }
               if (mode === "off") void applyMode("notifications");
             }}
+          />
+        }
+      />
+      <SettingsRow
+        {...searchableSetting("waiting-notifications")}
+        description="Send one system notice when a thread asks a question or needs approval, even when thread notifications are off, and one reminder after 30 minutes. Applies to this device while Houston is open."
+        control={
+          <Switch
+            checked={waitWhenThreadWaits}
+            onCheckedChange={(checked) =>
+              updateSettings({ notifyWhenThreadWaits: Boolean(checked) })
+            }
+            aria-label="Notify me when a thread waits for me"
           />
         }
       />

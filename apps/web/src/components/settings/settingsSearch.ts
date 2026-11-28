@@ -509,6 +509,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["usage quota rate limit account provider window subagent delegate"],
   },
   {
+    id: "hold-new-subagents-under-load",
+    title: "Hold new sub-agents under load",
+    to: "/settings/threads",
+    searchTerms: ["memory pressure concurrent runs ceiling subagent delegate queue wait"],
+  },
+  {
     id: "auto-resume-limited-threads",
     title: "Resume after usage limits",
     to: "/settings/threads",
@@ -595,6 +601,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["notification toast popup completion input approval failure"],
   },
   {
+    id: "waiting-notifications",
+    title: "Notify me when a thread waits for me",
+    to: "/settings/general",
+    searchTerms: ["waiting question approval blocked reminder system notice 30 minutes"],
+  },
+  {
     id: "language",
     title: "Language",
     to: "/settings/general",
@@ -654,6 +666,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Rich text composer",
     to: "/settings/chat",
     searchTerms: ["composer rich text tiptap bold italic markdown styled wysiwyg"],
+  },
+  {
+    id: "comment-button-selection",
+    title: "Comment button on selection",
+    to: "/settings/chat",
+    searchTerms: ["selection comment cite citation quote floating button text"],
   },
   {
     id: "send-shortcut",

@@ -159,4 +159,25 @@ function TooltipPopup({
   );
 }
 
-export { TooltipProvider, Tooltip, TooltipTrigger, TooltipPopup, TooltipScrollDismissArea };
+/** One tooltip line: the reading itself leads in t1, supporting lines follow in t2. */
+function TooltipLine({
+  tone = "primary",
+  className,
+  ...props
+}: ComponentProps<"span"> & { readonly tone?: "primary" | "muted" }) {
+  return (
+    <span
+      className={cn(tone === "muted" ? "text-muted-foreground" : "text-foreground", className)}
+      {...props}
+    />
+  );
+}
+
+export {
+  TooltipProvider,
+  Tooltip,
+  TooltipTrigger,
+  TooltipPopup,
+  TooltipLine,
+  TooltipScrollDismissArea,
+};

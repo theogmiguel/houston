@@ -31,8 +31,22 @@ and you can still change the destination before cloning.
 clone from. **New project** appears when the server configures a projects folder. Adding a project opens a new thread in the focused
 workspace with the composer ready.
 
-In **Add folder**, **Enter** adds a folder that exists and never creates one; a path that does
-not exist offers an explicit **Create folder … and add it** row.
+In **Add folder**, the list starts with places to start: the parent folders of existing
+projects, your home folder and, on Windows, the drives. Type a folder name to search the
+projects' parent folders first and then the add-project base directory; Git repositories lead
+the results, and each result shows its full path so folders with the same name stay apart.
+A full path pasted into the box lists that folder, with either slash on Windows. **Change base
+folder** opens the setting that chooses the fallback directory.
+
+**Enter** adds a folder that exists and never creates one. A path that does not exist offers an
+explicit **Create folder … and add it** row, kept apart from the results and showing the
+absolute path it would create.
+
+An agent in a thread without **Full access** can ask to add a folder instead of being
+refused. The request names the folder and why the agent needs it; approving registers that one
+folder without changing the thread's access, and declining or stopping the run adds nothing.
+When the folder or a new project's repository does not exist yet, the request says it will be
+created.
 
 **Project settings** in a thread's action menu
 or the command palette renames a project, pins it, archives it and changes its checkouts.
@@ -224,6 +238,12 @@ threads waiting on you from every workspace: input and approval requests first, 
 and threads that came back. Those threads leave their groups while the rail is not searching. The setting is off by default
 on desktop and on by default in a phone-width browser; a saved choice wins on either. The
 section is hidden when nothing is waiting.
+
+Click a row's body to open its answer block under the row; the title still opens the thread.
+A question shows one button per option and **Reply…** for free text, an approval shows the
+command with **Approve** and **Deny**, and a failed run shows why it failed with **Retry**.
+Only one block is open at a time. Answering a sub-agent's request in its parent's row answers
+the sub-agent. Text from agents is shown as plain text.
 
 **Filter by project** in the rail header limits the groups, the shelves, search and the
 older Closed threads Houston loads to the projects you pick. Click a project to choose only

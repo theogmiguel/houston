@@ -96,6 +96,10 @@ import {
   HoustonProjectRepositoryTrackInput,
   HoustonProjectRepositoryUntrackInput,
 } from "./houston/projects.ts";
+import {
+  HoustonProjectFolderSearchInput,
+  HoustonProjectFolderSearchResult,
+} from "./houston/projectFolderSearch.ts";
 import { ClientActivityReportInput } from "./background.ts";
 import {
   FilesystemGetMetadataInput,
@@ -199,6 +203,7 @@ import {
 import { PeerLinkPairClientInput, PeerLinkPairClientResult } from "./houston/peerLinkPairing.ts";
 import { PeerLinkSearchEvent, PeerLinkSearchInput } from "./houston/peerLinkSearch.ts";
 import { TerminalShells } from "./houston/terminalShells.ts";
+import { HoustonThreadMemoryInput, HoustonThreadMemorySample } from "./houston/threadMemory.ts";
 import { HoustonPreviewBrowserHost } from "./houston/previewBrowserHost.ts";
 import {
   HoustonMcpSignInCompleteInput,
@@ -579,6 +584,10 @@ import {
 } from "./scheduledTask.ts";
 import { SecretRequestAnswerInput, SecretRequestError } from "./secretRequest.ts";
 import {
+  HoustonProjectRequestAnswerInput,
+  HoustonProjectRequestError,
+} from "./houston/projectRequest.ts";
+import {
   ProjectCloneActionInput,
   ProjectCloneActionResult,
   ProjectCloneListEvent,
@@ -702,6 +711,7 @@ export const WS_METHODS = {
   houstonTasksSettingsSet: "houston.tasks.settings.set",
   houstonDatabaseReclaim: "houston.database.reclaim",
   houstonTerminalShells: "houston.terminal.shells",
+  houstonThreadMemorySubscribe: "houston.threadMemory.subscribe",
   houstonPreviewBrowserHost: "houston.preview.browserHost",
   houstonMcpSignInStart: "houston.mcpSignIn.start",
   houstonMcpSignInComplete: "houston.mcpSignIn.complete",
@@ -753,6 +763,7 @@ export const WS_METHODS = {
   houstonProjectsRepositoriesTrack: "houston.projects.repositories.track",
   houstonProjectsRepositoriesUntrack: "houston.projects.repositories.untrack",
   houstonProjectsRepositoriesIgnore: "houston.projects.repositories.ignore",
+  houstonProjectsSearchFolders: "houston.projects.searchFolders",
   houstonInferenceSubscribe: "houston.inference.subscribe",
   houstonInferenceRefresh: "houston.inference.refresh",
   houstonInferenceSave: "houston.inference.save",
@@ -844,6 +855,7 @@ export const WS_METHODS = {
   scheduledTasksRunNow: "scheduledTasks.runNow",
   scheduledTasksRotateWebhookToken: "scheduledTasks.rotateWebhookToken",
   secretsAnswerRequest: "secrets.answerRequest",
+  houstonProjectRequestAnswer: "houston.projectRequest.answer",
   scheduledTasksListWebhookDeliveries: "scheduledTasks.listWebhookDeliveries",
   scheduledTasksGetWebhookDelivery: "scheduledTasks.getWebhookDelivery",
 
@@ -1122,6 +1134,13 @@ const WsHoustonTerminalShellsRpc = Rpc.make(WS_METHODS.houstonTerminalShells, {
   payload: Schema.Struct({}),
   success: TerminalShells,
   error: EnvironmentAuthorizationError,
+});
+
+export const WsHoustonThreadMemorySubscribeRpc = Rpc.make(WS_METHODS.houstonThreadMemorySubscribe, {
+  payload: HoustonThreadMemoryInput,
+  success: HoustonThreadMemorySample,
+  error: EnvironmentAuthorizationError,
+  stream: true,
 });
 
 const WsHoustonPreviewBrowserHostRpc = Rpc.make(WS_METHODS.houstonPreviewBrowserHost, {
@@ -2189,6 +2208,12 @@ const WsHoustonProjectsRepositoriesIgnoreRpc = Rpc.make(
   },
 );
 
+const WsHoustonProjectsSearchFoldersRpc = Rpc.make(WS_METHODS.houstonProjectsSearchFolders, {
+  payload: HoustonProjectFolderSearchInput,
+  success: HoustonProjectFolderSearchResult,
+  error: EnvironmentAuthorizationError,
+});
+
 const WsHoustonTasksGetRpc = Rpc.make(WS_METHODS.houstonTasksGet, {
   payload: HoustonTaskGetInput,
   success: HoustonTaskDetail,
@@ -3025,6 +3050,11 @@ const WsSecretsAnswerRequestRpc = Rpc.make(WS_METHODS.secretsAnswerRequest, {
   error: Schema.Union([SecretRequestError, EnvironmentAuthorizationError]),
 });
 
+const WsHoustonProjectRequestAnswerRpc = Rpc.make(WS_METHODS.houstonProjectRequestAnswer, {
+  payload: HoustonProjectRequestAnswerInput,
+  error: Schema.Union([HoustonProjectRequestError, EnvironmentAuthorizationError]),
+});
+
 const WsScheduledTasksListWebhookDeliveriesRpc = Rpc.make(
   WS_METHODS.scheduledTasksListWebhookDeliveries,
   {
@@ -3146,6 +3176,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsScheduledTasksRunNowRpc,
   WsScheduledTasksRotateWebhookTokenRpc,
   WsSecretsAnswerRequestRpc,
+  WsHoustonProjectRequestAnswerRpc,
   WsScheduledTasksListWebhookDeliveriesRpc,
   WsScheduledTasksGetWebhookDeliveryRpc,
   WsServerReportClientActivityRpc,
@@ -3288,6 +3319,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonTasksSettingsSetRpc,
   WsHoustonDatabaseReclaimRpc,
   WsHoustonTerminalShellsRpc,
+  WsHoustonThreadMemorySubscribeRpc,
   WsHoustonPreviewBrowserHostRpc,
   WsHoustonMcpSignInStartRpc,
   WsHoustonMcpSignInCompleteRpc,
@@ -3341,6 +3373,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonProjectsRepositoriesTrackRpc,
   WsHoustonProjectsRepositoriesUntrackRpc,
   WsHoustonProjectsRepositoriesIgnoreRpc,
+  WsHoustonProjectsSearchFoldersRpc,
   WsHoustonInferenceSubscribeRpc,
   WsHoustonInferenceRefreshRpc,
   WsHoustonInferenceSaveRpc,

@@ -1,7 +1,9 @@
 import type {
+  EnvironmentId,
   ProviderInstanceId,
   ServerProvider,
   ServerProviderUsageWindow,
+  ThreadId,
   UsageLimitSourceSnapshots,
 } from "@houston-app/contracts";
 import {
@@ -12,7 +14,7 @@ import {
   paceOf,
   remainingPercent,
 } from "@houston-app/shared/usageLimits";
-import { CalendarIcon, GaugeIcon, TimerIcon } from "lucide-react";
+import { CalendarIcon, GaugeIcon, MemoryStickIcon, TimerIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { usePrimarySettings } from "../../hooks/useSettings";
@@ -22,6 +24,7 @@ import { cn } from "../../lib/utils";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
 import { usageRemainingTone } from "../usage/usageRemaining";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { useThreadMemoryRow } from "./ThreadDetailsMemory";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { useT } from "~/i18n/useT";
 
@@ -47,6 +50,8 @@ export interface ThreadDetailsUsageInput {
   readonly providers: readonly ServerProvider[];
   readonly sources: UsageLimitSourceSnapshots;
   readonly contextWindow: ContextWindowSnapshot | null;
+  /** Set only while the Memory item is visible, so no sampler runs for a hidden row. */
+  readonly memory?: { readonly environmentId: EnvironmentId; readonly threadId: ThreadId } | null;
 }
 
 /**
@@ -58,6 +63,7 @@ export function ThreadDetailsUsage({
   providers,
   sources,
   contextWindow,
+  memory,
 }: ThreadDetailsUsageInput) {
   const t = useT();
   const nowMinute = useNowMinute();
@@ -72,7 +78,7 @@ export function ThreadDetailsUsage({
     report?.accounts.find((entry) => entry.instanceId === providerInstanceId)?.limits ??
     providers.find((provider) => provider.instanceId === providerInstanceId)?.usageLimits;
   const notice = limits ? limitsNotice(limits) : null;
-  if (!limits && !contextWindow) return null;
+  if (!limits && !contextWindow && !memory) return null;
 
   return (
     <ThreadDetailsSection
@@ -93,6 +99,13 @@ export function ThreadDetailsUsage({
           ? limits.windows.map((window) => <LimitRow key={window.id} window={window} now={now} />)
           : null}
         {contextWindow ? <ContextRow usage={contextWindow} spaced={limits !== undefined} /> : null}
+        {memory ? (
+          <MemoryRow
+            environmentId={memory.environmentId}
+            threadId={memory.threadId}
+            spaced={limits !== undefined || contextWindow !== null || notice !== null}
+          />
+        ) : null}
       </div>
     </ThreadDetailsSection>
   );
@@ -130,6 +143,28 @@ function LimitRow({
           {pace ? <span className="text-muted-foreground">{t(PACE_LABEL[pace])}</span> : null}
         </>
       }
+    />
+  );
+}
+
+function MemoryRow({
+  environmentId,
+  threadId,
+  spaced,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly spaced: boolean;
+}) {
+  const row = useThreadMemoryRow(environmentId, threadId);
+  return (
+    <UsageRow
+      label={row.label}
+      left={row.left}
+      className={cn(spaced && "mt-1")}
+      icon={<MemoryStickIcon aria-hidden className="size-4 shrink-0" />}
+      value={row.value}
+      tooltip={row.tooltip}
     />
   );
 }
@@ -182,6 +217,7 @@ function UsageRow({
   tooltip,
   value,
   className,
+  icon,
 }: {
   readonly label: string;
   readonly left: number | null;
@@ -189,6 +225,8 @@ function UsageRow({
   /** Replaces the percentage when there is none. */
   readonly value?: string | undefined;
   readonly className?: string | undefined;
+  /** Replaces the glyph chosen from the label. */
+  readonly icon?: ReactNode | undefined;
 }) {
   const t = useT();
   const tone = left === null ? null : usageRemainingTone(left);
@@ -213,7 +251,7 @@ function UsageRow({
         }
       >
         <span className="flex min-w-0 max-w-32 items-center gap-1.5 text-muted-foreground">
-          <UsageGlyph label={label} />
+          {icon ?? <UsageGlyph label={label} />}
           <span className="truncate">{label}</span>
         </span>
         {left !== null ? (

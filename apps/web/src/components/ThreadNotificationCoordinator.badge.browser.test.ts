@@ -12,6 +12,7 @@ import { buildThreadRouteParams } from "../threadRoutes";
 const state = vi.hoisted(() => ({
   mode: "notifications",
   inApp: false,
+  wait: false,
   toast: vi.fn(),
   shells: null as unknown as { set: (id: string, value: unknown) => void },
   navigate: vi.fn(),
@@ -68,6 +69,7 @@ vi.mock(import("../hooks/useSettings"), async (original) => ({
   getClientSettings: (() => ({
     notificationMode: state.mode,
     inAppNotificationsEnabled: state.inApp,
+    notifyWhenThreadWaits: state.wait,
   })) as never,
 }));
 vi.mock(import("../threadNotifications"), async (original) => ({
@@ -77,6 +79,7 @@ vi.mock(import("../threadNotifications"), async (original) => ({
   setNotificationBadge: state.badge,
 }));
 
+import { WAITING_NOTICE_REMINDER_MS } from "./ThreadNotificationCoordinator.logic";
 import { startThreadNotifications } from "./ThreadNotificationCoordinator";
 
 let registry: AtomRegistry.AtomRegistry;
@@ -108,6 +111,12 @@ const thread = {
   archivedAt: null as string | null,
   hasPendingApprovals: false,
   hasPendingUserInput: false,
+  requestId: "request-1",
+  requestKind: null as "user_input" | "command" | "auth_refresh" | null,
+  lineage: null as {
+    parentThreadId: string | null;
+    relationshipToParent: "subagent" | null;
+  } | null,
   session: null as { status: string } | null,
   latestTurn: { turnId: "turn", state: "running", completedAt: null as string | null },
 };
@@ -130,9 +139,9 @@ function toV2ThreadShell(input: typeof thread) {
     worktreePath: null,
     activeProviderThreadId: null,
     lineage: {
-      rootThreadId: input.id,
-      parentThreadId: null,
-      relationshipToParent: null,
+      rootThreadId: input.lineage?.parentThreadId ?? input.id,
+      parentThreadId: input.lineage?.parentThreadId ?? null,
+      relationshipToParent: input.lineage?.relationshipToParent ?? null,
     },
     forkedFrom: null,
     createdBy: "user",
@@ -146,9 +155,9 @@ function toV2ThreadShell(input: typeof thread) {
           ? "failed"
           : "running",
     pendingRuntimeRequest: input.hasPendingUserInput
-      ? { id: "request-1", kind: "user_input", createdAt: SHELL_NOW }
+      ? { id: input.requestId, kind: input.requestKind ?? "user_input", createdAt: SHELL_NOW }
       : input.hasPendingApprovals
-        ? { id: "request-1", kind: "command", createdAt: SHELL_NOW }
+        ? { id: input.requestId, kind: input.requestKind ?? "command", createdAt: SHELL_NOW }
         : null,
     latestVisibleMessage: null,
     latestUserMessageAt: null,
@@ -190,6 +199,7 @@ function setup(options: { hostBridge?: Record<string, unknown> } = {}) {
   stack.defer(() => testRegistry.dispose());
   state.mode = "notifications";
   state.inApp = false;
+  state.wait = false;
   state.settingsListeners.clear();
   registry.set(environmentIdsAtom, ["one", "two"]);
   state.shells.set("one", shell());
@@ -342,7 +352,13 @@ it.each([false, true])(
 );
 
 it("uses the host notifier for a desktop notice and focuses the thread when it is clicked", async () => {
-  const notifyThread = vi.fn(async () => {});
+  const notifyThread = vi.fn<
+    (payload: {
+      readonly id: string;
+      readonly title: string;
+      readonly body: string;
+    }) => Promise<void>
+  >(async () => {});
   let focus: ((key: string) => void) | undefined;
   await using app = setup({
     hostBridge: {
@@ -371,4 +387,158 @@ it("uses the host notifier for a desktop notice and focuses the thread when it i
   focus?.("one:thread");
   expectOpenedInLayout("one");
   expect(state.badge).toHaveBeenLastCalledWith(0);
+});
+
+function waitingHostBridge(notifyThread: ReturnType<typeof vi.fn>) {
+  return {
+    notifyThread,
+    notificationsSupported: async () => ({ supported: true, reason: null }),
+    onThreadNotificationFocus: () => () => {},
+    onNotificationBadgeClear: () => () => {},
+    revealWindow: async () => {},
+  };
+}
+
+it("notifies a waiting question with every other notification setting off", async () => {
+  const notifyThread = vi.fn<
+    (payload: {
+      readonly id: string;
+      readonly title: string;
+      readonly body: string;
+    }) => Promise<void>
+  >(async () => {});
+  await using app = setup({ hostBridge: waitingHostBridge(notifyThread) });
+  state.mode = "off";
+  state.wait = true;
+  app.start();
+  using _timers = fakeTimers();
+
+  state.shells.set("one", shell({ hasPendingUserInput: true }));
+
+  expect(notifyThread).toHaveBeenCalledWith({
+    id: "one:thread:request-1",
+    title: "Input needed",
+    body: "Test thread",
+  });
+  expect(state.sound).not.toHaveBeenCalled();
+
+  state.shells.set("one", shell({ hasPendingUserInput: true }));
+  expect(notifyThread).toHaveBeenCalledTimes(1);
+
+  await vi.advanceTimersByTimeAsync(WAITING_NOTICE_REMINDER_MS);
+  expect(notifyThread).toHaveBeenCalledTimes(2);
+});
+
+it("leaves the existing input notice as the one notice and still reminds", async () => {
+  const notifyThread = vi.fn<
+    (payload: {
+      readonly id: string;
+      readonly title: string;
+      readonly body: string;
+    }) => Promise<void>
+  >(async () => {});
+  await using app = setup({ hostBridge: waitingHostBridge(notifyThread) });
+  state.mode = "notifications";
+  state.wait = true;
+  app.start();
+  using _timers = fakeTimers();
+
+  state.shells.set("one", shell({ hasPendingApprovals: true }));
+  expect(notifyThread.mock.calls.map(([payload]) => payload.id)).toEqual(["one:thread"]);
+
+  await vi.advanceTimersByTimeAsync(WAITING_NOTICE_REMINDER_MS);
+  expect(notifyThread.mock.calls.map(([payload]) => payload.id)).toEqual([
+    "one:thread",
+    "one:thread:request-1",
+  ]);
+});
+
+it("notifies a subagent's question only once its coordinator stops running", async () => {
+  const notifyThread = vi.fn<
+    (payload: {
+      readonly id: string;
+      readonly title: string;
+      readonly body: string;
+    }) => Promise<void>
+  >(async () => {});
+  await using app = setup({ hostBridge: waitingHostBridge(notifyThread) });
+  state.mode = "off";
+  state.wait = true;
+  app.start();
+
+  const parent = {
+    id: "parent",
+    latestTurn: { turnId: "parent", state: "running", completedAt: null },
+  };
+  const child = {
+    id: "child",
+    hasPendingUserInput: true,
+    lineage: { parentThreadId: "parent", relationshipToParent: "subagent" as const },
+  };
+  state.shells.set("one", shell(parent, child));
+  expect(notifyThread).not.toHaveBeenCalled();
+
+  state.shells.set(
+    "one",
+    shell(
+      {
+        id: "parent",
+        latestTurn: {
+          turnId: "parent",
+          state: "completed",
+          completedAt: "2026-09-13T07:05:00.000Z",
+        },
+      },
+      child,
+    ),
+  );
+  expect(notifyThread).toHaveBeenCalledWith({
+    id: "one:child:request-1",
+    title: "Input needed",
+    body: "Test thread",
+  });
+});
+
+it("drops the reminder when the request resolves", async () => {
+  const notifyThread = vi.fn<
+    (payload: {
+      readonly id: string;
+      readonly title: string;
+      readonly body: string;
+    }) => Promise<void>
+  >(async () => {});
+  await using app = setup({ hostBridge: waitingHostBridge(notifyThread) });
+  state.mode = "off";
+  state.wait = true;
+  app.start();
+  using _timers = fakeTimers();
+
+  state.shells.set("one", shell({ hasPendingUserInput: true }));
+  expect(notifyThread).toHaveBeenCalledTimes(1);
+
+  state.shells.set("one", shell());
+  await vi.advanceTimersByTimeAsync(WAITING_NOTICE_REMINDER_MS);
+  expect(notifyThread).toHaveBeenCalledTimes(1);
+});
+
+it("plays a sound for the waiting notice only when the mode has sound", async () => {
+  const notifyThread = vi.fn<
+    (payload: {
+      readonly id: string;
+      readonly title: string;
+      readonly body: string;
+    }) => Promise<void>
+  >(async () => {});
+  await using app = setup({ hostBridge: waitingHostBridge(notifyThread) });
+  state.mode = "sound";
+  state.wait = true;
+  app.start();
+  using _timers = fakeTimers();
+
+  state.shells.set("one", shell({ hasPendingApprovals: true }));
+  expect(notifyThread).toHaveBeenCalledTimes(1);
+  expect(state.sound).toHaveBeenCalledTimes(1);
+
+  await vi.advanceTimersByTimeAsync(WAITING_NOTICE_REMINDER_MS);
+  expect(state.sound).toHaveBeenCalledTimes(2);
 });

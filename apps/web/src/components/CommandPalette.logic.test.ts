@@ -6,6 +6,7 @@ import {
   COMMAND_PALETTE_LIST_BOTTOM_INSET_PX,
   RECENT_THREAD_LIMIT,
   availablePaletteActions,
+  buildAddProjectFolderGroups,
   buildRootGroups,
   snapCommandPaletteListHeight,
   newThreadNoProjectIndex,
@@ -818,6 +819,101 @@ describe("buildThreadActionItems", () => {
       "thread:environment-local:word-fresh",
       "thread:environment-local:prefix-stale",
     ]);
+  });
+});
+
+describe("add-project folder search groups", () => {
+  const place = (kind: "home" | "project-parent" | "base", path: string, label: string) => ({
+    kind,
+    label,
+    path,
+  });
+
+  it("lists places to start when nothing is typed", () => {
+    const groups = buildAddProjectFolderGroups({
+      query: "",
+      places: [
+        place("home", "/home/me", "Home"),
+        place("project-parent", "/home/me/dev", "dev"),
+        place("base", "/home/me/work", "Base folder"),
+      ],
+      folders: [],
+      placeIcon: null,
+      folderIcon: null,
+      gitFolderIcon: null,
+      runPlace: () => undefined,
+      runFolder: () => undefined,
+    });
+
+    expect(groups).toEqual([
+      {
+        value: "folder-places",
+        label: "Places to start",
+        items: [
+          expect.objectContaining({
+            title: "Home",
+            description: "/home/me",
+            value: "folder-place:home:/home/me",
+          }),
+          expect.objectContaining({
+            title: "dev",
+            description: "/home/me/dev",
+            value: "folder-place:project-parent:/home/me/dev",
+          }),
+          expect.objectContaining({
+            title: "Base folder",
+            description: "/home/me/work",
+            value: "folder-place:base:/home/me/work",
+          }),
+        ],
+      },
+    ]);
+  });
+
+  it("shows a result's full path so equal names can be told apart", () => {
+    const groups = buildAddProjectFolderGroups({
+      query: "houston",
+      places: [],
+      folders: [
+        {
+          name: "houston",
+          path: "/home/me/dev/houston",
+          gitRepository: true,
+        },
+        {
+          name: "houston",
+          path: "/home/me/clients/houston",
+          gitRepository: false,
+        },
+      ],
+      placeIcon: null,
+      folderIcon: null,
+      gitFolderIcon: null,
+      runPlace: () => undefined,
+      runFolder: () => undefined,
+    });
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ value: "folder-results", label: "Folders" });
+    expect(groups[0]?.items.map((item) => item.description)).toEqual([
+      "/home/me/dev/houston",
+      "/home/me/clients/houston",
+    ]);
+  });
+
+  it("shows nothing rather than a stale result list while searching", () => {
+    expect(
+      buildAddProjectFolderGroups({
+        query: "hou",
+        places: [],
+        folders: [],
+        placeIcon: null,
+        folderIcon: null,
+        gitFolderIcon: null,
+        runPlace: () => undefined,
+        runFolder: () => undefined,
+      }),
+    ).toEqual([]);
   });
 });
 
