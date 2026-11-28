@@ -21,6 +21,7 @@ For an installed build, use the documentation at its version tag from the
 - [Settings](user/settings.md) — every settings page and what it controls
 - [Environments and task sources](user/connections.md) — machines, access, Slack, Notion
   issues, Notion and secrets
+- [Remote access](user/remote-access.md) — the environments map and linking several machines
 - [Secrets](user/secrets.md) — secret providers, references and agent secret requests
 - [Changes](user/changes.md) — the Git surface, branches, worktrees and stashes
 - [Pull requests](user/pull-requests.md) — requests, review, checks and the merge queue
