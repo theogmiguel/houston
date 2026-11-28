@@ -838,6 +838,24 @@ export const ClaudeSettings = makeProviderSettingsSchema(
         providerSettingsForm: { control: "switch", clearWhenEmpty: "persist" },
       }),
     ),
+    leanDelegatedChildren: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.annotateKey({
+        title: "Leaner delegated children",
+        description:
+          "Delegated children start without the Artifact, Workflow and ScheduleWakeup tools and without Artifacts turned on. Skills, connectors and browser tools stay available.",
+        providerSettingsForm: { control: "switch", clearWhenEmpty: "persist" },
+      }),
+    ),
+    compactStaleThreadsOnWake: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.annotateKey({
+        title: "Compact stale threads on wake",
+        description:
+          "Compact a Claude thread first when a turn is about to start after its prompt cache expired and it is over Claude's auto-compact window. The waking message waits and runs unchanged. Other providers report no prompt-cache expiry and are not compacted.",
+        providerSettingsForm: { control: "switch", clearWhenEmpty: "persist" },
+      }),
+    ),
     autoCompactWindow: TrimmedString.check(
       Schema.isPattern(CLAUDE_AUTO_COMPACT_WINDOW_PATTERN),
     ).pipe(
@@ -872,6 +890,8 @@ export const ClaudeSettings = makeProviderSettingsSchema(
       "homePath",
       "claudeInChrome",
       "claudeArtifacts",
+      "leanDelegatedChildren",
+      "compactStaleThreadsOnWake",
       "autoCompactWindow",
       "idleCompaction",
       "launchArgs",
@@ -1459,6 +1479,12 @@ export const ServerSettings = Schema.Struct({
   ),
   idleCompaction: Schema.optionalKey(IdleCompactionMode),
   snoozeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Also hold threads that have not hit the limit while their provider account is limited. */
+  holdUnlimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** After the user presses Stop, hold agent messages, scheduled tasks and merge-queue notes. */
+  holdAgentMessagesAfterStop: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
   autoResumeLimitedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   snoozePresets: SnoozePresetSettings.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SNOOZE_PRESETS)),
@@ -1710,6 +1736,24 @@ export const idleCompactionPatch = (settings: IdleCompactionSettings, mode: Idle
       ? { compactIdleThreads: mode }
       : { compactIdleThreads: mode === "beforeCacheExpires" };
 
+/**
+ * Whether a Claude instance compacts a stale thread before a waking turn starts. The switch is a
+ * Claude setting, so a non-Claude instance reads false and no compaction is attempted.
+ */
+export const resolveCompactStaleThreadsOnWake = (
+  settings: Pick<ServerSettings, "providerInstances">,
+  instanceId: ProviderInstanceId,
+): boolean => {
+  const instance = Object.hasOwn(settings.providerInstances, instanceId)
+    ? settings.providerInstances[instanceId]
+    : undefined;
+  if (instance !== undefined && instance.driver !== "claudeAgent") return false;
+  return decodeClaudeSettings(instance?.config ?? {}).pipe(
+    Option.map((config) => config.compactStaleThreadsOnWake),
+    Option.getOrElse(() => false),
+  );
+};
+
 export const resolveIdleCompaction = (
   settings: Pick<ServerSettings, "providerInstances" | "compactIdleThreads" | "idleCompaction">,
   instanceId: ProviderInstanceId,
@@ -1912,6 +1956,8 @@ export const ServerSettingsPatch = Schema.Struct({
   sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
   autoResumeLimitedThreads: Schema.optionalKey(Schema.Boolean),
   snoozeLimitedThreads: Schema.optionalKey(Schema.Boolean),
+  holdUnlimitedThreads: Schema.optionalKey(Schema.Boolean),
+  holdAgentMessagesAfterStop: Schema.optionalKey(Schema.Boolean),
   snoozePresets: Schema.optionalKey(SnoozePresetSettings),
   hiddenThreadTags: Schema.optionalKey(Schema.Array(Schema.String)),
   hideTaggedThreads: Schema.optionalKey(Schema.Boolean),

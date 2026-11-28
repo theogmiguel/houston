@@ -130,6 +130,7 @@ import {
   type ThreadId,
   compactCommandInstructions,
   isDelegatedAppThread,
+  isProviderNativeSubagentThread,
   resolveIdleCompaction,
 } from "@houston-app/contracts";
 
@@ -1812,6 +1813,24 @@ export function withClaudeArtifacts(
   return { ...environment, CLAUDE_CODE_ARTIFACT: "1" };
 }
 
+/** A delegated child's session starts without these; Claude's native subagents keep them. */
+export const CLAUDE_LEAN_DELEGATED_CHILD_DISALLOWED_TOOLS: ReadonlyArray<string> = [
+  "Artifact",
+  "Workflow",
+  "ScheduleWakeup",
+];
+
+/** Only a Houston-delegated child, and only with the setting on; root and side threads stay full. */
+export function claudeLeanDelegatedChildTools(
+  appThread: Pick<OrchestrationV2AppThread, "lineage" | "creationSource" | "delegatedFrom">,
+  enabled: boolean,
+): ReadonlyArray<string> | undefined {
+  if (!enabled || !isDelegatedAppThread(appThread) || isProviderNativeSubagentThread(appThread)) {
+    return undefined;
+  }
+  return CLAUDE_LEAN_DELEGATED_CHILD_DISALLOWED_TOOLS;
+}
+
 // A delegated child is its own SDK session, so Claude Code gives it the main-conversation cache
 // TTL. When the user sets Claude's subagentPromptCacheTtl, the child follows it like a native
 // subagent would. An explicit CLAUDE_CODE_PROMPT_CACHE_TTL on the instance still wins.
@@ -1918,6 +1937,8 @@ export function makeClaudeQueryOptions(input: {
     "dangerously-skip-permissions": launchArgSkipPermissions,
     "append-system-prompt": launchArgAppendSystemPrompt,
     "append-system-prompt-file": _launchArgAppendSystemPromptFile,
+    // Folded into options.disallowedTools beside the setting's, as the SDK prefers the option.
+    disallowedTools: launchArgDisallowedTools,
     // The SDK replaces this flag with options.settings, so it arrives read as sdkSettings.
     settings: _launchArgSettings,
     ...extraArgs
@@ -1951,6 +1972,17 @@ export function makeClaudeQueryOptions(input: {
     ? { resume: input.nativeThreadId }
     : { sessionId: input.nativeThreadId };
   const selectedTools = input.tools ?? CLAUDE_CODE_PRESET_TOOLS;
+  // A launch argument is the comma-separated CLI form; keep every entry it already removes.
+  const launchDisallowedTools =
+    launchArgDisallowedTools === undefined || launchArgDisallowedTools === null
+      ? []
+      : launchArgDisallowedTools
+          .split(",")
+          .map((name) => name.trim())
+          .filter((name) => name.length > 0);
+  const disallowedTools = [
+    ...new Set([...(input.disallowedTools ?? []), ...launchDisallowedTools]),
+  ];
   const selectionSettings =
     Object.keys(compiledSelection.settings).length === 0
       ? undefined
@@ -2021,7 +2053,7 @@ export function makeClaudeQueryOptions(input: {
     ...threadIdentity,
     ...(input.resumeSessionAt === undefined ? {} : { resumeSessionAt: input.resumeSessionAt }),
     ...(input.allowedTools === undefined ? {} : { allowedTools: [...input.allowedTools] }),
-    ...(input.disallowedTools === undefined ? {} : { disallowedTools: [...input.disallowedTools] }),
+    ...(disallowedTools.length === 0 ? {} : { disallowedTools }),
     ...(input.canUseTool === undefined ? {} : { canUseTool: input.canUseTool }),
     ...(input.allowDangerouslySkipPermissions === true
       ? { allowDangerouslySkipPermissions: true }
@@ -9852,6 +9884,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 title: "Context compacted",
                 completedAt: compaction.completedAt ?? now,
                 updatedAt: now,
+                trigger: message.compact_metadata.trigger,
                 ...(message.compact_metadata.pre_tokens === undefined
                   ? {}
                   : { beforeTokenCount: message.compact_metadata.pre_tokens }),
@@ -11672,6 +11705,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             turnInput.runtimePolicy.cwd,
             launchArgSettings,
           );
+          const leanDelegatedChildTools = claudeLeanDelegatedChildTools(
+            turnInput.appThread,
+            adapterOptions.settings.leanDelegatedChildren,
+          );
           const queryOptions = makeClaudeQueryOptions({
             modelSelection: turnInput.modelSelection,
             claudeInChrome: adapterOptions.settings.claudeInChrome,
@@ -11699,8 +11736,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   ? yield* resolveSubagentPromptCacheTtl(turnInput.runtimePolicy.cwd)
                   : undefined,
               ),
-              adapterOptions.settings.claudeArtifacts,
+              adapterOptions.settings.claudeArtifacts && leanDelegatedChildTools === undefined,
             ),
+            ...(leanDelegatedChildTools === undefined
+              ? {}
+              : { disallowedTools: [...leanDelegatedChildTools] }),
             tools: queryPolicy.tools ?? CLAUDE_CODE_PRESET_TOOLS,
             ...(mcpOverrides.allowedTools === undefined
               ? {}

@@ -80,10 +80,12 @@ import {
   type ScopedThreadRef,
   type ThreadId,
   ProviderInteractionMode,
+  resolveCompactStaleThreadsOnWake,
   resolveIdleCompaction,
   RuntimeMode,
   managedRuntimeModeDenial,
 } from "@houston-app/contracts";
+import { COMPACTION_SUGGESTION_MIN_TOKENS } from "@houston-app/shared/claudeCompaction";
 import {
   deriveProviderExtensionStatuses,
   deriveProviderSubagentStatus,
@@ -577,6 +579,9 @@ export default function ChatView(props: ChatViewProps) {
   });
   const loadEarlierThreadHistory = useAtomCommand(threadEnvironment.loadEarlierHistory, {
     label: "load earlier thread history",
+    reportFailure: false,
+  });
+  const resumeThreadQueue = useOrchestrationCommand(threadEnvironment.resumeThreadQueue, {
     reportFailure: false,
   });
   const { environments } = useEnvironments();
@@ -2721,12 +2726,16 @@ export default function ChatView(props: ChatViewProps) {
           ? t("Compaction is unavailable for this provider")
           : t("Compacting is unavailable right now")
     : null;
+  const compactionInstanceId = activeProviderInstanceId ?? ProviderInstanceId.make("claudeAgent");
+  // With server-side stale compaction on, the composer leaves a thread at or over the server's
+  // threshold to it, so the same send is never compacted twice.
+  const serverCompactionThreshold = resolveCompactStaleThreadsOnWake(settings, compactionInstanceId)
+    ? (activeContextWindow?.autoCompactThreshold ?? COMPACTION_SUGGESTION_MIN_TOKENS)
+    : Number.POSITIVE_INFINITY;
   const resumeCompactionTokens =
     activeContextWindow &&
-    resolveIdleCompaction(
-      settings,
-      activeProviderInstanceId ?? ProviderInstanceId.make("claudeAgent"),
-    ) !== "off" &&
+    resolveIdleCompaction(settings, compactionInstanceId) !== "off" &&
+    activeContextWindow.usedTokens < serverCompactionThreshold &&
     !resumeCompactionPermanentlyDismissed &&
     !nativeResumeCompactionDismissed &&
     !compactDisabled &&
@@ -2787,6 +2796,14 @@ export default function ChatView(props: ChatViewProps) {
     );
     return item ? [item] : [];
   });
+  const heldLimitStarts = (
+    serverProjection?.runs.filter(
+      (run) => run.status === "queued" && run.queueHeldReason?.kind === "usage_limit",
+    ) ?? []
+  ).toSorted(
+    (left, right) => (left.queuePosition ?? left.ordinal) - (right.queuePosition ?? right.ordinal),
+  );
+  const heldLimitOverdue = heldLimitStarts.some((run) => run.queueHeldReason?.overdue === true);
   const limitRecoveryBanner =
     limitRecoveryRun !== null && activeThreadShell !== null
       ? usageLimitRecoveryBannerItem({
@@ -2800,6 +2817,20 @@ export default function ChatView(props: ChatViewProps) {
           snoozedUntil: activeThreadShell.snoozedUntil,
           timestampFormat,
           translate: t,
+          heldStarts: heldLimitStarts.length,
+          heldOverdue: heldLimitOverdue,
+          onStartHeld: async () => {
+            const firstHeld = heldLimitStarts[0];
+            if (firstHeld === undefined) return;
+            await resumeThreadQueue({
+              environmentId,
+              input: {
+                threadId: activeThreadShell.id,
+                runId: firstHeld.id,
+                releaseThreadHolds: true,
+              },
+            });
+          },
           onChange: async (limitRecovery) => {
             const result = await updateThreadMetadata({
               environmentId,

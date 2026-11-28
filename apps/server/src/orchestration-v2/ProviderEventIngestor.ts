@@ -40,6 +40,7 @@ import { stripUnservedToolOutputImageBytes } from "./toolOutputImageBytes.ts";
 import { boundFileChangeForStorage } from "./WireProjection.ts";
 import { ReadinessLedger, reportTurnTerminal } from "../houston/providerReadiness.ts";
 import { MessageDeliveryWriter } from "../houston/messageDelivery.ts";
+import { LimitWindowRegistry } from "../houston/runStart/LimitWindowRegistry.ts";
 
 export class ProviderEventNormalizeError extends Schema.TaggedError<ProviderEventNormalizeError>()(
   "ProviderEventNormalizeError",
@@ -630,9 +631,18 @@ export const layer: Layer.Layer<
                 return dismissed;
               }
               const occurredAt = yield* DateTime.now;
-              const failure = (yield* agentScope.oomKilled(input.threadId))
+              const terminalFailure = (yield* agentScope.oomKilled(input.threadId))
                 ? { ...input.event.failure, message: "Killed: out of memory.", code: "oom_kill" }
                 : input.event.failure;
+              // A limit with no reset cannot name a release time; say only what was reported.
+              const failure =
+                terminalFailure.class === "usage_limit" &&
+                (terminalFailure.resetAt ?? null) === null
+                  ? {
+                      ...terminalFailure,
+                      message: `${terminalFailure.message} The provider did not report when this usage limit resets.`,
+                    }
+                  : terminalFailure;
               return [
                 ...dismissed,
                 yield* makeDomainEvent(input, {
@@ -748,6 +758,18 @@ export const layer: Layer.Layer<
                     Effect.ignoreCause({ log: true }),
                     Effect.forkIn(scope, { startImmediately: true }),
                   );
+                  // Remember the account window so other threads on the instance wait too.
+                  const registry = yield* Effect.serviceOption(LimitWindowRegistry);
+                  if (Option.isSome(registry)) {
+                    yield* registry.value
+                      .recordFailure({
+                        providerInstanceId: input.providerInstanceId,
+                        model: null,
+                        resetAt: input.event.failure.resetAt ?? null,
+                        now: yield* DateTime.now,
+                      })
+                      .pipe(Effect.ignoreCause({ log: true }));
+                  }
                 }),
               ),
               Effect.flatMap((storedEvents) =>

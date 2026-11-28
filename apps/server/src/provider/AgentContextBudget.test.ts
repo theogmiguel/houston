@@ -1,11 +1,12 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import { ProviderInstanceId } from "@houston-app/contracts";
+import { EnvironmentId, ProviderInstanceId, ThreadId } from "@houston-app/contracts";
 import { McpProviderSessions } from "@houston-app/provider-core/server/McpProviderSessions";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { McpServer } from "effect/ai";
+import { McpSchema, McpServer } from "effect/ai";
 
 import { AssetSigner } from "../assets/AssetSigner.ts";
 import { ServerSecretStore } from "../auth/ServerSecretStore.ts";
@@ -21,6 +22,7 @@ import { HoustonTaskRuns } from "../houston/tasks/TaskRuns.ts";
 import { HoustonTaskService } from "../houston/tasks/TaskService.ts";
 import { IssueService } from "../issue/IssueService.ts";
 import * as McpHttpServer from "../mcp/McpHttpServer.ts";
+import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
 import { PreviewAutomationBroker } from "../mcp/PreviewAutomationBroker.ts";
 import {
   CLAUDE_PROVIDER,
@@ -135,6 +137,72 @@ const layerAdvertisedTools = McpHttpServer.layerTools.pipe(
   Layer.provide(toolHandlerServices),
 );
 
+type AdvertisedTool = {
+  readonly tool: {
+    readonly name: string;
+    readonly description?: string | undefined;
+    readonly inputSchema: unknown;
+  };
+  readonly annotations: Context.Context<never>;
+};
+
+// The model sees these fields. outputSchema and annotations are protocol metadata.
+const toolListJsonBytes = (tools: ReadonlyArray<AdvertisedTool>) =>
+  utf8Bytes(
+    JSON.stringify(
+      tools.map(({ tool }) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+      })),
+    ),
+  );
+
+// A root thread's default credential: browser tools on, device tools off, no linked session.
+const defaultRootThreadScope = (): McpInvocationContext.McpInvocationScope => ({
+  environmentId: EnvironmentId.make("context-budget"),
+  capabilities: new Set<McpInvocationContext.McpCapability>([
+    "orchestration",
+    "worktree",
+    "pull-requests",
+    "issues",
+    "preview",
+  ]),
+  issuedAt: 0,
+  requestNamespace: "context-budget",
+  thread: {
+    threadId: ThreadId.make("context-budget"),
+    providerSessionId: "context-budget",
+    providerInstanceId: ProviderInstanceId.make(CLAUDE_PROVIDER),
+  },
+  client: undefined,
+});
+
+// EnabledWhen reads the Houston caller from the request fiber, so apply it inside the scope.
+const toolsForScope = (
+  tools: ReadonlyArray<AdvertisedTool>,
+  scope: McpInvocationContext.McpInvocationScope,
+): Effect.Effect<{
+  readonly enabled: ReadonlyArray<AdvertisedTool>;
+  readonly disabled: ReadonlyArray<AdvertisedTool>;
+}> =>
+  Effect.sync(() => {
+    const isEnabled = (annotations: Context.Context<never>) => {
+      const enabledWhen = Context.getOrUndefined(annotations, McpSchema.EnabledWhen);
+      return (
+        enabledWhen === undefined ||
+        enabledWhen({
+          protocolVersion: "2025-06-18",
+          capabilities: McpSchema.ClientCapabilities.make({}),
+        })
+      );
+    };
+    const enabled: Array<AdvertisedTool> = [];
+    const disabled: Array<AdvertisedTool> = [];
+    for (const entry of tools) (isEnabled(entry.annotations) ? enabled : disabled).push(entry);
+    return { enabled, disabled };
+  }).pipe(Effect.provideService(McpInvocationContext.McpInvocationContext, scope));
+
 // Claude Code loads these tools up front instead of behind ToolSearch, outside this budget.
 it.effect("only request_secret asks Claude Code to load it up front", () =>
   Effect.gen(function* () {
@@ -146,24 +214,45 @@ it.effect("only request_secret asks Claude Code to load it up front", () =>
   }).pipe(Effect.provide(layerAdvertisedTools)),
 );
 
+it.effect("a tool hidden from a default thread grows the registered total only", () =>
+  Effect.gen(function* () {
+    const mcp = yield* McpServer.McpServer;
+    const scope = defaultRootThreadScope();
+    const { enabled, disabled } = yield* toolsForScope(mcp.tools, scope);
+    // The registered set already holds tools a default thread never lists.
+    expect(disabled.length).toBeGreaterThan(0);
+
+    const hiddenProbe = {
+      tool: {
+        name: "context_budget_hidden_probe",
+        description: "A tool no default thread lists.",
+        inputSchema: { type: "object" as const, properties: {} },
+      },
+      annotations: Context.make(McpSchema.EnabledWhen, () => false) as Context.Context<never>,
+    };
+    const registeredWithProbe = [...mcp.tools, hiddenProbe];
+    const { enabled: defaultWithProbe } = yield* toolsForScope(registeredWithProbe, scope);
+
+    expect(toolListJsonBytes(registeredWithProbe)).toBeGreaterThan(toolListJsonBytes(mcp.tools));
+    expect(toolListJsonBytes(defaultWithProbe)).toBe(toolListJsonBytes(enabled));
+    expect(defaultWithProbe.map(({ tool }) => tool.name)).not.toContain(hiddenProbe.tool.name);
+  }).pipe(Effect.provide(layerAdvertisedTools)),
+);
+
 // CI rejects a PR that raises any value above main's agentContextBudget.json, so growth
 // needs the agent-context-increase label. Lower the values when the text shrinks.
 it.effect("agent context matches the committed budget", () =>
   Effect.gen(function* () {
     const mcp = yield* McpServer.McpServer;
+    const { enabled: defaultThreadTools } = yield* toolsForScope(
+      mcp.tools,
+      defaultRootThreadScope(),
+    );
     const measured = {
       claudeSystemAppendBytes: utf8Bytes(claudeSystemAppend()),
       codexAdditionalContextBytes: utf8Bytes(codexAdditionalContext()),
-      // The model sees these fields. outputSchema and annotations are protocol metadata.
-      mcpToolListJsonBytes: utf8Bytes(
-        JSON.stringify(
-          mcp.tools.map(({ tool }) => ({
-            name: tool.name,
-            description: tool.description,
-            inputSchema: tool.inputSchema,
-          })),
-        ),
-      ),
+      mcpToolListJsonBytes: toolListJsonBytes(mcp.tools),
+      defaultThreadMcpToolListJsonBytes: toolListJsonBytes(defaultThreadTools),
     };
 
     expect(

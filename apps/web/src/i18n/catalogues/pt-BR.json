@@ -1264,5 +1264,11 @@
   "Links to 1 machine": "Vincula a 1 máquina",
   "Links to {count} machines": "Vincula a {count} máquinas",
   "No other machines": "Nenhuma outra máquina",
-  "Not supported": "Não suportado"
+  "Not supported": "Não suportado",
+  "1 automatic start waits": "1 início automático aguarda",
+  "{count} automatic starts wait": "{count} inícios automáticos aguardam",
+  "Start held items": "Iniciar itens retidos",
+  "Could not start held items": "Não foi possível iniciar os itens retidos",
+  "1 automatic start waits (overdue)": "1 início automático aguarda (atrasado)",
+  "{count} automatic starts wait (overdue)": "{count} inícios automáticos aguardam (atrasado)"
 }

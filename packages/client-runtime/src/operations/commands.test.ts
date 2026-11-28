@@ -564,6 +564,7 @@ describe("V2 environment commands", () => {
                   commandId: expect.any(String),
                   threadId: v2ThreadId,
                   runId: waitingRunId,
+                  requestedBy: "user",
                   holdQueue: true,
                 },
               ],
@@ -679,7 +680,12 @@ describe("V2 environment commands", () => {
             runId,
             subagentId,
           },
-          { type: "thread.stop", commandId: "lineage-stop", threadId: childThreadId },
+          {
+            type: "thread.stop",
+            commandId: "lineage-stop",
+            threadId: childThreadId,
+            requestedBy: "user",
+          },
         ]);
       }).pipe(Effect.provide(layerTestRandom)),
   );
@@ -707,6 +713,7 @@ describe("V2 environment commands", () => {
           type: "thread.stop",
           commandId: "stop-outside-history-window",
           threadId: v2ThreadId,
+          requestedBy: "user",
         },
       ]);
     }).pipe(Effect.provide(layerTestRandom)),

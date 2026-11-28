@@ -467,6 +467,11 @@ A delegated child works in the parent's project unless the agent names another p
 in another project works in that project's folder, or in a new worktree of it started from its
 current commit, and still reports to its parent.
 
+**Settings ▸ Providers ▸ Claude ▸ Leaner delegated children** is off by default. When it is on,
+a Claude child starts without the Artifact, Workflow and ScheduleWakeup tools and without the
+Artifact environment switch; skills, connectors and browser tools stay available. Root threads,
+side threads and Claude's own native subagents are unchanged.
+
 Agents also manage workspaces through the `houston_workspace_*` tools, with the app closed: list,
 create, rename, hide, pin, reorder and delete a workspace, and add a thread's chat to one or take
 it out. A thread's chat is in one workspace at a time, so adding it moves it out of its other

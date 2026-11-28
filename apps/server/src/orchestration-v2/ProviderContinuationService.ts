@@ -127,6 +127,7 @@ export const layer = Layer.effectDiscard(
               dispatchMode: { type: "queue_after_active" },
               createdBy: "agent",
               creationSource: "server",
+              startOrigin: "automatic",
               delegatedCompletion: {
                 parentRunId: request.delegatedCompletion.parentRunId,
                 generation: delivery.generation,
@@ -202,6 +203,7 @@ export const layer = Layer.effectDiscard(
           createdBy: "agent",
           // Only buffered wakes use creationSource "provider"; Claude would drain an empty buffer instead of prompting message_text.
           creationSource: request.delivery === "message_text" ? "server" : "provider",
+          startOrigin: request.delivery === "message_text" ? "automatic" : "provider",
         });
         // Catch after dispatchIfCurrent so adapters see raw failures first; clearIfCurrent is idempotent and covers others.
         const logInstanceDisabled = (

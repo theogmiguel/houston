@@ -17,6 +17,7 @@ import {
   globalIdleCompaction,
   idleCompactionPatch,
   requiredScopesForProjectMutation,
+  resolveCompactStaleThreadsOnWake,
   resolveIdleCompaction,
   resolveProjectProviderInstanceEnabled,
   resolveProviderInstanceEnabled,
@@ -305,6 +306,45 @@ describe("Claude in Chrome and Artifacts settings", () => {
     expect(decodeClaudeSettings({ claudeInChrome: false }).claudeInChrome).toBe(false);
     expect(decodeClaudeSettings({ claudeArtifacts: false }).claudeArtifacts).toBe(false);
     expect(decodeClaudeSettings({ claudeArtifacts: true }).claudeArtifacts).toBe(true);
+  });
+
+  it("keeps leaner delegated children off unless the user turns it on", () => {
+    expect(decodeClaudeSettings({}).leanDelegatedChildren).toBe(false);
+    expect(decodeClaudeSettings({ leanDelegatedChildren: true }).leanDelegatedChildren).toBe(true);
+  });
+
+  it("keeps compacting stale threads on wake off unless the user turns it on", () => {
+    expect(decodeClaudeSettings({}).compactStaleThreadsOnWake).toBe(false);
+    expect(
+      decodeClaudeSettings({ compactStaleThreadsOnWake: true }).compactStaleThreadsOnWake,
+    ).toBe(true);
+  });
+});
+
+describe("resolveCompactStaleThreadsOnWake", () => {
+  it("reads the Claude instance switch and refuses a provider that reports no cache expiry", () => {
+    const settings = decodeServerSettings({
+      providerInstances: {
+        claude_wake: {
+          driver: "claudeAgent",
+          config: { compactStaleThreadsOnWake: true },
+        },
+        claude_calm: { driver: "claudeAgent" },
+        codex_calm: { driver: "codex", config: { compactStaleThreadsOnWake: true } },
+      },
+    });
+    expect(resolveCompactStaleThreadsOnWake(settings, ProviderInstanceId.make("claude_wake"))).toBe(
+      true,
+    );
+    expect(resolveCompactStaleThreadsOnWake(settings, ProviderInstanceId.make("claude_calm"))).toBe(
+      false,
+    );
+    expect(resolveCompactStaleThreadsOnWake(settings, ProviderInstanceId.make("codex_calm"))).toBe(
+      false,
+    );
+    expect(resolveCompactStaleThreadsOnWake(settings, ProviderInstanceId.make("claudeAgent"))).toBe(
+      false,
+    );
   });
 });
 

@@ -7,7 +7,12 @@ import { usageLimitRecoveryBannerItem } from "./UsageLimitRecoveryBanner";
 
 const stoppedAt = new Date(2026, 9, 20, 12, 0);
 
-function bannerDescription(resetAt: Date, timestampFormat: TimestampFormat) {
+function bannerDescription(
+  resetAt: Date,
+  timestampFormat: TimestampFormat,
+  heldStarts?: number,
+  heldOverdue?: boolean,
+) {
   return usageLimitRecoveryBannerItem({
     runId: RunId.make("run-1"),
     errorCode: null,
@@ -18,6 +23,8 @@ function bannerDescription(resetAt: Date, timestampFormat: TimestampFormat) {
     snoozedUntil: null,
     recovery: null,
     timestampFormat,
+    ...(heldStarts === undefined ? {} : { heldStarts }),
+    ...(heldOverdue === undefined ? {} : { heldOverdue }),
     translate: (source, params) => translate("en", source, params),
     onChange: async () => {},
   }).description;
@@ -37,5 +44,24 @@ describe("usageLimitRecoveryBannerItem", () => {
     expect(bannerDescription(new Date(2026, 9, 21, 17, 30), "24-hour")).toBe(
       "Resets tomorrow at 17:30",
     );
+  });
+
+  it("adds the automatic starts waiting on the hold", () => {
+    using _now = vi.spyOn(Date, "now").mockReturnValue(stoppedAt.getTime());
+    expect(bannerDescription(new Date(2026, 9, 20, 17, 30), "24-hour", 3)).toBe(
+      "Resets 17:30 · 3 automatic starts wait",
+    );
+  });
+
+  it("says when a held start is overdue", () => {
+    using _now = vi.spyOn(Date, "now").mockReturnValue(stoppedAt.getTime());
+    expect(bannerDescription(new Date(2026, 9, 20, 17, 30), "24-hour", 1, true)).toBe(
+      "Resets 17:30 · 1 automatic start waits (overdue)",
+    );
+  });
+
+  it("adds nothing when no start is held", () => {
+    using _now = vi.spyOn(Date, "now").mockReturnValue(stoppedAt.getTime());
+    expect(bannerDescription(new Date(2026, 9, 20, 17, 30), "24-hour", 0)).toBe("Resets 17:30");
   });
 });

@@ -219,10 +219,12 @@ function makeClaudeTestAppThread(input: {
   readonly threadId: ThreadId;
   readonly providerThread: OrchestrationV2ProviderThread;
   readonly now: DateTime.Utc;
+  readonly lineage?: OrchestrationV2AppThread["lineage"];
+  readonly creationSource?: OrchestrationV2AppThread["creationSource"];
 }): OrchestrationV2AppThread {
   return {
     createdBy: "user",
-    creationSource: "web",
+    creationSource: input.creationSource ?? "web",
     id: input.threadId,
     projectId: ProjectId.make(`project-${input.threadId}`),
     title: "Claude attachment test",
@@ -233,7 +235,7 @@ function makeClaudeTestAppThread(input: {
     branch: null,
     worktreePath: null,
     activeProviderThreadId: input.providerThread.id,
-    lineage: {
+    lineage: input.lineage ?? {
       parentThreadId: null,
       relationshipToParent: null,
       rootThreadId: input.threadId,
@@ -262,6 +264,8 @@ function makeClaudeTestTurnInput(input: {
   readonly messageCreationSource?: ProviderAdapter.ProviderAdapterV2TurnInput["message"]["creationSource"];
   readonly modelSelection?: ModelSelection;
   readonly runtimePolicy?: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
+  readonly lineage?: OrchestrationV2AppThread["lineage"];
+  readonly creationSource?: OrchestrationV2AppThread["creationSource"];
 }): ProviderAdapter.ProviderAdapterV2TurnInput {
   return {
     appThread: makeClaudeTestAppThread(input),
@@ -319,6 +323,25 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
     assert.equal(options.permissionMode, expected);
     assert.isUndefined(options.extraArgs?.["permission-mode"]);
     assert.isUndefined(options.extraArgs?.["dangerously-skip-permissions"]);
+  });
+
+  it("merges launch-argument --disallowedTools into the session's list", () => {
+    const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      nativeThreadId: "native-disallowed-tools",
+      resume: false,
+      cwd: "/workspace",
+      settings: { ...DEFAULT_CLAUDE_SETTINGS, launchArgs: '--disallowedTools "Bash,Edit"' },
+      disallowedTools: ClaudeAdapterV2.CLAUDE_LEAN_DELEGATED_CHILD_DISALLOWED_TOOLS,
+    });
+    assert.deepEqual(options.disallowedTools, [
+      "Artifact",
+      "Workflow",
+      "ScheduleWakeup",
+      "Bash",
+      "Edit",
+    ]);
+    assert.isUndefined(options.extraArgs?.["disallowedTools"]);
   });
 
   it("passes --chrome when Claude in Chrome is on", () => {
@@ -1410,6 +1433,186 @@ describe("ClaudeAdapterV2 Claude in Chrome", () => {
           ),
         ),
       ),
+    ),
+  );
+});
+
+describe("ClaudeAdapterV2 leaner delegated children", () => {
+  const startTurn = Effect.fnUntraced(function* (input: {
+    readonly settings: ClaudeSettings;
+    readonly relationshipToParent: "subagent" | null;
+    readonly creationSource?: OrchestrationV2AppThread["creationSource"];
+    readonly launchArgs?: string;
+  }) {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const opened: Array<ClaudeAdapterV2.ClaudeAgentSdkQueryOptions> = [];
+    const threadId = ThreadId.make(`thread-lean-${input.relationshipToParent ?? "root"}`);
+    const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
+      instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
+      settings:
+        input.launchArgs === undefined
+          ? input.settings
+          : { ...input.settings, launchArgs: input.launchArgs },
+      environment: {},
+      attachmentsDir: yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "houston-claude-lean-",
+      }),
+      fileSystem,
+      path: yield* Path.Path,
+      random: yield* SecureRandom.SecureRandom,
+      idAllocator: yield* IdAllocator.IdAllocatorV2,
+      queryRunner: {
+        allocateSessionId: Effect.succeed(`native-thread-lean-${threadId}`),
+        open: (openInput) =>
+          Effect.sync(() => {
+            opened.push(openInput.options);
+            return {
+              messages: Stream.never,
+              offer: () => Effect.void,
+              setModel: () => Effect.void,
+              applyFlagSettings: () => Effect.void,
+              setPermissionMode: () => Effect.void,
+              backgroundTasks: () => Effect.succeed(false),
+              mcpServerStatus: Effect.succeed([]),
+              readMcpResource: () => Effect.die("unexpected MCP resource read"),
+              callMcpTool: () => Effect.die("unexpected MCP tool call"),
+              mcpAuthenticate: () => Effect.die("unexpected MCP sign-in"),
+              mcpSubmitOAuthCallbackUrl: () => Effect.die("unexpected MCP sign-in"),
+              reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
+              listPermissionRules: Effect.die("unexpected permission rules read"),
+              stopTask: () => Effect.void,
+              interrupt: Effect.void,
+              close: Effect.void,
+            };
+          }),
+        forkSession: () => Effect.die("unused"),
+        subagentLaunchToolUseId: () => Effect.succeed(null),
+        assertComplete: Effect.void,
+      },
+    });
+    const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      cwd: "/workspace",
+    });
+    const runtime = yield* adapter.openSession({
+      threadId,
+      providerSessionId: ProviderSessionId.make(`provider-session-${threadId}`),
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      runtimePolicy,
+    });
+    const providerThread = yield* runtime.ensureThread({
+      threadId,
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      runtimePolicy,
+    });
+    yield* runtime.startTurn(
+      makeClaudeTestTurnInput({
+        threadId,
+        providerThread,
+        now: yield* DateTime.now,
+        attemptId: RunAttemptId.make(`attempt-${threadId}`),
+        text: "Check the tools",
+        attachments: [],
+        runtimePolicy,
+        lineage: {
+          parentThreadId:
+            input.relationshipToParent === null ? null : ThreadId.make("thread-lean-parent"),
+          relationshipToParent: input.relationshipToParent,
+          rootThreadId: ThreadId.make("thread-lean-root"),
+        },
+        ...(input.creationSource === undefined ? {} : { creationSource: input.creationSource }),
+      }),
+    );
+    return opened;
+  });
+
+  const provideTestLayers = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    );
+
+  it.effect("a Houston child starts without Artifact, Workflow and ScheduleWakeup", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const opened = yield* startTurn({
+          settings: { ...DEFAULT_CLAUDE_SETTINGS, leanDelegatedChildren: true },
+          relationshipToParent: "subagent",
+        });
+        assert.lengthOf(opened, 1);
+        assert.deepEqual(opened[0]!.disallowedTools, ["Artifact", "Workflow", "ScheduleWakeup"]);
+        assert.isUndefined(opened[0]!.env?.CLAUDE_CODE_ARTIFACT);
+      }).pipe(provideTestLayers),
+    ),
+  );
+
+  it.effect("a root thread still lists them with the switch on", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const opened = yield* startTurn({
+          settings: { ...DEFAULT_CLAUDE_SETTINGS, leanDelegatedChildren: true },
+          relationshipToParent: null,
+        });
+        assert.lengthOf(opened, 1);
+        assert.isUndefined(opened[0]!.disallowedTools);
+        assert.strictEqual(opened[0]!.env?.CLAUDE_CODE_ARTIFACT, "1");
+      }).pipe(provideTestLayers),
+    ),
+  );
+
+  it.effect("a child keeps everything while the switch is off", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const opened = yield* startTurn({
+          settings: DEFAULT_CLAUDE_SETTINGS,
+          relationshipToParent: "subagent",
+        });
+        assert.lengthOf(opened, 1);
+        assert.isUndefined(opened[0]!.disallowedTools);
+        assert.strictEqual(opened[0]!.env?.CLAUDE_CODE_ARTIFACT, "1");
+      }).pipe(provideTestLayers),
+    ),
+  );
+
+  it.effect("Claude's own native subagents keep their tools", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const opened = yield* startTurn({
+          settings: { ...DEFAULT_CLAUDE_SETTINGS, leanDelegatedChildren: true },
+          relationshipToParent: "subagent",
+          creationSource: "provider",
+        });
+        assert.lengthOf(opened, 1);
+        assert.isUndefined(opened[0]!.disallowedTools);
+      }).pipe(provideTestLayers),
+    ),
+  );
+
+  it.effect("keeps launch-argument --disallowedTools entries beside the lean list", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const opened = yield* startTurn({
+          settings: { ...DEFAULT_CLAUDE_SETTINGS, leanDelegatedChildren: true },
+          relationshipToParent: "subagent",
+          launchArgs: '--disallowedTools "Bash,Edit"',
+        });
+        assert.lengthOf(opened, 1);
+        assert.deepEqual(opened[0]!.disallowedTools, [
+          "Artifact",
+          "Workflow",
+          "ScheduleWakeup",
+          "Bash",
+          "Edit",
+        ]);
+        assert.isUndefined(opened[0]!.extraArgs?.["disallowedTools"]);
+      }).pipe(provideTestLayers),
     ),
   );
 });
@@ -10554,6 +10757,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           assert.equal(compaction.turnItem.beforeTokenCount, 1500);
           assert.equal(compaction.turnItem.afterTokenCount, 400);
           assert.equal(compaction.turnItem.status, "completed");
+          assert.equal(compaction.turnItem.trigger, "manual");
         }
         const watermark = harness.events.find(
           (event) =>

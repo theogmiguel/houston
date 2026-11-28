@@ -84,6 +84,7 @@ export interface ChatMessage {
   readonly scheduledTaskId?: ScheduledTaskId;
   readonly senderThreadId?: ThreadId;
   readonly idleCompaction?: import("@houston-app/contracts").OrchestrationV2IdleCompaction;
+  readonly compactionReason?: import("@houston-app/contracts").OrchestrationV2CompactionReason;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly inputIntent?: OrchestrationV2UserMessageInputIntent | undefined;

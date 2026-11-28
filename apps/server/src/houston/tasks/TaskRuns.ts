@@ -1313,6 +1313,7 @@ const make = Effect.gen(function* () {
             dispatchMode: { type: "queue_after_active" },
             createdBy: "user",
             creationSource: "server",
+            startOrigin: "automatic",
           })
           .pipe(Effect.ignore);
       }

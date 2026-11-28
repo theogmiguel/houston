@@ -59,6 +59,37 @@ Limits come from the provider account. Houston does not throttle, stop or extend
 limit; a limited thread is reported and can be held or resumed from **Settings ▸ Threads**
 and the thread's own banner.
 
+With **Hold until limits reset** on, an automatic turn on a thread whose latest run on that
+provider failed with a usage limit and whose reported reset is still ahead waits in the thread's
+queue instead of starting and failing. Automatic turns are sub-agent results, agent messages,
+background and restart notes, pull-request and merge-queue notes, scheduled tasks and limit
+resumes. A message you type, a Slack answer and a task run you start are never held and never
+wait behind a held item. **Send now** starts a held item at once.
+
+At the reported reset, **Resume after usage limits** starts its continuation first and the held
+items follow in queue order; without it, the held items start at the reset. A reset release does
+not end a **Stop**: after you press Stop, automatic starts still wait for Resume or a message. A limit whose reset
+time the provider does not report is not held, and its error says that the provider did not
+report when the limit resets.
+
+**Also hold threads that have not hit the limit**, under **Hold until limits reset**, extends the
+hold to every thread on a provider instance whose account is inside a known limit window: a
+reported window at 100% with a reset ahead, or a recent limit failure on that account. Automatic
+turns on any of its threads wait, and so do new sub-agents; a held sub-agent creates no worktree,
+and `delegate_task` returns `status: "queued"` with the reason and reset. A weekly limit that
+applies to one model holds only that model. A message you type still starts.
+
+While a hold exists, Houston asks that provider for its own usage reading every 15 minutes and
+sends nothing else; the reading goes only to the provider instance you configured. When no reset
+time is known, or the reset passed but the provider still refuses, Houston releases one held item
+as a test after 15, then 30, then every 60 minutes. A successful test releases the rest in queue
+order; a limit failure waits and retries. A hold with no reported reset is marked overdue after
+three failed tests or 15 minutes past its next test release; a hold with a reset time ends at
+that reset. The state survives a server restart. Providers that report
+no limit windows cannot be held this way and are named in the setting's description; Antigravity
+is one. One provider account used from two channels, or from the Windows Subsystem for Linux
+backend, is tracked separately by each server, so a limit seen in one is not known to the other.
+
 ## Breakdowns
 
 The breakdown groups usage by model or by time, with tokens, cost and share. The year view

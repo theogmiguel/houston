@@ -219,6 +219,10 @@ export const OrchestratorMcpDelegateTaskResult = Schema.Struct({
   childRunId: Schema.NullOr(RunId),
   childNodeId: NodeId,
   status: OrchestratorMcpDelegatedTaskStatus,
+  /** Why an automatic start is held, when the account is inside a known limit window. */
+  queuedReason: Schema.optional(TrimmedNonEmptyString),
+  /** When the held start is expected to release, when the provider reported a reset. */
+  queuedReleaseAt: Schema.optional(TrimmedNonEmptyString),
   workState: Schema.Literals(["working", "waiting_for_children", "result_available"]),
   hasPendingChildRuns: Schema.Boolean,
   latestTerminalRunId: Schema.NullOr(RunId),

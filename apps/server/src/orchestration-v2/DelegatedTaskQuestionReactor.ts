@@ -55,6 +55,7 @@ const make = Effect.gen(function* () {
       dispatchMode: { type: "queue_after_active" },
       createdBy: "agent",
       creationSource: "server",
+      startOrigin: "automatic",
     });
   });
 

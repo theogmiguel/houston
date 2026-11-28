@@ -45,7 +45,9 @@ import {
   MessageDeliveryJson,
   MessageDeliveryQueueHoldReason,
 } from "./houston/messageDelivery.ts";
+import { RunStartOrigin } from "./houston/runStart.ts";
 import { HoustonBlockingBackgroundWork } from "./houston/backgroundWork.ts";
+import { OrchestrationV2CompactionReason } from "./houston/compactionReason.ts";
 import { HoustonProviderTurnCompaction } from "./houston/contextWindow.ts";
 import { HoustonSideThread, makeHoustonSideThreadCommands } from "./houston/sideThreads.ts";
 import { HoustonMergeQueueNotifyCommand } from "./houston/mergeQueue.ts";
@@ -507,6 +509,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
   snoozedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   lastSnoozeWakeAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecovery)),
+  /** The user pressed Stop; automatic starts wait until the user resumes or sends a message. */
+  heldAfterStop: Schema.optional(Schema.Boolean),
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
@@ -574,6 +578,7 @@ interface CompactionMessageFields {
   readonly createdBy?: OrchestrationV2Actor | undefined;
   readonly creationSource?: OrchestrationV2CreationSource | undefined;
   readonly idleCompaction?: OrchestrationV2IdleCompaction | undefined;
+  readonly compactionReason?: OrchestrationV2CompactionReason | undefined;
 }
 
 /** A prompt that only asks the provider to compact, so its turn is the compaction itself. */
@@ -624,9 +629,36 @@ export function idleCompactionOf(
 ): OrchestrationV2IdleCompaction | undefined {
   if (!isCompactionCommandMessage(message)) return undefined;
   if (message.idleCompaction !== undefined) return message.idleCompaction;
+  // A wake compaction carries its own reason; only the two idle modes have an idle label.
+  if (
+    message.compactionReason !== undefined &&
+    message.compactionReason !== "beforeCacheExpires" &&
+    message.compactionReason !== "onReturn"
+  )
+    return undefined;
   // Servers before `idleCompaction` marked their own as agent-created.
   return message.createdBy === "agent" && message.creationSource === "server"
     ? "beforeCacheExpires"
+    : undefined;
+}
+
+/**
+ * The reason a stored `/compact` message carries. `idleCompaction` remains for older clients;
+ * a message from before the typed field has none and keeps its older title.
+ */
+export function compactionReasonForMessage(message: {
+  readonly compactionReason?: OrchestrationV2CompactionReason | undefined;
+  readonly idleCompaction?: OrchestrationV2IdleCompaction | undefined;
+  readonly text: string;
+  readonly attachments?: ReadonlyArray<unknown> | undefined;
+  readonly createdBy?: OrchestrationV2Actor | undefined;
+}): OrchestrationV2CompactionReason | undefined {
+  if (message.compactionReason !== undefined) return message.compactionReason;
+  if (message.idleCompaction !== undefined) return message.idleCompaction;
+  return message.createdBy === "user" &&
+    isCompactCommandText(message.text) &&
+    (message.attachments?.length ?? 0) === 0
+    ? "onRequest"
     : undefined;
 }
 
@@ -738,6 +770,10 @@ export const OrchestrationV2Run = Schema.Struct({
   queueHeld: Schema.optional(Schema.Boolean),
   /** Why this queued run cannot start; cleared when it starts or its hold is released. */
   queueHeldReason: Schema.optional(Schema.NullOr(MessageDeliveryQueueHoldReason)),
+  /** The user released this thread's usage-limit hold explicitly, so admission must not re-hold it. */
+  releasedUsageLimitHold: Schema.optional(Schema.Boolean),
+  /** Who asked for this queued run; kept so a drain does not re-derive it from the message. */
+  startOrigin: Schema.optionalKey(RunStartOrigin),
   requestedAt: Schema.DateTimeUtc,
   startedAt: Schema.NullOr(Schema.DateTimeUtc),
   completedAt: Schema.NullOr(Schema.DateTimeUtc),
@@ -1354,6 +1390,7 @@ export const OrchestrationV2ConversationMessage = Schema.Struct({
   scheduledTaskId: Schema.optional(ScheduledTaskId),
   senderThreadId: Schema.optional(ThreadId),
   idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
+  compactionReason: Schema.optional(OrchestrationV2CompactionReason),
   /**
    * The message is the script a provider-native workflow run executes, not prose. Clients show
    * the workflow's opening instead and keep the script behind a disclosure.
@@ -1674,6 +1711,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
     scheduledTaskId: Schema.optional(ScheduledTaskId),
     senderThreadId: Schema.optional(ThreadId),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
+    compactionReason: Schema.optional(OrchestrationV2CompactionReason),
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
     freshContext: OrchestrationV2Run.fields.freshContext,
     inputIntent: OrchestrationV2UserMessageInputIntent,
@@ -1808,6 +1846,8 @@ export const OrchestrationV2TurnItem = Schema.Union([
     type: Schema.Literal("compaction"),
     driver: Schema.NullOr(ProviderDriverKind),
     summary: Schema.optional(Schema.String),
+    /** The provider's own trigger for a compaction it ran without Houston asking. */
+    trigger: Schema.optional(Schema.Literals(["manual", "auto"])),
     beforeTokenCount: Schema.optional(NonNegativeInt),
     afterTokenCount: Schema.optional(NonNegativeInt),
   }),
@@ -2516,6 +2556,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     scheduledTaskId: Schema.optional(ScheduledTaskId),
     senderThreadId: Schema.optional(ThreadId),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
+    compactionReason: Schema.optional(OrchestrationV2CompactionReason),
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
     freshContext: OrchestrationV2Run.fields.freshContext,
     inputIntent: OrchestrationV2UserMessageInputIntent,
@@ -2642,6 +2683,8 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     type: Schema.Literal("compaction"),
     driver: Schema.NullOr(ProviderDriverKind),
     summary: Schema.optional(Schema.String),
+    /** The provider's own trigger for a compaction it ran without Houston asking. */
+    trigger: Schema.optional(Schema.Literals(["manual", "auto"])),
     beforeTokenCount: Schema.optional(NonNegativeInt),
     afterTokenCount: Schema.optional(NonNegativeInt),
   }),
@@ -2975,6 +3018,8 @@ export const OrchestrationV2Command = Schema.Union([
     commandId: CommandId,
     threadId: ThreadId,
     reason: Schema.optional(Schema.String),
+    /** Who asked for the stop; only the user's own Stop holds later automatic starts. */
+    requestedBy: Schema.optional(Schema.Literals(["user", "agent"])),
     /**
      * False when the caller stops the thread's delegated tasks itself, as the server's tree walks
      * do under their caller's dispatch limit. Otherwise Stop also stops every task under the thread.
@@ -3234,8 +3279,11 @@ export const OrchestrationV2Command = Schema.Union([
     scheduledTaskId: Schema.optional(ScheduledTaskId),
     senderThreadId: Schema.optional(ThreadId),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
+    compactionReason: Schema.optional(OrchestrationV2CompactionReason),
     /** Start a new provider session without the thread's earlier context. Never steers. */
     freshContext: Schema.optional(Schema.Boolean),
+    /** Who asked for this start; only `automatic` work may be held before it reaches the provider. */
+    startOrigin: Schema.optionalKey(RunStartOrigin),
     commandId: CommandId,
     threadId: ThreadId,
     messageId: MessageId,
@@ -3323,6 +3371,8 @@ export const OrchestrationV2Command = Schema.Union([
     threadId: ThreadId,
     runId: RunId,
     reason: Schema.optional(Schema.String),
+    /** Who asked for the interrupt; only the user's own Stop holds later automatic starts. */
+    requestedBy: Schema.optional(Schema.Literals(["user", "agent"])),
     holdQueue: Schema.optional(Schema.Boolean),
   }),
   Schema.Struct({
@@ -3348,6 +3398,8 @@ export const OrchestrationV2Command = Schema.Union([
      * Absent keeps the selection it was queued with.
      */
     modelSelection: Schema.optional(ModelSelection),
+    /** The banner starts the thread's held usage-limit items together, not one row's item. */
+    releaseThreadHolds: Schema.optionalKey(Schema.Boolean),
   }),
   Schema.Struct({
     type: Schema.Literal("queued-run.reorder"),
@@ -3480,6 +3532,15 @@ export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
 
 // Excluded from dispatchCommand so only the server can send these.
 const OrchestrationV2InternalCommand = Schema.Union([
+  /** A server release of due usage-limit holds; user Resume and Send now use their own commands. */
+  Schema.Struct({
+    type: Schema.Literal("queued-run.release"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    runId: RunId,
+    /** Release every held usage-limit item on the thread, not only this run. */
+    releaseThreadHolds: Schema.optionalKey(Schema.Boolean),
+  }),
   /** A Slack answer, fenced by the server; a client could otherwise send it unfenced. */
   HoustonSlackAnswerCommand,
   /** A merge queue notice; a client could otherwise post one into any thread. */

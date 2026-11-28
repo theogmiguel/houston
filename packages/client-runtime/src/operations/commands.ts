@@ -183,6 +183,7 @@ export interface StartThreadTurnInput extends ThreadCommandInput {
     readonly attachments: ReadonlyArray<ChatAttachment | UploadChatAttachment>;
     readonly context?: import("@houston-app/contracts").OrchestrationMessageContext;
     readonly idleCompaction?: import("@houston-app/contracts").OrchestrationV2IdleCompaction;
+    readonly compactionReason?: import("@houston-app/contracts").OrchestrationV2CompactionReason;
   };
   readonly modelSelection?: ModelSelection;
   readonly titleSeed?: string;
@@ -271,6 +272,8 @@ export interface ResumeThreadQueueInput extends ThreadCommandInput {
   readonly runId?: RunId;
   /** Starts the queued run on this selection instead of the one it was queued with. */
   readonly modelSelection?: ModelSelection;
+  /** The banner starts every held usage-limit item of the thread, not only this run. */
+  readonly releaseThreadHolds?: boolean;
 }
 
 export interface PromoteQueuedRunInput extends ThreadCommandInput {
@@ -751,6 +754,9 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
       ...(input.message.idleCompaction === undefined
         ? {}
         : { idleCompaction: input.message.idleCompaction }),
+      ...(input.message.compactionReason === undefined
+        ? {}
+        : { compactionReason: input.message.compactionReason }),
       attachments,
       ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
       ...(input.sourceProposedPlan === undefined
@@ -761,6 +767,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
         ? {}
         : { backgroundWorkPolicy: input.backgroundWorkPolicy }),
       dispatchMode: { type: "start_immediately" },
+      startOrigin: "user",
     });
   }
 
@@ -780,6 +787,9 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
     ...(input.message.idleCompaction === undefined
       ? {}
       : { idleCompaction: input.message.idleCompaction }),
+    ...(input.message.compactionReason === undefined
+      ? {}
+      : { compactionReason: input.message.compactionReason }),
     attachments,
     ...(input.titleSeed === undefined ? {} : { titleSeed: input.titleSeed }),
     ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
@@ -790,6 +800,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
       : { backgroundWorkPolicy: input.backgroundWorkPolicy }),
     ...(requestedMode !== "queue" ? { deliveryIntent: requestedMode } : {}),
     dispatchMode,
+    startOrigin: "user",
   });
 });
 
@@ -835,6 +846,7 @@ export const interruptThreadTurn = Effect.fn("EnvironmentCommands.interruptThrea
         type: "thread.stop",
         commandId: yield* allocateCommandId(input),
         threadId,
+        requestedBy: "user",
       });
     }
   }
@@ -884,6 +896,7 @@ export const interruptThreadTurn = Effect.fn("EnvironmentCommands.interruptThrea
     commandId: yield* allocateCommandId(input),
     threadId,
     runId,
+    requestedBy: "user",
     holdQueue: true,
   });
 });
@@ -1089,6 +1102,9 @@ export const resumeThreadQueue = Effect.fn("EnvironmentCommands.resumeThreadQueu
           type: "queued-run.start" as const,
           runId: input.runId,
           ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
+          ...(input.releaseThreadHolds === undefined
+            ? {}
+            : { releaseThreadHolds: input.releaseThreadHolds }),
         }),
     commandId: yield* allocateCommandId(input),
     threadId: input.threadId,

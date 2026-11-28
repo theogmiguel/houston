@@ -115,6 +115,7 @@ import { repositoriesOf } from "../project/threadRepositories.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { returnsHeldTaskAtOnce } from "./heldTaskResult.ts";
 import {
   clientModeCeiling,
   type McpInvocationScope,
@@ -1651,6 +1652,14 @@ const make = Effect.gen(function* () {
       childRunId: childRun?.id ?? null,
       childNodeId: task.id,
       status,
+      ...(status === "queued" && childRun?.queueHeld === true && childRun.queueHeldReason != null
+        ? {
+            queuedReason: childRun.queueHeldReason.message,
+            ...(childRun.queueHeldReason.releaseAt === undefined
+              ? {}
+              : { queuedReleaseAt: childRun.queueHeldReason.releaseAt }),
+          }
+        : {}),
       workState,
       hasPendingChildRuns: hasPendingChildRuns(childProjection, childRun),
       providerInstanceId: modelSelection.instanceId,
@@ -2623,8 +2632,11 @@ const make = Effect.gen(function* () {
         }),
       );
 
+      const initial = yield* readTask(scope, taskId, false, true);
+      // A held task returns at once in both modes; the parent is woken when the child finishes.
+      if (returnsHeldTaskAtOnce(initial)) return initial;
       if (input.mode !== "wait") {
-        return yield* readTask(scope, taskId, false, true);
+        return initial;
       }
       const timeoutMs = Math.min(
         MAX_WAIT_TIMEOUT_MS,
@@ -2756,6 +2768,7 @@ const make = Effect.gen(function* () {
             threadId: childThreadId,
             stopDelegatedTasks: false,
             reason,
+            requestedBy: "agent",
           })
           .pipe(
             Effect.mapError((error) =>
@@ -3008,6 +3021,7 @@ const make = Effect.gen(function* () {
                     attachments: [],
                     modelSelection: resolvedModelSelection,
                     dispatchMode: { type: "start_immediately" },
+                    startOrigin: "automatic",
                   })
                   .pipe(
                     Effect.mapError((error) =>
@@ -3350,6 +3364,7 @@ const make = Effect.gen(function* () {
             commandId,
             threadId: input.threadId,
             ...(input.reason === undefined ? {} : { reason: input.reason }),
+            requestedBy: "agent",
           })
           .pipe(Effect.catch(stopFailed));
         // A retry with the same clientRequestId repeats only the stops that failed.

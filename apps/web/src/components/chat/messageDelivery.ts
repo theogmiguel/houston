@@ -79,6 +79,10 @@ export function queueHeldPresentation(
             ? `${subject} failed its last run`
             : reason.kind === "workspace_preparation"
               ? "The workspace could not be prepared"
-              : "Waiting for background work to finish";
+              : reason.kind === "stopped_thread"
+                ? "You stopped this thread"
+                : reason.kind === "context_compaction"
+                  ? "Waiting for compaction"
+                  : "Waiting for background work to finish";
   return { label: `Held: ${text}`, detail: reason.message, tone: "warning" };
 }

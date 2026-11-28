@@ -11,6 +11,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
+import { limitReleaseCommandId } from "../houston/runStart/LimitWindowRegistry.ts";
 
 const MAX_OVERDUE_ARM_MS = 24 * 60 * 60 * 1000;
 
@@ -75,6 +76,7 @@ export function limitRecoveryCommand(
     dispatchMode: { type: "start_immediately" },
     createdBy: "agent",
     creationSource: "server",
+    startOrigin: "automatic",
   };
 }
 
@@ -138,6 +140,53 @@ const makeSweep = Effect.gen(function* () {
           }),
         ),
       );
+    }
+    // A reset that passed without auto-resume releasing the queue: start the held automatic
+    // work in its queue order instead of leaving it held forever.
+    if (preferences.snoozeLimitedThreads || preferences.holdUnlimitedThreads) {
+      const heldThreadIds = yield* projections.getRecoveryThreadIds("queued-runs");
+      for (const threadId of heldThreadIds) {
+        const held = yield* projections.getHeldQueuedRuns(threadId);
+        const due = held.filter((run) => {
+          const reason = run.queueHeldReason;
+          return (
+            reason?.kind === "usage_limit" &&
+            reason.releaseAt != null &&
+            Date.parse(reason.releaseAt) <= nowMs
+          );
+        });
+        if (due.length === 0) continue;
+        const shell = yield* projections.getThreadShell(threadId);
+        // Auto-resume's continuation runs first when this thread's own failure armed it.
+        const autoResumeOwns =
+          shell?.lastErrorClass === "usage_limit" &&
+          preferences.autoResumeLimitedThreads &&
+          shell.limitRecovery?.autoResume !== false;
+        if (autoResumeOwns) continue;
+        acted = true;
+        for (const run of due) {
+          yield* threads
+            .dispatch({
+              type: "queued-run.release",
+              commandId: limitReleaseCommandId({
+                prefix: "limit-release",
+                threadId,
+                runId: run.id,
+                occurrence: `${run.queueHeldReason?.releaseAt ?? ""}:${nowMs}`,
+              }),
+              threadId,
+              runId: run.id,
+            })
+            .pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("orchestration-v2.limit-recovery.release-held-failed", {
+                  threadId,
+                  cause,
+                }),
+              ),
+            );
+        }
+      }
     }
     // A sweep that acted, or failed to, re-checks on the next tick.
     if (acted) return;

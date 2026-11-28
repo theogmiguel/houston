@@ -134,6 +134,16 @@ or new worktree), hold presets, resume and hold behavior at usage limits, auto-c
 merge and after inactivity, the add-project base directory, host-folder clone layout, text
 generation model and instructions, text generation fallback, and response streaming.
 
+**Hold until limits reset** holds automatic turns on a thread that already hit a usage limit
+until its reported reset; **Resume after usage limits** then continues the thread. **Also hold
+threads that have not hit the limit** extends the hold to every thread on a provider instance
+inside a known limit window, including new sub-agents. See [Usage](usage.md).
+
+**Hold agent messages after Stop** holds agent messages, scheduled tasks, merge-queue notes and
+other automatic runs after you press Stop. They wait in the thread's queued list until you press
+Resume or send a message; **Send now** starts one at once. Off by default. See
+[Agent status](agent-status.md).
+
 **Text generation fallback** chooses where background writing goes when its model cannot
 run. **Any provider** (the default) tries an instance marked as running local models first,
 then the other providers. **Local models only** never sends it to a cloud instance, even before

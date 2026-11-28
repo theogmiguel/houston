@@ -60,6 +60,8 @@ import * as EffectOutbox from "./EffectOutbox.ts";
 import * as IdAllocator from "@houston-app/provider-core/server/IdAllocator";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ThreadLaunch from "./ThreadLaunchService.ts";
+import * as RunWorkspacePreparationWorker from "./RunWorkspacePreparationWorker.ts";
+import * as LimitWindowRegistry from "../houston/runStart/LimitWindowRegistry.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
 import * as ThreadTitleRegeneration from "./ThreadTitleRegenerationService.ts";
@@ -140,7 +142,11 @@ function makeHarness(options: HarnessOptions = {}) {
   const layerOrchestrator = ProviderReplayHarness.layerWithRegistry(
     { name: "thread-launch" },
     layerRegistry,
-    { databaseLayer: layerDatabase, runEffectWorker: false },
+    {
+      databaseLayer: layerDatabase,
+      runEffectWorker: false,
+      ...(options.serverSettings === undefined ? {} : { settings: options.serverSettings }),
+    },
   );
   const layerServerSettings = ServerSettings.layerTest(options.serverSettings);
   const layerReceipts = CommandReceiptStore.layer.pipe(Layer.provide(layerDatabase));
@@ -287,15 +293,20 @@ function makeHarness(options: HarnessOptions = {}) {
       ),
     ),
   );
+  const layerWorkspacePreparationWorker = RunWorkspacePreparationWorker.layer.pipe(
+    Layer.provide(Layer.merge(layerLaunch, layerThreadManagement)),
+  );
   return {
     layer: Layer.mergeAll(
       layerLaunch,
       layerRegistry,
+      layerOrchestrator,
       layerThreadManagement,
       layerTitleRegeneration,
       layerOutbox,
       layerDatabase,
       layerExternalServices,
+      layerWorkspacePreparationWorker,
     ),
     createWorktree,
     removeWorktree,
@@ -950,10 +961,10 @@ function scratchHarness() {
 const worktreeStrategy = { type: "worktree", baseRef: "main", startFromOrigin: true } as const;
 
 /** Settles once preparation releases the run, or fails it. */
-const preparationSettled = (threadId: ThreadId) =>
+const preparationSettledAfter = (threadId: ThreadId, afterSequence: number) =>
   Effect.gen(function* () {
     const threads = yield* ThreadManagement.ThreadManagementService;
-    yield* threads.streamStoredEventsFrom({ threadId }).pipe(
+    yield* threads.streamStoredEventsFrom({ threadId, afterSequence }).pipe(
       Stream.filter(
         (stored) =>
           stored.event.type === "run.updated" &&
@@ -964,6 +975,9 @@ const preparationSettled = (threadId: ThreadId) =>
     );
     return yield* threads.getThreadProjection(threadId);
   });
+
+/** Settles once preparation releases the run, or fails it. */
+const preparationSettled = (threadId: ThreadId) => preparationSettledAfter(threadId, 0);
 
 function scheduledTaskInput(id: string, targetProjectId: ProjectId) {
   return {
@@ -1020,6 +1034,186 @@ it.effect("launches a worktree request for Scratch at the root, in its own folde
     assert.equal(git.thread.worktreePath, "/other-repo-worktrees/feature");
     assert.equal(harness.createWorktree.mock.calls[0]?.[0]?.cwd, "/other-repo");
     assert.deepEqual(harness.claimed, [launched.threadId]);
+  }).pipe(Effect.provide(harness.layer));
+});
+
+const heldWorktreeStrategy = {
+  type: "worktree",
+  baseRef: "main",
+  branch: "feature/held-child",
+  startFromOrigin: true,
+} as const;
+
+const createHeldDeferredChild = (input: {
+  readonly threads: ThreadManagement.ThreadManagementService["Service"];
+  readonly registry: LimitWindowRegistry.LimitWindowRegistry["Service"];
+  readonly threadId: ThreadId;
+  readonly workspaceStrategy?: ThreadLaunch.ThreadLaunchWorkspaceStrategy;
+}) =>
+  Effect.gen(function* () {
+    const now = yield* DateTime.now;
+    yield* input.registry.recordFailure({
+      providerInstanceId: modelSelection.instanceId,
+      model: null,
+      resetAt: DateTime.formatIso(DateTime.add(now, { hours: 1 })),
+      now,
+    });
+    yield* input.threads.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make(`create:${input.threadId}`),
+      threadId: input.threadId,
+      projectId,
+      title: "Held child",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "agent",
+      creationSource: "mcp",
+    });
+    yield* input.threads.dispatch({
+      type: "message.dispatch",
+      commandId: CommandId.make(`send:${input.threadId}`),
+      threadId: input.threadId,
+      messageId: MessageId.make(`message:${input.threadId}`),
+      text: "Build the feature in its own worktree",
+      attachments: [],
+      dispatchMode: {
+        type: "defer_start",
+        workspaceStrategy: input.workspaceStrategy ?? heldWorktreeStrategy,
+      },
+      createdBy: "agent",
+      creationSource: "mcp",
+      startOrigin: "automatic",
+    });
+  });
+
+it.effect("a held deferred child records its worktree and prepares it once on release", () => {
+  const harness = makeHarness({
+    serverSettings: { snoozeLimitedThreads: true, holdUnlimitedThreads: true },
+  });
+  return Effect.gen(function* () {
+    const threads = yield* ThreadManagement.ThreadManagementService;
+    const registry = yield* LimitWindowRegistry.LimitWindowRegistry;
+    const threadId = ThreadId.make("thread:held-child:release");
+    yield* createHeldDeferredChild({ threads, registry, threadId });
+
+    const held = yield* threads.getThreadProjection(threadId);
+    const heldRun = held.runs[0]!;
+    assert.equal(heldRun.status, "queued");
+    assert.isTrue(heldRun.queueHeld);
+    assert.deepEqual(heldRun.workspacePreparation, heldWorktreeStrategy);
+    assert.isNull(held.thread.worktreePath);
+    assert.equal(harness.createWorktree.mock.calls.length, 0);
+    assert.isFalse(
+      held.turnItems.some(
+        (item) => item.type === "command_execution" && item.input === "Preparing workspace",
+      ),
+    );
+
+    yield* threads.dispatch({
+      type: "queued-run.start",
+      commandId: CommandId.make(`begin:${threadId}:now`),
+      threadId,
+      runId: heldRun.id,
+    });
+
+    const started = yield* preparationSettled(threadId);
+    assert.equal(started.runs[0]?.status, "starting");
+    assert.equal(started.runs[0]?.workspacePreparation?.type, "worktree");
+    assert.equal(started.thread.worktreePath, "/repo-worktrees/feature");
+    assert.equal(started.thread.branch, "feature/held-child");
+    assert.equal(harness.createWorktree.mock.calls.length, 1);
+    const worktreeCall = harness.createWorktree.mock.calls[0]![0];
+    assert.equal(worktreeCall.cwd, "/repo");
+    assert.equal(worktreeCall.newRefName, "feature/held-child");
+    assert.equal(worktreeCall.baseRefName, "refs/remotes/origin/main");
+    const preparation = started.turnItems.find(
+      (item) => item.type === "command_execution" && item.input === "Preparing workspace",
+    );
+    assert.isDefined(preparation);
+    assert.equal(preparation?.status, "completed");
+  }).pipe(Effect.provide(harness.layer));
+});
+
+it.effect("a discarded held child never prepares a workspace", () => {
+  const harness = makeHarness({
+    serverSettings: { snoozeLimitedThreads: true, holdUnlimitedThreads: true },
+  });
+  return Effect.gen(function* () {
+    const threads = yield* ThreadManagement.ThreadManagementService;
+    const registry = yield* LimitWindowRegistry.LimitWindowRegistry;
+    const threadId = ThreadId.make("thread:held-child:discard");
+    yield* createHeldDeferredChild({ threads, registry, threadId });
+    const heldRun = (yield* threads.getThreadProjection(threadId)).runs[0]!;
+
+    yield* threads.dispatch({
+      type: "queued-run.cancel",
+      commandId: CommandId.make(`discard:${threadId}`),
+      threadId,
+      runId: heldRun.id,
+    });
+
+    const discarded = yield* threads.getThreadProjection(threadId);
+    assert.equal(discarded.runs[0]?.status, "cancelled");
+    assert.isNull(discarded.thread.worktreePath);
+    assert.equal(harness.createWorktree.mock.calls.length, 0);
+    assert.isFalse(
+      discarded.turnItems.some(
+        (item) => item.type === "command_execution" && item.input === "Preparing workspace",
+      ),
+    );
+  }).pipe(Effect.provide(harness.layer));
+});
+
+it.effect("a retried released child prepares once, not once per caller", () => {
+  let attempts = 0;
+  const harness = makeHarness({
+    serverSettings: { snoozeLimitedThreads: true, holdUnlimitedThreads: true },
+    createWorktree: (input) => {
+      attempts += 1;
+      return attempts === 1
+        ? Effect.die(new Error("checkout failed"))
+        : Effect.succeed({
+            worktree: {
+              path: "/repo-worktrees/retried",
+              refName: input.newRefName,
+              headSha: "abc",
+            },
+          } as never);
+    },
+  });
+  return Effect.gen(function* () {
+    const threads = yield* ThreadManagement.ThreadManagementService;
+    const launches = yield* ThreadLaunch.ThreadLaunchService;
+    const registry = yield* LimitWindowRegistry.LimitWindowRegistry;
+    const threadId = ThreadId.make("thread:held-child:retry");
+    yield* createHeldDeferredChild({ threads, registry, threadId });
+    const heldRun = (yield* threads.getThreadProjection(threadId)).runs[0]!;
+
+    const releaseSequence = yield* threads.getThreadEventSequence(threadId);
+    yield* threads.dispatch({
+      type: "queued-run.start",
+      commandId: CommandId.make(`begin:${threadId}:now`),
+      threadId,
+      runId: heldRun.id,
+    });
+    const failed = yield* preparationSettledAfter(threadId, releaseSequence);
+    assert.equal(failed.runs[0]?.status, "failed");
+    assert.isNull(failed.thread.worktreePath);
+    assert.equal(attempts, 1);
+
+    const retrySequence = yield* threads.getThreadEventSequence(threadId);
+    yield* launches.retryPreparation({
+      commandId: CommandId.make(`retry:${threadId}`),
+      threadId,
+      runId: heldRun.id,
+    });
+    const retried = yield* preparationSettledAfter(threadId, retrySequence);
+    assert.equal(retried.runs[0]?.status, "starting");
+    assert.equal(retried.thread.worktreePath, "/repo-worktrees/retried");
+    assert.equal(attempts, 2);
   }).pipe(Effect.provide(harness.layer));
 });
 

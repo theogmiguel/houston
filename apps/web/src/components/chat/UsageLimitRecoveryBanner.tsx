@@ -11,7 +11,7 @@ import {
   CHATGPT_WORKSPACE_USAGE_LIMIT_CODE,
 } from "@houston-app/shared/usageLimits";
 import { GaugeIcon } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useDeadlinePassed } from "../../hooks/useDeadline";
 import { OpenAI } from "../Icons";
 import { ChatGptUsageButton } from "../settings/ChatGptUsageButton";
@@ -32,6 +32,11 @@ type RecoveryProps = {
   snoozedUntil: string | null;
   recovery: OrchestrationV2LimitRecovery | null;
   timestampFormat: TimestampFormat;
+  /** Automatic starts waiting on this thread's limit, in queue order. */
+  heldStarts?: number;
+  /** At least one of those held starts outlived its expected release. */
+  heldOverdue?: boolean;
+  onStartHeld?: () => Promise<void> | void;
   onChange: (recovery: OrchestrationV2LimitRecoveryUpdate) => Promise<void>;
   translate: Translate;
 };
@@ -47,6 +52,9 @@ export function usageLimitRecoveryBannerItem(props: RecoveryProps): ComposerBann
     recovery,
     snoozedUntil,
     timestampFormat,
+    heldStarts = 0,
+    heldOverdue = false,
+    onStartHeld = () => {},
     translate: t,
   } = props;
   // The server refuses recovery changes while a request is pending.
@@ -69,14 +77,32 @@ export function usageLimitRecoveryBannerItem(props: RecoveryProps): ComposerBann
       : t("Resets {time}", { time: formatUpcomingTimestamp(displayAt, timestampFormat) })
     : t("Reset time unavailable; retry manually");
   if (!chatGptLimit) {
+    const holdNote =
+      heldStarts > 0
+        ? heldStarts === 1
+          ? heldOverdue
+            ? t("1 automatic start waits (overdue)")
+            : t("1 automatic start waits")
+          : heldOverdue
+            ? t("{count} automatic starts wait (overdue)", { count: heldStarts })
+            : t("{count} automatic starts wait", { count: heldStarts })
+        : null;
     return {
       id: `usage-limit-recovery:${runId}`,
       variant: "warning",
       group: "environment",
       icon: <GaugeIcon />,
       title: t("Usage limit reached"),
-      description: resetDescription,
-      actions: recoveryActions,
+      description: holdNote === null ? resetDescription : `${resetDescription} · ${holdNote}`,
+      actions:
+        heldStarts > 0 ? (
+          <>
+            {recoveryActions}
+            <StartHeldItemsAction onStartHeld={onStartHeld} translate={t} />
+          </>
+        ) : (
+          recoveryActions
+        ),
     };
   }
   // OpenAI's partner guidelines specify this ChatGPT notice and its actions.
@@ -102,6 +128,39 @@ export function usageLimitRecoveryBannerItem(props: RecoveryProps): ComposerBann
       </>
     ),
   };
+}
+
+function StartHeldItemsAction({
+  onStartHeld,
+  translate: t,
+}: {
+  onStartHeld: () => Promise<void> | void;
+  translate: Translate;
+}) {
+  const [pending, setPending] = useState(false);
+  // A ref ignores a second click before the disabled render lands.
+  const inFlight = useRef(false);
+  async function start() {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setPending(true);
+    try {
+      await onStartHeld();
+    } catch (cause) {
+      toastManager.add({
+        type: "error",
+        title: t("Could not start held items"),
+        description: cause instanceof Error ? cause.message : t("An error occurred."),
+      });
+    }
+    inFlight.current = false;
+    setPending(false);
+  }
+  return (
+    <InlineButton touchTarget="padded" disabled={pending} onClick={() => void start()}>
+      {pending ? t("Starting…") : t("Start held items")}
+    </InlineButton>
+  );
 }
 
 function RecoveryActions({

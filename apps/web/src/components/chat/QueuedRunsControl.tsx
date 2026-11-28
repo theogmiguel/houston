@@ -323,7 +323,7 @@ export function QueuedRunsControl({
                 timestampFormat={props.timestampFormat}
                 onOpenThread={props.onOpenThread}
               >
-                {item.heldReason !== null ? (
+                {item.heldReason !== null && item.heldReason.kind !== "stopped_thread" ? (
                   currentModelLabel === null ? null : (
                     <Button
                       size="xs"
