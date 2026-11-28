@@ -2092,6 +2092,23 @@ it.effect("schedules an accepted preparing message exactly once across concurren
   }),
 );
 
+it.effect("stamps a server launch's bot mark on the thread it creates", () => {
+  const harness = makeHarness();
+  return Effect.gen(function* () {
+    const launches = yield* ThreadLaunch.ThreadLaunchService;
+    const houstonBot = { botId: "bot", botRunId: "bot-run", kind: "unattended" as const };
+    const launched = yield* launches.launch({
+      ...launchInput({ command: "command:launch:bot", thread: "thread:launch:bot" }),
+      houstonBot,
+    });
+    assert.deepEqual(launched.projection.thread.houstonBot, houstonBot);
+    const plain = yield* launches.launch(
+      launchInput({ command: "command:launch:plain", thread: "thread:launch:plain" }),
+    );
+    assert.notProperty(plain.projection.thread, "houstonBot");
+  }).pipe(Effect.provide(harness.layer));
+});
+
 it.effect("creates a strong provider-thread mapping for an imported native session", () => {
   const harness = makeHarness();
   return Effect.gen(function* () {

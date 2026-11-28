@@ -142,6 +142,9 @@ import * as LegacyKeychain from "./houston/secrets/LegacyKeychain.ts";
 import * as SecretStoreImport from "./houston/secrets/SecretStoreImport.ts";
 import * as HoustonTaskIssueWriteback from "./houston/tasks/TaskIssueWriteback.ts";
 import * as SlackConnection from "./houston/slack/Connection.ts";
+import * as HoustonBotThreads from "./houston/bots/botThreads.ts";
+import { layerBots } from "./houston/bots/layer.ts";
+import * as HoustonBotRuns from "./houston/bots/Runs.ts";
 import * as HoustonLayoutWorkspaces from "./houston/layoutWorkspaces.ts";
 import * as HoustonThreadMembership from "./houston/threadMembership.ts";
 import { layerSlack } from "./houston/slack/layer.ts";
@@ -207,6 +210,7 @@ import * as CursorKeychain from "@houston-app/provider-cursor/server/CursorKeych
 import * as CursorUsageAccounts from "@houston-app/provider-cursor/server/CursorUsageAccounts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as CodexUsageHistory from "./usage/CodexUsageHistory.ts";
+import * as EffectOutbox from "./orchestration-v2/EffectOutbox.ts";
 import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
@@ -703,6 +707,11 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(HoustonProjectRepositoriesSweep.sweep),
   Layer.effectDiscard(HoustonNativeSessionHistory.startNativeSessionBackfill),
   HoustonLayoutWorkspaces.layer,
+  // Bot runs follow thread events through the same event sink task runs read.
+  HoustonBotRuns.layer.pipe(
+    Layer.provideMerge(layerBots),
+    Layer.provide(Layer.merge(RuntimeLayer.layerEventSink, EffectOutbox.layer)),
+  ),
   // Model servers registered in Settings: periodic probes, discovery and the image check.
   layerInferenceServices,
   // The gateway's own accounting and stops; the queue layers sit with the route below.
@@ -773,6 +782,8 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     Layer.provideMerge(HoustonSlackStore.layer),
     Layer.provideMerge(layerHoustonSecrets),
     Layer.provideMerge(layerHoustonTaskPersistence),
+    // The runtime policy reads which threads are a bot's.
+    Layer.provideMerge(HoustonBotThreads.layer),
     Layer.provideMerge(layerPersistence),
     Layer.provideMerge(Layer.mergeAll(Keybindings.layer, UsageLimitSources.layer)),
     Layer.provideMerge(ProviderRegistry.layer),

@@ -1,0 +1,1171 @@
+// @effect-diagnostics nodeBuiltinImport:off - builds a repository with no base ref to start from.
+// The follower of bot runs: the state table read from a thread, who started each turn, and the
+// start, stop, switch and restart paths over the real orchestrator and launcher.
+import * as NodePath from "node:path";
+
+import { assert, describe, it } from "@effect/vitest";
+import {
+  CommandId,
+  DEFAULT_SERVER_SETTINGS,
+  EventId,
+  MessageId,
+  ProjectId,
+  ProviderInstanceId,
+  RunId,
+  ThreadId,
+  type OrchestrationV2AppThread,
+  type OrchestrationV2Run,
+} from "@houston-app/contracts";
+import type { HoustonBotAskInput } from "@houston-app/contracts/houston/bots";
+import { resolveProjectSettings } from "@houston-app/shared/projectSettings";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as SqlClient from "effect/sql/SqlClient";
+
+import * as EventSink from "../../orchestration-v2/EventSink.ts";
+import { USER_STOP_REASON } from "../../orchestration-v2/RunExecutionService.ts";
+import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
+import * as ServerSettings from "../../serverSettings.ts";
+import { commitLines, git } from "../tasks/taskRuns.testkit.ts";
+import { createProject } from "../tasks/tasks.testkit.ts";
+import { editOf, LAPTOP, setSwitch } from "./bots.testkit.ts";
+import { BOTS_OFF_MESSAGE } from "./rules.ts";
+import * as Store from "./Store.ts";
+import {
+  type BotContext,
+  CLAUDE_ACCOUNT,
+  dispatched,
+  launched,
+  makeBotHarness,
+  runBots,
+} from "./runs.testkit.ts";
+import {
+  deriveBotRunState,
+  isClientCommandId,
+  latestRunOf,
+  startedByOf,
+  type BotRunRead,
+  type RunRead,
+} from "./runState.ts";
+import { type BotWorkspaceGit, resolveBotWorkspace } from "./workspace.ts";
+
+const at = (minute: number) => DateTime.makeUnsafe(Date.UTC(2026, 10, 26, 9, minute));
+
+const run = (ordinal: number, status: OrchestrationV2Run["status"], extra: Partial<RunRead> = {}) =>
+  ({
+    id: RunId.make(`run-${ordinal}`),
+    ordinal,
+    status,
+    startedAt: status === "queued" ? null : at(ordinal),
+    completedAt:
+      status === "running" || status === "queued" || status === "starting" ? null : at(ordinal + 1),
+    ...extra,
+  }) as RunRead;
+
+const read = (overrides: Partial<BotRunRead> = {}): BotRunRead => ({
+  kind: "asked",
+  stop: null,
+  thread: {
+    deleted: false,
+    archived: false,
+    pendingRuntimeRequest: false,
+    pendingBackground: false,
+    lastError: null,
+  },
+  runs: [run(1, "completed")],
+  continuationPending: false,
+  interrupt: null,
+  ...overrides,
+});
+
+const thread = (overrides: Partial<BotRunRead["thread"]>) => ({ ...read().thread, ...overrides });
+
+describe("the state of a bot run, read from its thread", () => {
+  it("a deleted or archived thread stopped it, whatever its runs say", () => {
+    assert.deepEqual(deriveBotRunState(read({ thread: thread({ deleted: true }) })), {
+      state: "stopped",
+      reason: "the thread was deleted",
+    });
+    assert.deepEqual(
+      deriveBotRunState(read({ thread: thread({ archived: true }), runs: [run(1, "running")] })),
+      { state: "stopped", reason: "the thread was archived" },
+    );
+  });
+
+  it("a question waits for the owner in an asked bot run only", () => {
+    const waiting = read({
+      runs: [run(1, "running")],
+      thread: thread({ pendingRuntimeRequest: true }),
+    });
+    assert.deepEqual(deriveBotRunState(waiting), { state: "waiting", reason: null });
+    assert.deepEqual(deriveBotRunState({ ...waiting, kind: "unattended" }), {
+      state: "running",
+      reason: null,
+    });
+  });
+
+  it("is running while a run prepares, starts or runs, or is queued and not held", () => {
+    for (const status of ["preparing", "starting", "running", "waiting"] as const) {
+      assert.strictEqual(deriveBotRunState(read({ runs: [run(1, status)] })).state, "running");
+    }
+    assert.strictEqual(
+      deriveBotRunState(read({ runs: [run(1, "completed"), run(2, "queued")] })).state,
+      "running",
+    );
+  });
+
+  it("background only: running while the shell lists pending work, in both kinds", () => {
+    for (const kind of ["asked", "unattended"]) {
+      assert.deepEqual(
+        deriveBotRunState(read({ kind, thread: thread({ pendingBackground: true }) })),
+        { state: "running", reason: null },
+      );
+    }
+  });
+
+  it("a server restart with a pending continuation stays running, never 'you stopped it'", () => {
+    const interrupted = read({
+      runs: [run(1, "interrupted")],
+      continuationPending: true,
+      interrupt: { message: USER_STOP_REASON, byClient: false },
+    });
+    assert.deepEqual(deriveBotRunState(interrupted), { state: "running", reason: null });
+  });
+
+  it("a held message after a stop is not running: stopped, and a message is waiting", () => {
+    assert.deepEqual(
+      deriveBotRunState(
+        read({
+          runs: [run(1, "interrupted"), run(2, "queued", { queueHeld: true })],
+          interrupt: { message: USER_STOP_REASON, byClient: true },
+        }),
+      ),
+      { state: "stopped", reason: "you stopped it; a message is waiting" },
+    );
+  });
+
+  it("a removed queued message is ignored: the bot run stays finished", () => {
+    assert.deepEqual(
+      deriveBotRunState(
+        read({ runs: [run(1, "completed"), run(2, "cancelled", { startedAt: null })] }),
+      ),
+      { state: "finished", reason: "no result handed back" },
+    );
+  });
+
+  it("rolled back runs and runs that never started leave nothing to read", () => {
+    assert.deepEqual(deriveBotRunState(read({ runs: [run(1, "rolled_back")] })), {
+      state: "stopped",
+      reason: "the owner went back to before it",
+    });
+    assert.deepEqual(
+      deriveBotRunState(read({ runs: [run(1, "cancelled", { startedAt: null })] })),
+      { state: "stopped", reason: "stopped before it started" },
+    );
+    assert.deepEqual(deriveBotRunState(read({ runs: [] })), {
+      state: "stopped",
+      reason: "stopped before it started",
+    });
+  });
+
+  it("a worktree preparation that failed never started, and stays visible as failed", () => {
+    assert.deepEqual(
+      deriveBotRunState(
+        read({
+          runs: [run(1, "failed", { startedAt: null })],
+          thread: thread({ lastError: "Could not create the worktree: base main is missing" }),
+        }),
+      ),
+      { state: "failed", reason: "Could not create the worktree: base main is missing" },
+    );
+  });
+
+  it("a failed run's error is shown with credentials masked", () => {
+    const failed = deriveBotRunState(
+      read({
+        runs: [run(1, "failed")],
+        thread: thread({ lastError: "request failed: Authorization: Bearer abcdefghijklmnop" }),
+      }),
+    );
+    assert.strictEqual(failed.state, "failed");
+    assert.notInclude(failed.reason ?? "", "abcdefghijklmnop");
+  });
+
+  it("the latest run is the newest that ran, by completion, not by ordinal", () => {
+    const runs = [run(1, "completed"), run(2, "interrupted", { completedAt: at(0) })];
+    assert.strictEqual(latestRunOf(runs)?.id, "run-1");
+    assert.strictEqual(deriveBotRunState(read({ runs })).state, "finished");
+  });
+
+  describe("why it stopped", () => {
+    const stopped = (overrides: Partial<BotRunRead>) =>
+      deriveBotRunState(read({ runs: [run(1, "completed"), run(2, "interrupted")], ...overrides }));
+
+    it("Houston's own reason, when it was recorded for that thread run", () => {
+      assert.deepEqual(
+        stopped({ stop: { runId: "run-2", reason: "Labs ▸ Bots was turned off" } }),
+        {
+          state: "stopped",
+          reason: "Labs ▸ Bots was turned off",
+        },
+      );
+    });
+
+    it("a reason recorded for an older thread run does not explain a later one", () => {
+      assert.deepEqual(
+        stopped({
+          stop: { runId: "run-1", reason: "ran for 20 of 20 minutes" },
+          interrupt: { message: "the agent stopped it", byClient: false },
+        }),
+        { state: "stopped", reason: "interrupted: the agent stopped it" },
+      );
+    });
+
+    it("a client's stop is 'you stopped it'", () => {
+      assert.deepEqual(stopped({ interrupt: { message: USER_STOP_REASON, byClient: true } }), {
+        state: "stopped",
+        reason: "you stopped it",
+      });
+    });
+
+    it("an agent's stop without a reason, or with the user's words, is only 'interrupted'", () => {
+      assert.deepEqual(stopped({ interrupt: { message: USER_STOP_REASON, byClient: false } }), {
+        state: "stopped",
+        reason: "interrupted",
+      });
+    });
+
+    it("a stop with another message names it; no item adds nothing", () => {
+      assert.deepEqual(stopped({ interrupt: { message: "Superseded", byClient: true } }), {
+        state: "stopped",
+        reason: "interrupted: Superseded",
+      });
+      assert.deepEqual(stopped({ interrupt: null }), { state: "stopped", reason: "interrupted" });
+    });
+
+    it("an agent's stop message is shown with credentials masked", () => {
+      const masked = stopped({
+        interrupt: { message: "Authorization: Bearer abcdefghijklmnop", byClient: false },
+      });
+      assert.strictEqual(masked.state, "stopped");
+      assert.strictEqual(masked.reason, "interrupted: Authorization: Bearer [redacted]");
+    });
+  });
+
+  it("a stored kind this build does not know is followed like the unattended kind", () => {
+    const question = read({
+      runs: [run(1, "running")],
+      thread: thread({ pendingRuntimeRequest: true }),
+    });
+    assert.strictEqual(deriveBotRunState({ ...question, kind: "nightly" }).state, "running");
+  });
+});
+
+describe("who started a turn", () => {
+  const message = (id: string, extra: { readonly scheduledTaskId?: string } = {}) => ({
+    id: MessageId.make(id),
+    createdBy: "user" as const,
+    ...extra,
+  });
+
+  it("the owner: the opening of an asked bot run, an owner action, and any message they typed", () => {
+    const owner = { botRunId: "b1", origin: "owner", child: false };
+    assert.strictEqual(startedByOf({ ...owner, message: message("bot-run:b1") }), "owner");
+    assert.strictEqual(startedByOf({ ...owner, message: message("bot-owner:r9") }), "owner");
+    assert.strictEqual(startedByOf({ ...owner, message: message("composer-1") }), "owner");
+  });
+
+  it("an answer to a parked question is the owner's, whatever its source", () => {
+    assert.strictEqual(
+      startedByOf({
+        botRunId: "b1",
+        origin: "routine",
+        child: false,
+        message: { id: MessageId.make("answer-1"), createdBy: "user" },
+      }),
+      "owner",
+    );
+  });
+
+  it("Houston: a routine's opening, agent messages, scheduled prompts and every child turn", () => {
+    const routine = { botRunId: "b1", origin: "routine", child: false };
+    assert.strictEqual(
+      startedByOf({
+        ...routine,
+        message: { id: MessageId.make("bot-run:b1"), createdBy: "agent" },
+      }),
+      "houston",
+    );
+    assert.strictEqual(
+      startedByOf({ ...routine, message: { id: MessageId.make("wake-1"), createdBy: "agent" } }),
+      "houston",
+    );
+    assert.strictEqual(
+      startedByOf({ ...routine, message: message("scheduled-1", { scheduledTaskId: "task" }) }),
+      "houston",
+    );
+    assert.strictEqual(
+      startedByOf({ botRunId: "b1", origin: "owner", child: true, message: message("composer-1") }),
+      "houston",
+    );
+    assert.strictEqual(startedByOf({ ...routine, message: undefined }), "houston");
+  });
+
+  it("a client's command id is a bare uuid; agents' and Houston's carry a prefix", () => {
+    assert.isTrue(isClientCommandId("3f2b8c1e-9a4d-4f6b-8e21-5c7d9a0b1e2f"));
+    assert.isFalse(isClientCommandId("command:mcp:ns:stop:1"));
+    assert.isFalse(isClientCommandId("houston-bot-run:b1:stop:run-2"));
+    assert.isFalse(isClientCommandId(null));
+  });
+});
+
+const rowOf = (botRunId: string) =>
+  Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    sql<{
+      readonly state: string;
+      readonly reason: string | null;
+      readonly revision_n: number;
+      readonly stop_reason: string | null;
+      readonly launch_json: string | null;
+    }>`SELECT * FROM houston_bot_runs WHERE id = ${botRunId}`.pipe(
+      Effect.map((rows) => rows[0]),
+      Effect.orDie,
+    ),
+  );
+
+describe("an asked run's workspace, from the project's settings", () => {
+  const projectId = ProjectId.make("project-workspace");
+  const settingsFor = (defaultThreadEnvMode: "local" | "worktree", startFromOrigin = false) =>
+    resolveProjectSettings(
+      {
+        ...DEFAULT_SERVER_SETTINGS,
+        projectSettingsOverrides: {
+          [projectId]: { defaultThreadEnvMode, newWorktreesStartFromOrigin: startFromOrigin },
+        },
+      },
+      projectId,
+      null,
+      null,
+    );
+  const workspaceOf = (
+    git: BotWorkspaceGit,
+    projectSettings: ReturnType<typeof settingsFor>,
+    workspaceRoot = "/work/repo",
+  ) =>
+    resolveBotWorkspace(git, {
+      projectSettings,
+      workspaceRoot,
+      newProjectsRoot: null,
+      projectHasThreads: true,
+    });
+  const gitOf = (state: {
+    readonly isRepo?: boolean;
+    readonly branch?: string | null;
+    readonly remote?: string | null;
+    readonly defaultBranch?: string | null;
+    readonly refs?: ReadonlyArray<string>;
+  }): BotWorkspaceGit => ({
+    isRepository: () => Effect.succeed(state.isRepo ?? true),
+    currentBranch: () => Effect.succeed(state.branch ?? null),
+    primaryRemote: () => Effect.succeed(state.remote ?? null),
+    defaultBranch: () => Effect.succeed(state.defaultBranch ?? null),
+    hasRef: (_cwd, ref) => Effect.succeed((state.refs ?? []).includes(ref)),
+  });
+  const baseRefOf = (state: Parameters<typeof gitOf>[0], startFromOrigin = false) =>
+    Effect.map(workspaceOf(gitOf(state), settingsFor("worktree", startFromOrigin)), (strategy) =>
+      strategy.type === "worktree" ? strategy.baseRef : null,
+    );
+
+  it.effect("a local project, and a project without Git, start in its root", () =>
+    Effect.gen(function* () {
+      assert.deepEqual(yield* workspaceOf(gitOf({}), settingsFor("local")), { type: "root" });
+      assert.deepEqual(yield* workspaceOf(gitOf({ isRepo: false }), settingsFor("worktree")), {
+        type: "root",
+      });
+    }),
+  );
+
+  it.effect(
+    "worktree: the remote default as a local branch, else its tracking ref, else the checkout, else main",
+    () =>
+      Effect.gen(function* () {
+        assert.strictEqual(
+          yield* baseRefOf({
+            remote: "origin",
+            defaultBranch: "main",
+            refs: ["refs/heads/main", "refs/remotes/origin/main"],
+            branch: "topic",
+          }),
+          "main",
+        );
+        assert.strictEqual(
+          yield* baseRefOf({
+            remote: "origin",
+            defaultBranch: "main",
+            refs: ["refs/remotes/origin/main"],
+            branch: "topic",
+          }),
+          "origin/main",
+        );
+        assert.strictEqual(
+          yield* baseRefOf({ remote: "origin", defaultBranch: null, branch: "topic" }),
+          "topic",
+        );
+        assert.strictEqual(yield* baseRefOf({ remote: null, branch: null }), "main");
+      }),
+  );
+
+  it.effect("worktree: the project's resolved start-from-origin flag, on and off", () =>
+    Effect.gen(function* () {
+      const strategy = (startFromOrigin: boolean) =>
+        workspaceOf(
+          gitOf({ remote: null, branch: "main" }),
+          settingsFor("worktree", startFromOrigin),
+        );
+      assert.deepEqual(yield* strategy(true), {
+        type: "worktree",
+        baseRef: "main",
+        startFromOrigin: true,
+      });
+      assert.deepEqual(yield* strategy(false), {
+        type: "worktree",
+        baseRef: "main",
+        startFromOrigin: false,
+      });
+    }),
+  );
+});
+
+describe("bot runs over real threads", () => {
+  const harnessed = <A, E, R>(
+    name: string,
+    body: (context: BotContext) => Effect.Effect<A, E, R>,
+    options: Parameters<typeof runBots>[2] = {},
+  ) =>
+    Effect.flatMap(makeBotHarness(name), (harness) => runBots(harness, body, options)).pipe(
+      Effect.scoped,
+    );
+
+  const turnsOf = (botRunId: string) =>
+    Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql<{ readonly started_by: string; readonly local_date: string }>`
+        SELECT started_by, local_date FROM houston_bot_turns WHERE bot_run_id = ${botRunId}
+      `.pipe(Effect.orDie),
+    );
+
+  const ask = (
+    context: BotContext,
+    botId: string,
+    requestId: string,
+    ownerText = "What changed?",
+  ) => context.runs.ask({ requestId, botId, ownerText });
+
+  const setProjectSettings = (
+    projectId: ProjectId,
+    overrides: {
+      readonly defaultThreadEnvMode: "local" | "worktree";
+      readonly newWorktreesStartFromOrigin?: boolean;
+    },
+  ) =>
+    Effect.gen(function* () {
+      const settings = yield* ServerSettings.ServerSettingsService;
+      yield* settings
+        .updateSettings({ projectSettingsOverrides: { [projectId]: overrides } })
+        .pipe(Effect.orDie);
+    });
+
+  it.effect(
+    "asking starts one marked thread with the pinned revision; the same click never starts two",
+    () =>
+      harnessed("ask", (context) =>
+        Effect.gen(function* () {
+          const bot = yield* context.makeBot();
+          const first = yield* ask(context, bot.id, "click-1");
+          const again = yield* ask(context, bot.id, "click-1");
+          assert.deepEqual(again, first);
+          yield* context.until(
+            "the bot run to finish",
+            Effect.map(rowOf(first.botRunId), (row) => row?.state === "finished"),
+          );
+          const shell = yield* context.orchestrator.getThreadShell(ThreadId.make(first.threadId));
+          assert.deepEqual(shell?.houstonBot, {
+            botId: bot.id,
+            botRunId: first.botRunId,
+            kind: "asked",
+          });
+          const { messages } = yield* context.orchestrator.getThreadRecords(
+            ThreadId.make(first.threadId),
+            ["messages"],
+            { messageRoles: ["user"] },
+          );
+          assert.strictEqual(messages.length, 1);
+          assert.strictEqual(messages[0]?.id, `bot-run:${first.botRunId}`);
+          assert.isTrue(
+            messages[0]?.text.startsWith(
+              `<houston-bot run="${first.botRunId}" bot="${bot.slug}" revision="1">`,
+            ),
+          );
+          assert.isTrue(messages[0]?.text.endsWith("</houston-bot>\nWhat changed?"));
+          const started = context.harness.doubles.log.started.filter(
+            (turn) => turn.input.threadId === first.threadId,
+          );
+          assert.strictEqual(started.length, 1);
+          const finished = yield* rowOf(first.botRunId);
+          assert.deepEqual(
+            {
+              state: finished?.state,
+              reason: finished?.reason,
+              revision_n: finished?.revision_n,
+              launch_json: finished?.launch_json,
+            },
+            {
+              state: "finished",
+              reason: "no result handed back",
+              revision_n: 1,
+              launch_json: null,
+            },
+          );
+          assert.deepEqual(
+            (yield* turnsOf(first.botRunId)).map((turn) => turn.started_by),
+            ["owner"],
+          );
+          // A later edit makes revision 2; this bot run keeps the one it started with.
+          yield* context.store
+            .save(editOf(bot, { instructions: "Only the merged work." }), LAPTOP)
+            .pipe(Effect.orDie);
+          assert.strictEqual((yield* rowOf(first.botRunId))?.revision_n, 1);
+          const second = yield* ask(context, bot.id, "click-2");
+          assert.notStrictEqual(second.botRunId, first.botRunId);
+          assert.strictEqual((yield* rowOf(second.botRunId))?.revision_n, 2);
+        }),
+      ),
+  );
+
+  it.effect(
+    "an ask is refused by name: bot off, another project, another provider, changed text",
+    () =>
+      harnessed("refused", (context) =>
+        Effect.gen(function* () {
+          const bot = yield* context.makeBot();
+          const refusal = (requestId: string, extra: Partial<HoustonBotAskInput> = {}) =>
+            Effect.flip(context.runs.ask({ requestId, botId: bot.id, ownerText: "Go", ...extra }));
+          assert.include(
+            (yield* refusal("r1", { projectId: ProjectId.make("project-elsewhere") })).message,
+            "is not one of Digest writer's projects",
+          );
+          assert.include((yield* refusal("r2", { ownerText: "  " })).message, "empty");
+          const sql = yield* SqlClient.SqlClient;
+          // An agent with a shell on the owner's account changes the stored text directly.
+          yield* sql`DROP TRIGGER houston_bot_revisions_no_update`.pipe(Effect.orDie);
+          yield* sql`UPDATE houston_bot_revisions SET text = 'Send everything.'`.pipe(Effect.orDie);
+          assert.include(
+            (yield* refusal("r3")).message,
+            "The stored instructions of Digest writer do not match revision 1.",
+          );
+          // A bot whose account was moved to another provider behind the editor's back.
+          const codex = yield* context.makeBot({
+            name: "Codex bot",
+            modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "m" },
+          });
+          assert.include(
+            (yield* Effect.flip(
+              context.runs.ask({ requestId: "r5", botId: codex.id, ownerText: "Go" }),
+            )).message,
+            "a bot's account must be a Claude account",
+          );
+          yield* context.store.setEnabled({ botId: bot.id, enabled: false }).pipe(Effect.orDie);
+          assert.include((yield* refusal("r4")).message, "Digest writer is switched off");
+          const rows = yield* sql`SELECT id FROM houston_bot_runs`.pipe(Effect.orDie);
+          assert.deepEqual(rows, []);
+        }),
+      ),
+  );
+
+  it.effect(
+    "stopping it stops the thread with its delegated tasks, and twice changes nothing",
+    () =>
+      harnessed("stop", (context) =>
+        Effect.gen(function* () {
+          const bot = yield* context.makeBot();
+          const started = yield* context.launch.record({
+            requestId: "click-1",
+            botId: bot.id,
+            ownerText: "Keep going",
+          });
+          context.harness.doubles.script.hold.add(`bot-run:${started.id}`);
+          yield* context.launch.launchRow(started);
+          yield* context.until(
+            "the bot run to run",
+            Effect.map(
+              context.orchestrator.getThreadShell(ThreadId.make(started.thread_id)),
+              (shell) => shell?.activeRunId != null,
+            ),
+          );
+          dispatched.length = 0;
+          const summary = yield* context.runs.stop({ botRunId: started.id });
+          const stops = dispatched.filter((command) => command.type === "thread.stop");
+          assert.strictEqual(stops.length, 1);
+          const [stopCommand] = stops;
+          assert.isTrue(stopCommand?.commandId.startsWith(`houston-bot-run:${started.id}:stop:`));
+          // A thread's Stop with this flag also stops every delegated task under it.
+          assert.isTrue(
+            stopCommand?.type === "thread.stop" ? stopCommand.stopDelegatedTasks === true : false,
+          );
+          yield* context.until(
+            "the bot run to stop",
+            Effect.map(rowOf(started.id), (row) => row?.state === "stopped"),
+          );
+          assert.strictEqual((yield* rowOf(started.id))?.reason, "you stopped it");
+          assert.strictEqual(summary.id, started.id);
+          const twice = yield* context.runs.stop({ botRunId: started.id });
+          assert.strictEqual(twice.state, "stopped");
+          assert.strictEqual(
+            dispatched.filter((command) => command.type === "thread.stop").length,
+            1,
+          );
+        }),
+      ),
+  );
+
+  it.effect("Labs ▸ Bots off stops an unattended bot run, and leaves the owner's asked one", () =>
+    harnessed("off", (context) =>
+      Effect.gen(function* () {
+        const bot = yield* context.makeBot();
+        const sql = yield* SqlClient.SqlClient;
+        const started = [];
+        for (const requestId of ["unattended", "asked"]) {
+          const row = yield* context.launch.record({ requestId, botId: bot.id, ownerText: "Go" });
+          context.harness.doubles.script.hold.add(`bot-run:${row.id}`);
+          if (requestId === "unattended") {
+            yield* sql`UPDATE houston_bot_runs SET kind = 'unattended', origin = 'test' WHERE id = ${row.id}`.pipe(
+              Effect.orDie,
+            );
+          }
+          yield* context.launch.launchRow(row);
+          started.push(row);
+        }
+        const [unattended, asked] = started;
+        yield* context.until(
+          "both bot runs to run",
+          Effect.map(
+            Effect.forEach(started, (row) =>
+              context.orchestrator.getThreadShell(ThreadId.make(row.thread_id)),
+            ),
+            (shells) => shells.every((shell) => shell?.activeRunId != null),
+          ),
+        );
+        yield* setSwitch(false);
+        yield* context.until(
+          "the unattended bot run to stop",
+          Effect.map(rowOf(unattended!.id), (row) => row?.state === "stopped"),
+        );
+        assert.strictEqual((yield* rowOf(unattended!.id))?.reason, "Labs ▸ Bots was turned off");
+        assert.strictEqual((yield* rowOf(asked!.id))?.state, "running");
+        assert.isNull((yield* rowOf(asked!.id))?.stop_reason ?? null);
+      }),
+    ),
+  );
+
+  it.effect("Labs ▸ Bots off refuses a real ask, stop and list and starts nothing", () =>
+    harnessed("off-requests", (context) =>
+      Effect.gen(function* () {
+        const bot = yield* context.makeBot();
+        const pending = yield* context.launch.record({
+          requestId: "before-off",
+          botId: bot.id,
+          ownerText: "Go",
+        });
+        const sql = yield* SqlClient.SqlClient;
+        yield* setSwitch(false);
+        const ask = yield* Effect.flip(
+          context.runs.ask({ requestId: "while-off", botId: bot.id, ownerText: "Go" }),
+        );
+        const stop = yield* Effect.flip(context.runs.stop({ botRunId: pending.id }));
+        const list = yield* Effect.flip(context.runs.list({ botId: bot.id }));
+        for (const refusal of [ask, stop, list]) {
+          assert.strictEqual(refusal.kind, "off");
+          assert.strictEqual(refusal.message, BOTS_OFF_MESSAGE);
+        }
+        const rows = yield* sql`SELECT id FROM houston_bot_runs`.pipe(Effect.orDie);
+        assert.deepEqual(
+          rows.map((row) => row.id),
+          [pending.id],
+        );
+      }),
+    ),
+  );
+
+  it.effect("a bot switched off after its read does not start", () => {
+    const staleStore = Layer.effect(
+      Store.HoustonBotStore,
+      Effect.gen(function* () {
+        const base = yield* Store.HoustonBotStore;
+        type Found = Effect.Success<ReturnType<typeof base.find>>;
+        let cached: Found | undefined;
+        return {
+          ...base,
+          find: (botId: string) =>
+            Effect.gen(function* () {
+              const fresh = yield* base.find(botId);
+              if (cached === undefined) cached = fresh;
+              return cached;
+            }),
+        };
+      }),
+    ).pipe(Layer.provide(Store.layer));
+    return harnessed(
+      "two-windows",
+      (context) =>
+        Effect.gen(function* () {
+          const bot = yield* context.makeBot();
+          // The first read is the one the click made; the second window closes the switch.
+          assert.isDefined(yield* context.store.find(bot.id));
+          yield* context.store.setEnabled({ botId: bot.id, enabled: false }).pipe(Effect.orDie);
+          const refusal = yield* Effect.flip(
+            context.launch.record({ requestId: "late", botId: bot.id, ownerText: "Go" }),
+          );
+          assert.include(refusal.message, "Digest writer is switched off");
+          const sql = yield* SqlClient.SqlClient;
+          assert.deepEqual(yield* sql`SELECT id FROM houston_bot_runs`.pipe(Effect.orDie), []);
+        }),
+      { store: staleStore as unknown as Layer.Layer<Store.HoustonBotStore> },
+    );
+  });
+
+  it.effect("a real client's stop is recorded and reads 'you stopped it'", () =>
+    harnessed("client-stop", (context) =>
+      Effect.gen(function* () {
+        const bot = yield* context.makeBot();
+        const started = yield* context.launch.record({
+          requestId: "click-1",
+          botId: bot.id,
+          ownerText: "Keep going",
+        });
+        context.harness.doubles.script.hold.add(`bot-run:${started.id}`);
+        yield* context.launch.launchRow(started);
+        yield* context.until(
+          "the bot run to run",
+          Effect.map(
+            context.orchestrator.getThreadRecords(ThreadId.make(started.thread_id), ["runs"]),
+            ({ runs }) => runs.some((run) => run.startedAt !== null && run.status === "running"),
+          ),
+        );
+        yield* context.orchestrator
+          .dispatch({
+            type: "thread.stop",
+            commandId: CommandId.make("3f2b8c1e-9a4d-4f6b-8e21-5c7d9a0b1e2f"),
+            threadId: ThreadId.make(started.thread_id),
+            reason: USER_STOP_REASON,
+            stopDelegatedTasks: true,
+          })
+          .pipe(Effect.orDie);
+        yield* context.until(
+          "the client's stop to settle",
+          Effect.map(rowOf(started.id), (row) => row?.state === "stopped"),
+        );
+        const sql = yield* SqlClient.SqlClient;
+        assert.strictEqual((yield* rowOf(started.id))?.reason, "you stopped it");
+        const turns = yield* sql<{ readonly stopped_by_client: number }>`
+          SELECT stopped_by_client FROM houston_bot_turns WHERE bot_run_id = ${started.id}
+        `.pipe(Effect.orDie);
+        assert.deepEqual(
+          turns.map((turn) => turn.stopped_by_client),
+          [1],
+        );
+      }),
+    ),
+  );
+
+  it.effect("a launcher's error is refused with credentials masked", () => {
+    const failingLauncher = Layer.mock(ThreadLaunch.ThreadLaunchService)({
+      launch: () =>
+        Effect.fail(
+          new Error(
+            "Could not create the worktree: Authorization: Bearer abcdefghijklmnop",
+          ) as never,
+        ),
+    });
+    return harnessed(
+      "launcher-error",
+      (context) =>
+        Effect.gen(function* () {
+          const bot = yield* context.makeBot();
+          const row = yield* context.launch.record({
+            requestId: "click-1",
+            botId: bot.id,
+            ownerText: "Go",
+          });
+          const refusal = yield* Effect.flip(context.launch.launchRow(row));
+          assert.notInclude(refusal.message, "abcdefghijklmnop");
+          assert.include(refusal.message, "[redacted]");
+          const stored = yield* rowOf(row.id);
+          assert.strictEqual(stored?.state, "failed");
+          assert.notInclude(stored?.reason ?? "", "abcdefghijklmnop");
+          assert.include(stored?.reason ?? "", "[redacted]");
+        }),
+      { launcher: failingLauncher },
+    );
+  });
+
+  it.effect("an ordinary thread and its sub-agent cost the follower no lookup", () => {
+    const lookups: Array<string> = [];
+    return harnessed(
+      "quiet",
+      (context) =>
+        Effect.gen(function* () {
+          const launcher = yield* ThreadLaunch.ThreadLaunchService;
+          const ordinary = ThreadId.make("ordinary-quiet");
+          lookups.length = 0;
+          yield* launcher.launch({
+            commandId: CommandId.make("ordinary-quiet-launch"),
+            threadId: ordinary,
+            projectId: context.projectId,
+            title: "Ordinary quiet",
+            modelSelection: { instanceId: CLAUDE_ACCOUNT, model: "test-model" },
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            workspaceStrategy: { type: "root" },
+            initialMessage: { text: "Hello", attachments: [] },
+            createdBy: "user",
+            creationSource: "web",
+          });
+          yield* context.settle;
+          assert.deepEqual(lookups, []);
+          const shell = yield* context.orchestrator.getThreadShell(ordinary);
+          assert.isNotNull(shell);
+          const { runs } = yield* context.orchestrator.getThreadRecords(ordinary, ["runs"]);
+          const child = ThreadId.make("child-quiet");
+          const sink = yield* EventSink.EventSinkV2;
+          const now = yield* DateTime.now;
+          lookups.length = 0;
+          yield* sink.write({
+            events: [
+              {
+                id: EventId.make("event-child-created"),
+                type: "thread.created",
+                threadId: child,
+                occurredAt: now,
+                payload: {
+                  ...shell,
+                  id: child,
+                  title: "Child quiet",
+                  houstonBot: undefined,
+                  lineage: {
+                    parentThreadId: ordinary,
+                    relationshipToParent: "subagent",
+                    rootThreadId: ordinary,
+                  },
+                } as OrchestrationV2AppThread,
+              },
+              {
+                id: EventId.make("event-child-run"),
+                type: "run.created",
+                threadId: child,
+                occurredAt: now,
+                payload: {
+                  ...runs[0]!,
+                  id: RunId.make("child-quiet-run"),
+                  threadId: child,
+                  userMessageId: MessageId.make("child-quiet-message"),
+                } as OrchestrationV2Run,
+              },
+            ] as never,
+          });
+          yield* context.runs.catchUp;
+          yield* context.settle;
+          assert.deepEqual(lookups, []);
+          // The child's later events carry no created payload, so only the cache of its own
+          // thread keeps them quiet.
+          const later = yield* DateTime.now;
+          yield* sink.write({
+            events: [
+              {
+                id: EventId.make("event-child-updated"),
+                type: "run.updated",
+                threadId: child,
+                occurredAt: later,
+                payload: {
+                  ...runs[0]!,
+                  id: RunId.make("child-quiet-run"),
+                  threadId: child,
+                  userMessageId: MessageId.make("child-quiet-message"),
+                  status: "completed",
+                  completedAt: later,
+                } as OrchestrationV2Run,
+              },
+            ] as never,
+          });
+          yield* context.runs.catchUp;
+          yield* context.settle;
+          assert.deepEqual(lookups, []);
+        }),
+      {
+        observe: {
+          onShell: (threadId) => lookups.push(`shell:${threadId}`),
+          onPolicy: (threadId) => lookups.push(`policy:${threadId}`),
+          onRunsSelect: () => lookups.push("runs"),
+        },
+      },
+    );
+  });
+
+  it.effect("lists a bot's runs newest first, a page at a time, unknown literals as other", () =>
+    harnessed("list", (context) =>
+      Effect.gen(function* () {
+        const bot = yield* context.makeBot();
+        const sql = yield* SqlClient.SqlClient;
+        const ids: Array<string> = [];
+        for (const [index, requestId] of ["older", "newer"].entries()) {
+          const row = yield* context.launch.record({ requestId, botId: bot.id, ownerText: "Go" });
+          yield* sql`
+            UPDATE houston_bot_runs SET started_at = ${`2026-11-26T09:0${index}:00.000Z`}
+            WHERE id = ${row.id}
+          `.pipe(Effect.orDie);
+          ids.push(row.id);
+        }
+        // Written by a newer server, read by this one.
+        yield* sql`
+          UPDATE houston_bot_runs SET kind = 'later-kind', state = 'later-state' WHERE id = ${ids[1]!}
+        `.pipe(Effect.orDie);
+        const page = yield* context.runs.list({ botId: bot.id });
+        assert.deepEqual(
+          page.runs.map((summary) => [summary.id, summary.kind, summary.state]),
+          [
+            [ids[1], "other", "other"],
+            [ids[0], "asked", "running"],
+          ],
+        );
+        assert.isFalse(page.hasMore);
+        const before = yield* context.runs.list({
+          botId: bot.id,
+          before: page.runs[0]!.startedAt,
+        });
+        assert.deepEqual(
+          before.runs.map((summary) => summary.id),
+          [ids[0]],
+        );
+      }),
+    ),
+  );
+
+  it.effect("an ordinary thread is followed by nothing: no bot run, no turn", () =>
+    harnessed("ordinary", (context) =>
+      Effect.gen(function* () {
+        const launcher = yield* ThreadLaunch.ThreadLaunchService;
+        yield* launcher.launch({
+          commandId: CommandId.make("ordinary-launch"),
+          threadId: ThreadId.make("ordinary-thread"),
+          projectId: context.projectId,
+          title: "Ordinary",
+          modelSelection: { instanceId: CLAUDE_ACCOUNT, model: "test-model" },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          workspaceStrategy: { type: "root" },
+          initialMessage: { text: "Hello", attachments: [] },
+          createdBy: "user",
+          creationSource: "web",
+        });
+        yield* context.settle;
+        const sql = yield* SqlClient.SqlClient;
+        assert.deepEqual(yield* sql`SELECT * FROM houston_bot_turns`.pipe(Effect.orDie), []);
+        assert.deepEqual(yield* sql`SELECT * FROM houston_bot_runs`.pipe(Effect.orDie), []);
+      }),
+    ),
+  );
+
+  it.effect(
+    "a local Git project starts the asked run in its root, as its next new thread would",
+    () =>
+      harnessed("workspace-local", (context) =>
+        Effect.gen(function* () {
+          yield* setProjectSettings(context.projectId, { defaultThreadEnvMode: "local" });
+          const bot = yield* context.makeBot();
+          launched.length = 0;
+          const asked = yield* ask(context, bot.id, "workspace-local");
+          assert.deepEqual(launched.at(-1)?.workspaceStrategy, { type: "root" });
+          yield* context.until(
+            "the bot run to finish",
+            Effect.map(rowOf(asked.botRunId), (row) => row?.state === "finished"),
+          );
+          const shell = yield* context.orchestrator.getThreadShell(ThreadId.make(asked.threadId));
+          assert.isNull(shell?.worktreePath);
+        }),
+      ),
+  );
+
+  it.effect(
+    "a worktree project starts from the remote default's local branch, with its start flag",
+    () =>
+      harnessed("workspace-worktree", (context) =>
+        Effect.gen(function* () {
+          const bot = yield* context.makeBot();
+          const start = (startFromOrigin: boolean, requestId: string) =>
+            Effect.gen(function* () {
+              yield* setProjectSettings(context.projectId, {
+                defaultThreadEnvMode: "worktree",
+                newWorktreesStartFromOrigin: startFromOrigin,
+              });
+              launched.length = 0;
+              const asked = yield* ask(context, bot.id, requestId);
+              assert.deepEqual(launched.at(-1)?.workspaceStrategy, {
+                type: "worktree",
+                baseRef: "main",
+                startFromOrigin,
+              });
+              return asked;
+            });
+          const on = yield* start(true, "workspace-on");
+          const off = yield* start(false, "workspace-off");
+          for (const asked of [on, off]) {
+            yield* context.until(
+              `the bot run ${asked.botRunId} to finish`,
+              Effect.map(rowOf(asked.botRunId), (row) => row?.state === "finished"),
+            );
+            const shell = yield* context.orchestrator.getThreadShell(ThreadId.make(asked.threadId));
+            assert.isNotNull(shell?.worktreePath);
+          }
+        }),
+      ),
+  );
+
+  it.effect("a project without Git starts the asked run in its root", () =>
+    harnessed("workspace-nongit", (context) =>
+      Effect.gen(function* () {
+        const projectId = yield* createProject("workspace-nongit-repo", context.harness.root);
+        yield* setProjectSettings(projectId, { defaultThreadEnvMode: "worktree" });
+        const bot = yield* context.makeBot({ defaultProjectId: projectId });
+        launched.length = 0;
+        const asked = yield* ask(context, bot.id, "workspace-nongit");
+        assert.deepEqual(launched.at(-1)?.workspaceStrategy, { type: "root" });
+        yield* context.until(
+          "the bot run to finish",
+          Effect.map(rowOf(asked.botRunId), (row) => row?.state === "finished"),
+        );
+        const shell = yield* context.orchestrator.getThreadShell(ThreadId.make(asked.threadId));
+        assert.isNull(shell?.worktreePath);
+      }),
+    ),
+  );
+
+  it.effect("a base ref that does not resolve is refused by name and starts nothing", () =>
+    harnessed("workspace-none", (context) =>
+      Effect.gen(function* () {
+        const repo = NodePath.join(context.harness.root, "detached-repo");
+        git(context.harness.root, "init", "-q", "-b", "trunk", repo);
+        commitLines(repo, "README.md", 1, "readme");
+        git(repo, "checkout", "-q", "--detach");
+        const projectId = yield* createProject("workspace-none-repo", repo);
+        yield* setProjectSettings(projectId, {
+          defaultThreadEnvMode: "worktree",
+          newWorktreesStartFromOrigin: false,
+        });
+        const bot = yield* context.makeBot({ defaultProjectId: projectId });
+        launched.length = 0;
+        const refusal = yield* Effect.flip(
+          context.runs.ask({ requestId: "workspace-none", botId: bot.id, ownerText: "Go" }),
+        );
+        assert.strictEqual(refusal.kind, "invalid");
+        assert.include(refusal.message, 'Base ref "main" does not resolve');
+        assert.strictEqual(launched.length, 0);
+        const sql = yield* SqlClient.SqlClient;
+        assert.deepEqual(yield* sql`SELECT id FROM houston_bot_runs`.pipe(Effect.orDie), []);
+      }),
+    ),
+  );
+});
+
+describe("bot runs across a restart", () => {
+  it.effect(
+    "a launch the server did not finish is repeated with the same ids, within its limit",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeBotHarness("restart");
+        const databaseFile = `${harness.root}/state.sqlite`;
+        const recorded = yield* runBots(
+          harness,
+          (context) =>
+            Effect.gen(function* () {
+              const bot = yield* context.makeBot();
+              const fresh = yield* context.launch.record({
+                requestId: "fresh",
+                botId: bot.id,
+                ownerText: "Go",
+              });
+              const old = yield* context.launch.record({
+                requestId: "old",
+                botId: bot.id,
+                ownerText: "Go",
+              });
+              const sql = yield* SqlClient.SqlClient;
+              yield* sql`
+              UPDATE houston_bot_runs SET started_at = '1969-12-31T23:49:00.000Z' WHERE id = ${old.id}
+            `.pipe(Effect.orDie);
+              return { fresh, old, projectId: context.projectId };
+            }),
+          { databaseFile },
+        );
+        yield* runBots(
+          harness,
+          (context) =>
+            Effect.gen(function* () {
+              yield* context.until(
+                "the repeated launch to finish",
+                Effect.map(rowOf(recorded.fresh.id), (row) => row?.state === "finished"),
+              );
+              const shell = yield* context.orchestrator.getThreadShell(
+                ThreadId.make(recorded.fresh.thread_id),
+              );
+              assert.strictEqual(shell?.houstonBot?.botRunId, recorded.fresh.id);
+              assert.deepEqual(
+                {
+                  state: (yield* rowOf(recorded.old.id))?.state,
+                  reason: (yield* rowOf(recorded.old.id))?.reason,
+                },
+                { state: "failed", reason: "Houston stopped before it started" },
+              );
+            }),
+          { databaseFile, restarted: true, projectId: recorded.projectId },
+        );
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect("a pending asked launch is not repeated after its bot was switched off", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeBotHarness("restart-off");
+      const databaseFile = `${harness.root}/state.sqlite`;
+      const recorded = yield* runBots(
+        harness,
+        (context) =>
+          Effect.gen(function* () {
+            const bot = yield* context.makeBot();
+            const row = yield* context.launch.record({
+              requestId: "pending",
+              botId: bot.id,
+              ownerText: "Go",
+            });
+            yield* context.store.setEnabled({ botId: bot.id, enabled: false }).pipe(Effect.orDie);
+            return { row, projectId: context.projectId };
+          }),
+        { databaseFile },
+      );
+      yield* runBots(
+        harness,
+        (context) =>
+          Effect.gen(function* () {
+            yield* context.settle;
+            const stored = yield* rowOf(recorded.row.id);
+            assert.deepEqual(
+              { state: stored?.state, reason: stored?.reason },
+              { state: "failed", reason: "Houston stopped before it started" },
+            );
+            const shell = yield* context.orchestrator.getThreadShell(
+              ThreadId.make(recorded.row.thread_id),
+            );
+            assert.isNull(shell);
+          }),
+        { databaseFile, restarted: true, projectId: recorded.projectId },
+      );
+    }).pipe(Effect.scoped),
+  );
+});

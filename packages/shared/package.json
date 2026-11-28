@@ -562,6 +562,38 @@
     "./keybindingMatching": {
       "types": "./src/keybindingMatching.ts",
       "import": "./src/keybindingMatching.ts"
+    },
+    "./houston/replyText/structure": {
+      "types": "./src/houston/replyText/structure.ts",
+      "import": "./src/houston/replyText/structure.ts"
+    },
+    "./houston/replyText/normalize": {
+      "types": "./src/houston/replyText/normalize.ts",
+      "import": "./src/houston/replyText/normalize.ts"
+    },
+    "./houston/replyText/parse": {
+      "types": "./src/houston/replyText/parse.ts",
+      "import": "./src/houston/replyText/parse.ts"
+    },
+    "./houston/replyText/mentions": {
+      "types": "./src/houston/replyText/mentions.ts",
+      "import": "./src/houston/replyText/mentions.ts"
+    },
+    "./houston/replyText/fallbackText": {
+      "types": "./src/houston/replyText/fallbackText.ts",
+      "import": "./src/houston/replyText/fallbackText.ts"
+    },
+    "./houston/replyText/fingerprint": {
+      "types": "./src/houston/replyText/fingerprint.ts",
+      "import": "./src/houston/replyText/fingerprint.ts"
+    },
+    "./houston/replyText/previewModel": {
+      "types": "./src/houston/replyText/previewModel.ts",
+      "import": "./src/houston/replyText/previewModel.ts"
+    },
+    "./houston/replyText/emoji": {
+      "types": "./src/houston/replyText/emoji.ts",
+      "import": "./src/houston/replyText/emoji.ts"
     }
   },
   "scripts": {

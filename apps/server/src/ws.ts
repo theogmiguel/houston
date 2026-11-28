@@ -228,6 +228,9 @@ import * as HoustonRpcSerialization from "./houston/rpcSerialization.ts";
 import * as HoustonTaskService from "./houston/tasks/TaskService.ts";
 import * as HoustonTaskRuns from "./houston/tasks/TaskRuns.ts";
 import * as HoustonTaskV1Import from "./houston/tasks/V1Import.ts";
+import * as HoustonBotService from "./houston/bots/Service.ts";
+import * as HoustonBotRuns from "./houston/bots/Runs.ts";
+import type { BotActor } from "./houston/bots/rules.ts";
 import * as HoustonLayoutWorkspaces from "./houston/layoutWorkspaces.ts";
 import * as HoustonSlackService from "./houston/slack/Service.ts";
 import * as HoustonSlackV1Import from "./houston/slack/V1Import.ts";
@@ -747,6 +750,8 @@ const SPLIT_WS_RPC_PREFIXES = [
   "provider",
   "orchestration",
   "vcs",
+  // Bots, with the requests later slices add, keep the other group under the limit.
+  "houston.bots",
 ] as const;
 type SplitWsRpc = Extract<
   ServerWsRpc,
@@ -1606,6 +1611,12 @@ export const layerWsRpc = (
       const houstonTaskImport = yield* HoustonTaskV1Import.HoustonTaskV1Import;
       const houstonTaskRuns = yield* HoustonTaskRuns.HoustonTaskRuns;
       const houstonLayoutWorkspaces = yield* HoustonLayoutWorkspaces.HoustonLayoutWorkspaceService;
+      const houstonBots = yield* HoustonBotService.HoustonBotService;
+      const houstonBotRuns = yield* HoustonBotRuns.HoustonBotRuns;
+      const botActor: BotActor = {
+        sessionId: currentSessionId,
+        label: SessionStore.deviceDisplayName(currentSession.client ?? { deviceType: "unknown" }),
+      };
       const houstonSlack = yield* HoustonSlackService.HoustonSlackService;
       const houstonSlackImport = yield* HoustonSlackV1Import.HoustonSlackV1Import;
       const houstonMergeQueue = yield* HoustonMergeQueueService.HoustonMergeQueueService;
@@ -3467,6 +3478,16 @@ export const layerWsRpc = (
           houstonLayoutWorkspaces.moveThread(input),
         [WS_METHODS.houstonLayoutWorkspacesSetFocus]: ({ workspaceId }) =>
           houstonLayoutWorkspaces.setFocus(workspaceId).pipe(Effect.as({})),
+        [WS_METHODS.houstonBotsSubscribe]: () => houstonBots.subscribe,
+        [WS_METHODS.houstonBotsRevisions]: (input) => houstonBots.revisions(input),
+        [WS_METHODS.houstonBotsSave]: (input) => houstonBots.save(input, botActor),
+        [WS_METHODS.houstonBotsRestoreRevision]: (input) =>
+          houstonBots.restoreRevision(input, botActor),
+        [WS_METHODS.houstonBotsSetEnabled]: (input) => houstonBots.setEnabled(input),
+        [WS_METHODS.houstonBotsDelete]: (input) => houstonBots.delete(input),
+        [WS_METHODS.houstonBotsAsk]: (input) => houstonBotRuns.ask(input),
+        [WS_METHODS.houstonBotsStop]: (input) => houstonBotRuns.stop(input),
+        [WS_METHODS.houstonBotsRunsList]: (input) => houstonBotRuns.list(input),
         [WS_METHODS.houstonSlackGet]: () => houstonSlack.get,
         [WS_METHODS.houstonSlackConnect]: (input) => houstonSlack.connect(input),
         [WS_METHODS.houstonSlackDisconnect]: () => houstonSlack.disconnect,

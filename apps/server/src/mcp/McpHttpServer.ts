@@ -198,15 +198,6 @@ const linkedEnvironmentsOff = HttpServerResponse.jsonUnsafe(
   { status: 403, headers: { "cache-control": "no-store" } },
 );
 
-// Houston: the only tools a task's planner or reviewer credential may call.
-const HOUSTON_TASK_SUBMIT_TOOLS: ReadonlySet<string> = new Set([
-  "houston_task_plan_submit",
-  "houston_task_review_submit",
-]);
-
-const houstonTaskSubmitDenial = (scope: McpInvocationContext.McpInvocationScope, tool: string) =>
-  `capability_denied: thread ${scope.thread?.threadId ?? "unknown"} plans or reviews a Houston task, so its credential may call only ${[...HOUSTON_TASK_SUBMIT_TOOLS].join(" and ")}, not ${tool}.`;
-
 const parseJsonOrUndefined = (text: string): unknown => {
   try {
     return JSON.parse(text);
@@ -215,8 +206,11 @@ const parseJsonOrUndefined = (text: string): unknown => {
   }
 };
 
-/** The answer to a submit-only credential's `tools/call` of any other tool, or undefined. */
-const houstonTaskSubmitRefusal = Effect.fn("McpHttpServer.houstonTaskSubmitRefusal")(function* (
+/**
+ * Houston: the answer to a scoped credential's `tools/call` that its scope refuses, or undefined.
+ * A batch is answered for its first refused call, so none of it runs.
+ */
+const toolScopeRefusalResponse = Effect.fn("McpHttpServer.toolScopeRefusal")(function* (
   request: HttpServerRequest.HttpServerRequest,
   scope: McpInvocationContext.McpInvocationScope,
 ) {
@@ -226,37 +220,29 @@ const houstonTaskSubmitRefusal = Effect.fn("McpHttpServer.houstonTaskSubmitRefus
   if (text === undefined) return undefined;
   const body = parseJsonOrUndefined(text);
   const messages: ReadonlyArray<unknown> = Array.isArray(body) ? body : [body];
-  const refused = messages.find(
-    (
-      message,
-    ): message is {
+  for (const message of messages) {
+    const call = message as {
       readonly id?: unknown;
-      readonly params: { readonly name?: unknown };
-    } => {
-      const call = message as {
-        readonly method?: unknown;
-        readonly params?: { readonly name?: unknown };
-      };
-      return (
-        call?.method === "tools/call" &&
-        !HOUSTON_TASK_SUBMIT_TOOLS.has(String(call.params?.name ?? ""))
-      );
-    },
-  );
-  if (refused === undefined) return undefined;
-  return HttpServerResponse.jsonUnsafe(
-    {
-      jsonrpc: "2.0",
-      id: refused.id ?? null,
-      result: {
-        isError: true,
-        content: [
-          { type: "text", text: houstonTaskSubmitDenial(scope, String(refused.params.name)) },
-        ],
+      readonly method?: unknown;
+      readonly params?: { readonly name?: unknown; readonly arguments?: unknown };
+    };
+    if (call?.method !== "tools/call") continue;
+    const refusal = McpInvocationContext.toolScopeRefusal(
+      scope,
+      String(call.params?.name ?? ""),
+      call.params?.arguments,
+    );
+    if (refusal === undefined) continue;
+    return HttpServerResponse.jsonUnsafe(
+      {
+        jsonrpc: "2.0",
+        id: call.id ?? null,
+        result: { isError: true, content: [{ type: "text", text: refusal }] },
       },
-    },
-    { status: 200, headers: { "cache-control": "no-store" } },
-  );
+      { status: 200, headers: { "cache-control": "no-store" } },
+    );
+  }
+  return undefined;
 });
 
 const makeMcpAuthMiddleware = Effect.gen(function* () {
@@ -300,9 +286,10 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
     const limited = McpInvocationContext.withRuntimeModeCeiling(asked, runtimeModeCeiling);
     const linkedEnvironments = yield* linksEnabled;
     if (limited.client?.linked === true && !linkedEnvironments) return linkedEnvironmentsOff;
-    // Houston: a planner's or reviewer's credential reaches only its submit, however a tool is registered.
-    if (limited.capabilities.has("houston-task-submit")) {
-      const refusal = yield* houstonTaskSubmitRefusal(request, limited);
+    // Houston: a planner's, reviewer's or bot thread's credential reaches only its own tools,
+    // however a tool is registered.
+    if (McpInvocationContext.toolScopeOf(limited) !== undefined) {
+      const refusal = yield* toolScopeRefusalResponse(request, limited);
       if (refusal !== undefined) return refusal;
     }
     return { ...limited, linkedEnvironments };
@@ -969,28 +956,36 @@ const provideRegistrationServices = <Services>() =>
     ),
   );
 
-/** Refuses every other tool to a `houston-task-submit` credential before its handler runs. */
-const withHoustonTaskSubmitScope = Effect.fnUntraced(function* <A, E, R>(
+/**
+ * Houston: refuses a call outside the credential's tool scope before its handler runs, and leaves
+ * a bot thread's tools/list with only the tools it may call.
+ */
+const withHoustonToolScope = Effect.fnUntraced(function* <A, E, R>(
   registration: Effect.Effect<A, E, R>,
 ) {
   const server = yield* McpServer.McpServer;
   const scopedServer = McpServer.McpServer.of({
     ...server,
     addTool: Effect.fn("McpServer.addTool")(function (options) {
-      if (HOUSTON_TASK_SUBMIT_TOOLS.has(options.tool.name)) return server.addTool(options);
+      const name = options.tool.name;
+      const enabledWhen = Context.getOrUndefined(options.annotations, McpSchema.EnabledWhen);
+      const listedForBots = McpInvocationContext.listedForBots(name);
       return server.addTool({
         ...options,
+        annotations: Context.add(
+          options.annotations,
+          McpSchema.EnabledWhen,
+          (profile) => listedForBots() && (enabledWhen === undefined || enabledWhen(profile)),
+        ),
         handle: Effect.fnUntraced(function* (payload) {
           const scope = yield* Effect.serviceOption(McpInvocationContext.McpInvocationContext);
-          if (Option.isSome(scope) && scope.value.capabilities.has("houston-task-submit")) {
+          const refusal = Option.isSome(scope)
+            ? McpInvocationContext.toolScopeRefusal(scope.value, name, payload)
+            : undefined;
+          if (refusal !== undefined) {
             return new McpSchema.CallToolResult({
               isError: true,
-              content: [
-                {
-                  type: "text",
-                  text: houstonTaskSubmitDenial(scope.value, options.tool.name),
-                },
-              ],
+              content: [{ type: "text", text: refusal }],
             });
           }
           return yield* options.handle(payload);
@@ -1011,7 +1006,7 @@ export const toolkitRegistration = <Tools extends Record<string, Tool.Any>, EX, 
   handlers: McpToolAccess.HandlersLayer<Tools, EX, RX>,
 ) =>
   Layer.effectDiscard(
-    withHoustonTaskSubmitScope(
+    withHoustonToolScope(
       withToolSpans(
         withAdvertisedSchemas(toolkit, McpServer.registerToolkit(decodeAsAdvertised(toolkit))),
       ),
@@ -1030,7 +1025,7 @@ const imageToolRegistration = <Tools extends Record<string, Tool.Any>, A, E, R, 
   register: Effect.Effect<A, E, R>,
   handlers: McpToolAccess.HandlersLayer<Tools, EX, RX>,
 ) =>
-  Layer.effectDiscard(withHoustonTaskSubmitScope(withToolSpans(register))).pipe(
+  Layer.effectDiscard(withHoustonToolScope(withToolSpans(register))).pipe(
     Layer.provide(McpToolAccess.HandlersLayer.layer(handlers)),
   );
 

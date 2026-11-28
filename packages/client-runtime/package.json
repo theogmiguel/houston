@@ -283,6 +283,10 @@
       "types": "./src/state/taskSources.ts",
       "default": "./src/state/taskSources.ts"
     },
+    "./state/bots": {
+      "types": "./src/state/bots.ts",
+      "default": "./src/state/bots.ts"
+    },
     "./state/slack": {
       "types": "./src/state/slack.ts",
       "default": "./src/state/slack.ts"

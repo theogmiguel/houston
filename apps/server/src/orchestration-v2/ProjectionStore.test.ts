@@ -8125,6 +8125,55 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
     }),
   );
 
+  it.effect("a bot run's mark is kept in the thread and its shell", () =>
+    Effect.gen(function* () {
+      const store = yield* ProjectionStore.ProjectionStoreV2;
+      const at = DateTime.makeUnsafe("2026-11-25T09:00:00.000Z");
+      const houstonBot = { botId: "bot", botRunId: "bot-run", kind: "asked" as const };
+      const create = (id: string, mark?: typeof houstonBot) => {
+        const threadId = ThreadId.make(id);
+        return store.apply({
+          id: EventId.make(`event:${id}`),
+          type: "thread.created",
+          threadId,
+          occurredAt: at,
+          payload: {
+            createdBy: "user" as const,
+            creationSource: "server" as const,
+            id: threadId,
+            projectId: ProjectId.make("project:bot-mark"),
+            title: "Digest writer",
+            providerInstanceId,
+            modelSelection,
+            runtimeMode: "auto" as const,
+            interactionMode: "default" as const,
+            branch: null,
+            worktreePath: null,
+            activeProviderThreadId: null,
+            ...(mark === undefined ? {} : { houstonBot: mark }),
+            lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+            forkedFrom: null,
+            createdAt: at,
+            updatedAt: at,
+            archivedAt: null,
+            settledOverride: null,
+            settledAt: null,
+            lastVisitedAt: null,
+            deletedAt: null,
+          },
+        });
+      };
+      yield* create("thread:bot-mark", houstonBot);
+      yield* create("thread:no-mark");
+      const marked = ThreadId.make("thread:bot-mark");
+      const plain = ThreadId.make("thread:no-mark");
+      assert.deepEqual((yield* store.getThread(marked)).houstonBot, houstonBot);
+      assert.deepEqual((yield* store.getThreadShell(marked))?.houstonBot, houstonBot);
+      assert.notProperty(yield* store.getThread(plain), "houstonBot");
+      assert.notProperty(yield* store.getThreadShell(plain), "houstonBot");
+    }),
+  );
+
   it.effect("a pull request watch keeps a finished thread working until it ends", () =>
     Effect.gen(function* () {
       const store = yield* ProjectionStore.ProjectionStoreV2;

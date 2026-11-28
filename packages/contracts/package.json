@@ -55,6 +55,10 @@
       "types": "./src/houston/databaseReclaim.ts",
       "import": "./src/houston/databaseReclaim.ts"
     },
+    "./houston/bots": {
+      "types": "./src/houston/bots.ts",
+      "import": "./src/houston/bots.ts"
+    },
     "./houston/slack": {
       "types": "./src/houston/slack.ts",
       "import": "./src/houston/slack.ts"

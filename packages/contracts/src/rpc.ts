@@ -263,6 +263,25 @@ import {
   HoustonTaskStartResult,
 } from "./houston/tasks.ts";
 import {
+  HoustonBot,
+  HoustonBotAskInput,
+  HoustonBotAskResult,
+  HoustonBotDeleteInput,
+  HoustonBotDeleteResult,
+  HoustonBotEmptyInput,
+  HoustonBotError,
+  HoustonBotRestoreRevisionInput,
+  HoustonBotRevisionsInput,
+  HoustonBotRevisionsResult,
+  HoustonBotRunsListInput,
+  HoustonBotRunsListResult,
+  HoustonBotRunSummary,
+  HoustonBotSaveInput,
+  HoustonBotSetEnabledInput,
+  HoustonBotStopInput,
+  HoustonBotStreamEvent,
+} from "./houston/bots.ts";
+import {
   HoustonSlackConfigureInput,
   HoustonSlackConnectInput,
   HoustonSlackEmptyInput,
@@ -726,6 +745,15 @@ export const WS_METHODS = {
   houstonLayoutWorkspacesAssignThread: "houston.layoutWorkspaces.assignThread",
   houstonLayoutWorkspacesMoveThread: "houston.layoutWorkspaces.moveThread",
   houstonLayoutWorkspacesSetFocus: "houston.layoutWorkspaces.setFocus",
+  houstonBotsSubscribe: "houston.bots.subscribe",
+  houstonBotsRevisions: "houston.bots.revisions",
+  houstonBotsSave: "houston.bots.save",
+  houstonBotsRestoreRevision: "houston.bots.restoreRevision",
+  houstonBotsSetEnabled: "houston.bots.setEnabled",
+  houstonBotsDelete: "houston.bots.delete",
+  houstonBotsAsk: "houston.bots.ask",
+  houstonBotsStop: "houston.bots.stop",
+  houstonBotsRunsList: "houston.bots.runs.list",
   houstonSlackGet: "houston.slack.get",
   houstonSlackConnect: "houston.slack.connect",
   houstonSlackDisconnect: "houston.slack.disconnect",
@@ -2396,6 +2424,63 @@ const WsHoustonLayoutWorkspacesSubscribeRpc = Rpc.make(
   },
 );
 
+const HoustonBotsRpcError = Schema.Union([HoustonBotError, EnvironmentAuthorizationError]);
+
+const WsHoustonBotsSubscribeRpc = Rpc.make(WS_METHODS.houstonBotsSubscribe, {
+  payload: HoustonBotEmptyInput,
+  success: HoustonBotStreamEvent,
+  error: HoustonBotsRpcError,
+  stream: true,
+});
+
+const WsHoustonBotsRevisionsRpc = Rpc.make(WS_METHODS.houstonBotsRevisions, {
+  payload: HoustonBotRevisionsInput,
+  success: HoustonBotRevisionsResult,
+  error: HoustonBotsRpcError,
+});
+
+const WsHoustonBotsSaveRpc = Rpc.make(WS_METHODS.houstonBotsSave, {
+  payload: HoustonBotSaveInput,
+  success: HoustonBot,
+  error: HoustonBotsRpcError,
+});
+
+const WsHoustonBotsRestoreRevisionRpc = Rpc.make(WS_METHODS.houstonBotsRestoreRevision, {
+  payload: HoustonBotRestoreRevisionInput,
+  success: HoustonBot,
+  error: HoustonBotsRpcError,
+});
+
+const WsHoustonBotsSetEnabledRpc = Rpc.make(WS_METHODS.houstonBotsSetEnabled, {
+  payload: HoustonBotSetEnabledInput,
+  success: HoustonBot,
+  error: HoustonBotsRpcError,
+});
+
+const WsHoustonBotsDeleteRpc = Rpc.make(WS_METHODS.houstonBotsDelete, {
+  payload: HoustonBotDeleteInput,
+  success: HoustonBotDeleteResult,
+  error: HoustonBotsRpcError,
+});
+
+const WsHoustonBotsAskRpc = Rpc.make(WS_METHODS.houstonBotsAsk, {
+  payload: HoustonBotAskInput,
+  success: HoustonBotAskResult,
+  error: HoustonBotsRpcError,
+});
+
+const WsHoustonBotsStopRpc = Rpc.make(WS_METHODS.houstonBotsStop, {
+  payload: HoustonBotStopInput,
+  success: HoustonBotRunSummary,
+  error: HoustonBotsRpcError,
+});
+
+const WsHoustonBotsRunsListRpc = Rpc.make(WS_METHODS.houstonBotsRunsList, {
+  payload: HoustonBotRunsListInput,
+  success: HoustonBotRunsListResult,
+  error: HoustonBotsRpcError,
+});
+
 const HoustonSlackRpcError = Schema.Union([HoustonSlackError, EnvironmentAuthorizationError]);
 
 const WsHoustonSlackGetRpc = Rpc.make(WS_METHODS.houstonSlackGet, {
@@ -3314,6 +3399,15 @@ export const WsRpcGroup = RpcGroup.make(
   WsHoustonLayoutWorkspacesAssignThreadRpc,
   WsHoustonLayoutWorkspacesMoveThreadRpc,
   WsHoustonLayoutWorkspacesSetFocusRpc,
+  WsHoustonBotsSubscribeRpc,
+  WsHoustonBotsRevisionsRpc,
+  WsHoustonBotsSaveRpc,
+  WsHoustonBotsRestoreRevisionRpc,
+  WsHoustonBotsSetEnabledRpc,
+  WsHoustonBotsDeleteRpc,
+  WsHoustonBotsAskRpc,
+  WsHoustonBotsStopRpc,
+  WsHoustonBotsRunsListRpc,
   WsHoustonSlackGetRpc,
   WsHoustonSlackConnectRpc,
   WsHoustonSlackDisconnectRpc,

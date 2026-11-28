@@ -1494,3 +1494,295 @@ it.effect(
       }),
     ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
+
+// Houston: a bot thread's credential reaches only its bot's Houston tools, at the HTTP door and at
+// each tool, and acts on this machine only.
+const BotToolkit = Toolkit.make(
+  Tool.make("houston_thread_read", {
+    description: "Stands in for a read.",
+    parameters: Schema.Struct({ environmentId: OrchestratorMcpEnvironmentTarget }),
+    success: Schema.Struct({ ran: Schema.String }),
+    failure: OrchestratorMcpFailure,
+    failureMode: "return",
+  }),
+  Tool.make("schedule_task", {
+    description: "Stands in for a timer.",
+    success: Schema.Struct({ ran: Schema.String }),
+    failure: OrchestratorMcpFailure,
+    failureMode: "return",
+  }),
+  Tool.make("delegate_task", {
+    description: "Stands in for delegation.",
+    parameters: Schema.Struct({
+      target: Schema.optional(Schema.Struct({ environmentId: OrchestratorMcpEnvironmentTarget })),
+    }),
+    success: Schema.Struct({ ran: Schema.String }),
+    failure: OrchestratorMcpFailure,
+    failureMode: "return",
+  }),
+  Tool.make("houston_thread_send", {
+    description: "Stands in for a write.",
+    success: Schema.Struct({ ran: Schema.String }),
+    failure: OrchestratorMcpFailure,
+    failureMode: "return",
+  }),
+);
+const BOT_TOOL_NAMES = [
+  "houston_thread_read",
+  "schedule_task",
+  "delegate_task",
+  "houston_thread_send",
+];
+
+const layerBotTools = (calls: Array<string>) =>
+  McpHttpServer.toolkitRegistration(
+    BotToolkit,
+    McpToolAccess.toLayer(BotToolkit, {
+      houston_thread_read: McpToolAccess.reads(() =>
+        Effect.sync(() => calls.push("houston_thread_read")).pipe(Effect.as({ ran: "here" })),
+      ),
+      schedule_task: McpToolAccess.reads(() =>
+        Effect.sync(() => calls.push("schedule_task")).pipe(Effect.as({ ran: "here" })),
+      ),
+      delegate_task: McpToolAccess.reads(() =>
+        Effect.sync(() => calls.push("delegate_task")).pipe(Effect.as({ ran: "here" })),
+      ),
+      houston_thread_send: McpToolAccess.reads(() =>
+        Effect.sync(() => calls.push("houston_thread_send")).pipe(Effect.as({ ran: "here" })),
+      ),
+    }),
+  );
+
+const botCaller = (
+  kind: "asked" | "unattended",
+  child = false,
+): McpInvocationContext.McpBotCaller => ({
+  kind,
+  child,
+  botRunId: `bot-run-${kind}`,
+  botName: "Night digest",
+  tools:
+    kind === "unattended"
+      ? { allow: ["houston_thread_read"] }
+      : { deny: ["schedule_task", "delete_scheduled_task", "run_scheduled_task_now"] },
+});
+
+const scopeFor = (
+  name: string,
+  input: { readonly bot?: McpInvocationContext.McpBotCaller; readonly subagent?: boolean } = {},
+): McpInvocationContext.McpThreadInvocationScope => ({
+  environmentId,
+  requestNamespace: name,
+  thread: {
+    threadId: ThreadId.make(`thread-${name}`),
+    providerSessionId: name,
+    providerInstanceId: ProviderInstanceId.make("claude"),
+    subagent: input.subagent ?? input.bot?.child ?? false,
+    ...(input.bot === undefined ? {} : { bot: input.bot }),
+  },
+  client: undefined,
+  capabilities: new Set(["orchestration", "issues", "pull-requests"]),
+  issuedAt: 1,
+});
+
+const BOT_SCOPES: Record<string, McpInvocationContext.McpInvocationScope> = {
+  ordinary: scopeFor("ordinary"),
+  child: scopeFor("child", { subagent: true }),
+  external: {
+    ...scopeFor("external"),
+    thread: undefined,
+    client: { sessionId: "external", label: "Outside client", access: "full-access" },
+  },
+  asked: scopeFor("asked", { bot: botCaller("asked") }),
+  askedChild: scopeFor("askedChild", { bot: botCaller("asked", true) }),
+  unattended: scopeFor("unattended", { bot: botCaller("unattended") }),
+};
+
+it.effect(
+  "a bot thread's credential reaches only its tools, at HTTP and per tool, on this machine",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const calls: Array<string> = [];
+        const serverLayer = McpHttpServer.layerMcpTransport(layerBotTools(calls)).pipe(
+          Layer.provide(ServerSettings.layerTest()),
+          Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
+          Layer.provide(
+            Layer.mock(McpSessionRegistry.McpSessionRegistry)({
+              resolve: (token) =>
+                Effect.succeed(
+                  BOT_SCOPES[token]?.thread === undefined
+                    ? undefined
+                    : (BOT_SCOPES[token] as McpInvocationContext.McpThreadInvocationScope),
+                ),
+            }),
+          ),
+          Layer.provide(
+            Layer.succeed(McpHttpServer.McpClientAuthenticator, {
+              authenticate: (request) =>
+                Effect.succeed(
+                  request.headers.authorization === "Bearer external"
+                    ? BOT_SCOPES.external
+                    : undefined,
+                ),
+            } as McpHttpServer.McpClientAuthenticator["Service"]),
+          ),
+        );
+        yield* HttpRouter.serve(serverLayer, { disableListenLog: true, disableLogger: true }).pipe(
+          Layer.build,
+        );
+        const httpClient = yield* HttpClient.HttpClient;
+        const session = (token: string) =>
+          Effect.gen(function* () {
+            const headers = {
+              accept: "application/json, text/event-stream",
+              authorization: `Bearer ${token}`,
+            };
+            const initialize = yield* httpClient.post("/mcp", {
+              headers,
+              body: HttpBody.text(
+                `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"bot","version":"1.0.0"}}}`,
+                "application/json",
+              ),
+            });
+            expect(initialize.status, token).toBe(200);
+            const post = (body: unknown) =>
+              httpClient
+                .post("/mcp", {
+                  headers: {
+                    ...headers,
+                    "mcp-session-id": initialize.headers["mcp-session-id"]!,
+                    "mcp-protocol-version": "2025-06-18",
+                  },
+                  body: HttpBody.text(JSON.stringify(body), "application/json"),
+                })
+                .pipe(Effect.flatMap((response) => response.text));
+            const call = (name: string, args: object = {}) =>
+              post({
+                jsonrpc: "2.0",
+                id: 7,
+                method: "tools/call",
+                params: { name, arguments: args },
+              });
+            const listed = post({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }).pipe(
+              Effect.map((text) =>
+                (
+                  decodeJsonText(text) as { result: { tools: ReadonlyArray<{ name: string }> } }
+                ).result.tools
+                  .map((tool) => tool.name)
+                  .toSorted(),
+              ),
+            );
+            return { post, call, listed };
+          });
+        const elsewhere = EnvironmentId.make("environment-elsewhere");
+
+        // tools/list: the bot's list only; every other caller sees what it saw before.
+        for (const token of ["ordinary", "child", "external"]) {
+          expect(yield* (yield* session(token)).listed, token).toEqual(BOT_TOOL_NAMES.toSorted());
+        }
+        expect(yield* (yield* session("asked")).listed).toEqual([
+          "delegate_task",
+          "houston_thread_read",
+          "houston_thread_send",
+        ]);
+        expect(yield* (yield* session("askedChild")).listed).toEqual([
+          "delegate_task",
+          "houston_thread_read",
+          "houston_thread_send",
+        ]);
+        expect(yield* (yield* session("unattended")).listed).toEqual(["houston_thread_read"]);
+
+        const unattended = yield* session("unattended");
+        for (const name of ["schedule_task", "delegate_task", "houston_thread_send"]) {
+          const text = yield* unattended.call(name);
+          expect(text, name).toContain(`Houston's ${name} is not available in this bot thread.`);
+          expect(text, name).toContain(`"id":7`);
+        }
+        expect(
+          yield* unattended.call("houston_thread_read", { environmentId: elsewhere }),
+        ).toContain("Night digest works on this machine only.");
+        // A batch is refused for any refused call in it, before any of it runs.
+        expect(
+          yield* unattended.post([
+            {
+              jsonrpc: "2.0",
+              id: 8,
+              method: "tools/call",
+              params: { name: "houston_thread_read", arguments: {} },
+            },
+            {
+              jsonrpc: "2.0",
+              id: 9,
+              method: "tools/call",
+              params: { name: "delegate_task", arguments: {} },
+            },
+          ]),
+        ).toContain("Houston's delegate_task is not available in this bot thread.");
+        expect(calls).toEqual([]);
+        expect(yield* unattended.call("houston_thread_read", { environmentId })).toContain(
+          '"isError":false',
+        );
+        expect(calls).toEqual(["houston_thread_read"]);
+
+        for (const token of ["asked", "askedChild"]) {
+          const asked = yield* session(token);
+          calls.length = 0;
+          expect(yield* asked.call("schedule_task"), token).toContain(
+            "Houston's schedule_task is not available in this bot thread.",
+          );
+          expect(
+            yield* asked.call("delegate_task", { target: { environmentId: elsewhere } }),
+            token,
+          ).toContain("Night digest works on this machine only.");
+          yield* asked.call("delegate_task", { target: {} });
+          yield* asked.call("houston_thread_send");
+          expect(calls, token).toEqual(["delegate_task", "houston_thread_send"]);
+        }
+
+        calls.length = 0;
+        yield* (yield* session("ordinary")).call("schedule_task");
+        expect(calls).toEqual(["schedule_task"]);
+      }),
+    ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+const perToolCalls: Array<string> = [];
+it.effect("each tool refuses a bot thread's call outside its list, without the HTTP door", () =>
+  Effect.gen(function* () {
+    const calls = perToolCalls;
+    const server = yield* McpServer.McpServer;
+    const call = (scope: McpInvocationContext.McpInvocationScope, name: string, args: object) =>
+      server.callTool({ name, arguments: args }).pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+        Effect.provideService(McpSchema.McpServerClient, client),
+        Effect.map((result) => result as McpSchema.CallToolResult),
+      );
+    const textOf = (result: McpSchema.CallToolResult) =>
+      result.content.map((part) => (part.type === "text" ? part.text : "")).join("\n");
+    // Outside the list the tool is not even found; a visible one checks the call itself.
+    const refusedSchedule = yield* call(BOT_SCOPES.unattended!, "schedule_task", {}).pipe(
+      Effect.map(textOf),
+      Effect.catch((error) => Effect.succeed(error.message)),
+    );
+    expect(refusedSchedule).toContain("Tool 'schedule_task' not found");
+    const elsewhere = yield* call(BOT_SCOPES.unattended!, "houston_thread_read", {
+      environmentId: "environment-elsewhere",
+    });
+    expect(textOf(elsewhere)).toContain("Night digest works on this machine only.");
+    const askedElsewhere = yield* call(BOT_SCOPES.asked!, "delegate_task", {
+      target: { environmentId: "environment-elsewhere" },
+    });
+    expect(textOf(askedElsewhere)).toContain("Night digest works on this machine only.");
+    expect(calls).toEqual([]);
+    yield* call(BOT_SCOPES.asked!, "delegate_task", { target: { environmentId } });
+    expect(calls).toEqual(["delegate_task"]);
+  }).pipe(
+    Effect.provide(
+      layerBotTools(perToolCalls).pipe(
+        Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
+        Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
+      ),
+    ),
+  ),
+);

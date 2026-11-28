@@ -1436,6 +1436,137 @@ const InferenceImageVerdicts = Effect.gen(function* () {
   `;
 });
 
+// No CHECK constraints on literals: a later literal would need a table rebuild. Two triggers keep a
+// revision as it was accepted for as long as its bot exists.
+const Bots = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_bots (
+      id TEXT PRIMARY KEY,
+      slug TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      mark TEXT NOT NULL,
+      job TEXT NOT NULL,
+      default_project_id TEXT NOT NULL,
+      other_project_ids_json TEXT NOT NULL,
+      model_selection_json TEXT NOT NULL,
+      asked_mode TEXT NOT NULL,
+      unattended_full_access INTEGER NOT NULL DEFAULT 0,
+      max_at_once INTEGER NOT NULL DEFAULT 1,
+      max_starts_per_day INTEGER NOT NULL DEFAULT 6,
+      max_minutes INTEGER NOT NULL DEFAULT 20,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      ready_made TEXT,
+      row_revision INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_bot_revisions (
+      bot_id TEXT NOT NULL,
+      n INTEGER NOT NULL,
+      text TEXT NOT NULL,
+      sha256 TEXT NOT NULL,
+      accepted_at TEXT NOT NULL,
+      accepted_by_session TEXT NOT NULL,
+      accepted_by_label TEXT NOT NULL,
+      restored_from INTEGER,
+      PRIMARY KEY (bot_id, n)
+    )
+  `;
+  yield* sql`
+    CREATE TRIGGER IF NOT EXISTS houston_bot_revisions_no_update
+    BEFORE UPDATE ON houston_bot_revisions
+    BEGIN SELECT RAISE(ABORT, 'a bot revision cannot be changed'); END
+  `;
+  yield* sql`
+    CREATE TRIGGER IF NOT EXISTS houston_bot_revisions_no_delete
+    BEFORE DELETE ON houston_bot_revisions
+    WHEN EXISTS (SELECT 1 FROM houston_bots WHERE id = OLD.bot_id AND deleted_at IS NULL)
+    BEGIN SELECT RAISE(ABORT, 'a bot revision cannot be deleted while its bot exists'); END
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_bot_changes (
+      id INTEGER PRIMARY KEY,
+      bot_id TEXT NOT NULL,
+      field TEXT NOT NULL,
+      at TEXT NOT NULL,
+      by_session TEXT NOT NULL,
+      by_label TEXT NOT NULL
+    )
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_bot_changes_bot ON houston_bot_changes(bot_id, at)`;
+});
+
+// One row per bot run. The policy is stored as applied, so a later build does not widen it. Bot
+// runs outlive their bot; `bot_name` keeps what it was called.
+const BotRuns = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_bot_runs (
+      id TEXT PRIMARY KEY,
+      request_id TEXT UNIQUE,
+      source_key TEXT,
+      bot_id TEXT NOT NULL,
+      bot_name TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      origin TEXT NOT NULL,
+      routine_id TEXT,
+      project_id TEXT NOT NULL,
+      thread_id TEXT UNIQUE,
+      revision_n INTEGER NOT NULL,
+      revision_sha256 TEXT NOT NULL,
+      template TEXT NOT NULL,
+      policy_json TEXT NOT NULL,
+      state TEXT NOT NULL,
+      reason TEXT,
+      stop_run_id TEXT,
+      stop_reason TEXT,
+      due_at TEXT,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      active_ms INTEGER NOT NULL DEFAULT 0,
+      result_id TEXT,
+      missed_count INTEGER,
+      refused_calls INTEGER NOT NULL DEFAULT 0
+    )
+  `;
+  yield* sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_houston_bot_runs_occurrence
+    ON houston_bot_runs(routine_id, due_at)
+    WHERE routine_id IS NOT NULL AND due_at IS NOT NULL
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_bot_runs_bot ON houston_bot_runs(bot_id, started_at)`;
+});
+
+// Bots, followed: each provider turn of a bot's threads, who started it and on which local day; the
+// last thread event the follower applied; a launch kept until it is accepted, so a restart repeats it.
+const BotTurns = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_bot_turns (
+      run_id TEXT PRIMARY KEY,
+      bot_run_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      started_by TEXT NOT NULL,
+      local_date TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      stopped_by_client INTEGER NOT NULL DEFAULT 0
+    )
+  `;
+  yield* sql`CREATE INDEX IF NOT EXISTS idx_houston_bot_turns_bot_run ON houston_bot_turns(bot_run_id)`;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS houston_bot_cursor (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      sequence INTEGER NOT NULL
+    )
+  `;
+  yield* sql`ALTER TABLE houston_bot_runs ADD COLUMN launch_json TEXT`;
+});
+
 // Folders a project tracks from outside its own folder, and the repository ignore patterns it
 // stores beside houston.json's. Both are keyed by upstream ProjectId without a foreign key; a
 // deleted project's rows go with its deletion hook.
@@ -1510,6 +1641,9 @@ const houstonMigrationEntries = [
   [32, "ProviderNativeSessions", createNativeSessionHistory],
   [33, "ProjectRepositories", ProjectRepositories],
   [34, "TaskFolders", TaskFolders],
+  [35, "Bots", Bots],
+  [36, "BotRuns", BotRuns],
+  [37, "BotTurns", BotTurns],
 ] as const;
 
 /** Every Houston migration id this build knows, for callers that must not run beside an older schema. */

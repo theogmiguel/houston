@@ -35,6 +35,7 @@ import {
   ThreadId,
   TurnItemId,
 } from "@houston-app/contracts";
+import { HoustonBotProviderPolicy } from "@houston-app/contracts/houston/bots";
 import type { HoustonMcpSignInError } from "@houston-app/contracts/houston/mcpSignIn";
 import { MessageDeliveryReportEvidence } from "@houston-app/contracts/houston/messageDelivery";
 import * as Context from "effect/Context";
@@ -68,6 +69,8 @@ export const ProviderAdapterV2RuntimePolicy = Schema.Struct({
    * it; adapters use it to refuse native mode choices a user makes beside Houston's own.
    */
   maxRuntimeMode: Schema.optional(RuntimeMode),
+  /** Houston: a bot thread's rules; the driver refuses what they refuse, or the turn fails. */
+  houstonBot: Schema.optional(HoustonBotProviderPolicy),
 });
 export type ProviderAdapterV2RuntimePolicy = typeof ProviderAdapterV2RuntimePolicy.Type;
 

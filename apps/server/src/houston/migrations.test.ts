@@ -49,6 +49,9 @@ const HOUSTON_TRACK: Array<readonly [number, string]> = [
   [32, "ProviderNativeSessions"],
   [33, "ProjectRepositories"],
   [34, "TaskFolders"],
+  [35, "Bots"],
+  [36, "BotRuns"],
+  [37, "BotTurns"],
 ];
 const TASK_TABLES = [
   "houston_task_acceptance",
@@ -1148,7 +1151,7 @@ describe("the grids removal migration", () => {
   );
 
   it.effect(
-    "a file database at the main track's head applies 18 to 34 and ends without the table",
+    "a file database at the main track's head applies 18 to 37 and ends without the table",
     () =>
       withDatabaseFile((file) =>
         Effect.gen(function* () {
@@ -1173,11 +1176,84 @@ describe("the grids removal migration", () => {
               [32, "ProviderNativeSessions"],
               [33, "ProjectRepositories"],
               [34, "TaskFolders"],
+              [35, "Bots"],
+              [36, "BotRuns"],
+              [37, "BotTurns"],
             ],
           );
           assert.deepEqual(yield* gridObjects, []);
         }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: file }))),
       ),
+  );
+});
+
+describe("the bot turns migration", () => {
+  it.effect("keeps one row per thread run, one cursor, and a launch on the bot run", () =>
+    Effect.gen(function* () {
+      yield* runHoustonMigrations();
+      const sql = yield* SqlClient.SqlClient;
+      const turn = sql`
+        INSERT INTO houston_bot_turns (
+          run_id, bot_run_id, thread_id, started_by, local_date, started_at
+        ) VALUES ('run-1', 'bot-run', 'thread', 'owner', '2026-11-26', '2026-11-26T09:00:00.000Z')
+      `;
+      yield* turn;
+      assert.isTrue((yield* Effect.exit(turn))._tag === "Failure");
+      yield* sql`INSERT INTO houston_bot_cursor (id, sequence) VALUES (1, 4)`;
+      const second = yield* Effect.exit(
+        sql`INSERT INTO houston_bot_cursor (id, sequence) VALUES (2, 4)`,
+      );
+      assert.isTrue(second._tag === "Failure");
+      const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(houston_bot_runs)`;
+      assert.include(
+        columns.map((column) => column.name),
+        "launch_json",
+      );
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
+  );
+});
+
+describe("the bot runs migration", () => {
+  it.effect("keeps one bot run per thread, per request and per routine occurrence", () =>
+    Effect.gen(function* () {
+      yield* runHoustonMigrations();
+      const sql = yield* SqlClient.SqlClient;
+      const insert = (
+        id: string,
+        fields: {
+          readonly requestId?: string;
+          readonly threadId?: string;
+          readonly routineId?: string;
+          readonly dueAt?: string;
+        } = {},
+      ) => sql`
+        INSERT INTO houston_bot_runs (
+          id, request_id, bot_id, bot_name, kind, origin, routine_id, project_id, thread_id,
+          revision_n, revision_sha256, template, policy_json, state, due_at, started_at
+        ) VALUES (
+          ${id}, ${fields.requestId ?? null}, 'bot', 'Digest writer', 'asked', 'owner',
+          ${fields.routineId ?? null}, 'project', ${fields.threadId ?? null}, 1, 'sha', 'v1', '{}',
+          'running', ${fields.dueAt ?? null}, 'now'
+        )
+      `;
+      const fails = <A, E>(effect: Effect.Effect<A, E>) =>
+        Effect.map(Effect.exit(effect), (exit) => exit._tag === "Failure");
+      yield* insert("a", { requestId: "r1", threadId: "t1" });
+      assert.isTrue(yield* fails(insert("b", { requestId: "r1" })));
+      assert.isTrue(yield* fails(insert("c", { threadId: "t1" })));
+      // Requests and threads are optional: two bot runs may both have none.
+      yield* insert("d");
+      yield* insert("e");
+      yield* insert("f", { routineId: "routine", dueAt: "09:00" });
+      assert.isTrue(yield* fails(insert("g", { routineId: "routine", dueAt: "09:00" })));
+      yield* insert("h", { routineId: "routine", dueAt: "10:00" });
+      yield* insert("i", { routineId: "routine" });
+      yield* insert("j", { routineId: "routine" });
+      const [row] = yield* sql<Record<string, unknown>>`
+        SELECT active_ms, refused_calls, reason, result_id FROM houston_bot_runs WHERE id = 'a'
+      `;
+      assert.deepEqual(row, { active_ms: 0, refused_calls: 0, reason: null, result_id: null });
+    }).pipe(Effect.provide(Layer.fresh(SqlitePersistence.layerMemory))),
   );
 });
 
