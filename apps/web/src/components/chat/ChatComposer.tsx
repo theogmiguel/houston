@@ -248,6 +248,7 @@ import { useIsPhone } from "../../mobile/usePhone";
 import { getTraitsSectionVisibility, readPromptUltrathink } from "./TraitsPicker";
 import {
   availableTerminalCommandEntries,
+  providerCommandsLeftToProvider,
   resolveTerminalCommand,
   type TerminalActionId,
 } from "../../composerTerminalCommands";
@@ -1098,7 +1099,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const selectedProviderSkills = selectedProviderStatus
     ? resolveProviderSkillsForCwd(selectedProviderStatus, gitCwd)
     : NO_PROVIDER_SKILLS;
-  const selectedProviderSlashCommands = selectedProviderStatus
+  const reportedProviderSlashCommands = selectedProviderStatus
     ? resolveProviderSlashCommandsForCwd(selectedProviderStatus, gitCwd)
     : NO_PROVIDER_SLASH_COMMANDS;
   const { refresh: refreshWorkspaceSnapshotOnTyping, scanning: workspaceSkillsScanning } =
@@ -1322,6 +1323,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ...(terminalTraitsVisibility?.showFastMode ? (["fast"] as const) : []),
     ...(compatibleRuntimeModeOptions.length > 1 ? (["permissions"] as const) : []),
   ]);
+  const selectedProviderSlashCommands = providerCommandsLeftToProvider(
+    reportedProviderSlashCommands,
+    { provider: selectedProvider, availableActions: availableTerminalActions },
+  );
   const providerCommandNames = selectedProviderSlashCommands.flatMap((command) => [
     command.name,
     ...(command.aliases ?? []),

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   availableTerminalCommandEntries,
   parseTerminalCommand,
+  providerCommandsLeftToProvider,
   resolveTerminalCommand,
   TERMINAL_COMMAND_ENTRIES,
   type TerminalActionId,
@@ -123,6 +124,38 @@ describe("availableTerminalCommandEntries", () => {
       providerCommandNames: ["mcp"],
     });
     expect(reported.some((entry) => entry.names.includes("mcp"))).toBe(false);
+  });
+});
+
+describe("providerCommandsLeftToProvider", () => {
+  const reported = [{ name: "mcp" }, { name: "Fast" }, { name: "context" }, { name: "review" }];
+
+  it("withholds the names Claude reports but cannot serve outside a terminal", () => {
+    const left = providerCommandsLeftToProvider(reported, {
+      provider: "claudeAgent",
+      availableActions: ALL,
+    });
+    expect(left.map((command) => command.name)).toEqual(["context", "review"]);
+    expect(
+      resolveTerminalCommand("/mcp", {
+        availableActions: ALL,
+        providerCommandNames: left.map((command) => command.name),
+      }),
+    ).toMatchObject({ entry: { action: "settings-providers" } });
+  });
+
+  it("leaves a name with the provider while Houston's action is unavailable", () => {
+    const left = providerCommandsLeftToProvider(reported, {
+      provider: "claudeAgent",
+      availableActions: new Set<TerminalActionId>(["settings-providers"]),
+    });
+    expect(left.map((command) => command.name)).toEqual(["Fast", "context", "review"]);
+  });
+
+  it("leaves every name with a provider that has no measured dead ends", () => {
+    expect(
+      providerCommandsLeftToProvider(reported, { provider: "codex", availableActions: ALL }),
+    ).toBe(reported);
   });
 });
 
